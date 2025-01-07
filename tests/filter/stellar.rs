@@ -1,0 +1,76 @@
+use log::info;
+use openzeppelin_monitor::models::{
+    MonitorMatch, StellarEvent, StellarTransaction, TransactionInfo,
+};
+use openzeppelin_monitor::services::blockchain::BlockChainClientEnum;
+use openzeppelin_monitor::services::filter::{handle_match, FilterError, FilterService};
+
+use crate::filter::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service};
+use crate::mocks::{MockStellarClientTrait, MockTriggerRepository};
+
+#[tokio::test]
+async fn test_stellar_monitor_should_detect_token_transfer() -> Result<(), FilterError> {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    // Load test data using common utility
+    let test_data = load_test_data("stellar");
+
+    // Load Stellar-specific test data
+    let events: Vec<StellarEvent> = read_and_parse_json("tests/fixtures/stellar/events.json");
+    let transactions: Vec<TransactionInfo> =
+        read_and_parse_json("tests/fixtures/stellar/transactions.json");
+
+    let mut mock = MockStellarClientTrait::new();
+    let decoded_transactions: Vec<StellarTransaction> = transactions
+        .iter()
+        .map(|tx| StellarTransaction::from(tx.clone()))
+        .collect();
+
+    // Setup mock expectations
+    mock.expect_get_transactions()
+        .times(1)
+        .returning(move |_, _| Ok(decoded_transactions.clone()));
+
+    mock.expect_get_events()
+        .times(1)
+        .returning(move |_, _| Ok(events.clone()));
+
+    let mock_client = BlockChainClientEnum::Stellar(Box::new(mock));
+    let filter_service = FilterService::new();
+
+    let matches = filter_service
+        .filter_block(
+            &mock_client,
+            &test_data.network,
+            &test_data.blocks[0],
+            &[test_data.monitor],
+        )
+        .await?;
+
+    assert!(!matches.is_empty(), "Should have found matching events");
+    assert_eq!(
+        matches.len(),
+        1,
+        "Expected exactly one match for the token transfer"
+    );
+
+    let trigger_execution_service = setup_trigger_execution_service::<MockTriggerRepository>(
+        "tests/fixtures/stellar/triggers/trigger.json",
+    );
+
+    for matching_monitor in matches {
+        match matching_monitor.clone() {
+            MonitorMatch::Stellar(stellar_monitor_match) => {
+                info!(
+                    "Stellar monitor match: {:?}",
+                    stellar_monitor_match.transaction.hash()
+                );
+            }
+            _ => {
+                info!("Unknown monitor match");
+            }
+        }
+        let _ = handle_match(matching_monitor, &trigger_execution_service).await;
+    }
+    Ok(())
+}

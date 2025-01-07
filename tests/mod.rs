@@ -1,4 +1,7 @@
-mod filter;
-mod mocks;
+pub mod mocks;
 
-pub use mocks::*;
+mod filter {
+    mod common;
+    mod evm;
+    mod stellar;
+}
