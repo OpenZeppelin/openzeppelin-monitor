@@ -1,69 +1,65 @@
 use log::{error, info};
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use super::error::BlockWatcherError;
-use super::storage::{BlockStorage, FileBlockStorage};
+use super::storage::BlockStorage;
 
 use crate::models::{BlockType, Network};
 use crate::repositories::{NetworkRepositoryTrait, NetworkService};
 use crate::services::blockchain::{create_blockchain_client, BlockChainClient};
 
-pub struct BlockWatcherService<T: NetworkRepositoryTrait> {
-    network_service: Arc<NetworkService<T>>,
-    block_storage: Arc<dyn BlockStorage + Send + Sync>,
+pub struct NetworkBlockWatcher<B>
+where
+    B: BlockStorage + Send + Sync + 'static,
+{
+    network: Network,
+    block_storage: Arc<B>,
     block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+    scheduler: JobScheduler,
 }
 
-impl<T: NetworkRepositoryTrait> BlockWatcherService<T> {
+pub struct BlockWatcherService<T, B>
+where
+    T: NetworkRepositoryTrait,
+    B: BlockStorage + Send + Sync + 'static,
+{
+    network_service: Arc<NetworkService<T>>,
+    block_storage: Arc<B>,
+    block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+    active_watchers: Arc<RwLock<HashMap<String, NetworkBlockWatcher<B>>>>,
+}
+
+impl<B> NetworkBlockWatcher<B>
+where
+    B: BlockStorage + Send + Sync + 'static,
+{
     pub async fn new(
-        network_service: NetworkService<T>,
+        network: Network,
+        block_storage: Arc<B>,
         block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
     ) -> Result<Self, BlockWatcherError> {
-        Ok(BlockWatcherService {
-            network_service: Arc::new(network_service),
-            block_storage: Arc::new(FileBlockStorage::new()),
-            block_handler,
-        })
-    }
-
-    pub async fn start(&self) -> Result<(), BlockWatcherError> {
-        let networks = self.network_service.get_all();
-
-        if networks.is_empty() {
-            info!("No networks found, block watcher will not start");
-            return Ok(());
-        }
-
-        info!("Scheduling block watchers for {} networks", networks.len());
-
         let scheduler = JobScheduler::new().await.map_err(|e| {
             BlockWatcherError::scheduler_error(format!("Failed to create scheduler: {}", e))
         })?;
 
-        for (_, network) in networks {
-            self.schedule_network_watcher(&scheduler, &network).await?;
-        }
-
-        scheduler.start().await.map_err(|e| {
-            BlockWatcherError::scheduler_error(format!("Failed to start scheduler: {}", e))
-        })?;
-
-        info!("Block watcher started successfully");
-        Ok(())
+        Ok(Self {
+            network,
+            block_storage,
+            block_handler,
+            scheduler,
+        })
     }
 
-    async fn schedule_network_watcher(
-        &self,
-        scheduler: &JobScheduler,
-        network: &Network,
-    ) -> Result<(), BlockWatcherError> {
-        let network_clone = network.clone();
+    pub async fn start(&mut self) -> Result<(), BlockWatcherError> {
+        let network = self.network.clone();
         let block_storage = self.block_storage.clone();
         let block_handler = self.block_handler.clone();
 
-        let job = Job::new_async(network.cron_schedule.as_str(), move |_uuid, _l| {
-            let network = network_clone.clone();
+        let job = Job::new_async(self.network.cron_schedule.as_str(), move |_uuid, _l| {
+            let network = network.clone();
             let block_storage = block_storage.clone();
             let block_handler = block_handler.clone();
 
@@ -82,12 +78,96 @@ impl<T: NetworkRepositoryTrait> BlockWatcherService<T> {
         })
         .map_err(|e| BlockWatcherError::scheduler_error(format!("Failed to create job: {}", e)))?;
 
-        scheduler
+        self.scheduler
             .add(job)
             .await
             .map_err(|e| BlockWatcherError::scheduler_error(format!("Failed to add job: {}", e)))?;
 
-        info!("Scheduled block watcher for network: {}", network.slug);
+        self.scheduler.start().await.map_err(|e| {
+            BlockWatcherError::scheduler_error(format!("Failed to start scheduler: {}", e))
+        })?;
+
+        info!("Started block watcher for network: {}", self.network.slug);
+        Ok(())
+    }
+
+    pub async fn stop(&mut self) -> Result<(), BlockWatcherError> {
+        self.scheduler.shutdown().await.map_err(|e| {
+            BlockWatcherError::scheduler_error(format!("Failed to stop scheduler: {}", e))
+        })?;
+
+        info!("Stopped block watcher for network: {}", self.network.slug);
+        Ok(())
+    }
+}
+
+impl<T, B> BlockWatcherService<T, B>
+where
+    T: NetworkRepositoryTrait,
+    B: BlockStorage + Send + Sync + 'static,
+{
+    pub async fn new(
+        network_service: NetworkService<T>,
+        block_storage: B,
+        block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+    ) -> Result<Self, BlockWatcherError> {
+        Ok(BlockWatcherService {
+            network_service: Arc::new(network_service),
+            block_storage: Arc::new(block_storage),
+            block_handler,
+            active_watchers: Arc::new(RwLock::new(HashMap::new())),
+        })
+    }
+
+    pub async fn start(&self) -> Result<(), BlockWatcherError> {
+        let networks = self.network_service.get_all();
+
+        if networks.is_empty() {
+            info!("No networks found, block watcher will not start");
+            return Ok(());
+        }
+
+        info!("Starting block watchers for {} networks", networks.len());
+
+        for (_, network) in networks {
+            self.start_network_watcher(&network).await?;
+        }
+
+        info!("All block watchers started successfully");
+        Ok(())
+    }
+
+    pub async fn start_network_watcher(&self, network: &Network) -> Result<(), BlockWatcherError> {
+        let mut watchers = self.active_watchers.write().await;
+
+        if watchers.contains_key(&network.slug) {
+            info!(
+                "Block watcher already running for network: {}",
+                network.slug
+            );
+            return Ok(());
+        }
+
+        let mut watcher = NetworkBlockWatcher::new(
+            network.clone(),
+            self.block_storage.clone(),
+            self.block_handler.clone(),
+        )
+        .await?;
+
+        watcher.start().await?;
+        watchers.insert(network.slug.clone(), watcher);
+
+        Ok(())
+    }
+
+    pub async fn stop_network_watcher(&self, network_slug: &str) -> Result<(), BlockWatcherError> {
+        let mut watchers = self.active_watchers.write().await;
+
+        if let Some(mut watcher) = watchers.remove(network_slug) {
+            watcher.stop().await?;
+        }
+
         Ok(())
     }
 }

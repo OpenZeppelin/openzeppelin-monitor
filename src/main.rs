@@ -8,7 +8,7 @@ pub use repositories::{
     MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
     TriggerService,
 };
-pub use services::blockwatcher::BlockWatcherService;
+pub use services::blockwatcher::{BlockWatcherService, FileBlockStorage};
 pub use services::filter::FilterService;
 pub use services::notification::{Notifier, SlackNotifier};
 
@@ -19,8 +19,11 @@ use crate::{
         notification::NotificationService, trigger::TriggerExecutionService,
     },
 };
+
 use log::{error, info};
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,32 +42,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         notification_service,
     ));
 
-    // Get monitors once before creating the handler
+    // Get monitors and networks once before creating the handler
     let monitors = monitor_service.get_all();
+    let active_monitors = filter_active_monitors(monitors);
+    let networks = network_service.get_all();
+
+    // Check if we have any networks with active monitors
+    let networks_with_monitors: Vec<Network> = networks
+        .clone()
+        .into_values()
+        .filter(|network| !filter_network_monitors(&active_monitors, &network.slug).is_empty())
+        .collect();
+
+    if networks_with_monitors.is_empty() {
+        info!("No networks with active monitors found. Exiting...");
+        return Ok(());
+    }
+
+    // Add shutdown channel
+    let (shutdown_tx, _) = broadcast::channel(1);
 
     // Create the block handler closure
     let block_handler = Arc::new({
         let trigger_service = trigger_execution_service.clone();
         let filter_service = filter_service.clone();
-        let active_monitors = monitors
-            .clone()
-            .into_values()
-            .filter(|m| !m.paused)
-            .collect::<Vec<_>>();
+        let shutdown_tx = shutdown_tx.clone();
+        let active_monitors = active_monitors;
 
         move |block: &BlockType, network: &Network| {
-            if active_monitors.is_empty() {
-                info!("No active monitors found. Skipping block.");
-                return;
-            }
-
-            let monitors = active_monitors
-                .clone()
-                .into_iter()
-                .filter(|m| m.networks.contains(&network.slug))
-                .collect::<Vec<_>>();
-
-            if monitors.is_empty() {
+            let applicable_monitors = filter_network_monitors(&active_monitors, &network.slug);
+            if applicable_monitors.is_empty() {
                 info!(
                     "No monitors for network {} to process. Skipping block.",
                     network.slug
@@ -76,60 +83,84 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let filter_service = filter_service.clone();
             let network = network.clone();
             let block = block.clone();
+            let mut shutdown_rx = shutdown_tx.subscribe();
 
-            // // Use block_in_place instead of spawn to process sequentially
-            // tokio::task::block_in_place(|| {
-            //     tokio::runtime::Handle::current().block_on(async {
-            //         let matches = filter_service
-            //             .filter_block(&network, &block, &monitors)
-            //             .await;
-            //         if let Ok(matches) = matches {
-            //             for matching_monitor in matches {
-            //                 let _ = handle_match(matching_monitor, &trigger_service).await;
-            //             }
-            //         }
-            //     })
-            // });
-
-            // Spawn a new task to handle the block processing
             tokio::spawn(async move {
-                let client = create_blockchain_client(&network).await.unwrap();
-                let matches = filter_service
-                    .filter_block(&client, &network, &block, &monitors)
-                    .await;
-                if let Ok(matches) = matches {
-                    for matching_monitor in matches {
-                        let _ = handle_match(matching_monitor, &trigger_service).await;
+                let client = match create_blockchain_client(&network).await {
+                    Ok(client) => client,
+                    Err(e) => {
+                        error!("Failed to create blockchain client: {}", e);
+                        return;
+                    }
+                };
+
+                tokio::select! {
+                    result = filter_service.filter_block(&client, &network, &block, &applicable_monitors) => {
+                        match result {
+                            Ok(matches) => {
+                                for matching_monitor in matches {
+                                    if let Err(e) = handle_match(matching_monitor, &trigger_service).await {
+                                        error!("Error handling match: {}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => error!("Error filtering block: {}", e),
+                        }
+                    }
+                    _ = shutdown_rx.recv() => {
+                        info!("Shutting down block processing task");
+                        return;
                     }
                 }
             });
         }
     });
 
-    // Create block watcher with the handler
-    let block_watcher = BlockWatcherService::new(network_service, block_handler).await?;
+    // Create block watcher service
+    let block_watcher = BlockWatcherService::<NetworkRepository, FileBlockStorage>::new(
+        network_service,
+        FileBlockStorage::new(),
+        block_handler,
+    )
+    .await?;
 
-    // Spawn the watcher in a separate task
-    let watcher_handle = tokio::spawn(async move {
-        if let Err(e) = block_watcher.start().await {
-            error!("Block watcher error: {}", e);
-        }
-    });
+    // Start watchers for networks that have active monitors
+    for network in networks_with_monitors {
+        block_watcher.start_network_watcher(&network).await?;
+    }
 
     // Wait for shutdown signal
     info!("Service started. Press Ctrl+C to shutdown");
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!("Shutdown signal received, stopping services...");
-        }
-    }
+            let _ = shutdown_tx.send(());  // Notify all tasks to shutdown
 
-    // Gracefully shutdown the watcher
-    watcher_handle.abort();
-    if let Err(e) = watcher_handle.await {
-        error!("Error during watcher shutdown: {}", e);
+            // Stop all network watchers
+            for network in networks.values() {
+                if let Err(e) = block_watcher.stop_network_watcher(&network.slug).await {
+                    error!("Error stopping watcher for network {}: {}", network.slug, e);
+                }
+            }
+        }
     }
 
     info!("Shutdown complete");
     Ok(())
+}
+
+// Helper functions
+fn filter_active_monitors(monitors: HashMap<String, Monitor>) -> Vec<Monitor> {
+    monitors
+        .into_values()
+        .filter(|m| !m.paused)
+        .collect::<Vec<_>>()
+}
+
+fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<Monitor> {
+    monitors
+        .iter()
+        .filter(|m| m.networks.contains(&network_slug))
+        .cloned()
+        .collect()
 }
