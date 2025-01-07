@@ -1,3 +1,16 @@
+//! Blockchain monitoring service entry point.
+//!
+//! This binary provides the main entry point for the blockchain monitoring service.
+//! It initializes all required services, sets up blockchain watchers for configured
+//! networks, and handles graceful shutdown on interrupt signals.
+//!
+//! The service follows these main steps:
+//! 1. Loads configurations from the default directory
+//! 2. Initializes core services (monitoring, filtering, notifications)
+//! 3. Sets up blockchain watchers for networks with active monitors
+//! 4. Processes blocks and triggers notifications based on configured conditions
+//! 5. Handles graceful shutdown on Ctrl+C
+
 pub mod models;
 pub mod repositories;
 pub mod services;
