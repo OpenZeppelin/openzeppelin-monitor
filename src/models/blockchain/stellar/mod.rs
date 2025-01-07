@@ -1,3 +1,9 @@
+//! Stellar blockchain specific implementations.
+//!
+//! This module contains data structures and implementations specific to the
+//! Stellar blockchain, including blocks (ledgers), transactions, events,
+//! and monitoring functionality.
+
 mod block;
 mod event;
 mod monitor;

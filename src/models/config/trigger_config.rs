@@ -1,3 +1,8 @@
+//! Trigger configuration loading and validation.
+//!
+//! This module implements the ConfigLoader trait for Trigger configurations,
+//! allowing triggers to be loaded from JSON files.
+
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -7,13 +12,19 @@ use crate::models::{ConfigLoader, Trigger, TriggerTypeConfig};
 
 use super::error::ConfigError;
 
+/// File structure for trigger configuration files
 #[derive(Debug, Deserialize)]
 pub struct TriggerConfigFile {
+    /// Map of trigger names to their configurations
     #[serde(flatten)]
     pub triggers: HashMap<String, Trigger>,
 }
 
 impl ConfigLoader for Trigger {
+    /// Load all trigger configurations from a directory
+    ///
+    /// Reads and parses all JSON files in the specified directory (or default
+    /// config directory) as trigger configurations.
     fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
     where
         T: FromIterator<(String, Trigger)>,
@@ -34,6 +45,9 @@ impl ConfigLoader for Trigger {
         Ok(T::from_iter(trigger_pairs))
     }
 
+    /// Load a trigger configuration from a specific file
+    ///
+    /// Reads and parses a single JSON file as a trigger configuration.
     fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
         let file = std::fs::File::open(path)?;
         let config: Trigger = serde_json::from_reader(file)?;
@@ -46,6 +60,14 @@ impl ConfigLoader for Trigger {
         Ok(config)
     }
 
+    /// Validate the trigger configuration
+    ///
+    /// Ensures that:
+    /// - The trigger has a valid name
+    /// - The trigger type is supported
+    /// - Required configuration fields for the trigger type are present
+    /// - URLs are valid for webhook and Slack triggers
+    /// - Script paths exist for script triggers
     fn validate(&self) -> Result<(), String> {
         match &self.config {
             TriggerTypeConfig::Slack {

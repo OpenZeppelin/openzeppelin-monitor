@@ -1,3 +1,8 @@
+//! Monitor configuration loading and validation.
+//!
+//! This module implements the ConfigLoader trait for Monitor configurations,
+//! allowing monitors to be loaded from JSON files.
+
 use std::fs;
 use std::path::Path;
 
@@ -6,6 +11,10 @@ use crate::models::{ConfigLoader, Monitor};
 use super::error::ConfigError;
 
 impl ConfigLoader for Monitor {
+    /// Load all monitor configurations from a directory
+    ///
+    /// Reads and parses all JSON files in the specified directory (or default
+    /// config directory) as monitor configurations.
     fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
     where
         T: FromIterator<(String, Self)>,
@@ -39,6 +48,9 @@ impl ConfigLoader for Monitor {
         Ok(T::from_iter(pairs))
     }
 
+    /// Load a monitor configuration from a specific file
+    ///
+    /// Reads and parses a single JSON file as a monitor configuration.
     fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
         let file = std::fs::File::open(path)?;
         let config: Monitor = serde_json::from_reader(file)?;
@@ -51,16 +63,15 @@ impl ConfigLoader for Monitor {
         Ok(config)
     }
 
+    /// Validate the monitor configuration
+    ///
+    /// Ensures that:
+    /// - The monitor has a valid name
+    /// - At least one network is specified
+    /// - At least one address is specified
+    /// - At least one condition is specified
+    /// - At least one trigger is specified
     fn validate(&self) -> Result<(), String> {
-        // Validate networks
-
-        // // Validate contract addresses
-        // for address in &self.addresses {
-        //     if !address.address.starts_with("0x") || address.address.len() != 42 {
-        //         return Err(format!("Invalid address format: {}", address.address));
-        //     }
-        // }
-
         // Validate function signatures
         for func in &self.match_conditions.functions {
             if !func.signature.contains('(') || !func.signature.contains(')') {

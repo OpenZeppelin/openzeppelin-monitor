@@ -1,15 +1,27 @@
+//! Configuration error types.
+//!
+//! This module defines the error types that can occur during configuration
+//! loading and validation.
+
 use log::error;
 use std::error::Error;
 use std::fmt;
 
+/// Errors that can occur during configuration operations
 #[derive(Debug)]
 pub enum ConfigError {
+    /// Configuration validation failed
     ValidationError(String),
+
+    /// Failed to parse configuration file
     ParseError(String),
+
+    /// File system error during configuration loading
     FileError(String),
 }
 
 impl ConfigError {
+    /// Format the error message for display
     fn format_message(&self) -> String {
         match self {
             Self::ValidationError(msg) => format!("Validation error: {}", msg),
@@ -18,18 +30,21 @@ impl ConfigError {
         }
     }
 
+    /// Create a new validation error and log it
     pub fn validation_error(msg: impl Into<String>) -> Self {
         let error = Self::ValidationError(msg.into());
         error!("{}", error.format_message());
         error
     }
 
+    /// Create a new parse error and log it
     pub fn parse_error(msg: impl Into<String>) -> Self {
         let error = Self::ParseError(msg.into());
         error!("{}", error.format_message());
         error
     }
 
+    /// Create a new file error and log it
     pub fn file_error(msg: impl Into<String>) -> Self {
         let error = Self::FileError(msg.into());
         error!("{}", error.format_message());

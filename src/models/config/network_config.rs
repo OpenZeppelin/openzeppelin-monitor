@@ -1,3 +1,8 @@
+//! Network configuration loading and validation.
+//!
+//! This module implements the ConfigLoader trait for Network configurations,
+//! allowing network definitions to be loaded from JSON files.
+
 use std::path::Path;
 
 use crate::models::{BlockChainType, ConfigLoader, Network};
@@ -5,6 +10,10 @@ use crate::models::{BlockChainType, ConfigLoader, Network};
 use super::error::ConfigError;
 
 impl ConfigLoader for Network {
+    /// Load all network configurations from a directory
+    ///
+    /// Reads and parses all JSON files in the specified directory (or default
+    /// config directory) as network configurations.
     fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
     where
         T: FromIterator<(String, Self)>,
@@ -38,6 +47,9 @@ impl ConfigLoader for Network {
         Ok(T::from_iter(pairs))
     }
 
+    /// Load a network configuration from a specific file
+    ///
+    /// Reads and parses a single JSON file as a network configuration.
     fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigError> {
         let file = std::fs::File::open(path)?;
         let config: Network = serde_json::from_reader(file)?;
@@ -50,6 +62,13 @@ impl ConfigLoader for Network {
         Ok(config)
     }
 
+    /// Validate the network configuration
+    ///
+    /// Ensures that:
+    /// - The network has a valid name and slug
+    /// - At least one RPC URL is specified
+    /// - Required chain-specific parameters are present
+    /// - Block time and confirmation values are reasonable
     fn validate(&self) -> Result<(), String> {
         // Validate network_type
         match self.network_type {
