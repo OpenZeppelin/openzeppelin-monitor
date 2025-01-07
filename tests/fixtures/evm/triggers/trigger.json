@@ -1,0 +1,11 @@
+{
+  "large_transfer_slack": {
+    "name": "Large Transfer Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "webhook_url": "https://hooks.slack.com/services/A/B/C",
+      "title": "transfers-monitor",
+      "body": "Large transfer of ${amount} ${symbol} from ${from} to ${to}"
+    }
+  }
+}
