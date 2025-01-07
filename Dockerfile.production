@@ -16,10 +16,10 @@ FROM cgr.dev/chainguard/glibc-dynamic
 WORKDIR /app
 COPY --from=base /usr/lib/libssl.so.3 /usr/lib/libssl.so.3
 COPY --from=base /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so.3
-COPY --from=base --chown=nonroot:nonroot /usr/app/bin/oz-oss-monitor /app/oz-oss-monitor 
+COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
 COPY --chown=nonroot:nonroot config /app/config
 COPY --chown=nonroot:nonroot data /app/data
 
 # starting up
-ENTRYPOINT ["/app/oz-oss-monitor"]
+ENTRYPOINT ["/app/openzeppelin-monitor"]
 
