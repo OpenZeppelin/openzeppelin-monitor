@@ -26,3 +26,6 @@ config/**/*.json
 
 # Ignore .env files
 .env
+
+# Ignore DS_Store files
+.DS_Store
