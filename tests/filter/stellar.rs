@@ -1,3 +1,8 @@
+//! Integration tests for Stellar chain monitoring.
+//!
+//! Tests the monitoring functionality for the Stellar blockchain,
+//! including contract invocations and transaction filtering.
+
 use log::info;
 use openzeppelin_monitor::models::{
     MonitorMatch, StellarEvent, StellarTransaction, TransactionInfo,

@@ -1,3 +1,8 @@
+//! Common test utilities and helper functions.
+//!
+//! Provides shared functionality for loading test fixtures and setting up
+//! test environments for both EVM and Stellar chain tests.
+
 use openzeppelin_monitor::{
     models::{BlockType, Monitor, Network, Trigger},
     repositories::{TriggerRepositoryTrait, TriggerService},

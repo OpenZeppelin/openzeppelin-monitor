@@ -1,3 +1,8 @@
+//! Integration tests for EVM chain monitoring.
+//!
+//! Tests the monitoring functionality for EVM-compatible blockchains,
+//! including event and transaction filtering.
+
 use log::info;
 use openzeppelin_monitor::models::MonitorMatch;
 use openzeppelin_monitor::services::{

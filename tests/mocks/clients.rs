@@ -1,3 +1,13 @@
+//! Mock implementations of blockchain clients.
+//!
+//! This module provides mock implementations of the blockchain client traits
+//! used for testing. It includes:
+//! - [`MockEvmClientTrait`] - Mock implementation of EVM blockchain client
+//! - [`MockStellarClientTrait`] - Mock implementation of Stellar blockchain client
+//!
+//! These mocks allow testing blockchain-related functionality without actual
+//! network connections.
+
 use openzeppelin_monitor::models::{BlockType, StellarEvent, StellarTransaction};
 use openzeppelin_monitor::services::blockchain::{
     BlockChainClient, BlockChainError, EvmClientTrait, StellarClientTrait,
@@ -7,6 +17,10 @@ use async_trait::async_trait;
 use mockall::{mock, predicate::*};
 
 mock! {
+    /// Mock implementation of the EVM client trait.
+    ///
+    /// This mock allows testing EVM-specific functionality by simulating blockchain
+    /// responses without actual network calls.
     pub EvmClientTrait {}
 
     #[async_trait]
@@ -35,6 +49,10 @@ mock! {
 }
 
 mock! {
+    /// Mock implementation of the Stellar client trait.
+    ///
+    /// This mock allows testing Stellar-specific functionality by simulating blockchain
+    /// responses without actual network calls.
     pub StellarClientTrait {}
 
     #[async_trait]
