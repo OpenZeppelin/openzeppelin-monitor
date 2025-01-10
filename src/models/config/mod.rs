@@ -25,7 +25,7 @@ pub trait ConfigLoader: Sized {
     /// Validate the configuration
     ///
     /// Returns Ok(()) if valid, or an error message if invalid.
-    fn validate(&self) -> Result<(), String>;
+    fn validate(&self) -> Result<(), error::ConfigError>;
 
     /// Check if a file is a JSON file based on extension
     fn is_json_file(path: &Path) -> bool {

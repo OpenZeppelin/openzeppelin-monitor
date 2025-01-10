@@ -5,9 +5,8 @@
 
 use std::path::Path;
 
+use crate::models::config::error::ConfigError;
 use crate::models::{BlockChainType, ConfigLoader, Network};
-
-use super::error::ConfigError;
 
 impl ConfigLoader for Network {
     /// Load all network configurations from a directory
@@ -56,7 +55,7 @@ impl ConfigLoader for Network {
 
         // Validate the config after loading
         if let Err(validation_error) = config.validate() {
-            return Err(ConfigError::validation_error(validation_error));
+            return Err(ConfigError::validation_error(validation_error.to_string()));
         }
 
         Ok(config)
@@ -69,11 +68,11 @@ impl ConfigLoader for Network {
     /// - At least one RPC URL is specified
     /// - Required chain-specific parameters are present
     /// - Block time and confirmation values are reasonable
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), ConfigError> {
         // Validate network_type
         match self.network_type {
             BlockChainType::EVM | BlockChainType::Stellar => {}
-            _ => return Err("Invalid network_type".to_string()),
+            _ => return Err(ConfigError::validation_error("Invalid network_type")),
         }
 
         // Validate slug
@@ -82,9 +81,9 @@ impl ConfigLoader for Network {
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
         {
-            return Err(
-                "Slug must contain only lowercase letters, numbers, and underscores".to_string(),
-            );
+            return Err(ConfigError::validation_error(
+                "Slug must contain only lowercase letters, numbers, and underscores",
+            ));
         }
 
         // Validate RPC URL types
@@ -94,37 +93,47 @@ impl ConfigLoader for Network {
             .iter()
             .all(|rpc_url| supported_types.contains(&rpc_url.type_.as_str()))
         {
-            return Err(format!(
+            return Err(ConfigError::validation_error(format!(
                 "RPC URL type must be one of: {}",
                 supported_types.join(", ")
-            ));
+            )));
         }
 
         // Validate RPC URLs format
         if !self.rpc_urls.iter().all(|rpc_url| {
             rpc_url.url.starts_with("http://") || rpc_url.url.starts_with("https://")
         }) {
-            return Err("All RPC URLs must start with http:// or https://".to_string());
+            return Err(ConfigError::validation_error(
+                "All RPC URLs must start with http:// or https://",
+            ));
         }
 
         // Validate RPC URL weights
         if !self.rpc_urls.iter().all(|rpc_url| rpc_url.weight <= 100) {
-            return Err("All RPC URL weights must be between 0 and 100".to_string());
+            return Err(ConfigError::validation_error(
+                "All RPC URL weights must be between 0 and 100",
+            ));
         }
 
         // Validate block time
         if self.block_time_ms < 100 {
-            return Err("Block time must be at least 100ms".to_string());
+            return Err(ConfigError::validation_error(
+                "Block time must be at least 100ms",
+            ));
         }
 
         // Validate confirmation blocks
         if self.confirmation_blocks == 0 {
-            return Err("Confirmation blocks must be greater than 0".to_string());
+            return Err(ConfigError::validation_error(
+                "Confirmation blocks must be greater than 0",
+            ));
         }
 
         // Validate max_past_blocks
         if self.max_past_blocks.unwrap_or(0) == 0 {
-            return Err("max_past_blocks must be greater than 0".to_string());
+            return Err(ConfigError::validation_error(
+                "max_past_blocks must be greater than 0",
+            ));
         }
 
         Ok(())

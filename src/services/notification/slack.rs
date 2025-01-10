@@ -8,8 +8,8 @@ use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
 
-use super::{NotificationError, Notifier};
 use crate::models::TriggerTypeConfig;
+use crate::services::notification::{NotificationError, Notifier};
 
 /// Implementation of Slack notifications via webhooks
 pub struct SlackNotifier {

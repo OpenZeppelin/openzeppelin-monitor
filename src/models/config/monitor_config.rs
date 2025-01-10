@@ -6,9 +6,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::models::config::error::ConfigError;
 use crate::models::{ConfigLoader, Monitor};
-
-use super::error::ConfigError;
 
 impl ConfigLoader for Monitor {
     /// Load all monitor configurations from a directory
@@ -57,38 +56,31 @@ impl ConfigLoader for Monitor {
 
         // Validate the config after loading
         if let Err(validation_error) = config.validate() {
-            return Err(ConfigError::validation_error(validation_error));
+            return Err(ConfigError::validation_error(validation_error.to_string()));
         }
 
         Ok(config)
     }
 
     /// Validate the monitor configuration
-    ///
-    /// Ensures that:
-    /// - The monitor has a valid name
-    /// - At least one network is specified
-    /// - At least one address is specified
-    /// - At least one condition is specified
-    /// - At least one trigger is specified
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), ConfigError> {
         // Validate function signatures
         for func in &self.match_conditions.functions {
             if !func.signature.contains('(') || !func.signature.contains(')') {
-                return Err(format!(
+                return Err(ConfigError::validation_error(format!(
                     "Invalid function signature format: {}",
                     func.signature
-                ));
+                )));
             }
         }
 
         // Validate event signatures
         for event in &self.match_conditions.events {
             if !event.signature.contains('(') || !event.signature.contains(')') {
-                return Err(format!(
+                return Err(ConfigError::validation_error(format!(
                     "Invalid event signature format: {}",
                     event.signature
-                ));
+                )));
             }
         }
 

@@ -3,9 +3,9 @@
     "name": "Large Transfer Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/A/B/C",
+      "webhook_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
       "title": "transfers-monitor",
-      "body": "Large transfer of ${amount} ${symbol} from ${from} to ${to}"
+      "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
     }
   }
 }

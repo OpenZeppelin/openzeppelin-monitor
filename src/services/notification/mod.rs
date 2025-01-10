@@ -11,9 +11,11 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 
+mod email;
 mod error;
 mod slack;
 
+pub use email::EmailNotifier;
 pub use error::NotificationError;
 pub use slack::SlackNotifier;
 
@@ -64,6 +66,30 @@ impl NotificationService {
                 body,
             } => {
                 let notifier = SlackNotifier::new(webhook_url.clone(), title.clone(), body.clone());
+                notifier
+                    .notify(&notifier.format_message(&variables))
+                    .await?;
+            }
+            TriggerTypeConfig::Email {
+                host,
+                port,
+                username,
+                password,
+                subject,
+                body,
+                sender,
+                receipients,
+            } => {
+                let notifier = EmailNotifier::new(
+                    host,
+                    port.unwrap_or(465),
+                    username,
+                    password,
+                    subject,
+                    body,
+                    sender,
+                    receipients,
+                );
                 notifier
                     .notify(&notifier.format_message(&variables))
                     .await?;

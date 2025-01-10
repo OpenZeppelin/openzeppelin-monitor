@@ -3,7 +3,7 @@
     "name": "Large Transfer Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/A/B/C",
+      "webhook_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
       "title": "transfers-monitor",
       "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
     }

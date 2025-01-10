@@ -962,7 +962,7 @@
     "events": [
       {
         "signature": "Transfer(address,address,uint256)",
-        "expression": "value > 1000000000000000000"
+        "expression": "value > 10000000000"
       }
     ],
     "transactions": [
@@ -972,5 +972,5 @@
       }
     ]
   },
-  "triggers": ["evm_large_transfer_usdc_slack"]
+  "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
 }

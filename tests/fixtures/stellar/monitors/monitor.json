@@ -1,7 +1,9 @@
 {
   "name": "Large Transfer of USDC Token",
   "paused": false,
-  "networks": ["stellar_testnet"],
+  "networks": [
+    "stellar_testnet"
+  ],
   "addresses": [
     {
       "address": "CAVLP5DH2GJPZMVO7IJY4CVOD5MWEFTJFVPD2YY2FQXOQHRGHK4D6HLP"
@@ -31,5 +33,7 @@
       }
     ]
   },
-  "triggers": ["large_transfer_slack"]
+  "triggers": [
+    "large_transfer_slack"
+  ]
 }

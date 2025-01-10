@@ -5,9 +5,9 @@
 
 use std::collections::HashMap;
 
-use super::error::TriggerError;
 use crate::repositories::{TriggerRepositoryTrait, TriggerService};
 use crate::services::notification::NotificationService;
+use crate::services::trigger::error::TriggerError;
 
 /// Service for executing triggers with notifications
 ///

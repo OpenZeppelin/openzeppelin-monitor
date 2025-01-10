@@ -1,3 +1,4 @@
+use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for actions to take when monitored conditions are met.
@@ -19,6 +20,8 @@ pub struct Trigger {
 pub enum TriggerType {
     /// Send notification to Slack
     Slack,
+    /// Send notification to email
+    Email,
     /// Make HTTP request to webhook
     Webhook,
     /// Execute local script
@@ -37,6 +40,25 @@ pub enum TriggerTypeConfig {
         title: String,
         /// Message template
         body: String,
+    },
+    /// Email notification configuration
+    Email {
+        /// SMTP host
+        host: String,
+        /// SMTP port (default 465)
+        port: Option<u16>,
+        /// SMTP username
+        username: String,
+        /// SMTP password
+        password: String,
+        /// Email subject
+        subject: String,
+        /// Email body
+        body: String,
+        /// Email sender
+        sender: EmailAddress,
+        /// Email receipients
+        receipients: Vec<EmailAddress>,
     },
     /// Webhook configuration
     Webhook {

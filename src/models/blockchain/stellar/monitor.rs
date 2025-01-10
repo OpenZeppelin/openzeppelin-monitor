@@ -3,9 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::models::{MatchConditions, Monitor};
-
-use super::{StellarBlock, StellarTransaction};
+use crate::models::{MatchConditions, Monitor, StellarBlock, StellarTransaction};
 
 /// Result of a successful monitor match on a Stellar chain
 #[derive(Debug, Clone, Deserialize, Serialize)]
