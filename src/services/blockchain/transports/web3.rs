@@ -1,15 +1,32 @@
+//! Web3 transport implementation for EVM blockchain interactions.
+//!
+//! This module provides a client implementation for interacting with EVM-compatible nodes
+//! via Web3, supporting connection management and raw JSON-RPC request functionality.
+
 use serde_json::{json, Value};
 use web3::{transports::Http, Web3};
 
-use super::super::BlockChainError;
 use crate::models::Network;
+use crate::services::blockchain::BlockChainError;
 
+/// A client for interacting with EVM-compatible blockchain nodes via Web3
 pub struct Web3TransportClient {
+    /// The underlying Web3 client for RPC requests
     pub client: Web3<Http>,
+    /// The base URL of the RPC endpoint
     pub url: String,
 }
 
 impl Web3TransportClient {
+    /// Creates a new Web3 transport client by attempting to connect to available endpoints
+    ///
+    /// Tries each RPC URL in order of descending weight until a successful connection is established.
+    ///
+    /// # Arguments
+    /// * `network` - Network configuration containing RPC URLs
+    ///
+    /// # Returns
+    /// * `Result<Self, BlockChainError>` - A new client instance or connection error
     pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
         // Filter web3 URLs with weight > 0 and sort by weight descending
         let mut rpc_urls: Vec<_> = network
@@ -43,6 +60,20 @@ impl Web3TransportClient {
         ))
     }
 
+    /// Sends a raw JSON-RPC request to the EVM node
+    ///
+    /// # Arguments
+    /// * `method` - The JSON-RPC method to call
+    /// * `params` - Vector of parameters to pass to the method
+    ///
+    /// # Returns
+    /// * `Result<Value, BlockChainError>` - JSON response or error
+    ///
+    /// # Example
+    /// ```no_run
+    /// let params = vec![json!("0x123...")];
+    /// let response = client.send_raw_request("eth_getBalance", params).await?;
+    /// ```
     pub async fn send_raw_request(
         &self,
         method: &str,

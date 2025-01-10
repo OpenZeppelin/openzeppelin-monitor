@@ -1,12 +1,19 @@
+//! Error types for filter operations.
+//!
+//! Defines the error cases that can occur during block filtering
+//! and provides helper methods for error creation and formatting.
+
+use log::error;
 use std::error::Error;
 use std::fmt;
 
-use log::error;
-
 #[derive(Debug)]
 pub enum FilterError {
+    /// Error when block type doesn't match expected chain
     BlockTypeMismatch(String),
+    /// Error during network operations
     NetworkError(String),
+    /// Internal processing errors
     InternalError(String),
 }
 

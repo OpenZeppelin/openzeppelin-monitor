@@ -1,16 +1,46 @@
+//! Match handling and processing logic.
+//!
+//! This module implements the processing of matched transactions and events:
+//! - Converts blockchain data to trigger-friendly format
+//! - Prepares notification payloads by converting blockchain-specific data into a generic format
+//! - Handles match execution through configured triggers
+//! - Manages the transformation of complex blockchain data into template variables
+
 use std::collections::HashMap;
 
 use crate::{
     models::{EVMTransaction, MonitorMatch, StellarTransaction},
     repositories::TriggerRepositoryTrait,
+    services::filter::helpers::evm::{h160_to_string, h256_to_string},
+    services::filter::FilterError,
     services::trigger::TriggerExecutionService,
 };
 
-use super::{
-    helpers::evm::{h160_to_string, h256_to_string},
-    FilterError,
-};
-
+/// Process a monitor match by executing associated triggers.
+///
+/// Takes a matched monitor event and processes it through the appropriate trigger service.
+/// Converts blockchain-specific data into a standardized format that can be used in trigger templates.
+///
+/// # Arguments
+/// * `matching_monitor` - The matched monitor event containing transaction and trigger information
+/// * `trigger_service` - Service responsible for executing triggers
+///
+/// # Returns
+/// Result indicating success or failure of trigger execution
+///
+/// # Example Template Variables
+/// The function converts blockchain data into template variables like:
+/// ```text
+/// "monitor_name": "Transfer USDT Token"
+/// "transaction_hash": "0x99139c8f64b9b939678e261e1553660b502d9fd01c2ab1516e699ee6c8cc5791"
+/// "transaction_from": "0xf401346fd255e034a2e43151efe1d68c1e0f8ca5"
+/// "transaction_to": "0x0000000000001ff3684f28c67538d4d072c22734"
+/// "transaction_value": "24504000000000000"
+/// "event_0_signature": "Transfer(address,address,uint256)"
+/// "event_0_to": "0x70bf6634ee8cb27d04478f184b9b8bb13e5f4710"
+/// "event_0_from": "0x2e8135be71230c6b1b4045696d41c09db0414226"
+/// "event_0_value": "88248701"
+/// ```
 pub async fn handle_match<T: TriggerRepositoryTrait>(
     matching_monitor: MonitorMatch,
     trigger_service: &TriggerExecutionService<T>,
@@ -36,22 +66,6 @@ pub async fn handle_match<T: TriggerRepositoryTrait>(
                 data.insert("transaction_to".to_string(), h160_to_string(*to));
             }
             data.insert("monitor_name".to_string(), evm_monitor_match.monitor.name);
-
-            // We convert all matched events/functions arguments to a HashMap so it can be used in the body template of the trigger
-            // This is formatted as follows:
-            // "monitor_name": "Transfer USDT Token"
-            // "transaction_hash": "0x99139c8f64b9b939678e261e1553660b502d9fd01c2ab1516e699ee6c8cc5791",
-            // "transaction_from": "0xf401346fd255e034a2e43151efe1d68c1e0f8ca5",
-            // "transaction_to": "0x0000000000001ff3684f28c67538d4d072c22734",
-            // "transaction_value": "24504000000000000",
-            // "event_0_signature": "Transfer(address,address,uint256)",
-            // "event_0_to": "0x70bf6634ee8cb27d04478f184b9b8bb13e5f4710",
-            // "event_0_from": "0x2e8135be71230c6b1b4045696d41c09db0414226",
-            // "event_0_value": "88248701",
-            // "event_1_signature": "Transfer(address,address,uint256)",
-            // "event_1_from": "0x70bf6634ee8cb27d04478f184b9b8bb13e5f4710",
-            // "event_1_to": "0x7afa9d836d2fccf172b66622625e56404e465dbd",
-            // "event_1_value": "750113",
 
             let matched_args: HashMap<String, String> =
                 if let Some(args) = &evm_monitor_match.matched_on_args {

@@ -1,3 +1,12 @@
+//! EVM blockchain filter implementation.
+//!
+//! This module provides filtering capabilities for Ethereum Virtual Machine (EVM) compatible blockchains.
+//! It handles:
+//! - Transaction matching based on conditions
+//! - Function call detection and parameter matching
+//! - Event log processing and filtering
+//! - ABI-based decoding of function calls and events
+
 use async_trait::async_trait;
 use ethabi::Contract;
 use log::{info, warn};
@@ -17,14 +26,21 @@ use crate::{
             are_same_address, are_same_signature, format_token_value, h160_to_string,
             h256_to_string, normalize_address,
         },
+        filter::{BlockFilter, FilterError},
     },
 };
 
-use super::{BlockFilter, FilterError};
-
+/// Filter implementation for EVM-compatible blockchains
 pub struct EVMBlockFilter {}
 
 impl EVMBlockFilter {
+    /// Finds transactions that match the monitor's conditions.
+    ///
+    /// # Arguments
+    /// * `tx_status` - Status of the transaction (success/failure)
+    /// * `transaction` - The transaction to check
+    /// * `monitor` - Monitor containing match conditions
+    /// * `matched_transactions` - Vector to store matching transactions
     fn find_matching_transaction(
         &self,
         tx_status: &TransactionStatus,
@@ -49,7 +65,6 @@ impl EVMBlockFilter {
 
                 if status_matches {
                     if let Some(expr) = &condition.expression {
-                        // Create a vector of transaction parameters
                         let tx_params = vec![
                             EVMMatchParamEntry {
                                 name: "value".to_string(),
@@ -91,6 +106,16 @@ impl EVMBlockFilter {
         }
     }
 
+    /// Finds function calls in a transaction that match the monitor's conditions.
+    ///
+    /// Decodes the transaction input data using the contract ABI and matches against
+    /// the monitor's function conditions.
+    ///
+    /// # Arguments
+    /// * `transaction` - The transaction containing the function call
+    /// * `monitor` - Monitor containing function match conditions
+    /// * `matched_functions` - Vector to store matching functions
+    /// * `matched_on_args` - Arguments from matched function calls
     fn find_matching_functions_for_transaction(
         &self,
         transaction: &Transaction,
@@ -209,6 +234,17 @@ impl EVMBlockFilter {
         }
     }
 
+    /// Finds events in a transaction receipt that match the monitor's conditions.
+    ///
+    /// Processes event logs from the transaction receipt and matches them against
+    /// the monitor's event conditions.
+    ///
+    /// # Arguments
+    /// * `receipt` - Transaction receipt containing event logs
+    /// * `monitor` - Monitor containing event match conditions
+    /// * `matched_events` - Vector to store matching events
+    /// * `matched_on_args` - Arguments from matched events
+    /// * `involved_addresses` - Addresses involved in matched events
     async fn find_matching_events_for_transaction(
         &self,
         receipt: &TransactionReceipt,
@@ -285,58 +321,14 @@ impl EVMBlockFilter {
         }
     }
 
-    async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
-        // Create contract object from ABI
-        let contract = Contract::load(abi.to_string().as_bytes())
-            .map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
-            .unwrap();
-
-        let decoded_log = contract
-            .events()
-            .find(|event| event.signature() == log.topics[0])
-            .and_then(|event| {
-                event
-                    .parse_log((log.topics.clone(), log.data.0.clone()).into())
-                    .ok()
-                    .map(|parsed| {
-                        let event_params_map = EVMMatchParamsMap {
-                            signature: format!(
-                                "{}({})",
-                                event.name,
-                                event
-                                    .inputs
-                                    .iter()
-                                    .map(|p| p.kind.to_string())
-                                    .collect::<Vec<String>>()
-                                    .join(",")
-                            ),
-                            args: Some(
-                                event
-                                    .inputs
-                                    .iter()
-                                    .filter_map(|input| {
-                                        parsed
-                                            .params
-                                            .iter()
-                                            .find(|param| param.name == input.name)
-                                            .map(|param| EVMMatchParamEntry {
-                                                name: input.name.clone(),
-                                                value: format_token_value(&param.value),
-                                                kind: input.kind.to_string(),
-                                                indexed: input.indexed,
-                                            })
-                                    })
-                                    .collect(),
-                            ),
-                            hex_signature: Some(h256_to_string(event.signature())),
-                        };
-                        event_params_map
-                    })
-            });
-
-        decoded_log
-    }
-
+    /// Evaluates a match expression against provided parameters.
+    ///
+    /// # Arguments
+    /// * `expression` - The expression to evaluate
+    /// * `args` - Optional parameters to use in evaluation
+    ///
+    /// # Returns
+    /// `true` if the expression matches, `false` otherwise
     fn evaluate_expression(
         &self,
         expression: &str,
@@ -423,10 +415,80 @@ impl EVMBlockFilter {
         // No conditions were true
         false
     }
+
+    /// Decodes event logs using the provided ABI.
+    ///
+    /// # Arguments
+    /// * `abi` - Contract ABI for decoding
+    /// * `log` - Event log to decode
+    ///
+    /// # Returns
+    /// Option containing EVMMatchParamsMap with decoded event data if successful
+    async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
+        // Create contract object from ABI
+        let contract = Contract::load(abi.to_string().as_bytes())
+            .map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
+            .unwrap();
+
+        let decoded_log = contract
+            .events()
+            .find(|event| event.signature() == log.topics[0])
+            .and_then(|event| {
+                event
+                    .parse_log((log.topics.clone(), log.data.0.clone()).into())
+                    .ok()
+                    .map(|parsed| {
+                        let event_params_map = EVMMatchParamsMap {
+                            signature: format!(
+                                "{}({})",
+                                event.name,
+                                event
+                                    .inputs
+                                    .iter()
+                                    .map(|p| p.kind.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(",")
+                            ),
+                            args: Some(
+                                event
+                                    .inputs
+                                    .iter()
+                                    .filter_map(|input| {
+                                        parsed
+                                            .params
+                                            .iter()
+                                            .find(|param| param.name == input.name)
+                                            .map(|param| EVMMatchParamEntry {
+                                                name: input.name.clone(),
+                                                value: format_token_value(&param.value),
+                                                kind: input.kind.to_string(),
+                                                indexed: input.indexed,
+                                            })
+                                    })
+                                    .collect(),
+                            ),
+                            hex_signature: Some(h256_to_string(event.signature())),
+                        };
+                        event_params_map
+                    })
+            });
+
+        decoded_log
+    }
 }
 
 #[async_trait]
 impl BlockFilter for EVMBlockFilter {
+    /// Processes a block and finds matches based on monitor conditions.
+    ///
+    /// # Arguments
+    /// * `client` - Blockchain client for additional data fetching
+    /// * `network` - Network of the blockchain
+    /// * `block` - The block to process
+    /// * `monitors` - Active monitors containing match conditions
+    ///
+    /// # Returns
+    /// Vector of matches found in the block
     async fn filter_block(
         &self,
         client: &BlockChainClientEnum,

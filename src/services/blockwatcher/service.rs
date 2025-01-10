@@ -1,16 +1,24 @@
+//! Block watcher service implementation.
+//!
+//! Provides functionality to watch and process blockchain blocks across multiple networks,
+//! managing individual watchers for each network and coordinating block processing.
+
 use log::{error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
-use super::error::BlockWatcherError;
-use super::storage::BlockStorage;
-
 use crate::models::{BlockType, Network};
 use crate::repositories::{NetworkRepositoryTrait, NetworkService};
 use crate::services::blockchain::{create_blockchain_client, BlockChainClient};
+use crate::services::blockwatcher::error::BlockWatcherError;
+use crate::services::blockwatcher::storage::BlockStorage;
 
+/// Watcher implementation for a single network
+///
+/// Manages block watching and processing for a specific blockchain network,
+/// including scheduling and block handling.
 pub struct NetworkBlockWatcher<B>
 where
     B: BlockStorage + Send + Sync + 'static,
@@ -21,6 +29,10 @@ where
     scheduler: JobScheduler,
 }
 
+/// Service for managing multiple network watchers
+///
+/// Coordinates block watching across multiple networks, managing individual
+/// watchers and their lifecycles.
 pub struct BlockWatcherService<T, B>
 where
     T: NetworkRepositoryTrait,
@@ -36,6 +48,15 @@ impl<B> NetworkBlockWatcher<B>
 where
     B: BlockStorage + Send + Sync + 'static,
 {
+    /// Creates a new network watcher instance
+    ///
+    /// # Arguments
+    /// * `network` - Network configuration
+    /// * `block_storage` - Storage implementation for blocks
+    /// * `block_handler` - Handler function for processed blocks
+    ///
+    /// # Returns
+    /// * `Result<Self, BlockWatcherError>` - New watcher instance or error
     pub async fn new(
         network: Network,
         block_storage: Arc<B>,
@@ -53,6 +74,10 @@ where
         })
     }
 
+    /// Starts the network watcher
+    ///
+    /// Initializes the scheduler and begins watching for new blocks according
+    /// to the network's cron schedule.
     pub async fn start(&mut self) -> Result<(), BlockWatcherError> {
         let network = self.network.clone();
         let block_storage = self.block_storage.clone();
@@ -91,6 +116,9 @@ where
         Ok(())
     }
 
+    /// Stops the network watcher
+    ///
+    /// Shuts down the scheduler and stops watching for new blocks.
     pub async fn stop(&mut self) -> Result<(), BlockWatcherError> {
         self.scheduler.shutdown().await.map_err(|e| {
             BlockWatcherError::scheduler_error(format!("Failed to stop scheduler: {}", e))
@@ -106,6 +134,12 @@ where
     T: NetworkRepositoryTrait,
     B: BlockStorage + Send + Sync + 'static,
 {
+    /// Creates a new block watcher service
+    ///
+    /// # Arguments
+    /// * `network_service` - Service for network operations
+    /// * `block_storage` - Storage implementation for blocks
+    /// * `block_handler` - Handler function for processed blocks
     pub async fn new(
         network_service: NetworkService<T>,
         block_storage: B,
@@ -119,6 +153,9 @@ where
         })
     }
 
+    /// Starts all network watchers
+    ///
+    /// Initializes and starts watchers for all configured networks.
     pub async fn start(&self) -> Result<(), BlockWatcherError> {
         let networks = self.network_service.get_all();
 
@@ -137,6 +174,10 @@ where
         Ok(())
     }
 
+    /// Starts a watcher for a specific network
+    ///
+    /// # Arguments
+    /// * `network` - Network configuration to start watching
     pub async fn start_network_watcher(&self, network: &Network) -> Result<(), BlockWatcherError> {
         let mut watchers = self.active_watchers.write().await;
 
@@ -161,6 +202,10 @@ where
         Ok(())
     }
 
+    /// Stops a watcher for a specific network
+    ///
+    /// # Arguments
+    /// * `network_slug` - Identifier of the network to stop watching
     pub async fn stop_network_watcher(&self, network_slug: &str) -> Result<(), BlockWatcherError> {
         let mut watchers = self.active_watchers.write().await;
 
@@ -172,8 +217,18 @@ where
     }
 }
 
+/// Default maximum number of past blocks to process
 const DEFAULT_MAX_PAST_BLOCKS: u64 = 10;
 
+/// Processes new blocks for a network
+///
+/// # Arguments
+/// * `network` - Network configuration
+/// * `block_storage` - Storage implementation for blocks
+/// * `block_handler` - Handler function for processed blocks
+///
+/// # Returns
+/// * `Result<(), BlockWatcherError>` - Success or error
 async fn process_new_blocks(
     network: &Network,
     block_storage: Arc<dyn BlockStorage + Send + Sync>,

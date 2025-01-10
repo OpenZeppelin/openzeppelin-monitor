@@ -1,3 +1,10 @@
+//! Helper functions for Stellar-specific operations.
+//!
+//! This module provides utility functions for working with Stellar-specific data types
+//! and formatting, including address normalization, XDR value parsing, and
+//! operation processing.
+
+use hex::encode;
 use serde_json::{json, Value};
 use stellar_strkey::ed25519::PublicKey as StrkeyPublicKey;
 use stellar_strkey::Contract;
@@ -9,8 +16,14 @@ use stellar_xdr::curr::{Limits, UInt256Parts};
 
 use crate::models::StellarDecodedParamEntry;
 use crate::models::StellarParsedOperationResult;
-use hex::encode;
 
+/// Combines the parts of a UInt256 into a single string representation.
+///
+/// # Arguments
+/// * `n` - The UInt256Parts containing the 4 64-bit components
+///
+/// # Returns
+/// A string representation of the combined 256-bit unsigned integer
 fn combine_u256(n: &UInt256Parts) -> String {
     (
         ((n.hi_hi as u128) << 64) | // Shift hi_hi left by 64 bits
@@ -22,6 +35,13 @@ fn combine_u256(n: &UInt256Parts) -> String {
         .to_string() // Combine all parts into a single u256 value
 }
 
+/// Combines the parts of an Int256 into a single string representation.
+///
+/// # Arguments
+/// * `n` - The Int256Parts containing the 4 64-bit components
+///
+/// # Returns
+/// A string representation of the combined 256-bit signed integer
 fn combine_i256(n: &Int256Parts) -> String {
     ((n.hi_hi as i128) << 64
         | (n.hi_lo as i128) << 64
@@ -30,14 +50,35 @@ fn combine_i256(n: &Int256Parts) -> String {
         .to_string()
 }
 
+/// Combines the parts of a UInt128 into a single string representation.
+///
+/// # Arguments
+/// * `n` - The UInt128Parts containing the 2 64-bit components
+///
+/// # Returns
+/// A string representation of the combined 128-bit unsigned integer
 fn combine_u128(n: &UInt128Parts) -> String {
     ((n.hi as u128) << 64 | (n.lo as u128)).to_string()
 }
 
+/// Combines the parts of an Int128 into a single string representation.
+///
+/// # Arguments
+/// * `n` - The Int128Parts containing the 2 64-bit components
+///
+/// # Returns
+/// A string representation of the combined 128-bit signed integer
 fn combine_i128(n: &Int128Parts) -> String {
     ((n.hi as i128) << 64 | (n.lo as i128)).to_string()
 }
 
+/// Processes a Stellar Contract Value (ScVal) into a JSON representation.
+///
+/// # Arguments
+/// * `val` - The ScVal to process
+///
+/// # Returns
+/// A JSON Value representing the processed ScVal with appropriate type information
 fn process_sc_val(val: &ScVal) -> Value {
     match val {
         ScVal::Bool(b) => json!(b),
@@ -68,11 +109,25 @@ fn process_sc_val(val: &ScVal) -> Value {
     }
 }
 
+/// Processes a Stellar Contract Vector into a JSON array.
+///
+/// # Arguments
+/// * `vec` - The ScVec to process
+///
+/// # Returns
+/// A JSON Value containing an array of processed ScVal elements
 fn process_sc_vec(vec: &ScVec) -> Value {
     let values: Vec<Value> = vec.0.iter().map(|val| process_sc_val(val)).collect();
     json!(values)
 }
 
+/// Processes a Stellar Contract Map into a JSON object.
+///
+/// # Arguments
+/// * `map` - The ScMap to process
+///
+/// # Returns
+/// A JSON Value containing key-value pairs of processed ScVal elements
 fn process_sc_map(map: &ScMap) -> Value {
     let entries: serde_json::Map<String, Value> = map
         .0
@@ -85,6 +140,13 @@ fn process_sc_map(map: &ScMap) -> Value {
     json!(entries)
 }
 
+/// Gets the type of a Stellar Contract Value as a string.
+///
+/// # Arguments
+/// * `val` - The ScVal to get the type for
+///
+/// # Returns
+/// A string representing the type of the ScVal
 fn get_sc_val_type(val: &ScVal) -> String {
     match val {
         ScVal::Bool(_) => "Bool".to_string(),
@@ -109,6 +171,13 @@ fn get_sc_val_type(val: &ScVal) -> String {
     }
 }
 
+/// Gets the function signature for a Stellar host function operation.
+///
+/// # Arguments
+/// * `invoke_op` - The InvokeHostFunctionOp to get the signature for
+///
+/// # Returns
+/// A string representing the function signature in the format "function_name(type1,type2,...)"
 pub fn get_function_signature(invoke_op: &InvokeHostFunctionOp) -> String {
     match &invoke_op.host_function {
         HostFunction::InvokeContract(args) => {
@@ -121,6 +190,13 @@ pub fn get_function_signature(invoke_op: &InvokeHostFunctionOp) -> String {
     }
 }
 
+/// Processes a Stellar host function operation into a parsed result.
+///
+/// # Arguments
+/// * `invoke_op` - The InvokeHostFunctionOp to process
+///
+/// # Returns
+/// A StellarParsedOperationResult containing the processed operation details
 pub fn process_invoke_host_function(
     invoke_op: &InvokeHostFunctionOp,
 ) -> StellarParsedOperationResult {
@@ -159,22 +235,60 @@ pub fn process_invoke_host_function(
     }
 }
 
+/// Compares two Stellar addresses for equality, ignoring case and whitespace.
+///
+/// # Arguments
+/// * `address1` - First address to compare
+/// * `address2` - Second address to compare
+///
+/// # Returns
+/// `true` if the addresses are equivalent, `false` otherwise
 pub fn are_same_address(address1: &str, address2: &str) -> bool {
     normalize_address(address1) == normalize_address(address2)
 }
 
+/// Normalizes a Stellar address by removing whitespace and converting to lowercase.
+///
+/// # Arguments
+/// * `address` - The address string to normalize
+///
+/// # Returns
+/// The normalized address string
 pub fn normalize_address(address: &str) -> String {
     address.trim().replace(" ", "").to_lowercase()
 }
 
+/// Compares two Stellar function signatures for equality, ignoring case and whitespace.
+///
+/// # Arguments
+/// * `signature1` - First signature to compare
+/// * `signature2` - Second signature to compare
+///
+/// # Returns
+/// `true` if the signatures are equivalent, `false` otherwise
 pub fn are_same_signature(signature1: &str, signature2: &str) -> bool {
     normalize_signature(signature1) == normalize_signature(signature2)
 }
 
+/// Normalizes a Stellar function signature by removing whitespace and converting to lowercase.
+///
+/// # Arguments
+/// * `signature` - The signature string to normalize
+///
+/// # Returns
+/// The normalized signature string
 pub fn normalize_signature(signature: &str) -> String {
     signature.trim().replace(" ", "").to_lowercase()
 }
 
+/// Parses a Stellar Contract Value into a decoded parameter entry.
+///
+/// # Arguments
+/// * `val` - The ScVal to parse
+/// * `indexed` - Whether this parameter is indexed
+///
+/// # Returns
+/// An Option containing the decoded parameter entry if successful
 pub fn parse_sc_val(val: &ScVal, indexed: bool) -> Option<StellarDecodedParamEntry> {
     match val {
         ScVal::Bool(b) => Some(StellarDecodedParamEntry {
@@ -273,6 +387,18 @@ pub fn parse_sc_val(val: &ScVal, indexed: bool) -> Option<StellarDecodedParamEnt
     }
 }
 
+/// Parses XDR-encoded bytes into a decoded parameter entry.
+///
+/// Attempts to decode XDR-formatted bytes into a Stellar Contract Value (ScVal) and then
+/// converts it into a decoded parameter entry. This is commonly used for processing
+/// contract events and function parameters.
+///
+/// # Arguments
+/// * `bytes` - The XDR-encoded bytes to parse
+/// * `indexed` - Whether this parameter is indexed in the event/function
+///
+/// # Returns
+/// An Option containing the decoded parameter entry if successful, None if parsing fails
 pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedParamEntry> {
     match ReadXdr::from_xdr(bytes, Limits::none()) {
         Ok(scval) => parse_sc_val(&scval, indexed),

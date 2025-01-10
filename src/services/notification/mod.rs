@@ -1,3 +1,12 @@
+//! Notification service implementation.
+//!
+//! This module provides functionality to send notifications through various channels:
+//! - Slack messages via webhooks
+//! - HTTP webhooks (planned)
+//! - Script execution (planned)
+//!
+//! Supports variable substitution in message templates.
+
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -10,18 +19,39 @@ pub use slack::SlackNotifier;
 
 use crate::models::TriggerTypeConfig;
 
+/// Interface for notification implementations
+///
+/// All notification types must implement this trait to provide
+/// consistent notification behavior.
 #[async_trait]
 pub trait Notifier {
+    /// Sends a notification with the given message
+    ///
+    /// # Arguments
+    /// * `message` - The formatted message to send
+    ///
+    /// # Returns
+    /// * `Result<(), Box<dyn std::error::Error>>` - Success or error
     async fn notify(&self, message: &str) -> Result<(), Box<dyn std::error::Error>>;
 }
 
+/// Service for managing notifications across different channels
 pub struct NotificationService;
 
 impl NotificationService {
+    /// Creates a new notification service instance
     pub fn new() -> Self {
         NotificationService
     }
 
+    /// Executes a notification based on the trigger configuration
+    ///
+    /// # Arguments
+    /// * `config` - Configuration specifying the notification type and parameters
+    /// * `variables` - Variables to substitute in message templates
+    ///
+    /// # Returns
+    /// * `Result<(), Box<dyn std::error::Error>>` - Success or error
     pub async fn execute(
         &self,
         config: &TriggerTypeConfig,

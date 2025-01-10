@@ -1,3 +1,11 @@
+//! Block filtering implementations.
+//!
+//! Provides trait definition and implementations for filtering blocks
+//! across different blockchain types. Includes:
+//! - Generic BlockFilter trait
+//! - EVM-specific implementation
+//! - Stellar-specific implementation
+
 mod evm;
 mod stellar;
 
@@ -8,9 +16,8 @@ pub use stellar::StellarBlockFilter;
 use crate::{
     models::{BlockType, Monitor, MonitorMatch, Network},
     services::blockchain::BlockChainClientEnum,
+    services::filter::error::FilterError,
 };
-
-use super::FilterError;
 
 #[async_trait]
 pub trait BlockFilter {

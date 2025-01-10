@@ -1,3 +1,11 @@
+//! Stellar blockchain filter implementation for processing and matching blockchain events.
+//!
+//! This module provides functionality to:
+//! - Filter and match Stellar blockchain transactions against monitor conditions
+//! - Process and decode Stellar events
+//! - Compare different types of parameter values
+//! - Evaluate complex matching expressions
+
 use async_trait::async_trait;
 use base64::Engine;
 use log::{info, warn};
@@ -16,20 +24,27 @@ use crate::{
         filter::helpers::stellar::{
             are_same_signature, normalize_address, parse_xdr_value, process_invoke_host_function,
         },
+        filter::{BlockFilter, FilterError},
     },
 };
 
-use super::{BlockFilter, FilterError};
-
+/// Represents a mapping between a Stellar event and its transaction hash
 #[derive(Debug)]
 struct EventMap {
     pub event: StellarMatchParamsMap,
     pub tx_hash: String,
 }
 
+/// Implementation of the block filter for Stellar blockchain
 pub struct StellarBlockFilter {}
 
 impl StellarBlockFilter {
+    /// Finds matching transactions based on monitor conditions
+    ///
+    /// # Arguments
+    /// * `transaction` - The Stellar transaction to check
+    /// * `monitor` - The monitor containing match conditions
+    /// * `matched_transactions` - Vector to store matching transactions
     fn find_matching_transaction(
         &self,
         transaction: &StellarTransaction,
@@ -150,6 +165,14 @@ impl StellarBlockFilter {
         }
     }
 
+    /// Finds matching functions within a transaction
+    ///
+    /// # Arguments
+    /// * `monitored_addresses` - List of addresses being monitored
+    /// * `transaction` - The transaction to check
+    /// * `monitor` - The monitor containing match conditions
+    /// * `matched_functions` - Vector to store matching functions
+    /// * `matched_on_args` - Arguments that matched the conditions
     fn find_matching_functions_for_transaction(
         &self,
         monitored_addresses: &[String],
@@ -242,6 +265,14 @@ impl StellarBlockFilter {
         }
     }
 
+    /// Finds matching events for a transaction
+    ///
+    /// # Arguments
+    /// * `events` - List of decoded events
+    /// * `transaction` - The transaction to check
+    /// * `monitor` - The monitor containing match conditions
+    /// * `matched_events` - Vector to store matching events
+    /// * `matched_on_args` - Arguments that matched the conditions
     fn find_matching_events_for_transaction(
         &self,
         events: &Vec<EventMap>,
@@ -299,6 +330,14 @@ impl StellarBlockFilter {
         }
     }
 
+    /// Decodes Stellar events into a more processable format
+    ///
+    /// # Arguments
+    /// * `events` - Raw Stellar events to decode
+    /// * `monitored_addresses` - List of addresses being monitored
+    ///
+    /// # Returns
+    /// Vector of decoded events mapped to their transaction hashes
     async fn decode_events(
         &self,
         events: &Vec<StellarEvent>,
@@ -432,6 +471,16 @@ impl StellarBlockFilter {
         return decoded_events;
     }
 
+    /// Compares values based on their type and operator
+    ///
+    /// # Arguments
+    /// * `param_type` - The type of parameter being compared
+    /// * `param_value` - The actual value to compare
+    /// * `operator` - The comparison operator
+    /// * `compare_value` - The value to compare against
+    ///
+    /// # Returns
+    /// Boolean indicating if the comparison evaluates to true
     fn compare_values(
         &self,
         param_type: &str,
@@ -709,6 +758,14 @@ impl StellarBlockFilter {
         self.compare_values(param_type, &map_value.to_string(), operator, compare_value)
     }
 
+    /// Evaluates a complex matching expression against provided arguments
+    ///
+    /// # Arguments
+    /// * `expression` - The expression to evaluate (supports AND/OR operations)
+    /// * `args` - The arguments to evaluate against
+    ///
+    /// # Returns
+    /// Boolean indicating if the expression evaluates to true
     fn evaluate_expression(
         &self,
         expression: &str,
@@ -813,6 +870,13 @@ impl StellarBlockFilter {
         false
     }
 
+    /// Converts Stellar function arguments into match parameter entries
+    ///
+    /// # Arguments
+    /// * `arguments` - Vector of argument values to convert
+    ///
+    /// # Returns
+    /// Vector of converted parameter entries
     fn convert_arguments_to_match_param_entry(
         &self,
         arguments: &Vec<Value>,
@@ -874,6 +938,16 @@ impl StellarBlockFilter {
 
 #[async_trait]
 impl BlockFilter for StellarBlockFilter {
+    /// Filters a Stellar block against provided monitors
+    ///
+    /// # Arguments
+    /// * `client` - The blockchain client to use
+    /// * `_network` - The network being monitored
+    /// * `block` - The block to filter
+    /// * `monitors` - List of monitors to check against
+    ///
+    /// # Returns
+    /// Result containing vector of matching monitors or a filter error
     async fn filter_block(
         &self,
         client: &BlockChainClientEnum,

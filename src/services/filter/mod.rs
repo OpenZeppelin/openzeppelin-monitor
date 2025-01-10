@@ -1,3 +1,10 @@
+//! Transaction and event filtering functionality.
+//!
+//! Implements the core filtering logic for monitoring blockchain activity:
+//! - Block filtering for different chain types
+//! - Match handling and processing
+//! - Chain-specific helper functions
+
 mod error;
 mod filter_match;
 mod filters;

@@ -1,3 +1,9 @@
+//! EVM-compatible blockchain client implementation.
+//!
+//! This module provides functionality to interact with Ethereum and other EVM-compatible
+//! blockchains, supporting operations like block retrieval, transaction receipt lookup,
+//! and log filtering.
+
 use async_trait::async_trait;
 use web3::types::{BlockId, BlockNumber};
 
@@ -7,12 +13,25 @@ use crate::services::blockchain::{client::BlockChainClient, BlockChainError};
 use crate::services::filter::helpers::evm::string_to_h256;
 use crate::utils::WithRetry;
 
+/// Client implementation for Ethereum Virtual Machine (EVM) compatible blockchains
+///
+/// Provides high-level access to EVM blockchain data and operations through Web3
+/// transport layer.
 pub struct EvmClient {
+    /// The underlying Web3 transport client for RPC communication
     web3_client: Web3TransportClient,
+    /// Network configuration for this client instance
     _network: Network,
 }
 
 impl EvmClient {
+    /// Creates a new EVM client instance
+    ///
+    /// # Arguments
+    /// * `network` - Network configuration containing RPC endpoints and chain details
+    ///
+    /// # Returns
+    /// * `Result<Self, BlockChainError>` - New client instance or connection error
     pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
         let web3_client = Web3TransportClient::new(network).await?;
         Ok(Self {
@@ -22,13 +41,29 @@ impl EvmClient {
     }
 }
 
+/// Extended functionality specific to EVM-compatible blockchains
 #[async_trait]
 pub trait EvmClientTrait: BlockChainClient {
+    /// Retrieves a transaction receipt by its hash
+    ///
+    /// # Arguments
+    /// * `transaction_hash` - The hash of the transaction to look up
+    ///
+    /// # Returns
+    /// * `Result<TransactionReceipt, BlockChainError>` - Transaction receipt or error
     async fn get_transaction_receipt(
         &self,
         transaction_hash: String,
     ) -> Result<web3::types::TransactionReceipt, BlockChainError>;
 
+    /// Retrieves logs for a range of blocks
+    ///
+    /// # Arguments
+    /// * `from_block` - Starting block number
+    /// * `to_block` - Ending block number
+    ///
+    /// # Returns
+    /// * `Result<Vec<Log>, BlockChainError>` - Collection of matching logs or error
     async fn get_logs_for_blocks(
         &self,
         from_block: u64,
@@ -38,6 +73,11 @@ pub trait EvmClientTrait: BlockChainClient {
 
 #[async_trait]
 impl EvmClientTrait for EvmClient {
+    /// Retrieves a transaction receipt by hash with proper error handling
+    ///
+    /// # Errors
+    /// - Returns `BlockChainError::InternalError` if the hash format is invalid
+    /// - Returns `BlockChainError::RequestError` if the receipt is not found
     async fn get_transaction_receipt(
         &self,
         transaction_hash: String,
@@ -61,6 +101,9 @@ impl EvmClientTrait for EvmClient {
         })?)
     }
 
+    /// Retrieves logs within the specified block range
+    ///
+    /// Uses Web3's filter builder to construct the log filter query
     async fn get_logs_for_blocks(
         &self,
         from_block: u64,
@@ -82,6 +125,7 @@ impl EvmClientTrait for EvmClient {
 
 #[async_trait]
 impl BlockChainClient for EvmClient {
+    /// Retrieves the latest block number with retry functionality
     async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
         let with_retry = WithRetry::with_default_config();
         with_retry
@@ -97,6 +141,10 @@ impl BlockChainClient for EvmClient {
             .await
     }
 
+    /// Retrieves blocks within the specified range with retry functionality
+    ///
+    /// # Note
+    /// If end_block is None, only the start_block will be retrieved
     async fn get_blocks(
         &self,
         start_block: u64,
