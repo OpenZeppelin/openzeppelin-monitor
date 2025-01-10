@@ -50,7 +50,7 @@ pub struct LedgerInfo {
 /// This type provides a convenient interface for working with Stellar ledger data
 /// while maintaining compatibility with the RPC response format.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Block(LedgerInfo);
+pub struct Block(pub LedgerInfo);
 
 impl Block {
     /// Get the block number (sequence)

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::models::{
-    BlockType, Network, StellarBlock, StellarEvent, StellarTransaction, TransactionInfo,
+    BlockType, Network, StellarBlock, StellarEvent, StellarTransaction, StellarTransactionInfo,
 };
 use crate::services::blockchain::transports::StellarTransportClient;
 use crate::services::blockchain::{client::BlockChainClient, BlockChainError};
@@ -116,7 +116,7 @@ impl StellarClientTrait for StellarClient {
                 .send_raw_request("getTransactions", params)
                 .await?;
 
-            let ledger_transactions: Vec<TransactionInfo> = serde_json::from_value(
+            let ledger_transactions: Vec<StellarTransactionInfo> = serde_json::from_value(
                 response["result"]["transactions"].clone(),
             )
             .map_err(|e| {

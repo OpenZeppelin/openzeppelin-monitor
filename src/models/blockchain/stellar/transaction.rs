@@ -107,7 +107,7 @@ pub struct DecodedTransaction {
 /// This type implements convenience methods for working with Stellar transactions
 /// while maintaining compatibility with the RPC response format.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Transaction(TransactionInfo);
+pub struct Transaction(pub TransactionInfo);
 
 impl Transaction {
     /// Get the transaction hash

@@ -10,7 +10,7 @@ use web3::types::{Transaction as Web3Transaction, H160, H256, U256};
 /// This type provides a convenient interface for working with EVM transactions
 /// while maintaining compatibility with the web3 types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Transaction(Web3Transaction);
+pub struct Transaction(pub Web3Transaction);
 
 impl Transaction {
     /// Get the transaction value (amount of ETH transferred)
