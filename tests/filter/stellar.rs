@@ -5,7 +5,7 @@
 
 use log::info;
 use openzeppelin_monitor::models::{
-    MonitorMatch, StellarEvent, StellarTransaction, TransactionInfo,
+    MonitorMatch, StellarEvent, StellarTransaction, StellarTransactionInfo,
 };
 use openzeppelin_monitor::services::blockchain::BlockChainClientEnum;
 use openzeppelin_monitor::services::filter::{handle_match, FilterError, FilterService};
@@ -22,7 +22,7 @@ async fn test_stellar_monitor_should_detect_token_transfer() -> Result<(), Filte
 
     // Load Stellar-specific test data
     let events: Vec<StellarEvent> = read_and_parse_json("tests/fixtures/stellar/events.json");
-    let transactions: Vec<TransactionInfo> =
+    let transactions: Vec<StellarTransactionInfo> =
         read_and_parse_json("tests/fixtures/stellar/transactions.json");
 
     let mut mock = MockStellarClientTrait::new();
