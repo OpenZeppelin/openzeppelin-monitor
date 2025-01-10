@@ -17,12 +17,6 @@ use crate::services::blockchain::{
 ///
 /// # Returns
 /// * `Result<BlockChainClientEnum, BlockChainError>` - Initialized blockchain client or error
-///
-/// # Example
-/// ```no_run
-/// let network = Network::new(BlockChainType::EVM, ...);
-/// let client = create_blockchain_client(&network).await?;
-/// ```
 pub async fn create_blockchain_client(
     network: &Network,
 ) -> Result<BlockChainClientEnum, BlockChainError> {

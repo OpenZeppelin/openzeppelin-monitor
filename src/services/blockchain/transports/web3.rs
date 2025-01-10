@@ -68,12 +68,6 @@ impl Web3TransportClient {
     ///
     /// # Returns
     /// * `Result<Value, BlockChainError>` - JSON response or error
-    ///
-    /// # Example
-    /// ```no_run
-    /// let params = vec![json!("0x123...")];
-    /// let response = client.send_raw_request("eth_getBalance", params).await?;
-    /// ```
     pub async fn send_raw_request(
         &self,
         method: &str,
