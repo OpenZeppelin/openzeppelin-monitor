@@ -6,7 +6,7 @@ use crate::models::BlockChainType;
 ///
 /// Defines connection details and operational parameters for a specific blockchain network,
 /// supporting both EVM and Stellar-based chains.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Network {
     /// Type of blockchain (EVM, Stellar, etc)
     pub network_type: BlockChainType,
@@ -43,9 +43,9 @@ pub struct Network {
 }
 
 /// RPC endpoint configuration with load balancing weight
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RpcUrl {
-    /// Type of RPC endpoint (e.g. "rpc", "horizon")
+    /// Type of RPC endpoint (e.g. "rpc")
     pub type_: String,
 
     /// URL of the RPC endpoint

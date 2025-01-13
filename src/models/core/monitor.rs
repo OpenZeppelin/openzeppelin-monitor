@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// - Contract addresses to watch
 /// - Conditions to match (functions, events, transactions)
 /// - Triggers to execute when conditions are met
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Monitor {
     /// Unique name identifying this monitor
     pub name: String,
@@ -29,7 +29,7 @@ pub struct Monitor {
 }
 
 /// Contract address with optional ABI for decoding transactions and events
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct AddressWithABI {
     /// Contract address in the network's native format
     pub address: String,
@@ -39,7 +39,7 @@ pub struct AddressWithABI {
 }
 
 /// Collection of conditions that can trigger a monitor
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct MatchConditions {
     /// Function calls to match
     pub functions: Vec<FunctionCondition>,
@@ -52,7 +52,7 @@ pub struct MatchConditions {
 }
 
 /// Condition for matching contract function calls
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct FunctionCondition {
     /// Function signature (e.g., "transfer(address,uint256)")
     pub signature: String,
@@ -62,7 +62,7 @@ pub struct FunctionCondition {
 }
 
 /// Condition for matching contract events
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct EventCondition {
     /// Event signature (e.g., "Transfer(address,address,uint256)")
     pub signature: String,
@@ -72,7 +72,7 @@ pub struct EventCondition {
 }
 
 /// Condition for matching transaction states
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TransactionCondition {
     /// Required transaction status
     pub status: TransactionStatus,

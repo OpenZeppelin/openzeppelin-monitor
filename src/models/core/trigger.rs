@@ -2,7 +2,7 @@ use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for actions to take when monitored conditions are met.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Trigger {
     /// Unique name identifying this trigger
     pub name: String,
@@ -15,7 +15,7 @@ pub struct Trigger {
 }
 
 /// Supported trigger action types
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TriggerType {
     /// Send notification to Slack
@@ -29,7 +29,7 @@ pub enum TriggerType {
 }
 
 /// Type-specific configuration for triggers
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum TriggerTypeConfig {
     /// Slack notification configuration

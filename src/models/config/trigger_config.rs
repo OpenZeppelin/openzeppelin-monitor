@@ -96,7 +96,7 @@ impl ConfigLoader for Trigger {
             }
             TriggerTypeConfig::Email {
                 host,
-                port,
+                port: _,
                 username,
                 password,
                 subject,
@@ -108,10 +108,15 @@ impl ConfigLoader for Trigger {
                 if host.trim().is_empty() {
                     return Err(ConfigError::validation_error("Host cannot be empty"));
                 }
-                // Validate port
-                if port.is_none() {
-                    return Err(ConfigError::validation_error("Port cannot be empty"));
+                // Validate host format
+                if !host.contains('.')
+                    || !host
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+                {
+                    return Err(ConfigError::validation_error("Invalid SMTP host format"));
                 }
+
                 // Basic username validation
                 if username.is_empty() {
                     return Err(ConfigError::validation_error(
@@ -144,6 +149,12 @@ impl ConfigLoader for Trigger {
                 {
                     return Err(ConfigError::validation_error(
                         "Subject contains invalid control characters",
+                    ));
+                }
+                // Add minimum length check after trim
+                if subject.trim().len() < 1 {
+                    return Err(ConfigError::validation_error(
+                        "Subject must contain at least 1 character",
                     ));
                 }
 

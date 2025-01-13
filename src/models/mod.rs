@@ -19,14 +19,14 @@ pub use blockchain::evm::{
 };
 
 pub use blockchain::stellar::{
-    StellarLedgerInfo, StellarBlock, StellarDecodedParamEntry, StellarEvent, StellarMatchArguments,
+    StellarBlock, StellarDecodedParamEntry, StellarEvent, StellarLedgerInfo, StellarMatchArguments,
     StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch,
     StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
 };
 
 // Re-export core types
 pub use core::{
-    AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, Network,
+    AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, Network, RpcUrl,
     TransactionCondition, TransactionStatus, Trigger, TriggerType, TriggerTypeConfig,
 };
 

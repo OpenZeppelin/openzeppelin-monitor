@@ -5,6 +5,10 @@
 
 pub mod mocks;
 
+mod properties {
+    mod monitor_prop_tests;
+}
+
 mod filter {
     mod common;
     mod evm;
