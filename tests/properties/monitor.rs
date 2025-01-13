@@ -10,21 +10,33 @@ use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::Config;
 
+const MIN_TEST_CASES: usize = 1;
+const MAX_TEST_CASES: usize = 20;
+const MIN_COLLECTION_SIZE: usize = 0;
+const MAX_COLLECTION_SIZE: usize = 10;
+const MAX_ADDRESSES: usize = 10;
+
 // Custom strategies for generating Monitor, Network, and Trigger
 fn monitor_strategy(
     available_networks: Vec<String>,
     available_triggers: Vec<String>,
 ) -> impl Strategy<Value = Monitor> {
     (
-        prop::collection::vec(prop::sample::select(available_triggers), 0..3), // triggers from available list
-        prop::collection::vec(prop::sample::select(available_networks), 0..3), // networks from available list
-        "[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()),                      // name
-        proptest::arbitrary::any::<bool>(),                                    // paused
+        prop::collection::vec(
+            prop::sample::select(available_triggers),
+            MIN_COLLECTION_SIZE..MAX_COLLECTION_SIZE,
+        ),
+        prop::collection::vec(
+            prop::sample::select(available_networks),
+            MIN_COLLECTION_SIZE..MAX_COLLECTION_SIZE,
+        ),
+        "[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()),
+        proptest::arbitrary::any::<bool>(),
         proptest::collection::vec(
             ("[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()))
                 .prop_map(|address| AddressWithABI { address, abi: None }),
-            0..10,
-        ), // addresses
+            MIN_COLLECTION_SIZE..MAX_ADDRESSES,
+        ),
         match_conditions_strategy(),
     )
         .prop_map(
@@ -223,9 +235,18 @@ fn match_conditions_strategy() -> impl Strategy<Value = MatchConditions> {
         .prop_map(|(status, expression)| TransactionCondition { status, expression });
 
     (
-        proptest::collection::vec(function_condition_strategy, 0..3),
-        proptest::collection::vec(event_condition_strategy, 0..3),
-        proptest::collection::vec(transaction_condition_strategy, 0..3),
+        proptest::collection::vec(
+            function_condition_strategy,
+            MIN_COLLECTION_SIZE..MAX_COLLECTION_SIZE,
+        ),
+        proptest::collection::vec(
+            event_condition_strategy,
+            MIN_COLLECTION_SIZE..MAX_COLLECTION_SIZE,
+        ),
+        proptest::collection::vec(
+            transaction_condition_strategy,
+            MIN_COLLECTION_SIZE..MAX_COLLECTION_SIZE,
+        ),
     )
         .prop_map(|(functions, events, transactions)| MatchConditions {
             functions,
@@ -244,12 +265,12 @@ proptest! {
         triggers in proptest::collection::hash_map(
             "[a-zA-Z0-9_]{1,10}",
             trigger_strategy(),
-            1..10
+            MIN_TEST_CASES..MAX_TEST_CASES
         ),
         networks in proptest::collection::hash_map(
             "[a-zA-Z0-9_]{1,10}",
             network_strategy(),
-            1..10
+            MIN_TEST_CASES..MAX_TEST_CASES
         ),
     ) {
         // Get the available network and trigger names
@@ -260,7 +281,7 @@ proptest! {
         let monitors = proptest::collection::hash_map(
             "[a-zA-Z0-9_]{1,10}",
             monitor_strategy(network_names.clone(), trigger_names.clone()),
-            1..10
+            MIN_TEST_CASES..MAX_TEST_CASES
         ).new_tree(&mut proptest::test_runner::TestRunner::default())
         .unwrap()
         .current();
@@ -301,7 +322,7 @@ proptest! {
                 "b".to_string(),
                 "c".to_string(),
             ]),
-            1..10
+            MIN_TEST_CASES..MAX_TEST_CASES
         )
     ) {
         // Simulate saving and reloading from a repository
@@ -324,7 +345,7 @@ proptest! {
                 "b".to_string(),
                 "c".to_string(),
             ]),
-            1..10
+            MIN_TEST_CASES..MAX_TEST_CASES
         )
     ) {
         // Simulate getting monitors by ID
@@ -336,126 +357,145 @@ proptest! {
     }
 
     #[test]
-    fn validate_trigger_config_test(trigger in trigger_strategy()) {
-        // Valid trigger should pass validation
-        assert!(trigger.validate().is_ok());
+    fn validate_trigger_config_test(
+        triggers in proptest::collection::vec(
+            trigger_strategy(),
+            MIN_TEST_CASES..MAX_TEST_CASES
+        )
+    ) {
+        for trigger in triggers {
+            // Valid trigger should pass validation
+            assert!(trigger.validate().is_ok());
 
-        // Test invalid cases
-        match &trigger.config {
-            TriggerTypeConfig::Slack { webhook_url: _, title: _, body: _ } => {
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Slack { webhook_url: url, .. } = &mut invalid_trigger.config {
-                    *url = "not-a-url".to_string(); // Invalid URL format
-                }
-                assert!(invalid_trigger.validate().is_err());
+            // Test invalid cases
+            match &trigger.config {
+                TriggerTypeConfig::Slack { webhook_url: _, title: _, body: _ } => {
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Slack { webhook_url: url, .. } = &mut invalid_trigger.config {
+                        *url = "not-a-url".to_string(); // Invalid URL format
+                    }
+                    assert!(invalid_trigger.validate().is_err());
 
-                // Test empty title
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Slack { title: t, .. } = &mut invalid_trigger.config {
-                    *t = "".to_string();
-                }
-                assert!(invalid_trigger.validate().is_err());
-            },
-            TriggerTypeConfig::Email { host: _, port: _, username: _, password: _, subject: _, body: _, sender: _, receipients: _ } => {
-                // Test empty recipients
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Email { receipients: r, .. } = &mut invalid_trigger.config {
-                    r.clear();
-                }
-                assert!(invalid_trigger.validate().is_err());
+                    // Test empty title
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Slack { title: t, .. } = &mut invalid_trigger.config {
+                        *t = "".to_string();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
+                },
+                TriggerTypeConfig::Email { host: _, port: _, username: _, password: _, subject: _, body: _, sender: _, receipients: _ } => {
+                    // Test empty recipients
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Email { receipients: r, .. } = &mut invalid_trigger.config {
+                        r.clear();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
 
-                // Test invalid host
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Email { host: h, .. } = &mut invalid_trigger.config {
-                    *h = "not-a-host".to_string();
-                }
-                assert!(invalid_trigger.validate().is_err());
+                    // Test invalid host
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Email { host: h, .. } = &mut invalid_trigger.config {
+                        *h = "not-a-host".to_string();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
 
-                // Test whitespace-only subject
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Email { subject: s, .. } = &mut invalid_trigger.config {
-                    *s = "   ".to_string();
-                }
-                assert!(invalid_trigger.validate().is_err());
-            },
-            TriggerTypeConfig::Webhook { url: _, method: _, headers: _ } => {
-                // Test invalid method
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Webhook { method: m, .. } = &mut invalid_trigger.config {
-                    *m = "INVALID_METHOD".to_string();
-                }
-                assert!(invalid_trigger.validate().is_err());
+                    // Test whitespace-only subject
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Email { subject: s, .. } = &mut invalid_trigger.config {
+                        *s = "   ".to_string();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
+                },
+                TriggerTypeConfig::Webhook { url: _, method: _, headers: _ } => {
+                    // Test invalid method
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Webhook { method: m, .. } = &mut invalid_trigger.config {
+                        *m = "INVALID_METHOD".to_string();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
 
-                // Test invalid URL
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Webhook { url: u, .. } = &mut invalid_trigger.config {
-                    *u = "not-a-url".to_string();
-                }
-                assert!(invalid_trigger.validate().is_err());
-            },
-            TriggerTypeConfig::Script { path: _, args: _     } => {
-                // Test invalid path
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
-                    *p = "invalid/path/no-extension".to_string();
-                }
-                assert!(invalid_trigger.validate().is_err());
+                    // Test invalid URL
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Webhook { url: u, .. } = &mut invalid_trigger.config {
+                        *u = "not-a-url".to_string();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
+                },
+                TriggerTypeConfig::Script { path: _, args: _     } => {
+                    // Test invalid path
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
+                        *p = "invalid/path/no-extension".to_string();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
 
-                // Test empty path
-                let mut invalid_trigger = trigger.clone();
-                if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
-                    *p = "".to_string();
+                    // Test empty path
+                    let mut invalid_trigger = trigger.clone();
+                    if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
+                        *p = "".to_string();
+                    }
+                    assert!(invalid_trigger.validate().is_err());
                 }
-                assert!(invalid_trigger.validate().is_err());
             }
         }
     }
 
     #[test]
-    fn validate_network_config_test(network in network_strategy()) {
-        // Valid network should pass validation
-        assert!(network.validate().is_ok());
+    fn validate_network_config_test(
+        networks in proptest::collection::vec(
+            network_strategy(),
+            MIN_TEST_CASES..MAX_TEST_CASES
+        )
+    ) {
+        for network in networks {
+            // Valid network should pass validation
+            assert!(network.validate().is_ok());
 
-        // Test invalid cases
-        let mut invalid_network = network.clone();
-        invalid_network.block_time_ms = 50; // Too low block time
-        assert!(invalid_network.validate().is_err());
+            // Test invalid cases
+            let mut invalid_network = network.clone();
+            invalid_network.block_time_ms = 50; // Too low block time
+            assert!(invalid_network.validate().is_err());
 
-        let mut invalid_network = network.clone();
-        invalid_network.confirmation_blocks = 0; // Invalid confirmation blocks
-        assert!(invalid_network.validate().is_err());
+            let mut invalid_network = network.clone();
+            invalid_network.confirmation_blocks = 0; // Invalid confirmation blocks
+            assert!(invalid_network.validate().is_err());
 
-        let mut invalid_network = network.clone();
-        invalid_network.rpc_urls[0].url = "invalid-url".to_string(); // Invalid RPC URL
-        assert!(invalid_network.validate().is_err());
+            let mut invalid_network = network.clone();
+            invalid_network.rpc_urls[0].url = "invalid-url".to_string(); // Invalid RPC URL
+            assert!(invalid_network.validate().is_err());
 
-        let mut invalid_network = network.clone();
-        invalid_network.slug = "INVALID_SLUG".to_string(); // Invalid slug with uppercase
-        assert!(invalid_network.validate().is_err());
+            let mut invalid_network = network.clone();
+            invalid_network.slug = "INVALID_SLUG".to_string(); // Invalid slug with uppercase
+            assert!(invalid_network.validate().is_err());
+        }
     }
 
     #[test]
     fn validate_monitor_config_test(
-        monitor in monitor_strategy(
-            vec!["network1".to_string()],
-            vec!["trigger1".to_string()]
+        monitors in proptest::collection::vec(
+            monitor_strategy(
+                vec!["network1".to_string()],
+                vec!["trigger1".to_string()]
+            ),
+            MIN_TEST_CASES..MAX_TEST_CASES
         )
     ) {
-        // Valid monitor should pass validation
-        assert!(monitor.validate().is_ok());
+        for monitor in monitors {
+            // Valid monitor should pass validation
+            assert!(monitor.validate().is_ok());
 
-        // Test invalid function signature
-        let mut invalid_monitor = monitor.clone();
-        if let Some(func) = invalid_monitor.match_conditions.functions.first_mut() {
-            func.signature = "invalid_signature".to_string(); // Missing parentheses
-            assert!(invalid_monitor.validate().is_err());
-        }
+            // Test invalid function signature
+            let mut invalid_monitor = monitor.clone();
+            if let Some(func) = invalid_monitor.match_conditions.functions.first_mut() {
+                func.signature = "invalid_signature".to_string(); // Missing parentheses
+                assert!(invalid_monitor.validate().is_err());
+            }
 
-        // Test invalid event signature
-        let mut invalid_monitor = monitor.clone();
-        if let Some(event) = invalid_monitor.match_conditions.events.first_mut() {
-            event.signature = "invalid_signature".to_string(); // Missing parentheses
-            assert!(invalid_monitor.validate().is_err());
+            // Test invalid event signature
+            let mut invalid_monitor = monitor.clone();
+            if let Some(event) = invalid_monitor.match_conditions.events.first_mut() {
+                event.signature = "invalid_signature".to_string(); // Missing parentheses
+                assert!(invalid_monitor.validate().is_err());
+            }
         }
     }
 }
