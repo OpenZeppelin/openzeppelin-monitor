@@ -5,7 +5,14 @@ A blockchain monitoring service that watches for specific on-chain activities an
 ## Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff' }}}%%
+%%{init: {
+    'theme': 'base',
+    'themeVariables': {
+        'background': '#ffffff',
+        'mainBkg': '#ffffff',
+        'primaryBorderColor': '#cccccc'
+    }
+}}%%
 graph TD
     subgraph Blockchain Networks
         ETH[Ethereum RPC]
