@@ -134,18 +134,15 @@ cp config/triggers/slack_notifications.json.example config/triggers/slack_notifi
 
 ### Monitor Argument Access
 
-- **Stellar**: Arguments are accessed by numeric index
+- **Stellar**: Arguments are accessed by numeric index:
 
-  ```stellar
-  function: "transfer(Address,Address,I128)"
-  // Access via [0, 1, 2]
-  ```
+  - For function `transfer(Address,Address,I128)`
+    - Access via [0, 1, 2]
 
-- **EVM**: Arguments are accessed by parameter names defined in the ABI
-  ```solidity
-  // For event Transfer(address from, address to, uint256 value)
-  // Access via ["from", "to", "value"]
-  ```
+- **EVM**: Arguments are accessed by parameter names defined in the ABI:
+
+  - For event `Transfer(address from, address to, uint256 value)`
+    - Access via ["from", "to", "value"]
 
 ### Condition Evaluation Rules
 
