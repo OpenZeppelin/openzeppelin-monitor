@@ -5,6 +5,7 @@ A blockchain monitoring service that watches for specific on-chain activities an
 ## Architecture
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff' }}}%%
 graph TD
     subgraph Blockchain Networks
         ETH[Ethereum RPC]
@@ -138,11 +139,13 @@ cp config/triggers/slack_notifications.json.example config/triggers/slack_notifi
 
   - For function `transfer(Address,Address,I128)`
     - Access via [0, 1, 2]
+    - For example: `"expression": "2 > 1000"`
 
 - **EVM**: Arguments are accessed by parameter names defined in the ABI:
 
   - For event `Transfer(address from, address to, uint256 value)`
     - Access via ["from", "to", "value"]
+    - For example: `"expression": "value > 10000000000"`
 
 ### Condition Evaluation Rules
 
@@ -177,22 +180,11 @@ Template variables may be used to inject specific values related to the monitor 
 
 Example usage in trigger body:
 
-```json
-{
-  // EVM
-  "config": {
-    "webhook_url": "https://hooks.slack.com/services/A/B/C",
-    "title": "Transfer event triggered",
-    "body": "Transfer of ${event_0_value} from ${transaction_from}"
-  },
-  // Stellar
-  "config": {
-    "webhook_url": "https://hooks.slack.com/services/A/B/C",
-    "title": "Transfer event triggered",
-    "body": "Transfer of ${function_0_2} from account ${function_0_0}"
-  }
-}
-```
+For EVM:
+`"body": "Transfer of ${event_0_value} from ${transaction_from}"`
+
+For Stellar:
+`"body": "Transfer of ${function_0_2} from account ${function_0_0}"`
 
 ## Usage
 
