@@ -48,9 +48,11 @@ pub fn setup_trigger_execution_service<T: TriggerRepositoryTrait>(
     let mut mock_trigger_repository = MockTriggerRepository::new();
 
     let triggers = trigger_map.clone();
-    mock_trigger_repository
-        .expect_load_all()
-        .returning(move |_| Ok(triggers.clone()));
+
+    // mock_trigger_repository load all with triggers
+    MockTriggerRepository::load_all_context()
+        .expect()
+        .return_once(move |_| Ok(triggers.clone()));
 
     mock_trigger_repository
         .expect_get()

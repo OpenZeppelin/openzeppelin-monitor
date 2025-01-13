@@ -24,8 +24,7 @@ impl MonitorRepository {
     /// Loads all monitor configurations from JSON files in the specified directory
     /// (or default config directory if None is provided).
     pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-        let monitors = Monitor::load_all(path)
-            .map_err(|e| RepositoryError::load_error(format!("Failed to load monitors: {}", e)))?;
+        let monitors = Self::load_all(path)?;
         Ok(MonitorRepository { monitors })
     }
 
@@ -81,7 +80,8 @@ pub trait MonitorRepositoryTrait {
     ///
     /// If no path is provided, uses the default config directory.
     /// Also validates references to networks and triggers.
-    fn load_all(&self, path: Option<&Path>) -> Result<HashMap<String, Monitor>, RepositoryError>;
+    /// This is a static method that doesn't require an instance.
+    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Monitor>, RepositoryError>;
 
     /// Get a specific monitor by ID
     ///
@@ -95,14 +95,13 @@ pub trait MonitorRepositoryTrait {
 }
 
 impl MonitorRepositoryTrait for MonitorRepository {
-    fn load_all(&self, path: Option<&Path>) -> Result<HashMap<String, Monitor>, RepositoryError> {
+    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Monitor>, RepositoryError> {
         let monitors =
             Monitor::load_all(path).map_err(|e| RepositoryError::load_error(e.to_string()))?;
-        let triggers = TriggerRepository::new(None).unwrap().triggers;
-        let networks = NetworkRepository::new(None).unwrap().networks;
+        let triggers = TriggerRepository::new(None)?.triggers;
+        let networks = NetworkRepository::new(None)?.networks;
 
         Self::validate_monitor_references(&monitors, &triggers, &networks)?;
-
         Ok(monitors)
     }
 

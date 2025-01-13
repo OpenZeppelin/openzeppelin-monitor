@@ -23,8 +23,7 @@ impl NetworkRepository {
     /// Loads all network configurations from JSON files in the specified directory
     /// (or default config directory if None is provided).
     pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-        let networks = Network::load_all(path)
-            .map_err(|e| RepositoryError::load_error(format!("Failed to load networks: {}", e)))?;
+        let networks = Self::load_all(path)?;
         Ok(NetworkRepository { networks })
     }
 }
@@ -37,7 +36,8 @@ pub trait NetworkRepositoryTrait {
     /// Load all network configurations from the given path
     ///
     /// If no path is provided, uses the default config directory.
-    fn load_all(&self, path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
+    /// This is a static method that doesn't require an instance.
+    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
 
     /// Get a specific network by ID
     ///
@@ -51,9 +51,9 @@ pub trait NetworkRepositoryTrait {
 }
 
 impl NetworkRepositoryTrait for NetworkRepository {
-    fn load_all(&self, path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
+    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
         Network::load_all(path)
-            .map_err(|e| RepositoryError::load_error(format!("Failed  to load networks: {}", e)))
+            .map_err(|e| RepositoryError::load_error(format!("Failed to load networks: {}", e)))
     }
 
     fn get(&self, network_id: &str) -> Option<Network> {

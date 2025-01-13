@@ -23,8 +23,7 @@ impl TriggerRepository {
     /// Loads all trigger configurations from JSON files in the specified directory
     /// (or default config directory if None is provided).
     pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-        let triggers = Trigger::load_all(path)
-            .map_err(|e| RepositoryError::load_error(format!("Failed to load triggers: {}", e)))?;
+        let triggers = Self::load_all(path)?;
         Ok(TriggerRepository { triggers })
     }
 }
@@ -37,7 +36,8 @@ pub trait TriggerRepositoryTrait {
     /// Load all trigger configurations from the given path
     ///
     /// If no path is provided, uses the default config directory.
-    fn load_all(&self, path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
+    /// This is a static method that doesn't require an instance.
+    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
 
     /// Get a specific trigger by ID
     ///
@@ -51,7 +51,7 @@ pub trait TriggerRepositoryTrait {
 }
 
 impl TriggerRepositoryTrait for TriggerRepository {
-    fn load_all(&self, path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
+    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
         Trigger::load_all(path).map_err(|e| RepositoryError::load_error(format!("Failed: {}", e)))
     }
 

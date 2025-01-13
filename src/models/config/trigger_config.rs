@@ -27,7 +27,7 @@ impl ConfigLoader for Trigger {
     /// config directory) as trigger configurations.
     fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
     where
-        T: FromIterator<(String, Trigger)>,
+        T: FromIterator<(String, Self)>,
     {
         let config_dir = path.unwrap_or(Path::new("config/triggers"));
         let entries = fs::read_dir(config_dir)?;
@@ -39,7 +39,17 @@ impl ConfigLoader for Trigger {
                 let content = fs::read_to_string(&entry.path())?;
                 let file_triggers: TriggerConfigFile = serde_json::from_str(&content)
                     .map_err(|e| ConfigError::parse_error(e.to_string()))?;
-                trigger_pairs.extend(file_triggers.triggers.into_iter());
+
+                // Validate each trigger before adding it
+                for (name, trigger) in file_triggers.triggers {
+                    if let Err(validation_error) = trigger.validate() {
+                        return Err(ConfigError::validation_error(format!(
+                            "Validation failed for trigger '{}': {}",
+                            name, validation_error
+                        )));
+                    }
+                    trigger_pairs.push((name, trigger));
+                }
             }
         }
         Ok(T::from_iter(trigger_pairs))
