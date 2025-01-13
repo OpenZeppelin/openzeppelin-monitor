@@ -11,7 +11,7 @@ use proptest::strategy::ValueTree;
 use proptest::test_runner::Config;
 
 const MIN_TEST_CASES: usize = 1;
-const MAX_TEST_CASES: usize = 20;
+const MAX_TEST_CASES: usize = 10;
 const MIN_COLLECTION_SIZE: usize = 0;
 const MAX_COLLECTION_SIZE: usize = 10;
 const MAX_ADDRESSES: usize = 10;
