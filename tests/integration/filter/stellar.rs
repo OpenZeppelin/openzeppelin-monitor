@@ -10,20 +10,23 @@ use openzeppelin_monitor::models::{
 use openzeppelin_monitor::services::blockchain::BlockChainClientEnum;
 use openzeppelin_monitor::services::filter::{handle_match, FilterError, FilterService};
 
-use crate::filter::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service};
-use crate::mocks::{MockStellarClientTrait, MockTriggerRepository};
+use crate::integration::filter::common::{
+    load_test_data, read_and_parse_json, setup_trigger_execution_service,
+};
+use crate::integration::mocks::{MockStellarClientTrait, MockTriggerRepository};
 
 #[tokio::test]
-async fn test_stellar_monitor_should_detect_token_transfer() -> Result<(), FilterError> {
+async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> {
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Load test data using common utility
     let test_data = load_test_data("stellar");
 
     // Load Stellar-specific test data
-    let events: Vec<StellarEvent> = read_and_parse_json("tests/fixtures/stellar/events.json");
+    let events: Vec<StellarEvent> =
+        read_and_parse_json("tests/integration/fixtures/stellar/events.json");
     let transactions: Vec<StellarTransactionInfo> =
-        read_and_parse_json("tests/fixtures/stellar/transactions.json");
+        read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
     let mut mock = MockStellarClientTrait::new();
     let decoded_transactions: Vec<StellarTransaction> = transactions
@@ -60,7 +63,7 @@ async fn test_stellar_monitor_should_detect_token_transfer() -> Result<(), Filte
     );
 
     let trigger_execution_service = setup_trigger_execution_service::<MockTriggerRepository>(
-        "tests/fixtures/stellar/triggers/trigger.json",
+        "tests/integration/fixtures/stellar/triggers/trigger.json",
     );
 
     for matching_monitor in matches {

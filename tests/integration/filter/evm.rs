@@ -10,11 +10,11 @@ use openzeppelin_monitor::services::{
     filter::{handle_match, FilterError, FilterService},
 };
 
-use crate::filter::common::{load_test_data, setup_trigger_execution_service};
-use crate::mocks::MockTriggerRepository;
+use crate::integration::filter::common::{load_test_data, setup_trigger_execution_service};
+use crate::integration::mocks::MockTriggerRepository;
 
 #[tokio::test]
-async fn test_evm_monitor_should_detect_token_transfer() -> Result<(), FilterError> {
+async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> {
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Load test data using common utility
@@ -40,7 +40,7 @@ async fn test_evm_monitor_should_detect_token_transfer() -> Result<(), FilterErr
     );
 
     let trigger_execution_service = setup_trigger_execution_service::<MockTriggerRepository>(
-        "tests/fixtures/evm/triggers/trigger.json",
+        "tests/integration/fixtures/evm/triggers/trigger.json",
     );
 
     for matching_monitor in matches {

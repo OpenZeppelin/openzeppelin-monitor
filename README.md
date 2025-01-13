@@ -204,7 +204,9 @@ RUST_LOG=info cargo run
 ### Run Tests
 
 ```bash
-RUST_LOG=info cargo test -- --nocapture
+cargo test
+cargo test properties
+cargo test integration
 ```
 
 ## Project Structure

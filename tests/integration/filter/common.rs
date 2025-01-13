@@ -11,9 +11,9 @@ use openzeppelin_monitor::{
 use std::collections::HashMap;
 use std::fs;
 
-use crate::mocks::MockTriggerRepository;
+use crate::integration::mocks::MockTriggerRepository;
 
-pub const TEST_FIXTURES_BASE: &str = "tests/fixtures";
+pub const TEST_FIXTURES_BASE: &str = "tests/integration/fixtures";
 
 pub struct TestData {
     pub blocks: Vec<BlockType>,
