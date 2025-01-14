@@ -18,7 +18,7 @@ use crate::models::BlockType;
 /// Defines the required functionality for storing and retrieving blocks
 /// and tracking the last processed block for each network.
 #[async_trait]
-pub trait BlockStorage {
+pub trait BlockStorage: Clone + Send + Sync {
     /// Retrieves the last processed block number for a network
     ///
     /// # Arguments
@@ -67,12 +67,23 @@ pub trait BlockStorage {
     /// # Returns
     /// * `Result<(), Box<dyn Error>>` - Success or error
     async fn delete_blocks(&self, network_id: &str) -> Result<(), Box<dyn Error>>;
+
+    /// Saves a missed block for a network
+    ///
+    /// # Arguments
+    /// * `network_id` - Unique identifier for the network
+    /// * `block` - Block number to save
+    ///
+    /// # Returns
+    /// * `Result<(), Box<dyn Error>>` - Success or error
+    async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), Box<dyn Error>>;
 }
 
 /// File-based implementation of block storage
 ///
 /// Stores blocks and processing state in JSON files within a configured
 /// directory structure.
+#[derive(Clone)]
 pub struct FileBlockStorage {
     /// Base path for all storage files
     storage_path: PathBuf,
@@ -164,6 +175,32 @@ impl BlockStorage for FileBlockStorage {
                 tokio::fs::remove_file(path).await?;
             }
         }
+        Ok(())
+    }
+
+    /// Saves a missed block for a network
+    ///
+    /// # Arguments
+    /// * `network_id` - Unique identifier for the network
+    /// * `block` - Block number to save
+    ///
+    /// # Returns
+    /// * `Result<(), Box<dyn Error>>` - Success or error
+    async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), Box<dyn Error>> {
+        let file_path = self
+            .storage_path
+            .join(format!("{}_missed_blocks.txt", network_id));
+
+        // Open file in append mode, create if it doesn't exist
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_path)
+            .await?;
+
+        // Write the block number followed by a newline
+        tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", block).as_bytes()).await?;
+
         Ok(())
     }
 }

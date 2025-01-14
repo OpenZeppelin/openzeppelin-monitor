@@ -9,7 +9,9 @@
 mod error;
 mod service;
 mod storage;
+mod tracker;
 
 pub use error::BlockWatcherError;
 pub use service::BlockWatcherService;
 pub use storage::{BlockStorage, FileBlockStorage};
+pub use tracker::BlockTracker;

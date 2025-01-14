@@ -14,6 +14,7 @@ use crate::repositories::{NetworkRepositoryTrait, NetworkService};
 use crate::services::blockchain::{create_blockchain_client, BlockChainClient};
 use crate::services::blockwatcher::error::BlockWatcherError;
 use crate::services::blockwatcher::storage::BlockStorage;
+use crate::services::blockwatcher::BlockTracker;
 
 /// Watcher implementation for a single network
 ///
@@ -27,6 +28,7 @@ where
     block_storage: Arc<B>,
     block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
     scheduler: JobScheduler,
+    block_tracker: Arc<BlockTracker<B>>,
 }
 
 /// Service for managing multiple network watchers
@@ -42,6 +44,7 @@ where
     block_storage: Arc<B>,
     block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
     active_watchers: Arc<RwLock<HashMap<String, NetworkBlockWatcher<B>>>>,
+    block_tracker: Arc<BlockTracker<B>>,
 }
 
 impl<B> NetworkBlockWatcher<B>
@@ -61,16 +64,17 @@ where
         network: Network,
         block_storage: Arc<B>,
         block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+        block_tracker: Arc<BlockTracker<B>>,
     ) -> Result<Self, BlockWatcherError> {
         let scheduler = JobScheduler::new().await.map_err(|e| {
             BlockWatcherError::scheduler_error(format!("Failed to create scheduler: {}", e))
         })?;
-
         Ok(Self {
             network,
             block_storage,
             block_handler,
             scheduler,
+            block_tracker,
         })
     }
 
@@ -82,14 +86,18 @@ where
         let network = self.network.clone();
         let block_storage = self.block_storage.clone();
         let block_handler = self.block_handler.clone();
+        let block_tracker = self.block_tracker.clone();
 
         let job = Job::new_async(self.network.cron_schedule.as_str(), move |_uuid, _l| {
             let network = network.clone();
             let block_storage = block_storage.clone();
             let block_handler = block_handler.clone();
+            let block_tracker = block_tracker.clone();
 
             Box::pin(async move {
-                match process_new_blocks(&network, block_storage, block_handler).await {
+                match process_new_blocks(&network, block_storage, block_handler, block_tracker)
+                    .await
+                {
                     Ok(_) => info!(
                         "Successfully processed blocks for network: {}",
                         network.slug
@@ -141,15 +149,17 @@ where
     /// * `block_storage` - Storage implementation for blocks
     /// * `block_handler` - Handler function for processed blocks
     pub async fn new(
-        network_service: NetworkService<T>,
-        block_storage: B,
+        network_service: Arc<NetworkService<T>>,
+        block_storage: Arc<B>,
         block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+        block_tracker: Arc<BlockTracker<B>>,
     ) -> Result<Self, BlockWatcherError> {
         Ok(BlockWatcherService {
-            network_service: Arc::new(network_service),
-            block_storage: Arc::new(block_storage),
+            network_service,
+            block_storage,
             block_handler,
             active_watchers: Arc::new(RwLock::new(HashMap::new())),
+            block_tracker,
         })
     }
 
@@ -193,6 +203,7 @@ where
             network.clone(),
             self.block_storage.clone(),
             self.block_handler.clone(),
+            self.block_tracker.clone(),
         )
         .await?;
 
@@ -229,10 +240,11 @@ const DEFAULT_MAX_PAST_BLOCKS: u64 = 10;
 ///
 /// # Returns
 /// * `Result<(), BlockWatcherError>` - Success or error
-async fn process_new_blocks(
+async fn process_new_blocks<B: BlockStorage>(
     network: &Network,
-    block_storage: Arc<dyn BlockStorage + Send + Sync>,
+    block_storage: Arc<B>,
     block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+    block_tracker: Arc<BlockTracker<B>>,
 ) -> Result<(), BlockWatcherError> {
     let rpc_client = create_blockchain_client(network).await.map_err(|e| {
         BlockWatcherError::network_error(format!("Failed to create RPC client: {}", e))
@@ -288,6 +300,15 @@ async fn process_new_blocks(
     }
 
     for block in &blocks {
+        let block_number = match block {
+            BlockType::EVM(block) => block.number(),
+            BlockType::Stellar(block) => block.number(),
+        };
+        // record the block number in the block tracker service
+        // so that if a block is missed, we can log it
+        block_tracker.record_block(network, block_number).await;
+
+        // process the block
         (block_handler)(block, network);
     }
 
