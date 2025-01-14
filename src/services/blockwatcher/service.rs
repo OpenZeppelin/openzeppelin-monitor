@@ -217,9 +217,6 @@ where
     }
 }
 
-/// Default maximum number of past blocks to process
-const DEFAULT_MAX_PAST_BLOCKS: u64 = 10;
-
 /// Processes new blocks for a network
 ///
 /// # Arguments
@@ -251,7 +248,10 @@ async fn process_new_blocks(
     })?;
 
     let latest_confirmed_block = latest_block.saturating_sub(network.confirmation_blocks);
-    let max_past_blocks = network.max_past_blocks.unwrap_or(DEFAULT_MAX_PAST_BLOCKS);
+
+    let recommended_past_blocks = network.get_recommended_past_blocks();
+
+    let max_past_blocks = network.max_past_blocks.unwrap_or(recommended_past_blocks);
 
     info!(
         "Processing blocks for network {} ({}). Last processed: {}, Latest confirmed: {} (waiting {} confirmations, max past blocks: {})",

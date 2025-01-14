@@ -3,10 +3,36 @@
 //! This module implements the ConfigLoader trait for Network configurations,
 //! allowing network definitions to be loaded from JSON files.
 
+use log::warn;
 use std::path::Path;
 
 use crate::models::config::error::ConfigError;
 use crate::models::{BlockChainType, ConfigLoader, Network};
+use crate::utils::get_cron_interval_ms;
+
+impl Network {
+    /// Calculates the recommended minimum number of past blocks to maintain for this network.
+    ///
+    /// This function computes a safe minimum value based on three factors:
+    /// 1. The number of blocks that occur during one cron interval (`blocks_per_cron`)
+    /// 2. The required confirmation blocks for the network
+    /// 3. An additional buffer block (+1)
+    ///
+    /// The formula used is: `(cron_interval_ms / block_time_ms) + confirmation_blocks + 1`
+    ///
+    /// # Returns
+    /// * `u64` - The recommended minimum number of past blocks to maintain
+    ///
+    /// # Note
+    /// If the cron schedule parsing fails, the blocks_per_cron component will be 0,
+    /// resulting in a minimum recommendation of `confirmation_blocks + 1`
+    pub fn get_recommended_past_blocks(&self) -> u64 {
+        let cron_interval_ms = get_cron_interval_ms(&self.cron_schedule).unwrap_or(0) as u64;
+        let blocks_per_cron = cron_interval_ms / self.block_time_ms;
+        let recommended_blocks = blocks_per_cron + self.confirmation_blocks + 1;
+        recommended_blocks
+    }
+}
 
 impl ConfigLoader for Network {
     /// Load all network configurations from a directory
@@ -129,11 +155,32 @@ impl ConfigLoader for Network {
             ));
         }
 
-        // Validate max_past_blocks
-        if self.max_past_blocks.unwrap_or(0) == 0 {
+        // Validate cron_schedule
+        if self.cron_schedule.is_empty() {
             return Err(ConfigError::validation_error(
-                "max_past_blocks must be greater than 0",
+                "Cron schedule must be provided",
             ));
+        }
+
+        // Validate max_past_blocks
+        if let Some(max_blocks) = self.max_past_blocks {
+            if max_blocks <= 0 {
+                return Err(ConfigError::validation_error(
+                    "max_past_blocks must be greater than 0",
+                ));
+            }
+
+            let recommended_blocks = self.get_recommended_past_blocks();
+
+            if max_blocks < recommended_blocks {
+                warn!(
+                    "The `max_past_blocks` configuration ({}) is lower than recommended minimum ({}) for network '{}'. \
+                    This may result in missed blocks. Recommended formula: (cron_interval_ms/block_time_ms) + confirmation_blocks + 1",
+                    max_blocks,
+                    recommended_blocks,
+                    self.slug
+                );
+            }
         }
 
         Ok(())
