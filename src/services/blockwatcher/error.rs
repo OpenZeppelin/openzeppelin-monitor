@@ -41,6 +41,14 @@ pub enum BlockWatcherError {
     /// - Failed to retrieve last processed block
     /// - File system errors
     StorageError(String),
+
+    /// Errors related to block tracker operations
+    ///
+    /// Examples include:
+    /// - Failed to record block
+    /// - Failed to retrieve last processed block
+    /// - Errors related to ordered blocks
+    BlockTrackerError(String),
 }
 
 impl BlockWatcherError {
@@ -51,6 +59,7 @@ impl BlockWatcherError {
             Self::NetworkError(msg) => format!("Network error: {}", msg),
             Self::ProcessingError(msg) => format!("Processing error: {}", msg),
             Self::StorageError(msg) => format!("Storage error: {}", msg),
+            Self::BlockTrackerError(msg) => format!("Block tracker error: {}", msg),
         }
     }
 
@@ -78,6 +87,13 @@ impl BlockWatcherError {
     /// Creates a new storage error with logging
     pub fn storage_error(msg: impl Into<String>) -> Self {
         let error = Self::StorageError(msg.into());
+        error!("{}", error.format_message());
+        error
+    }
+
+    /// Creates a new missed block error with logging
+    pub fn block_tracker_error(msg: impl Into<String>) -> Self {
+        let error = Self::BlockTrackerError(msg.into());
         error!("{}", error.format_message());
         error
     }
