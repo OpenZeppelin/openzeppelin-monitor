@@ -4,7 +4,14 @@
 //! It initializes all required services, sets up blockchain watchers for configured
 //! networks, and handles graceful shutdown on interrupt signals.
 //!
-//! The service follows these main steps:
+//! # Architecture
+//! The service is built around several key components:
+//! - Monitors: Define what to watch for in the blockchain
+//! - Networks: Supported blockchain networks
+//! - Triggers: Actions to take when monitored conditions are met
+//! - Services: Core functionality including block watching, filtering, and notifications
+//!
+//! # Flow
 //! 1. Loads configurations from the default directory
 //! 2. Initializes core services (monitoring, filtering, notifications)
 //! 3. Sets up blockchain watchers for networks with active monitors
@@ -42,6 +49,10 @@ use tokio::sync::broadcast;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type BlockHandlerFn = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
 
+/// Main entry point for the blockchain monitoring service.
+///
+/// # Errors
+/// Returns an error if service initialization fails or if there's an error during shutdown.
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
@@ -100,6 +111,17 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Initializes all required services for the blockchain monitor.
+///
+/// # Returns
+/// Returns a tuple containing:
+/// - FilterService: Handles filtering of blockchain data
+/// - TriggerExecutionService: Manages trigger execution
+/// - Vec<Monitor>: List of active monitors
+/// - HashMap<String, Network>: Available networks indexed by slug
+///
+/// # Errors
+/// Returns an error if any service initialization fails
 fn initialize_services() -> Result<(
     Arc<FilterService>,
     Arc<TriggerExecutionService<TriggerRepository>>,
@@ -129,6 +151,16 @@ fn initialize_services() -> Result<(
     ))
 }
 
+/// Creates a block handler function that processes new blocks from the blockchain.
+///
+/// # Arguments
+/// * `shutdown_tx` - Broadcast channel for shutdown signals
+/// * `trigger_service` - Service for executing triggers
+/// * `filter_service` - Service for filtering blockchain data
+/// * `active_monitors` - List of active monitors
+///
+/// # Returns
+/// Returns a function that handles incoming blocks
 fn create_block_handler(
     shutdown_tx: broadcast::Sender<()>,
     trigger_service: Arc<TriggerExecutionService<TriggerRepository>>,
@@ -165,6 +197,15 @@ fn create_block_handler(
     })
 }
 
+/// Processes a single block for all applicable monitors.
+///
+/// # Arguments
+/// * `network` - The network the block belongs to
+/// * `block` - The block to process
+/// * `applicable_monitors` - List of monitors that apply to this network
+/// * `filter_service` - Service for filtering blockchain data
+/// * `trigger_service` - Service for executing triggers
+/// * `shutdown_rx` - Receiver for shutdown signals
 async fn process_block(
     network: &Network,
     block: &BlockType,
@@ -201,10 +242,25 @@ async fn process_block(
     }
 }
 
+/// Checks if a network has any active monitors.
+///
+/// # Arguments
+/// * `monitors` - List of monitors to check
+/// * `network_slug` - Network identifier to check for
+///
+/// # Returns
+/// Returns true if there are any active monitors for the given network
 fn has_active_monitors(monitors: &[Monitor], network_slug: &String) -> bool {
     monitors.iter().any(|m| m.networks.contains(network_slug))
 }
 
+/// Filters out paused monitors from the provided collection.
+///
+/// # Arguments
+/// * `monitors` - HashMap of monitors to filter
+///
+/// # Returns
+/// Returns a vector containing only active (non-paused) monitors
 fn filter_active_monitors(monitors: HashMap<String, Monitor>) -> Vec<Monitor> {
     monitors
         .into_values()
@@ -212,6 +268,14 @@ fn filter_active_monitors(monitors: HashMap<String, Monitor>) -> Vec<Monitor> {
         .collect::<Vec<_>>()
 }
 
+/// Filters monitors that are applicable to a specific network.
+///
+/// # Arguments
+/// * `monitors` - List of monitors to filter
+/// * `network_slug` - Network identifier to filter by
+///
+/// # Returns
+/// Returns a vector of monitors that are configured for the specified network
 fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<Monitor> {
     monitors
         .iter()
