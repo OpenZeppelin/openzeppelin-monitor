@@ -57,8 +57,8 @@ pub enum TriggerTypeConfig {
         body: String,
         /// Email sender
         sender: EmailAddress,
-        /// Email receipients
-        receipients: Vec<EmailAddress>,
+        /// Email recipients
+        recipients: Vec<EmailAddress>,
     },
     /// Webhook configuration
     Webhook {

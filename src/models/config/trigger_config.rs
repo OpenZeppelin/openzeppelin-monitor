@@ -112,7 +112,7 @@ impl ConfigLoader for Trigger {
                 subject,
                 body,
                 sender,
-                receipients,
+                recipients,
             } => {
                 // Validate host
                 if host.trim().is_empty() {
@@ -188,10 +188,10 @@ impl ConfigLoader for Trigger {
                 }
 
                 // Validate recipients
-                if receipients.is_empty() {
+                if recipients.is_empty() {
                     return Err(ConfigError::validation_error("Recipients cannot be empty"));
                 }
-                for recipient in receipients {
+                for recipient in recipients {
                     if !EmailAddress::is_valid(recipient.as_str()) {
                         return Err(ConfigError::validation_error(format!(
                             "Invalid recipient email address: {}",

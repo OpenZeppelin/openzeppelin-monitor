@@ -78,7 +78,7 @@ impl NotificationService {
                 subject,
                 body,
                 sender,
-                receipients,
+                recipients,
             } => {
                 let notifier = EmailNotifier::new(
                     host,
@@ -88,7 +88,7 @@ impl NotificationService {
                     subject,
                     body,
                     sender,
-                    receipients,
+                    recipients,
                 );
                 notifier
                     .notify(&notifier.format_message(&variables))

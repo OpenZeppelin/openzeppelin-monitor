@@ -28,8 +28,8 @@ pub struct EmailNotifier {
     client: SmtpTransport,
     /// Email sender
     sender: EmailAddress,
-    /// Email receipients
-    receipients: Vec<EmailAddress>,
+    /// Email recipients
+    recipients: Vec<EmailAddress>,
 }
 
 impl EmailNotifier {
@@ -43,7 +43,7 @@ impl EmailNotifier {
     /// * `subject` - Email subject
     /// * `body_template` - Message template with variables
     /// * `sender` - Email sender
-    /// * `receipients` - Email receipients
+    /// * `recipients` - Email recipients
     pub fn new(
         host: &str,
         port: u16,
@@ -52,7 +52,7 @@ impl EmailNotifier {
         subject: &str,
         body_template: &str,
         sender: &EmailAddress,
-        receipients: &Vec<EmailAddress>,
+        recipients: &Vec<EmailAddress>,
     ) -> Self {
         let client = SmtpTransport::relay(host)
             .unwrap()
@@ -64,7 +64,7 @@ impl EmailNotifier {
             subject: subject.to_owned(),
             body_template: body_template.to_owned(),
             sender: sender.clone(),
-            receipients: receipients.clone(),
+            recipients: recipients.clone(),
             client,
         }
     }
@@ -101,7 +101,7 @@ impl EmailNotifier {
                 subject,
                 body,
                 sender,
-                receipients,
+                recipients,
             } => {
                 let client = SmtpTransport::relay(host)
                     .unwrap()
@@ -113,7 +113,7 @@ impl EmailNotifier {
                     subject: subject.clone(),
                     body_template: body.clone(),
                     sender: sender.clone(),
-                    receipients: receipients.clone(),
+                    recipients: recipients.clone(),
                     client,
                 })
             }
@@ -133,17 +133,17 @@ impl Notifier for EmailNotifier {
     /// * `Result<(), Box<dyn std::error::Error>>` - Success or error
     async fn notify(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
         let recipients_str = self
-            .receipients
+            .recipients
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(", ");
 
         let mailboxes: Mailboxes = recipients_str.parse().unwrap();
-        let receipients_header: header::To = mailboxes.into();
+        let recipients_header: header::To = mailboxes.into();
 
         let email = Message::builder()
-            .mailbox(receipients_header)
+            .mailbox(recipients_header)
             .from(self.sender.to_string().parse()?)
             .reply_to(self.sender.to_string().parse()?)
             .subject(&self.subject)
