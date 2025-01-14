@@ -126,27 +126,33 @@ pub fn format_token_value(token: &Token) -> String {
         Token::Int(num) | Token::Uint(num) => num.to_string(),
         Token::Bool(b) => b.to_string(),
         Token::String(s) => s.clone(),
-        Token::Array(arr) => format!(
-            "[{}]",
-            arr.iter()
-                .map(format_token_value)
-                .collect::<Vec<String>>()
-                .join(",")
-        ),
-        Token::FixedArray(arr) => format!(
-            "[{}]",
-            arr.iter()
-                .map(format_token_value)
-                .collect::<Vec<String>>()
-                .join(",")
-        ),
-        Token::Tuple(tuple) => format!(
-            "({})",
-            tuple
-                .iter()
-                .map(format_token_value)
-                .collect::<Vec<String>>()
-                .join(",")
-        ),
+        Token::Array(arr) => {
+            format!(
+                "[{}]",
+                arr.iter()
+                    .map(format_token_value)
+                    .collect::<Vec<String>>()
+                    .join(",")
+            )
+        }
+        Token::FixedArray(arr) => {
+            format!(
+                "[{}]",
+                arr.iter()
+                    .map(format_token_value)
+                    .collect::<Vec<String>>()
+                    .join(",")
+            )
+        }
+        Token::Tuple(tuple) => {
+            format!(
+                "({})",
+                tuple
+                    .iter()
+                    .map(format_token_value)
+                    .collect::<Vec<String>>()
+                    .join(",")
+            )
+        }
     }
 }

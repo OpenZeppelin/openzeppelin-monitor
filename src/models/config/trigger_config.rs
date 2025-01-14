@@ -79,6 +79,11 @@ impl ConfigLoader for Trigger {
     /// - URLs are valid for webhook and Slack triggers
     /// - Script paths exist for script triggers
     fn validate(&self) -> Result<(), ConfigError> {
+        // Validate trigger name
+        if self.name.is_empty() {
+            return Err(ConfigError::validation_error("Trigger cannot be empty"));
+        }
+
         match &self.config {
             TriggerTypeConfig::Slack {
                 webhook_url,
@@ -98,10 +103,6 @@ impl ConfigLoader for Trigger {
                 // Validate template is not empty
                 if body.trim().is_empty() {
                     return Err(ConfigError::validation_error("Body cannot be empty"));
-                }
-                // Name validation moved outside since it's part of TriggerConfig
-                if self.name.trim().is_empty() {
-                    return Err(ConfigError::validation_error("Name cannot be empty"));
                 }
             }
             TriggerTypeConfig::Email {
@@ -210,9 +211,6 @@ impl ConfigLoader for Trigger {
                     "GET" | "POST" | "PUT" | "DELETE" => {}
                     _ => return Err(ConfigError::validation_error("Invalid HTTP method")),
                 }
-                if self.name.trim().is_empty() {
-                    return Err(ConfigError::validation_error("Name cannot be empty"));
-                }
             }
             TriggerTypeConfig::Script { path, .. } => {
                 // Validate script path exists
@@ -221,9 +219,6 @@ impl ConfigLoader for Trigger {
                         "Script path does not exist: {}",
                         path
                     )));
-                }
-                if self.name.trim().is_empty() {
-                    return Err(ConfigError::validation_error("Name cannot be empty"));
                 }
             }
         }

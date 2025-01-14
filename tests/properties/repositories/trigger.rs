@@ -81,17 +81,22 @@ proptest! {
             // Valid trigger should pass validation
             prop_assert!(trigger.validate().is_ok());
 
+            // Test invalid trigger name
+            let mut invalid_trigger = trigger.clone();
+            invalid_trigger.name = "".to_string();
+            prop_assert!(invalid_trigger.validate().is_err());
+
             // Test invalid cases
             match &trigger.config {
                 TriggerTypeConfig::Slack { webhook_url: _, title: _, body: _ } => {
-                    let mut invalid_trigger = trigger.clone();
+                     invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Slack { webhook_url: url, .. } = &mut invalid_trigger.config {
                         *url = "not-a-url".to_string(); // Invalid URL format
                     }
                     prop_assert!(invalid_trigger.validate().is_err());
 
                     // Test empty title
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Slack { title: t, .. } = &mut invalid_trigger.config {
                         *t = "".to_string();
                     }
@@ -99,21 +104,21 @@ proptest! {
                 },
                 TriggerTypeConfig::Email { host: _, port: _, username: _, password: _, subject: _, body: _, sender: _, recipients: _ } => {
                     // Test empty recipients
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Email { recipients: r, .. } = &mut invalid_trigger.config {
                         r.clear();
                     }
                     prop_assert!(invalid_trigger.validate().is_err());
 
                     // Test invalid host
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Email { host: h, .. } = &mut invalid_trigger.config {
                         *h = "not-a-host".to_string();
                     }
                     prop_assert!(invalid_trigger.validate().is_err());
 
                     // Test whitespace-only subject
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Email { subject: s, .. } = &mut invalid_trigger.config {
                         *s = "   ".to_string();
                     }
@@ -121,14 +126,14 @@ proptest! {
                 },
                 TriggerTypeConfig::Webhook { url: _, method: _, headers: _ } => {
                     // Test invalid method
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Webhook { method: m, .. } = &mut invalid_trigger.config {
                         *m = "INVALID_METHOD".to_string();
                     }
                     prop_assert!(invalid_trigger.validate().is_err());
 
                     // Test invalid URL
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Webhook { url: u, .. } = &mut invalid_trigger.config {
                         *u = "not-a-url".to_string();
                     }
@@ -136,14 +141,14 @@ proptest! {
                 },
                 TriggerTypeConfig::Script { path: _, args: _     } => {
                     // Test invalid path
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
                         *p = "invalid/path/no-extension".to_string();
                     }
                     prop_assert!(invalid_trigger.validate().is_err());
 
                     // Test empty path
-                    let mut invalid_trigger = trigger.clone();
+                    invalid_trigger = trigger.clone();
                     if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
                         *p = "".to_string();
                     }

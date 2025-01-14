@@ -64,6 +64,11 @@ impl ConfigLoader for Monitor {
 
     /// Validate the monitor configuration
     fn validate(&self) -> Result<(), ConfigError> {
+        // Validate monitor name
+        if self.name.is_empty() {
+            return Err(ConfigError::validation_error("Monitor name is required"));
+        }
+
         // Validate function signatures
         for func in &self.match_conditions.functions {
             if !func.signature.contains('(') || !func.signature.contains(')') {

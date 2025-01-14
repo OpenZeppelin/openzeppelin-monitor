@@ -87,16 +87,20 @@ proptest! {
             invalid_network.block_time_ms = 50; // Too low block time
             prop_assert!(invalid_network.validate().is_err());
 
-            let mut invalid_network = network.clone();
+            invalid_network = network.clone();
             invalid_network.confirmation_blocks = 0; // Invalid confirmation blocks
             prop_assert!(invalid_network.validate().is_err());
 
-            let mut invalid_network = network.clone();
+            invalid_network = network.clone();
             invalid_network.rpc_urls[0].url = "invalid-url".to_string(); // Invalid RPC URL
             prop_assert!(invalid_network.validate().is_err());
 
-            let mut invalid_network = network.clone();
+            invalid_network = network.clone();
             invalid_network.slug = "INVALID_SLUG".to_string(); // Invalid slug with uppercase
+            prop_assert!(invalid_network.validate().is_err());
+
+            invalid_network = network.clone();
+            invalid_network.name = "".to_string(); // Empty name
             prop_assert!(invalid_network.validate().is_err());
         }
     }

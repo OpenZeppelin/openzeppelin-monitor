@@ -149,6 +149,10 @@ proptest! {
 
             let mut invalid_monitor = monitor.clone();
 
+            // Test invalid monitor name
+            invalid_monitor.name = "".to_string();
+            prop_assert!(invalid_monitor.validate().is_err());
+
             // Test invalid function signature
             if let Some(func) = invalid_monitor.match_conditions.functions.first_mut() {
                 func.signature = "invalid_signature".to_string(); // Missing parentheses

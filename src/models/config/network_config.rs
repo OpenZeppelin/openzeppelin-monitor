@@ -95,6 +95,11 @@ impl ConfigLoader for Network {
     /// - Required chain-specific parameters are present
     /// - Block time and confirmation values are reasonable
     fn validate(&self) -> Result<(), ConfigError> {
+        // Validate network name
+        if self.name.is_empty() {
+            return Err(ConfigError::validation_error("Network name is required"));
+        }
+
         // Validate network_type
         match self.network_type {
             BlockChainType::EVM | BlockChainType::Stellar => {}
