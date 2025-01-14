@@ -7,6 +7,11 @@
       "url": "https://eth.drpc.org",
       "type_": "rpc",
       "weight": 100
+    },
+    {
+      "type_": "rpc",
+      "url": "https://ethereum-rpc.publicnode.com",
+      "weight": 90
     }
   ],
   "chain_id": 1,
