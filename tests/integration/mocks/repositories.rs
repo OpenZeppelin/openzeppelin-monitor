@@ -11,7 +11,8 @@
 
 use openzeppelin_monitor::models::{Monitor, Network, Trigger};
 use openzeppelin_monitor::repositories::{
-    MonitorRepositoryTrait, NetworkRepositoryTrait, RepositoryError, TriggerRepositoryTrait,
+    MonitorRepositoryTrait, NetworkRepository, NetworkRepositoryTrait, NetworkService,
+    RepositoryError, TriggerRepository, TriggerRepositoryTrait, TriggerService,
 };
 
 use std::{collections::HashMap, path::Path};
@@ -58,7 +59,11 @@ mock! {
 
     impl MonitorRepositoryTrait for MonitorRepository {
         #[mockall::concretize]
-        fn load_all(path: Option<&Path>) -> Result<HashMap<String, Monitor>, RepositoryError>;
+        fn load_all(
+            path: Option<&Path>,
+            network_service: Option<&NetworkService<NetworkRepository>>,
+            trigger_service: Option<&TriggerService<TriggerRepository>>,
+        ) -> Result<HashMap<String, Monitor>, RepositoryError>;
         fn get(&self, monitor_id: &str) -> Option<Monitor>;
         fn get_all(&self) -> HashMap<String, Monitor>;
     }

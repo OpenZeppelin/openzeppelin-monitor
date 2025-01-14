@@ -80,11 +80,6 @@ impl<S: BlockStorage> BlockTracker<S> {
         // Check for gaps if we have previous blocks
         if let Some(&last_block) = network_history.back() {
             if block_number > last_block + 1 {
-                // BlockWatcherError::missed_block_warning(format!(
-                //     "Potential missed blocks detected for network {}: gap between {} and {}",
-                //     network.slug, last_block, block_number
-                // ));
-
                 // Log each missed block number
                 for missed in (last_block + 1)..block_number {
                     BlockWatcherError::block_tracker_error(format!(

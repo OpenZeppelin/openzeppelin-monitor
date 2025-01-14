@@ -57,7 +57,7 @@ type BlockHandlerFn = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
 async fn main() -> Result<()> {
     env_logger::init();
 
-    let (filter_service, trigger_execution_service, active_monitors, networks) =
+    let (filter_service, network_service, trigger_execution_service, active_monitors, networks) =
         initialize_services()?;
 
     let networks_with_monitors: Vec<Network> = networks
@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
 
     let file_block_storage = Arc::new(FileBlockStorage::new());
     let block_watcher = BlockWatcherService::<NetworkRepository, FileBlockStorage>::new(
-        Arc::new(NetworkService::<NetworkRepository>::new(None)?),
+        network_service,
         file_block_storage.clone(),
         block_handler,
         Arc::new(BlockTracker::new(1000, Some(file_block_storage.clone()))),
@@ -124,13 +124,18 @@ async fn main() -> Result<()> {
 /// Returns an error if any service initialization fails
 fn initialize_services() -> Result<(
     Arc<FilterService>,
+    Arc<NetworkService<NetworkRepository>>,
     Arc<TriggerExecutionService<TriggerRepository>>,
     Vec<Monitor>,
     HashMap<String, Network>,
 )> {
     let network_service = NetworkService::<NetworkRepository>::new(None)?;
     let trigger_service = TriggerService::<TriggerRepository>::new(None)?;
-    let monitor_service = MonitorService::<MonitorRepository>::new(None)?;
+    let monitor_service = Arc::new(MonitorService::<MonitorRepository>::new(
+        None,
+        Some(&network_service),
+        Some(&trigger_service),
+    )?);
     let notification_service = NotificationService::new();
 
     let filter_service = Arc::new(FilterService::new());
@@ -145,6 +150,7 @@ fn initialize_services() -> Result<(
 
     Ok((
         filter_service,
+        Arc::new(network_service),
         trigger_execution_service,
         active_monitors,
         networks,

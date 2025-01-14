@@ -9,8 +9,8 @@ use std::path::Path;
 
 use crate::models::{ConfigLoader, Monitor, Network, Trigger};
 use crate::repositories::error::RepositoryError;
-use crate::repositories::network::NetworkRepository;
-use crate::repositories::trigger::TriggerRepository;
+use crate::repositories::network::{NetworkRepository, NetworkService};
+use crate::repositories::trigger::{TriggerRepository, TriggerService};
 
 /// Repository for storing and retrieving monitor configurations
 pub struct MonitorRepository {
@@ -23,8 +23,12 @@ impl MonitorRepository {
     ///
     /// Loads all monitor configurations from JSON files in the specified directory
     /// (or default config directory if None is provided).
-    pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-        let monitors = Self::load_all(path)?;
+    pub fn new(
+        path: Option<&Path>,
+        network_service: Option<&NetworkService<NetworkRepository>>,
+        trigger_service: Option<&TriggerService<TriggerRepository>>,
+    ) -> Result<Self, RepositoryError> {
+        let monitors = Self::load_all(path, network_service, trigger_service)?;
         Ok(MonitorRepository { monitors })
     }
 
@@ -81,7 +85,11 @@ pub trait MonitorRepositoryTrait {
     /// If no path is provided, uses the default config directory.
     /// Also validates references to networks and triggers.
     /// This is a static method that doesn't require an instance.
-    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Monitor>, RepositoryError>;
+    fn load_all(
+        path: Option<&Path>,
+        network_service: Option<&NetworkService<NetworkRepository>>,
+        trigger_service: Option<&TriggerService<TriggerRepository>>,
+    ) -> Result<HashMap<String, Monitor>, RepositoryError>;
 
     /// Get a specific monitor by ID
     ///
@@ -95,11 +103,23 @@ pub trait MonitorRepositoryTrait {
 }
 
 impl MonitorRepositoryTrait for MonitorRepository {
-    fn load_all(path: Option<&Path>) -> Result<HashMap<String, Monitor>, RepositoryError> {
+    fn load_all(
+        path: Option<&Path>,
+        network_service: Option<&NetworkService<NetworkRepository>>,
+        trigger_service: Option<&TriggerService<TriggerRepository>>,
+    ) -> Result<HashMap<String, Monitor>, RepositoryError> {
         let monitors =
             Monitor::load_all(path).map_err(|e| RepositoryError::load_error(e.to_string()))?;
-        let triggers = TriggerRepository::new(None)?.triggers;
-        let networks = NetworkRepository::new(None)?.networks;
+
+        let networks = match network_service {
+            Some(service) => service.get_all(),
+            None => NetworkRepository::new(None)?.networks,
+        };
+
+        let triggers = match trigger_service {
+            Some(service) => service.get_all(),
+            None => TriggerRepository::new(None)?.triggers,
+        };
 
         Self::validate_monitor_references(&monitors, &triggers, &networks)?;
         Ok(monitors)
@@ -128,8 +148,12 @@ impl<T: MonitorRepositoryTrait> MonitorService<T> {
     ///
     /// Loads monitor configurations from the specified path (or default config directory)
     /// and validates all network and trigger references.
-    pub fn new(path: Option<&Path>) -> Result<MonitorService<MonitorRepository>, RepositoryError> {
-        let repository = MonitorRepository::new(path)?;
+    pub fn new(
+        path: Option<&Path>,
+        network_service: Option<&NetworkService<NetworkRepository>>,
+        trigger_service: Option<&TriggerService<TriggerRepository>>,
+    ) -> Result<MonitorService<MonitorRepository>, RepositoryError> {
+        let repository = MonitorRepository::new(path, network_service, trigger_service)?;
         Ok(MonitorService { repository })
     }
 
@@ -146,7 +170,7 @@ impl<T: MonitorRepositoryTrait> MonitorService<T> {
     pub fn new_with_path(
         path: Option<&Path>,
     ) -> Result<MonitorService<MonitorRepository>, RepositoryError> {
-        let repository = MonitorRepository::new(path)?;
+        let repository = MonitorRepository::new(path, None, None)?;
         Ok(MonitorService { repository })
     }
 

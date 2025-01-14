@@ -174,11 +174,10 @@ impl ConfigLoader for Network {
 
             if max_blocks < recommended_blocks {
                 warn!(
-                    "The `max_past_blocks` configuration ({}) is lower than recommended minimum ({}) for network '{}'. \
-                    This may result in missed blocks. Recommended formula: (cron_interval_ms/block_time_ms) + confirmation_blocks + 1",
+                    "Network '{}' max_past_blocks ({}) below recommended {} (cron_interval/block_time + confirmations + 1)",
+                    self.slug,
                     max_blocks,
-                    recommended_blocks,
-                    self.slug
+                    recommended_blocks
                 );
             }
         }
