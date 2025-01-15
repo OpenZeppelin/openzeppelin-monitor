@@ -4,7 +4,7 @@
 //! allowing network definitions to be loaded from JSON files.
 
 use log::warn;
-use std::path::Path;
+use std::{path::Path, str::FromStr};
 
 use crate::{
 	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network},
@@ -80,9 +80,7 @@ impl ConfigLoader for Network {
 		let config: Network = serde_json::from_reader(file)?;
 
 		// Validate the config after loading
-		if let Err(validation_error) = config.validate() {
-			return Err(ConfigError::validation_error(validation_error.to_string()));
-		}
+		config.validate()?;
 
 		Ok(config)
 	}
@@ -165,6 +163,14 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"Cron schedule must be provided",
 			));
+		}
+
+		// Add cron schedule format validation
+		if let Err(e) = cron::Schedule::from_str(&self.cron_schedule) {
+			return Err(ConfigError::validation_error(format!(
+				"Invalid cron schedule format: {}",
+				e
+			)));
 		}
 
 		// Validate max_past_blocks

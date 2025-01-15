@@ -103,6 +103,10 @@ proptest! {
 			invalid_network = network.clone();
 			invalid_network.name = "".to_string(); // Empty name
 			prop_assert!(invalid_network.validate().is_err());
+
+			invalid_network = network.clone();
+			invalid_network.cron_schedule = "0 */1 * * *".to_string(); // Invalid cron schedule
+			prop_assert!(invalid_network.validate().is_err());
 		}
 	}
 }

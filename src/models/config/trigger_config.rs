@@ -60,9 +60,7 @@ impl ConfigLoader for Trigger {
 		let config: Trigger = serde_json::from_reader(file)?;
 
 		// Validate the config after loading
-		if let Err(validation_error) = config.validate() {
-			return Err(ConfigError::validation_error(validation_error.to_string()));
-		}
+		config.validate()?;
 
 		Ok(config)
 	}
