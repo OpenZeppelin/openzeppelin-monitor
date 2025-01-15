@@ -60,7 +60,7 @@ impl EVMBlockFilter {
                 // First check if status matches (if specified)
                 let status_matches = match &condition.status {
                     TransactionStatus::Any => true,
-                    required_status => *required_status == tx_status.clone(),
+                    required_status => *required_status == *tx_status,
                 };
 
                 if status_matches {
@@ -89,7 +89,7 @@ impl EVMBlockFilter {
                         if self.evaluate_expression(expr, &Some(tx_params)) {
                             matched_transactions.push(TransactionCondition {
                                 expression: Some(expr.to_string()),
-                                status: tx_status.clone(),
+                                status: *tx_status,
                             });
                             break;
                         }
@@ -97,7 +97,7 @@ impl EVMBlockFilter {
                         // No expression but status matched
                         matched_transactions.push(TransactionCondition {
                             expression: None,
-                            status: tx_status.clone(),
+                            status: *tx_status,
                         });
                         break;
                     }
@@ -169,7 +169,7 @@ impl EVMBlockFilter {
                                                     "Failed to decode function input: {}",
                                                     e
                                                 ));
-                                                return vec![];
+                                                vec![]
                                             });
 
                                         let params: Vec<EVMMatchParamEntry> = function
@@ -270,7 +270,7 @@ impl EVMBlockFilter {
 
             // Process the matching address's ABI
             if let Some(abi) = &monitored_addr.abi {
-                let decoded_log = self.decode_events(&abi, &log).await;
+                let decoded_log = self.decode_events(abi, log).await;
 
                 if let Some(event_condition) = decoded_log {
                     if monitor.match_conditions.events.is_empty() {
@@ -570,12 +570,11 @@ impl BlockFilter for EVMBlockFilter {
                     };
 
                     // Get transaction status from receipt
-                    let tx_status = receipt
-                        .status
-                        .map(|s| s.as_u64() == 1)
-                        .unwrap_or(false)
-                        .then(|| TransactionStatus::Success)
-                        .unwrap_or(TransactionStatus::Failure);
+                    let tx_status = if receipt.status.map(|s| s.as_u64() == 1).unwrap_or(false) {
+                        TransactionStatus::Success
+                    } else {
+                        TransactionStatus::Failure
+                    };
 
                     // Collect all involved addresses from receipt logs, transaction.to, and transaction.from
                     let mut involved_addresses = Vec::new();
@@ -593,15 +592,15 @@ impl BlockFilter for EVMBlockFilter {
                     // Check transaction match conditions
                     self.find_matching_transaction(
                         &tx_status,
-                        &transaction,
-                        &monitor,
+                        transaction,
+                        monitor,
                         &mut matched_transactions,
                     );
 
                     // Check for event match conditions
                     self.find_matching_events_for_transaction(
-                        &receipt,
-                        &monitor,
+                        receipt,
+                        monitor,
                         &mut matched_events,
                         &mut matched_on_args,
                         &mut involved_addresses,
@@ -610,8 +609,8 @@ impl BlockFilter for EVMBlockFilter {
 
                     // Check function match conditions
                     self.find_matching_functions_for_transaction(
-                        &transaction,
-                        &monitor,
+                        transaction,
+                        monitor,
                         &mut matched_functions,
                         &mut matched_on_args,
                     );
@@ -623,9 +622,9 @@ impl BlockFilter for EVMBlockFilter {
                     let has_address_match = monitored_addresses.iter().any(|addr| {
                         involved_addresses
                             .iter()
-                            .map(|a| normalize_address(&a))
+                            .map(|a| normalize_address(a))
                             .collect::<Vec<String>>()
-                            .contains(&normalize_address(&addr))
+                            .contains(&normalize_address(addr))
                     });
 
                     // Only proceed if we have a matching address
@@ -657,7 +656,7 @@ impl BlockFilter for EVMBlockFilter {
                         };
 
                         if should_match {
-                            matching_results.push(MonitorMatch::EVM(EVMMonitorMatch {
+                            matching_results.push(MonitorMatch::EVM(Box::new(EVMMonitorMatch {
                                 monitor: Monitor {
                                     // Omit ABI from monitor since we do not need it here
                                     addresses: monitor
@@ -701,7 +700,7 @@ impl BlockFilter for EVMBlockFilter {
                                         None
                                     },
                                 }),
-                            }));
+                            })));
                         }
                     }
                 }

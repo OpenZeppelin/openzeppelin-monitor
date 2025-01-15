@@ -1,0 +1,14 @@
+{
+  "LABEL": {
+    "name": "PR title checker needs attention",
+    "color": "EEEEEE"
+  },
+  "CHECKS": {
+    "regexp": "^(fix|feat|docs|chore|refactor|style|ci|revert|test)!?(\\(.*\\))?!?:.*"
+  },
+  "MESSAGES": {
+    "success": "PR title is valid",
+    "failure": "PR title is invalid",
+    "notice": "Title needs to pass regex '^(fix|feat|docs|chore|refactor|style|ci|revert|test)!?(\\(.*\\))?!?:.*"
+  }
+}

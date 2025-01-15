@@ -56,7 +56,7 @@ pub trait BlockStorage: Clone + Send + Sync {
     async fn save_blocks(
         &self,
         network_id: &str,
-        blocks: &Vec<BlockType>,
+        blocks: &[BlockType],
     ) -> Result<(), Box<dyn Error>>;
 
     /// Deletes all stored blocks for a network
@@ -92,11 +92,18 @@ pub struct FileBlockStorage {
 impl FileBlockStorage {
     /// Creates a new file-based block storage instance
     ///
+    /// Initializes storage with the provided path
+    pub fn new(storage_path: PathBuf) -> Self {
+        FileBlockStorage { storage_path }
+    }
+}
+
+impl Default for FileBlockStorage {
+    /// Default implementation for FileBlockStorage
+    ///
     /// Initializes storage with the default path "data"
-    pub fn new() -> Self {
-        FileBlockStorage {
-            storage_path: PathBuf::from("data"),
-        }
+    fn default() -> Self {
+        FileBlockStorage::new(PathBuf::from("data"))
     }
 }
 
@@ -146,7 +153,7 @@ impl BlockStorage for FileBlockStorage {
     async fn save_blocks(
         &self,
         network_slug: &str,
-        blocks: &Vec<BlockType>,
+        blocks: &[BlockType],
     ) -> Result<(), Box<dyn Error>> {
         let file_path = self.storage_path.join(format!(
             "{}_blocks_{}.json",
@@ -170,10 +177,8 @@ impl BlockStorage for FileBlockStorage {
             .to_string_lossy()
             .to_string();
 
-        for entry in glob(&pattern)? {
-            if let Ok(path) = entry {
-                tokio::fs::remove_file(path).await?;
-            }
+        for entry in glob(&pattern)?.flatten() {
+            tokio::fs::remove_file(entry).await?;
         }
         Ok(())
     }

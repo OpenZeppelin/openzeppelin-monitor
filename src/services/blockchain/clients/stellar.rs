@@ -306,7 +306,7 @@ impl BlockChainClient for StellarClient {
                         if (sequence as u64) > target_block {
                             return Ok(blocks);
                         }
-                        blocks.push(BlockType::Stellar(StellarBlock::from(ledger)));
+                        blocks.push(BlockType::Stellar(Box::new(ledger)));
                     }
 
                     cursor = response["result"]["cursor"]

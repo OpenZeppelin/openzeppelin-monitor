@@ -1,0 +1,36 @@
+---
+version: 2
+# opt in to updates for ecosystems that are not yet GA.
+enable-beta-ecosystems: true
+updates:
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      # Prefix all commit messages with "chore(deps): "
+      prefix: 'chore(deps): '
+    reviewers:
+      - OpenZeppelin/defender-sre
+      - OpenZeppelin/defender-dev
+
+  # Maintain dependencies for cargo
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
+    commit-message:
+      # Prefix all commit messages
+      prefix: 'chore(deps): '
+    reviewers:
+      - OpenZeppelin/defender-dev
+      - OpenZeppelin/defender-sre
+    labels:
+      - dependabot
+      - dependencies
+    # Allow up to 10 open pull requests for testing
+    open-pull-requests-limit: 5

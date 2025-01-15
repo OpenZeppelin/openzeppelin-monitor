@@ -36,7 +36,7 @@ impl ConfigLoader for Trigger {
         for entry in entries {
             let entry = entry?;
             if Self::is_json_file(&entry.path()) {
-                let content = fs::read_to_string(&entry.path())?;
+                let content = fs::read_to_string(entry.path())?;
                 let file_triggers: TriggerConfigFile = serde_json::from_str(&content)
                     .map_err(|e| ConfigError::parse_error(e.to_string()))?;
                 trigger_pairs.extend(file_triggers.triggers.into_iter());

@@ -16,6 +16,8 @@ use crate::services::blockwatcher::error::BlockWatcherError;
 use crate::services::blockwatcher::storage::BlockStorage;
 use crate::services::blockwatcher::BlockTracker;
 
+type BlockHandler = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
+
 /// Watcher implementation for a single network
 ///
 /// Manages block watching and processing for a specific blockchain network,
@@ -26,7 +28,7 @@ where
 {
     network: Network,
     block_storage: Arc<B>,
-    block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+    block_handler: BlockHandler,
     scheduler: JobScheduler,
     block_tracker: Arc<BlockTracker<B>>,
 }
@@ -42,7 +44,7 @@ where
 {
     network_service: Arc<NetworkService<T>>,
     block_storage: Arc<B>,
-    block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+    block_handler: BlockHandler,
     active_watchers: Arc<RwLock<HashMap<String, NetworkBlockWatcher<B>>>>,
     block_tracker: Arc<BlockTracker<B>>,
 }
@@ -63,7 +65,7 @@ where
     pub async fn new(
         network: Network,
         block_storage: Arc<B>,
-        block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+        block_handler: BlockHandler,
         block_tracker: Arc<BlockTracker<B>>,
     ) -> Result<Self, BlockWatcherError> {
         let scheduler = JobScheduler::new().await.map_err(|e| {
@@ -151,7 +153,7 @@ where
     pub async fn new(
         network_service: Arc<NetworkService<T>>,
         block_storage: Arc<B>,
-        block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+        block_handler: BlockHandler,
         block_tracker: Arc<BlockTracker<B>>,
     ) -> Result<Self, BlockWatcherError> {
         Ok(BlockWatcherService {
@@ -243,7 +245,7 @@ const DEFAULT_MAX_PAST_BLOCKS: u64 = 10;
 async fn process_new_blocks<B: BlockStorage>(
     network: &Network,
     block_storage: Arc<B>,
-    block_handler: Arc<dyn Fn(&BlockType, &Network) + Send + Sync>,
+    block_handler: BlockHandler,
     block_tracker: Arc<BlockTracker<B>>,
 ) -> Result<(), BlockWatcherError> {
     let rpc_client = create_blockchain_client(network).await.map_err(|e| {

@@ -32,39 +32,42 @@ pub struct EmailNotifier {
     receipients: Vec<EmailAddress>,
 }
 
+/// Configuration for SMTP connection
+#[derive(Clone)]
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+}
+
+/// Configuration for email content
+#[derive(Clone)]
+pub struct EmailContent {
+    pub subject: String,
+    pub body_template: String,
+    pub sender: EmailAddress,
+    pub receipients: Vec<EmailAddress>,
+}
+
 impl EmailNotifier {
     /// Creates a new email notifier instance
     ///
     /// # Arguments
-    /// * `host` - SMTP server host
-    /// * `port` - SMTP server port
-    /// * `username` - SMTP server username
-    /// * `password` - SMTP server password
-    /// * `subject` - Email subject
-    /// * `body_template` - Message template with variables
-    /// * `sender` - Email sender
-    /// * `receipients` - Email receipients
-    pub fn new(
-        host: &str,
-        port: u16,
-        username: &str,
-        password: &str,
-        subject: &str,
-        body_template: &str,
-        sender: &EmailAddress,
-        receipients: &Vec<EmailAddress>,
-    ) -> Self {
-        let client = SmtpTransport::relay(host)
+    /// * `smtp_config` - SMTP server configuration
+    /// * `email_content` - Email content configuration
+    pub fn new(smtp_config: SmtpConfig, email_content: EmailContent) -> Self {
+        let client = SmtpTransport::relay(&smtp_config.host)
             .unwrap()
-            .port(port)
-            .credentials(Credentials::new(username.to_owned(), password.to_owned()))
+            .port(smtp_config.port)
+            .credentials(Credentials::new(smtp_config.username, smtp_config.password))
             .build();
 
         Self {
-            subject: subject.to_owned(),
-            body_template: body_template.to_owned(),
-            sender: sender.clone(),
-            receipients: receipients.clone(),
+            subject: email_content.subject,
+            body_template: email_content.body_template,
+            sender: email_content.sender,
+            receipients: email_content.receipients,
             client,
         }
     }
@@ -103,19 +106,21 @@ impl EmailNotifier {
                 sender,
                 receipients,
             } => {
-                let client = SmtpTransport::relay(host)
-                    .unwrap()
-                    .port(port.unwrap_or(465))
-                    .credentials(Credentials::new(username.clone(), password.clone()))
-                    .build();
+                let smtp_config = SmtpConfig {
+                    host: host.clone(),
+                    port: port.unwrap_or(465),
+                    username: username.clone(),
+                    password: password.clone(),
+                };
 
-                Some(Self {
+                let email_content = EmailContent {
                     subject: subject.clone(),
                     body_template: body.clone(),
                     sender: sender.clone(),
                     receipients: receipients.clone(),
-                    client,
-                })
+                };
+
+                Some(Self::new(smtp_config, email_content))
             }
             _ => None,
         }

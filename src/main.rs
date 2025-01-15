@@ -40,6 +40,7 @@ use crate::{
     },
 };
 
+use dotenvy::dotenv;
 use log::{error, info};
 use std::collections::HashMap;
 use std::error::Error;
@@ -48,6 +49,12 @@ use tokio::sync::broadcast;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type BlockHandlerFn = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
+type ServiceResult = Result<(
+    Arc<FilterService>,
+    Arc<TriggerExecutionService<TriggerRepository>>,
+    Vec<Monitor>,
+    HashMap<String, Network>,
+)>;
 
 /// Main entry point for the blockchain monitoring service.
 ///
@@ -55,6 +62,8 @@ type BlockHandlerFn = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
 /// Returns an error if service initialization fails or if there's an error during shutdown.
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load environment variables from .env file
+    dotenv().ok();
     env_logger::init();
 
     let (filter_service, trigger_execution_service, active_monitors, networks) =
@@ -80,7 +89,7 @@ async fn main() -> Result<()> {
         active_monitors,
     );
 
-    let file_block_storage = Arc::new(FileBlockStorage::new());
+    let file_block_storage = Arc::new(FileBlockStorage::default());
     let block_watcher = BlockWatcherService::<NetworkRepository, FileBlockStorage>::new(
         Arc::new(NetworkService::<NetworkRepository>::new(None)?),
         file_block_storage.clone(),
@@ -122,12 +131,7 @@ async fn main() -> Result<()> {
 ///
 /// # Errors
 /// Returns an error if any service initialization fails
-fn initialize_services() -> Result<(
-    Arc<FilterService>,
-    Arc<TriggerExecutionService<TriggerRepository>>,
-    Vec<Monitor>,
-    HashMap<String, Network>,
-)> {
+fn initialize_services() -> ServiceResult {
     let network_service = NetworkService::<NetworkRepository>::new(None)?;
     let trigger_service = TriggerService::<TriggerRepository>::new(None)?;
     let monitor_service = MonitorService::<MonitorRepository>::new(None)?;
@@ -237,7 +241,6 @@ async fn process_block(
         }
         _ = shutdown_rx.recv() => {
             info!("Shutting down block processing task");
-            return;
         }
     }
 }
@@ -279,7 +282,7 @@ fn filter_active_monitors(monitors: HashMap<String, Monitor>) -> Vec<Monitor> {
 fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<Monitor> {
     monitors
         .iter()
-        .filter(|m| m.networks.contains(&network_slug))
+        .filter(|m| m.networks.contains(network_slug))
         .cloned()
         .collect()
 }

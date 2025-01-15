@@ -26,16 +26,6 @@ use crate::services::blockwatcher::storage::BlockStorage;
 /// # Type Parameters
 ///
 /// * `S` - A type that implements the `BlockStorage` trait for persisting missed block information
-///
-/// # Examples
-///
-/// ```
-/// use my_crate::BlockTracker;
-///
-/// let tracker = BlockTracker::new(100, None);
-/// tracker.record_block(&network, 1000).await;
-/// let last_block = tracker.get_last_block("ethereum").await;
-/// ```
 #[derive(Clone)]
 pub struct BlockTracker<S: BlockStorage> {
     /// Tracks the last N blocks processed for each network

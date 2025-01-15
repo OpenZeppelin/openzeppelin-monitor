@@ -109,7 +109,13 @@ cargo build
 
 ## Configuration
 
-1. Copy example configuration files:
+1. Configure your environment variables in `.env` file.
+
+```bash
+cp .env.example .env
+```
+
+2. Copy example configuration files:
 
 ```bash
 # EVM
@@ -125,17 +131,17 @@ cp config/triggers/email_notifications.json.example config/triggers/email_notifi
 cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
 ```
 
-2. Configure your networks in `config/networks/`:
+3. Configure your networks in `config/networks/`:
 
 - EVM networks: See `evm_mainnet.json`
 - Stellar networks: See `stellar_mainnet.json`
 
-3. Configure your monitors in `config/monitors/`:
+4. Configure your monitors in `config/monitors/`:
 
 - EVM monitors: See `evm_transfer_usdc.json`
 - Stellar monitors: See `stellar_transfer_usdc.json`
 
-4. Configure your triggers in `config/triggers/`:
+5. Configure your triggers in `config/triggers/`:
 
 - Slack notifications: See `slack_notifications.json`
 - Email notifications: See `email_notifications.json`
@@ -198,13 +204,13 @@ For Stellar:
 ### Run Locally
 
 ```bash
-RUST_LOG=info cargo run
+cargo run
 ```
 
 ### Run Tests
 
 ```bash
-RUST_LOG=info cargo test -- --nocapture
+cargo test -- --nocapture
 ```
 
 ## Project Structure

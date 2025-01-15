@@ -163,7 +163,7 @@ impl BlockChainClient for EvmClient {
                         .await?
                         .ok_or_else(|| BlockChainError::block_not_found(block_number))?;
 
-                    blocks.push(BlockType::EVM(EVMBlock::from(block)));
+                    blocks.push(BlockType::EVM(Box::new(EVMBlock::from(block))));
                 }
                 Ok(blocks)
             })

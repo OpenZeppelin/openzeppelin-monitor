@@ -15,7 +15,7 @@ mod email;
 mod error;
 mod slack;
 
-pub use email::EmailNotifier;
+pub use email::{EmailContent, EmailNotifier, SmtpConfig};
 pub use error::NotificationError;
 pub use slack::SlackNotifier;
 
@@ -80,16 +80,19 @@ impl NotificationService {
                 sender,
                 receipients,
             } => {
-                let notifier = EmailNotifier::new(
-                    host,
-                    port.unwrap_or(465),
-                    username,
-                    password,
-                    subject,
-                    body,
-                    sender,
-                    receipients,
-                );
+                let smtp_config = SmtpConfig {
+                    host: host.clone(),
+                    port: port.unwrap_or(465),
+                    username: username.clone(),
+                    password: password.clone(),
+                };
+                let email_content = EmailContent {
+                    subject: subject.clone(),
+                    body_template: body.clone(),
+                    sender: sender.clone(),
+                    receipients: receipients.clone(),
+                };
+                let notifier = EmailNotifier::new(smtp_config, email_content);
                 notifier
                     .notify(&notifier.format_message(&variables))
                     .await?;
@@ -104,5 +107,11 @@ impl NotificationService {
             }
         }
         Ok(())
+    }
+}
+
+impl Default for NotificationService {
+    fn default() -> Self {
+        Self::new()
     }
 }
