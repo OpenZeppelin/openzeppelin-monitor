@@ -215,6 +215,10 @@ cargo test properties
 cargo test integration
 ```
 
+### Developer setup
+
+Run `git config core.hooksPath .githooks` to setup git hooks for linting and formatting.
+
 ## Project Structure
 
 - `src/`: Source code

@@ -109,11 +109,20 @@ async fn main() -> Result<()> {
             info!("Shutdown signal received, stopping services...");
             let _ = shutdown_tx.send(());
 
-            for network in networks.values() {
-                if let Err(e) = block_watcher.stop_network_watcher(&network.slug).await {
-                    error!("Error stopping watcher for network {}: {}", network.slug, e);
+            // Create a future for all network shutdown operations
+            let shutdown_futures = networks.values().map(|network| {
+                block_watcher.stop_network_watcher(&network.slug)
+            });
+
+            // Wait for all shutdown operations to complete
+            for result in futures::future::join_all(shutdown_futures).await {
+                if let Err(e) = result {
+                    error!("Error during shutdown: {}", e);
                 }
             }
+
+            // Give some time for in-flight tasks to complete
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
     }
 
