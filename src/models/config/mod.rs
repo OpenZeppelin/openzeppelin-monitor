@@ -12,25 +12,25 @@ mod trigger_config;
 
 /// Common interface for loading configuration files
 pub trait ConfigLoader: Sized {
-    /// Load all configuration files from a directory
-    ///
-    /// If no path is provided, uses the default config directory.
-    fn load_all<T>(path: Option<&Path>) -> Result<T, error::ConfigError>
-    where
-        T: FromIterator<(String, Self)>;
+	/// Load all configuration files from a directory
+	///
+	/// If no path is provided, uses the default config directory.
+	fn load_all<T>(path: Option<&Path>) -> Result<T, error::ConfigError>
+	where
+		T: FromIterator<(String, Self)>;
 
-    /// Load configuration from a specific file path
-    fn load_from_path(path: &Path) -> Result<Self, error::ConfigError>;
+	/// Load configuration from a specific file path
+	fn load_from_path(path: &Path) -> Result<Self, error::ConfigError>;
 
-    /// Validate the configuration
-    ///
-    /// Returns Ok(()) if valid, or an error message if invalid.
-    fn validate(&self) -> Result<(), error::ConfigError>;
+	/// Validate the configuration
+	///
+	/// Returns Ok(()) if valid, or an error message if invalid.
+	fn validate(&self) -> Result<(), error::ConfigError>;
 
-    /// Check if a file is a JSON file based on extension
-    fn is_json_file(path: &Path) -> bool {
-        path.extension()
-            .map(|ext| ext.to_string_lossy().to_lowercase() == "json")
-            .unwrap_or(false)
-    }
+	/// Check if a file is a JSON file based on extension
+	fn is_json_file(path: &Path) -> bool {
+		path.extension()
+			.map(|ext| ext.to_string_lossy().to_lowercase() == "json")
+			.unwrap_or(false)
+	}
 }

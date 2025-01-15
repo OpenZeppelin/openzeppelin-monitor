@@ -9,7 +9,8 @@
 //! - Accessing configurations through a service layer
 //!
 //! Currently supported repositories:
-//! - Monitor: Loads and validates monitor configurations, ensuring referenced networks and triggers exist
+//! - Monitor: Loads and validates monitor configurations, ensuring referenced networks and triggers
+//!   exist
 //! - Network: Loads network configurations defining blockchain connection details
 //! - Trigger: Loads trigger configurations defining actions to take when conditions match
 

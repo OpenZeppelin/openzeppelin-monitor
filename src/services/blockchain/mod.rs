@@ -15,7 +15,7 @@ mod transports;
 
 pub use client::BlockChainClient;
 pub use clients::{
-    BlockChainClientEnum, EvmClient, EvmClientTrait, StellarClient, StellarClientTrait,
+	BlockChainClientEnum, EvmClient, EvmClientTrait, StellarClient, StellarClientTrait,
 };
 pub use error::BlockChainError;
 pub use factory::create_blockchain_client;

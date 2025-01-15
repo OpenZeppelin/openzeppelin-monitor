@@ -8,49 +8,49 @@ use crate::models::BlockChainType;
 /// supporting both EVM and Stellar-based chains.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Network {
-    /// Type of blockchain (EVM, Stellar, etc)
-    pub network_type: BlockChainType,
+	/// Type of blockchain (EVM, Stellar, etc)
+	pub network_type: BlockChainType,
 
-    /// Unique identifier for this network
-    pub slug: String,
+	/// Unique identifier for this network
+	pub slug: String,
 
-    /// Human-readable name of the network
-    pub name: String,
+	/// Human-readable name of the network
+	pub name: String,
 
-    /// List of RPC endpoints with their weights for load balancing
-    pub rpc_urls: Vec<RpcUrl>,
+	/// List of RPC endpoints with their weights for load balancing
+	pub rpc_urls: Vec<RpcUrl>,
 
-    /// Chain ID for EVM networks
-    pub chain_id: Option<u64>,
+	/// Chain ID for EVM networks
+	pub chain_id: Option<u64>,
 
-    /// Network passphrase for Stellar networks
-    pub network_passphrase: Option<String>,
+	/// Network passphrase for Stellar networks
+	pub network_passphrase: Option<String>,
 
-    /// Average block time in milliseconds
-    pub block_time_ms: u64,
+	/// Average block time in milliseconds
+	pub block_time_ms: u64,
 
-    /// Number of blocks needed for confirmation
-    pub confirmation_blocks: u64,
+	/// Number of blocks needed for confirmation
+	pub confirmation_blocks: u64,
 
-    /// Cron expression for how often to check for new blocks
-    pub cron_schedule: String,
+	/// Cron expression for how often to check for new blocks
+	pub cron_schedule: String,
 
-    /// Maximum number of past blocks to process
-    pub max_past_blocks: Option<u64>,
+	/// Maximum number of past blocks to process
+	pub max_past_blocks: Option<u64>,
 
-    /// Whether to store processed blocks
-    pub store_blocks: Option<bool>,
+	/// Whether to store processed blocks
+	pub store_blocks: Option<bool>,
 }
 
 /// RPC endpoint configuration with load balancing weight
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RpcUrl {
-    /// Type of RPC endpoint (e.g. "rpc")
-    pub type_: String,
+	/// Type of RPC endpoint (e.g. "rpc")
+	pub type_: String,
 
-    /// URL of the RPC endpoint
-    pub url: String,
+	/// URL of the RPC endpoint
+	pub url: String,
 
-    /// Weight for load balancing (0-100)
-    pub weight: u32,
+	/// Weight for load balancing (0-100)
+	pub weight: u32,
 }

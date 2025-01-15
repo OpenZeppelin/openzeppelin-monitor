@@ -11,49 +11,49 @@ use serde::{Deserialize, Serialize};
 /// and matches the format defined in the stellar-rpc repository.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Event {
-    /// Type of the event
-    #[serde(rename = "type")]
-    pub event_type: String,
+	/// Type of the event
+	#[serde(rename = "type")]
+	pub event_type: String,
 
-    /// Ledger sequence number containing this event
-    pub ledger: u32,
+	/// Ledger sequence number containing this event
+	pub ledger: u32,
 
-    /// Timestamp when the ledger was closed
-    #[serde(rename = "ledgerClosedAt")]
-    pub ledger_closed_at: String,
+	/// Timestamp when the ledger was closed
+	#[serde(rename = "ledgerClosedAt")]
+	pub ledger_closed_at: String,
 
-    /// Contract address that emitted the event
-    #[serde(rename = "contractId")]
-    pub contract_id: String,
+	/// Contract address that emitted the event
+	#[serde(rename = "contractId")]
+	pub contract_id: String,
 
-    /// Unique identifier for this event
-    pub id: String,
+	/// Unique identifier for this event
+	pub id: String,
 
-    /// Deprecated: Use cursor at top level for pagination
-    #[serde(rename = "pagingToken")]
-    pub paging_token: String,
+	/// Deprecated: Use cursor at top level for pagination
+	#[serde(rename = "pagingToken")]
+	pub paging_token: String,
 
-    /// Whether the event was emitted during a successful contract call
-    #[serde(rename = "inSuccessfulContractCall")]
-    pub in_successful_contract_call: bool,
+	/// Whether the event was emitted during a successful contract call
+	#[serde(rename = "inSuccessfulContractCall")]
+	pub in_successful_contract_call: bool,
 
-    /// Transaction hash that generated this event
-    #[serde(rename = "txHash")]
-    pub transaction_hash: String,
+	/// Transaction hash that generated this event
+	#[serde(rename = "txHash")]
+	pub transaction_hash: String,
 
-    /// Base64-encoded list of ScVals representing the event topics
-    #[serde(rename = "topic", skip_serializing_if = "Option::is_none")]
-    pub topic_xdr: Option<Vec<String>>,
+	/// Base64-encoded list of ScVals representing the event topics
+	#[serde(rename = "topic", skip_serializing_if = "Option::is_none")]
+	pub topic_xdr: Option<Vec<String>>,
 
-    /// Decoded JSON representation of the event topics
-    #[serde(rename = "topicJson", skip_serializing_if = "Option::is_none")]
-    pub topic_json: Option<Vec<serde_json::Value>>,
+	/// Decoded JSON representation of the event topics
+	#[serde(rename = "topicJson", skip_serializing_if = "Option::is_none")]
+	pub topic_json: Option<Vec<serde_json::Value>>,
 
-    /// Base64-encoded ScVal representing the event value
-    #[serde(rename = "value", skip_serializing_if = "Option::is_none")]
-    pub value_xdr: Option<String>,
+	/// Base64-encoded ScVal representing the event value
+	#[serde(rename = "value", skip_serializing_if = "Option::is_none")]
+	pub value_xdr: Option<String>,
 
-    /// Decoded JSON representation of the event value
-    #[serde(rename = "valueJson", skip_serializing_if = "Option::is_none")]
-    pub value_json: Option<serde_json::Value>,
+	/// Decoded JSON representation of the event value
+	#[serde(rename = "valueJson", skip_serializing_if = "Option::is_none")]
+	pub value_json: Option<serde_json::Value>,
 }

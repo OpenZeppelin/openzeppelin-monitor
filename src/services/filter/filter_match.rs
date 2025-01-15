@@ -9,17 +9,22 @@
 use std::collections::HashMap;
 
 use crate::{
-    models::MonitorMatch,
-    repositories::TriggerRepositoryTrait,
-    services::filter::helpers::evm::{h160_to_string, h256_to_string},
-    services::filter::FilterError,
-    services::trigger::TriggerExecutionService,
+	models::MonitorMatch,
+	repositories::TriggerRepositoryTrait,
+	services::{
+		filter::{
+			helpers::evm::{h160_to_string, h256_to_string},
+			FilterError,
+		},
+		trigger::TriggerExecutionService,
+	},
 };
 
 /// Process a monitor match by executing associated triggers.
 ///
 /// Takes a matched monitor event and processes it through the appropriate trigger service.
-/// Converts blockchain-specific data into a standardized format that can be used in trigger templates.
+/// Converts blockchain-specific data into a standardized format that can be used in trigger
+/// templates.
 ///
 /// # Arguments
 /// * `matching_monitor` - The matched monitor event containing transaction and trigger information
@@ -42,165 +47,165 @@ use crate::{
 /// "event_0_value": "88248701"
 /// ```
 pub async fn handle_match<T: TriggerRepositoryTrait>(
-    matching_monitor: MonitorMatch,
-    trigger_service: &TriggerExecutionService<T>,
+	matching_monitor: MonitorMatch,
+	trigger_service: &TriggerExecutionService<T>,
 ) -> Result<(), FilterError> {
-    match matching_monitor {
-        MonitorMatch::EVM(evm_monitor_match) => {
-            let transaction = evm_monitor_match.transaction.clone();
-            // Convert transaction data to a HashMap
-            let mut data = HashMap::new();
-            data.insert(
-                "transaction_hash".to_string(),
-                h256_to_string(*transaction.hash()),
-            );
-            data.insert(
-                "transaction_from".to_string(),
-                h160_to_string(*transaction.sender()),
-            );
-            data.insert(
-                "transaction_value".to_string(),
-                transaction.value().to_string(),
-            );
-            if let Some(to) = transaction.to() {
-                data.insert("transaction_to".to_string(), h160_to_string(*to));
-            }
-            data.insert("monitor_name".to_string(), evm_monitor_match.monitor.name);
+	match matching_monitor {
+		MonitorMatch::EVM(evm_monitor_match) => {
+			let transaction = evm_monitor_match.transaction.clone();
+			// Convert transaction data to a HashMap
+			let mut data = HashMap::new();
+			data.insert(
+				"transaction_hash".to_string(),
+				h256_to_string(*transaction.hash()),
+			);
+			data.insert(
+				"transaction_from".to_string(),
+				h160_to_string(*transaction.sender()),
+			);
+			data.insert(
+				"transaction_value".to_string(),
+				transaction.value().to_string(),
+			);
+			if let Some(to) = transaction.to() {
+				data.insert("transaction_to".to_string(), h160_to_string(*to));
+			}
+			data.insert("monitor_name".to_string(), evm_monitor_match.monitor.name);
 
-            let matched_args: HashMap<String, String> =
-                if let Some(args) = &evm_monitor_match.matched_on_args {
-                    let mut map = HashMap::new();
-                    if let Some(functions) = &args.functions {
-                        for (idx, func) in functions.iter().enumerate() {
-                            // First add the signature
-                            map.insert(
-                                format!("function_{}_signature", idx),
-                                func.signature.clone(),
-                            );
-                            // Then add all arguments
-                            if let Some(func_args) = &func.args {
-                                for arg in func_args {
-                                    map.insert(
-                                        format!("function_{}_{}", idx, arg.name),
-                                        arg.value.clone(),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    if let Some(events) = &args.events {
-                        for (idx, event) in events.iter().enumerate() {
-                            // First add the signature
-                            map.insert(format!("event_{}_signature", idx), event.signature.clone());
-                            // Then add all arguments
-                            if let Some(event_args) = &event.args {
-                                for arg in event_args {
-                                    map.insert(
-                                        format!("event_{}_{}", idx, arg.name),
-                                        arg.value.clone(),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    map
-                } else {
-                    HashMap::new()
-                };
+			let matched_args: HashMap<String, String> =
+				if let Some(args) = &evm_monitor_match.matched_on_args {
+					let mut map = HashMap::new();
+					if let Some(functions) = &args.functions {
+						for (idx, func) in functions.iter().enumerate() {
+							// First add the signature
+							map.insert(
+								format!("function_{}_signature", idx),
+								func.signature.clone(),
+							);
+							// Then add all arguments
+							if let Some(func_args) = &func.args {
+								for arg in func_args {
+									map.insert(
+										format!("function_{}_{}", idx, arg.name),
+										arg.value.clone(),
+									);
+								}
+							}
+						}
+					}
+					if let Some(events) = &args.events {
+						for (idx, event) in events.iter().enumerate() {
+							// First add the signature
+							map.insert(format!("event_{}_signature", idx), event.signature.clone());
+							// Then add all arguments
+							if let Some(event_args) = &event.args {
+								for arg in event_args {
+									map.insert(
+										format!("event_{}_{}", idx, arg.name),
+										arg.value.clone(),
+									);
+								}
+							}
+						}
+					}
+					map
+				} else {
+					HashMap::new()
+				};
 
-            data.extend(matched_args);
-            let _ = trigger_service
-                .execute(
-                    &evm_monitor_match
-                        .monitor
-                        .triggers
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>(),
-                    data,
-                )
-                .await;
-        }
-        MonitorMatch::Stellar(stellar_monitor_match) => {
-            let transaction = stellar_monitor_match.transaction.clone();
-            // Convert transaction data to a HashMap
-            let mut data = HashMap::new();
-            data.insert(
-                "transaction_hash".to_string(),
-                transaction.hash().to_string(),
-            );
+			data.extend(matched_args);
+			let _ = trigger_service
+				.execute(
+					&evm_monitor_match
+						.monitor
+						.triggers
+						.iter()
+						.map(|s| s.as_str())
+						.collect::<Vec<_>>(),
+					data,
+				)
+				.await;
+		}
+		MonitorMatch::Stellar(stellar_monitor_match) => {
+			let transaction = stellar_monitor_match.transaction.clone();
+			// Convert transaction data to a HashMap
+			let mut data = HashMap::new();
+			data.insert(
+				"transaction_hash".to_string(),
+				transaction.hash().to_string(),
+			);
 
-            // TODO: Add sender and value to the data so it can be used in the body template of the trigger
-            // data.insert(
-            //     "transaction_from".to_string(),
-            //     transaction.sender().to_string(),
-            // );
-            // data.insert(
-            //     "transaction_value".to_string(),
-            //     transaction.value().to_string(),
-            // );
-            // if let Some(to) = transaction.to() {
-            //     data.insert("transaction_to".to_string(), to.to_string());
-            // }
-            data.insert(
-                "monitor_name".to_string(),
-                stellar_monitor_match.monitor.name,
-            );
+			// TODO: Add sender and value to the data so it can be used in the body template of the
+			// trigger data.insert(
+			//     "transaction_from".to_string(),
+			//     transaction.sender().to_string(),
+			// );
+			// data.insert(
+			//     "transaction_value".to_string(),
+			//     transaction.value().to_string(),
+			// );
+			// if let Some(to) = transaction.to() {
+			//     data.insert("transaction_to".to_string(), to.to_string());
+			// }
+			data.insert(
+				"monitor_name".to_string(),
+				stellar_monitor_match.monitor.name,
+			);
 
-            let matched_args: HashMap<String, String> =
-                if let Some(args) = &stellar_monitor_match.matched_on_args {
-                    let mut map = HashMap::new();
-                    if let Some(functions) = &args.functions {
-                        for (idx, func) in functions.iter().enumerate() {
-                            // First add the signature
-                            map.insert(
-                                format!("function_{}_signature", idx),
-                                func.signature.clone(),
-                            );
-                            // Then add all arguments
-                            if let Some(func_args) = &func.args {
-                                for arg in func_args {
-                                    map.insert(
-                                        format!("function_{}_{}", idx, arg.name),
-                                        arg.value.clone(),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    if let Some(events) = &args.events {
-                        for (idx, event) in events.iter().enumerate() {
-                            // First add the signature
-                            map.insert(format!("event_{}_signature", idx), event.signature.clone());
-                            // Then add all arguments
-                            if let Some(event_args) = &event.args {
-                                for arg in event_args {
-                                    map.insert(
-                                        format!("event_{}_{}", idx, arg.name),
-                                        arg.value.clone(),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    map
-                } else {
-                    HashMap::new()
-                };
+			let matched_args: HashMap<String, String> =
+				if let Some(args) = &stellar_monitor_match.matched_on_args {
+					let mut map = HashMap::new();
+					if let Some(functions) = &args.functions {
+						for (idx, func) in functions.iter().enumerate() {
+							// First add the signature
+							map.insert(
+								format!("function_{}_signature", idx),
+								func.signature.clone(),
+							);
+							// Then add all arguments
+							if let Some(func_args) = &func.args {
+								for arg in func_args {
+									map.insert(
+										format!("function_{}_{}", idx, arg.name),
+										arg.value.clone(),
+									);
+								}
+							}
+						}
+					}
+					if let Some(events) = &args.events {
+						for (idx, event) in events.iter().enumerate() {
+							// First add the signature
+							map.insert(format!("event_{}_signature", idx), event.signature.clone());
+							// Then add all arguments
+							if let Some(event_args) = &event.args {
+								for arg in event_args {
+									map.insert(
+										format!("event_{}_{}", idx, arg.name),
+										arg.value.clone(),
+									);
+								}
+							}
+						}
+					}
+					map
+				} else {
+					HashMap::new()
+				};
 
-            data.extend(matched_args);
-            let _ = trigger_service
-                .execute(
-                    &stellar_monitor_match
-                        .monitor
-                        .triggers
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>(),
-                    data,
-                )
-                .await;
-        }
-    }
-    Ok(())
+			data.extend(matched_args);
+			let _ = trigger_service
+				.execute(
+					&stellar_monitor_match
+						.monitor
+						.triggers
+						.iter()
+						.map(|s| s.as_str())
+						.collect::<Vec<_>>(),
+					data,
+				)
+				.await;
+		}
+	}
+	Ok(())
 }

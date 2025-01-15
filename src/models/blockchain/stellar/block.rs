@@ -14,35 +14,35 @@ use serde_json::Value;
 /// and matches the format defined in the stellar-rpc repository.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LedgerInfo {
-    /// Hash of the ledger
-    #[serde(rename = "hash")]
-    pub hash: String,
+	/// Hash of the ledger
+	#[serde(rename = "hash")]
+	pub hash: String,
 
-    /// Sequence number of the ledger
-    #[serde(rename = "sequence")]
-    pub sequence: u32,
+	/// Sequence number of the ledger
+	#[serde(rename = "sequence")]
+	pub sequence: u32,
 
-    /// Timestamp when the ledger was closed
-    #[serde(rename = "ledgerCloseTime")]
-    pub ledger_close_time: String,
+	/// Timestamp when the ledger was closed
+	#[serde(rename = "ledgerCloseTime")]
+	pub ledger_close_time: String,
 
-    /// Base64-encoded XDR of the ledger header
-    #[serde(rename = "headerXdr")]
-    pub ledger_header: String,
+	/// Base64-encoded XDR of the ledger header
+	#[serde(rename = "headerXdr")]
+	pub ledger_header: String,
 
-    /// Decoded JSON representation of the ledger header
-    #[serde(rename = "headerJson")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ledger_header_json: Option<Value>,
+	/// Decoded JSON representation of the ledger header
+	#[serde(rename = "headerJson")]
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub ledger_header_json: Option<Value>,
 
-    /// Base64-encoded XDR of the ledger metadata
-    #[serde(rename = "metadataXdr")]
-    pub ledger_metadata: String,
+	/// Base64-encoded XDR of the ledger metadata
+	#[serde(rename = "metadataXdr")]
+	pub ledger_metadata: String,
 
-    /// Decoded JSON representation of the ledger metadata
-    #[serde(rename = "metadataJSON")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ledger_metadata_json: Option<Value>,
+	/// Decoded JSON representation of the ledger metadata
+	#[serde(rename = "metadataJSON")]
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub ledger_metadata_json: Option<Value>,
 }
 
 /// Wrapper around LedgerInfo that implements additional functionality
@@ -53,22 +53,22 @@ pub struct LedgerInfo {
 pub struct Block(pub LedgerInfo);
 
 impl Block {
-    /// Get the block number (sequence)
-    pub fn number(&self) -> u64 {
-        self.0.sequence as u64
-    }
+	/// Get the block number (sequence)
+	pub fn number(&self) -> u64 {
+		self.0.sequence as u64
+	}
 }
 
 impl From<LedgerInfo> for Block {
-    fn from(header: LedgerInfo) -> Self {
-        Self(header)
-    }
+	fn from(header: LedgerInfo) -> Self {
+		Self(header)
+	}
 }
 
 impl Deref for Block {
-    type Target = LedgerInfo;
+	type Target = LedgerInfo;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
 }

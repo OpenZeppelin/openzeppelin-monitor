@@ -12,24 +12,24 @@ use web3::types::{Block as Web3Block, Transaction as Web3Transaction};
 pub struct Block(pub Web3Block<Web3Transaction>);
 
 impl Block {
-    /// Get the block number
-    ///
-    /// Unwraps the optional block number and converts it to u64.
-    pub fn number(&self) -> u64 {
-        self.0.number.unwrap().as_u64()
-    }
+	/// Get the block number
+	///
+	/// Unwraps the optional block number and converts it to u64.
+	pub fn number(&self) -> u64 {
+		self.0.number.unwrap().as_u64()
+	}
 }
 
 impl From<Web3Block<Web3Transaction>> for Block {
-    fn from(block: Web3Block<Web3Transaction>) -> Self {
-        Self(block)
-    }
+	fn from(block: Web3Block<Web3Transaction>) -> Self {
+		Self(block)
+	}
 }
 
 impl Deref for Block {
-    type Target = Web3Block<Web3Transaction>;
+	type Target = Web3Block<Web3Transaction>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
 }

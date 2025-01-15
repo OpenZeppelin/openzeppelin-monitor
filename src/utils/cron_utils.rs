@@ -17,25 +17,26 @@ use cron::Schedule;
 /// # Returns
 ///
 /// * `Some(i64)` - The number of milliseconds between consecutive schedule runs
-/// * `None` - If the cron expression is invalid or if two consecutive occurrences cannot be determined
+/// * `None` - If the cron expression is invalid or if two consecutive occurrences cannot be
+///   determined
 pub fn get_cron_interval_ms(cron_schedule: &str) -> Option<i64> {
-    // Parse the cron schedule
-    let schedule = match cron_schedule.parse::<Schedule>() {
-        Ok(schedule) => schedule,
-        Err(_) => return None, // Return None if the cron string is invalid
-    };
+	// Parse the cron schedule
+	let schedule = match cron_schedule.parse::<Schedule>() {
+		Ok(schedule) => schedule,
+		Err(_) => return None, // Return None if the cron string is invalid
+	};
 
-    // Get the current time
-    let now = Utc::now();
+	// Get the current time
+	let now = Utc::now();
 
-    // Get the next two occurrences of the schedule
-    let mut occurrences = schedule.after(&now).take(2);
+	// Get the next two occurrences of the schedule
+	let mut occurrences = schedule.after(&now).take(2);
 
-    if let (Some(first), Some(second)) = (occurrences.next(), occurrences.next()) {
-        // Calculate the interval in milliseconds
-        let interval_ms = (second - first).num_milliseconds();
-        Some(interval_ms)
-    } else {
-        None // Return None if we cannot find two occurrences
-    }
+	if let (Some(first), Some(second)) = (occurrences.next(), occurrences.next()) {
+		// Calculate the interval in milliseconds
+		let interval_ms = (second - first).num_milliseconds();
+		Some(interval_ms)
+	} else {
+		None // Return None if we cannot find two occurrences
+	}
 }

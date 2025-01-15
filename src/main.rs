@@ -25,36 +25,36 @@ pub mod utils;
 
 pub use models::{ConfigLoader, Monitor, Network, Trigger};
 pub use repositories::{
-    MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
-    TriggerService,
+	MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
+	TriggerService,
 };
-pub use services::blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage};
-pub use services::filter::FilterService;
-pub use services::notification::{Notifier, SlackNotifier};
+pub use services::{
+	blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
+	filter::FilterService,
+	notification::{Notifier, SlackNotifier},
+};
 
 use crate::{
-    models::BlockType,
-    services::{
-        blockchain::create_blockchain_client, filter::handle_match,
-        notification::NotificationService, trigger::TriggerExecutionService,
-    },
+	models::BlockType,
+	services::{
+		blockchain::create_blockchain_client, filter::handle_match,
+		notification::NotificationService, trigger::TriggerExecutionService,
+	},
 };
 
 use dotenvy::dotenv;
 use log::{error, info};
-use std::collections::HashMap;
-use std::error::Error;
-use std::sync::Arc;
+use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::broadcast;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type BlockHandlerFn = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
 type ServiceResult = Result<(
-    Arc<FilterService>,
-    Arc<NetworkService<NetworkRepository>>,
-    Arc<TriggerExecutionService<TriggerRepository>>,
-    Vec<Monitor>,
-    HashMap<String, Network>,
+	Arc<FilterService>,
+	Arc<NetworkService<NetworkRepository>>,
+	Arc<TriggerExecutionService<TriggerRepository>>,
+	Vec<Monitor>,
+	HashMap<String, Network>,
 )>;
 
 /// Main entry point for the blockchain monitoring service.
@@ -63,71 +63,71 @@ type ServiceResult = Result<(
 /// Returns an error if service initialization fails or if there's an error during shutdown.
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment variables from .env file
-    dotenv().ok();
-    env_logger::init();
+	// Load environment variables from .env file
+	dotenv().ok();
+	env_logger::init();
 
-    let (filter_service, network_service, trigger_execution_service, active_monitors, networks) =
-        initialize_services()?;
+	let (filter_service, network_service, trigger_execution_service, active_monitors, networks) =
+		initialize_services()?;
 
-    let networks_with_monitors: Vec<Network> = networks
-        .values()
-        .filter(|network| has_active_monitors(&active_monitors.clone(), &network.slug))
-        .cloned()
-        .collect();
+	let networks_with_monitors: Vec<Network> = networks
+		.values()
+		.filter(|network| has_active_monitors(&active_monitors.clone(), &network.slug))
+		.cloned()
+		.collect();
 
-    if networks_with_monitors.is_empty() {
-        info!("No networks with active monitors found. Exiting...");
-        return Ok(());
-    }
+	if networks_with_monitors.is_empty() {
+		info!("No networks with active monitors found. Exiting...");
+		return Ok(());
+	}
 
-    let (shutdown_tx, _) = broadcast::channel(1);
+	let (shutdown_tx, _) = broadcast::channel(1);
 
-    let block_handler = create_block_handler(
-        shutdown_tx.clone(),
-        trigger_execution_service,
-        filter_service,
-        active_monitors,
-    );
+	let block_handler = create_block_handler(
+		shutdown_tx.clone(),
+		trigger_execution_service,
+		filter_service,
+		active_monitors,
+	);
 
-    let file_block_storage = Arc::new(FileBlockStorage::default());
-    let block_watcher = BlockWatcherService::<NetworkRepository, FileBlockStorage>::new(
-        network_service,
-        file_block_storage.clone(),
-        block_handler,
-        Arc::new(BlockTracker::new(1000, Some(file_block_storage.clone()))),
-    )
-    .await?;
+	let file_block_storage = Arc::new(FileBlockStorage::default());
+	let block_watcher = BlockWatcherService::<NetworkRepository, FileBlockStorage>::new(
+		network_service,
+		file_block_storage.clone(),
+		block_handler,
+		Arc::new(BlockTracker::new(1000, Some(file_block_storage.clone()))),
+	)
+	.await?;
 
-    for network in networks_with_monitors {
-        block_watcher.start_network_watcher(&network).await?;
-    }
+	for network in networks_with_monitors {
+		block_watcher.start_network_watcher(&network).await?;
+	}
 
-    info!("Service started. Press Ctrl+C to shutdown");
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            info!("Shutdown signal received, stopping services...");
-            let _ = shutdown_tx.send(());
+	info!("Service started. Press Ctrl+C to shutdown");
+	tokio::select! {
+		_ = tokio::signal::ctrl_c() => {
+			info!("Shutdown signal received, stopping services...");
+			let _ = shutdown_tx.send(());
 
-            // Create a future for all network shutdown operations
-            let shutdown_futures = networks.values().map(|network| {
-                block_watcher.stop_network_watcher(&network.slug)
-            });
+			// Create a future for all network shutdown operations
+			let shutdown_futures = networks.values().map(|network| {
+				block_watcher.stop_network_watcher(&network.slug)
+			});
 
-            // Wait for all shutdown operations to complete
-            for result in futures::future::join_all(shutdown_futures).await {
-                if let Err(e) = result {
-                    error!("Error during shutdown: {}", e);
-                }
-            }
+			// Wait for all shutdown operations to complete
+			for result in futures::future::join_all(shutdown_futures).await {
+				if let Err(e) = result {
+					error!("Error during shutdown: {}", e);
+				}
+			}
 
-            // Give some time for in-flight tasks to complete
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
-    }
+			// Give some time for in-flight tasks to complete
+			tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+		}
+	}
 
-    info!("Shutdown complete");
-    Ok(())
+	info!("Shutdown complete");
+	Ok(())
 }
 
 /// Initializes all required services for the blockchain monitor.
@@ -142,32 +142,32 @@ async fn main() -> Result<()> {
 /// # Errors
 /// Returns an error if any service initialization fails
 fn initialize_services() -> ServiceResult {
-    let network_service = NetworkService::<NetworkRepository>::new(None)?;
-    let trigger_service = TriggerService::<TriggerRepository>::new(None)?;
-    let monitor_service = Arc::new(MonitorService::<MonitorRepository>::new(
-        None,
-        Some(&network_service),
-        Some(&trigger_service),
-    )?);
-    let notification_service = NotificationService::new();
+	let network_service = NetworkService::<NetworkRepository>::new(None)?;
+	let trigger_service = TriggerService::<TriggerRepository>::new(None)?;
+	let monitor_service = Arc::new(MonitorService::<MonitorRepository>::new(
+		None,
+		Some(&network_service),
+		Some(&trigger_service),
+	)?);
+	let notification_service = NotificationService::new();
 
-    let filter_service = Arc::new(FilterService::new());
-    let trigger_execution_service = Arc::new(TriggerExecutionService::<TriggerRepository>::new(
-        trigger_service,
-        notification_service,
-    ));
+	let filter_service = Arc::new(FilterService::new());
+	let trigger_execution_service = Arc::new(TriggerExecutionService::<TriggerRepository>::new(
+		trigger_service,
+		notification_service,
+	));
 
-    let monitors = monitor_service.get_all();
-    let active_monitors = filter_active_monitors(monitors);
-    let networks = network_service.get_all();
+	let monitors = monitor_service.get_all();
+	let active_monitors = filter_active_monitors(monitors);
+	let networks = network_service.get_all();
 
-    Ok((
-        filter_service,
-        Arc::new(network_service),
-        trigger_execution_service,
-        active_monitors,
-        networks,
-    ))
+	Ok((
+		filter_service,
+		Arc::new(network_service),
+		trigger_execution_service,
+		active_monitors,
+		networks,
+	))
 }
 
 /// Creates a block handler function that processes new blocks from the blockchain.
@@ -181,39 +181,39 @@ fn initialize_services() -> ServiceResult {
 /// # Returns
 /// Returns a function that handles incoming blocks
 fn create_block_handler(
-    shutdown_tx: broadcast::Sender<()>,
-    trigger_service: Arc<TriggerExecutionService<TriggerRepository>>,
-    filter_service: Arc<FilterService>,
-    active_monitors: Vec<Monitor>,
+	shutdown_tx: broadcast::Sender<()>,
+	trigger_service: Arc<TriggerExecutionService<TriggerRepository>>,
+	filter_service: Arc<FilterService>,
+	active_monitors: Vec<Monitor>,
 ) -> BlockHandlerFn {
-    Arc::new(move |block: &BlockType, network: &Network| {
-        let mut shutdown_rx = shutdown_tx.subscribe();
-        let trigger_service = trigger_service.clone();
-        let filter_service = filter_service.clone();
-        let network = network.clone();
-        let block = block.clone();
-        let applicable_monitors = filter_network_monitors(&active_monitors, &network.slug);
+	Arc::new(move |block: &BlockType, network: &Network| {
+		let mut shutdown_rx = shutdown_tx.subscribe();
+		let trigger_service = trigger_service.clone();
+		let filter_service = filter_service.clone();
+		let network = network.clone();
+		let block = block.clone();
+		let applicable_monitors = filter_network_monitors(&active_monitors, &network.slug);
 
-        tokio::spawn(async move {
-            if applicable_monitors.is_empty() {
-                info!(
-                    "No monitors for network {} to process. Skipping block.",
-                    network.slug
-                );
-                return;
-            }
+		tokio::spawn(async move {
+			if applicable_monitors.is_empty() {
+				info!(
+					"No monitors for network {} to process. Skipping block.",
+					network.slug
+				);
+				return;
+			}
 
-            process_block(
-                &network,
-                &block,
-                &applicable_monitors,
-                &filter_service,
-                &trigger_service,
-                &mut shutdown_rx,
-            )
-            .await;
-        });
-    })
+			process_block(
+				&network,
+				&block,
+				&applicable_monitors,
+				&filter_service,
+				&trigger_service,
+				&mut shutdown_rx,
+			)
+			.await;
+		});
+	})
 }
 
 /// Processes a single block for all applicable monitors.
@@ -226,38 +226,38 @@ fn create_block_handler(
 /// * `trigger_service` - Service for executing triggers
 /// * `shutdown_rx` - Receiver for shutdown signals
 async fn process_block(
-    network: &Network,
-    block: &BlockType,
-    applicable_monitors: &[Monitor],
-    filter_service: &FilterService,
-    trigger_service: &TriggerExecutionService<TriggerRepository>,
-    shutdown_rx: &mut broadcast::Receiver<()>,
+	network: &Network,
+	block: &BlockType,
+	applicable_monitors: &[Monitor],
+	filter_service: &FilterService,
+	trigger_service: &TriggerExecutionService<TriggerRepository>,
+	shutdown_rx: &mut broadcast::Receiver<()>,
 ) {
-    let client = match create_blockchain_client(network).await {
-        Ok(client) => client,
-        Err(e) => {
-            error!("Failed to create blockchain client: {}", e);
-            return;
-        }
-    };
+	let client = match create_blockchain_client(network).await {
+		Ok(client) => client,
+		Err(e) => {
+			error!("Failed to create blockchain client: {}", e);
+			return;
+		}
+	};
 
-    tokio::select! {
-        result = filter_service.filter_block(&client, network, block, applicable_monitors) => {
-            match result {
-                Ok(matches) => {
-                    for matching_monitor in matches {
-                        if let Err(e) = handle_match(matching_monitor, trigger_service).await {
-                            error!("Error handling match: {}", e);
-                        }
-                    }
-                }
-                Err(e) => error!("Error filtering block: {}", e),
-            }
-        }
-        _ = shutdown_rx.recv() => {
-            info!("Shutting down block processing task");
-        }
-    }
+	tokio::select! {
+		result = filter_service.filter_block(&client, network, block, applicable_monitors) => {
+			match result {
+				Ok(matches) => {
+					for matching_monitor in matches {
+						if let Err(e) = handle_match(matching_monitor, trigger_service).await {
+							error!("Error handling match: {}", e);
+						}
+					}
+				}
+				Err(e) => error!("Error filtering block: {}", e),
+			}
+		}
+		_ = shutdown_rx.recv() => {
+			info!("Shutting down block processing task");
+		}
+	}
 }
 
 /// Checks if a network has any active monitors.
@@ -269,7 +269,7 @@ async fn process_block(
 /// # Returns
 /// Returns true if there are any active monitors for the given network
 fn has_active_monitors(monitors: &[Monitor], network_slug: &String) -> bool {
-    monitors.iter().any(|m| m.networks.contains(network_slug))
+	monitors.iter().any(|m| m.networks.contains(network_slug))
 }
 
 /// Filters out paused monitors from the provided collection.
@@ -280,10 +280,10 @@ fn has_active_monitors(monitors: &[Monitor], network_slug: &String) -> bool {
 /// # Returns
 /// Returns a vector containing only active (non-paused) monitors
 fn filter_active_monitors(monitors: HashMap<String, Monitor>) -> Vec<Monitor> {
-    monitors
-        .into_values()
-        .filter(|m| !m.paused)
-        .collect::<Vec<_>>()
+	monitors
+		.into_values()
+		.filter(|m| !m.paused)
+		.collect::<Vec<_>>()
 }
 
 /// Filters monitors that are applicable to a specific network.
@@ -295,9 +295,9 @@ fn filter_active_monitors(monitors: HashMap<String, Monitor>) -> Vec<Monitor> {
 /// # Returns
 /// Returns a vector of monitors that are configured for the specified network
 fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<Monitor> {
-    monitors
-        .iter()
-        .filter(|m| m.networks.contains(network_slug))
-        .cloned()
-        .collect()
+	monitors
+		.iter()
+		.filter(|m| m.networks.contains(network_slug))
+		.cloned()
+		.collect()
 }
