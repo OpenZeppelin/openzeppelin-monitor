@@ -165,7 +165,7 @@ pub fn network_strategy() -> impl Strategy<Value = Network> {
 		option::of("[a-zA-Z0-9 ]{1,20}".prop_map(|s| s.to_string())), // network_passphrase
 		1000..60000u64,                                               // block_time_ms
 		1..=20u64,                                                    // confirmation_blocks
-		"\\*/5 \\* \\* \\* \\*".prop_map(|s| s.to_string()),          // cron_schedule
+		"0 \\*/5 \\* \\* \\* \\*".prop_map(|s| s.to_string()),        // cron_schedule
 		Just(Some(1u64)),                                             /* max_past_blocks -
 		                                                               * ensure it's always
 		                                                               * Some(1) or greater */
