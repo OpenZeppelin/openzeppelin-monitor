@@ -29,8 +29,7 @@ impl Network {
     pub fn get_recommended_past_blocks(&self) -> u64 {
         let cron_interval_ms = get_cron_interval_ms(&self.cron_schedule).unwrap_or(0) as u64;
         let blocks_per_cron = cron_interval_ms / self.block_time_ms;
-        let recommended_blocks = blocks_per_cron + self.confirmation_blocks + 1;
-        recommended_blocks
+        blocks_per_cron + self.confirmation_blocks + 1
     }
 }
 
@@ -169,7 +168,7 @@ impl ConfigLoader for Network {
 
         // Validate max_past_blocks
         if let Some(max_blocks) = self.max_past_blocks {
-            if max_blocks <= 0 {
+            if max_blocks == 0 {
                 return Err(ConfigError::validation_error(
                     "max_past_blocks must be greater than 0",
                 ));

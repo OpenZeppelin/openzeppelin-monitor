@@ -9,6 +9,7 @@ use std::fmt;
 
 /// Errors that can occur during configuration operations
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ConfigError {
     /// Configuration validation failed
     ValidationError(String),

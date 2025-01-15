@@ -59,8 +59,8 @@ impl<T: TriggerRepositoryTrait> TriggerExecutionService<T> {
         for trigger_slug in trigger_slugs {
             let trigger = self
                 .trigger_service
-                .get(&trigger_slug.to_string())
-                .ok_or_else(|| TriggerError::not_found(&trigger_slug.to_string()))?;
+                .get(trigger_slug)
+                .ok_or_else(|| TriggerError::not_found(trigger_slug.to_string()))?;
 
             self.notification_service
                 .execute(&trigger.config, variables.clone())

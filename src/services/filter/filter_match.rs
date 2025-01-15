@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    models::{EVMTransaction, MonitorMatch, StellarTransaction},
+    models::MonitorMatch,
     repositories::TriggerRepositoryTrait,
     services::filter::helpers::evm::{h160_to_string, h256_to_string},
     services::filter::FilterError,
@@ -47,7 +47,7 @@ pub async fn handle_match<T: TriggerRepositoryTrait>(
 ) -> Result<(), FilterError> {
     match matching_monitor {
         MonitorMatch::EVM(evm_monitor_match) => {
-            let transaction = EVMTransaction::from(evm_monitor_match.transaction.clone());
+            let transaction = evm_monitor_match.transaction.clone();
             // Convert transaction data to a HashMap
             let mut data = HashMap::new();
             data.insert(
@@ -122,7 +122,7 @@ pub async fn handle_match<T: TriggerRepositoryTrait>(
                 .await;
         }
         MonitorMatch::Stellar(stellar_monitor_match) => {
-            let transaction = StellarTransaction::from(stellar_monitor_match.transaction.clone());
+            let transaction = stellar_monitor_match.transaction.clone();
             // Convert transaction data to a HashMap
             let mut data = HashMap::new();
             data.insert(

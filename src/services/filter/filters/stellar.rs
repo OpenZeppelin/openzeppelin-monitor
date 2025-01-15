@@ -68,37 +68,32 @@ impl StellarBlockFilter {
         let mut tx_operations: Vec<TxOperation> = vec![];
 
         if let Some(decoded) = transaction.decoded() {
-            if let Some(envelope) = &decoded.envelope {
-                match envelope {
-                    TransactionEnvelope::Tx(tx) => {
-                        let from = tx.tx.source_account.to_string();
-                        for operation in tx.tx.operations.iter() {
-                            match &operation.body {
-                                OperationBody::Payment(payment) => {
-                                    let operation = TxOperation {
-                                        _operation_type: "payment".to_string(),
-                                        sender: from.clone(),
-                                        receiver: payment.destination.to_string(),
-                                        value: Some(payment.amount.to_string()),
-                                    };
-                                    tx_operations.push(operation);
-                                }
-                                OperationBody::InvokeHostFunction(invoke_host_function) => {
-                                    let parsed_operation =
-                                        process_invoke_host_function(invoke_host_function);
-                                    let operation = TxOperation {
-                                        _operation_type: "invoke_host_function".to_string(),
-                                        sender: from.clone(),
-                                        receiver: parsed_operation.contract_address.clone(),
-                                        value: None,
-                                    };
-                                    tx_operations.push(operation);
-                                }
-                                _ => {}
-                            }
+            if let Some(TransactionEnvelope::Tx(tx)) = &decoded.envelope {
+                let from = tx.tx.source_account.to_string();
+                for operation in tx.tx.operations.iter() {
+                    match &operation.body {
+                        OperationBody::Payment(payment) => {
+                            let operation = TxOperation {
+                                _operation_type: "payment".to_string(),
+                                sender: from.clone(),
+                                receiver: payment.destination.to_string(),
+                                value: Some(payment.amount.to_string()),
+                            };
+                            tx_operations.push(operation);
                         }
+                        OperationBody::InvokeHostFunction(invoke_host_function) => {
+                            let parsed_operation =
+                                process_invoke_host_function(invoke_host_function);
+                            let operation = TxOperation {
+                                _operation_type: "invoke_host_function".to_string(),
+                                sender: from.clone(),
+                                receiver: parsed_operation.contract_address.clone(),
+                                value: None,
+                            };
+                            tx_operations.push(operation);
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -116,7 +111,7 @@ impl StellarBlockFilter {
                 // First check if status matches (if specified)
                 let status_matches = match &condition.status {
                     TransactionStatus::Any => true,
-                    required_status => *required_status == tx_status.clone(),
+                    required_status => *required_status == tx_status,
                 };
 
                 if status_matches {
@@ -182,84 +177,70 @@ impl StellarBlockFilter {
         matched_on_args: &mut StellarMatchArguments,
     ) {
         if let Some(decoded) = transaction.decoded() {
-            if let Some(envelope) = &decoded.envelope {
-                match envelope {
-                    TransactionEnvelope::Tx(tx) => {
-                        for operation in tx.tx.operations.iter() {
-                            match &operation.body {
-                                OperationBody::InvokeHostFunction(invoke_host_function) => {
-                                    let parsed_operation =
-                                        process_invoke_host_function(invoke_host_function);
+            if let Some(TransactionEnvelope::Tx(tx)) = &decoded.envelope {
+                for operation in tx.tx.operations.iter() {
+                    if let OperationBody::InvokeHostFunction(invoke_host_function) = &operation.body
+                    {
+                        let parsed_operation = process_invoke_host_function(invoke_host_function);
 
-                                    // Skip if contract address doesn't match
-                                    if !monitored_addresses.contains(&normalize_address(
-                                        &parsed_operation.contract_address,
-                                    )) {
-                                        continue;
-                                    }
+                        // Skip if contract address doesn't match
+                        if !monitored_addresses
+                            .contains(&normalize_address(&parsed_operation.contract_address))
+                        {
+                            continue;
+                        }
 
-                                    // Convert parsed operation arguments into param entries
-                                    let param_entries = self
-                                        .convert_arguments_to_match_param_entry(
-                                            &parsed_operation.arguments,
-                                        );
+                        // Convert parsed operation arguments into param entries
+                        let param_entries = self
+                            .convert_arguments_to_match_param_entry(&parsed_operation.arguments);
 
-                                    if monitor.match_conditions.functions.is_empty() {
-                                        // Match on all functions
+                        if monitor.match_conditions.functions.is_empty() {
+                            // Match on all functions
+                            matched_functions.push(FunctionCondition {
+                                signature: parsed_operation.function_signature.clone(),
+                                expression: None,
+                            });
+                        } else {
+                            // Check function conditions
+                            for condition in &monitor.match_conditions.functions {
+                                // Check if function signature matches
+                                if are_same_signature(
+                                    &condition.signature,
+                                    &parsed_operation.function_signature,
+                                ) {
+                                    // Evaluate expression if it exists
+                                    if let Some(expr) = &condition.expression {
+                                        if self
+                                            .evaluate_expression(expr, &Some(param_entries.clone()))
+                                        {
+                                            matched_functions.push(FunctionCondition {
+                                                signature: parsed_operation
+                                                    .function_signature
+                                                    .clone(),
+                                                expression: Some(expr.clone()),
+                                            });
+                                            if let Some(functions) = &mut matched_on_args.functions
+                                            {
+                                                functions.push(StellarMatchParamsMap {
+                                                    signature: parsed_operation
+                                                        .function_signature
+                                                        .clone(),
+                                                    args: Some(param_entries.clone()),
+                                                });
+                                            }
+                                            break;
+                                        }
+                                    } else {
+                                        // If no expression, match on function name alone
                                         matched_functions.push(FunctionCondition {
                                             signature: parsed_operation.function_signature.clone(),
                                             expression: None,
                                         });
-                                    } else {
-                                        // Check function conditions
-                                        for condition in &monitor.match_conditions.functions {
-                                            // Check if function signature matches
-                                            if are_same_signature(
-                                                &condition.signature,
-                                                &parsed_operation.function_signature,
-                                            ) {
-                                                // Evaluate expression if it exists
-                                                if let Some(expr) = &condition.expression {
-                                                    if self.evaluate_expression(
-                                                        expr,
-                                                        &Some(param_entries.clone()),
-                                                    ) {
-                                                        matched_functions.push(FunctionCondition {
-                                                            signature: parsed_operation
-                                                                .function_signature
-                                                                .clone(),
-                                                            expression: Some(expr.clone()),
-                                                        });
-                                                        if let Some(functions) =
-                                                            &mut matched_on_args.functions
-                                                        {
-                                                            functions.push(StellarMatchParamsMap {
-                                                                signature: parsed_operation
-                                                                    .function_signature
-                                                                    .clone(),
-                                                                args: Some(param_entries.clone()),
-                                                            });
-                                                        }
-                                                        break;
-                                                    }
-                                                } else {
-                                                    // If no expression, match on function name alone
-                                                    matched_functions.push(FunctionCondition {
-                                                        signature: parsed_operation
-                                                            .function_signature
-                                                            .clone(),
-                                                        expression: None,
-                                                    });
-                                                }
-                                            }
-                                        }
                                     }
                                 }
-                                _ => {}
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -275,7 +256,7 @@ impl StellarBlockFilter {
     /// * `matched_on_args` - Arguments that matched the conditions
     fn find_matching_events_for_transaction(
         &self,
-        events: &Vec<EventMap>,
+        events: &[EventMap],
         transaction: &StellarTransaction,
         monitor: &Monitor,
         matched_events: &mut Vec<EventCondition>,
@@ -468,7 +449,7 @@ impl StellarBlockFilter {
             });
         }
 
-        return decoded_events;
+        decoded_events
     }
 
     /// Compares values based on their type and operator
@@ -721,7 +702,7 @@ impl StellarBlockFilter {
 
     fn compare_map(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
         // Parse the map from JSON string
-        let Ok(map_value) = serde_json::from_str::<serde_json::Value>(&param_value) else {
+        let Ok(map_value) = serde_json::from_str::<serde_json::Value>(param_value) else {
             warn!("Failed to parse map value: {}", param_value);
             return false;
         };
@@ -879,7 +860,7 @@ impl StellarBlockFilter {
     /// Vector of converted parameter entries
     fn convert_arguments_to_match_param_entry(
         &self,
-        arguments: &Vec<Value>,
+        arguments: &[Value],
     ) -> Vec<StellarMatchParamEntry> {
         let mut params = Vec::new();
         for (index, arg) in arguments.iter().enumerate() {
@@ -1020,21 +1001,21 @@ impl BlockFilter for StellarBlockFilter {
 
                 info!("Processing transaction: {:?}", transaction.hash());
 
-                self.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+                self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
 
                 // Decoded events already account for monitored addresses, so no need to pass in monitored_addresses
                 self.find_matching_events_for_transaction(
                     &decoded_events,
-                    &transaction,
-                    &monitor,
+                    transaction,
+                    monitor,
                     &mut matched_events,
                     &mut matched_on_args,
                 );
 
                 self.find_matching_functions_for_transaction(
                     &monitored_addresses,
-                    &transaction,
-                    &monitor,
+                    transaction,
+                    monitor,
                     &mut matched_functions,
                     &mut matched_on_args,
                 );
@@ -1066,10 +1047,12 @@ impl BlockFilter for StellarBlockFilter {
                 };
 
                 if should_match {
-                    matching_results.push(MonitorMatch::Stellar(StellarMonitorMatch {
+                    matching_results.push(MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
                         monitor: monitor.clone(),
+                        // The conversion to StellarTransaction triggers decoding of the transaction
+                        #[allow(clippy::useless_conversion)]
                         transaction: StellarTransaction::from(transaction.clone()),
-                        ledger: stellar_block.clone(),
+                        ledger: *stellar_block.clone(),
                         matched_on: MatchConditions {
                             events: matched_events
                                 .clone()
@@ -1099,7 +1082,7 @@ impl BlockFilter for StellarBlockFilter {
                                 None
                             },
                         }),
-                    }));
+                    })));
                 }
             }
         }

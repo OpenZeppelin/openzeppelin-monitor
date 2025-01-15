@@ -93,7 +93,7 @@ fn process_sc_val(val: &ScVal) -> Value {
         ScVal::I128(n) => json!({ "type": "I128", "value": combine_i128(n) }),
         ScVal::U256(n) => json!({ "type": "U256", "value": combine_u256(n) }),
         ScVal::I256(n) => json!({ "type": "I256", "value": combine_i256(n) }),
-        ScVal::Bytes(b) => json!(hex::encode(&b)),
+        ScVal::Bytes(b) => json!(hex::encode(b)),
         ScVal::String(s) => json!(s.to_string()),
         ScVal::Symbol(s) => json!(s.to_string()),
         ScVal::Vec(Some(vec)) => process_sc_vec(vec),
@@ -117,7 +117,7 @@ fn process_sc_val(val: &ScVal) -> Value {
 /// # Returns
 /// A JSON Value containing an array of processed ScVal elements
 fn process_sc_vec(vec: &ScVec) -> Value {
-    let values: Vec<Value> = vec.0.iter().map(|val| process_sc_val(val)).collect();
+    let values: Vec<Value> = vec.0.iter().map(process_sc_val).collect();
     json!(values)
 }
 
@@ -182,7 +182,7 @@ pub fn get_function_signature(invoke_op: &InvokeHostFunctionOp) -> String {
     match &invoke_op.host_function {
         HostFunction::InvokeContract(args) => {
             let function_name = args.function_name.to_string();
-            let arg_types: Vec<String> = args.args.iter().map(|arg| get_sc_val_type(arg)).collect();
+            let arg_types: Vec<String> = args.args.iter().map(get_sc_val_type).collect();
 
             format!("{}({})", function_name, arg_types.join(","))
         }
@@ -213,17 +213,13 @@ pub fn process_invoke_host_function(
 
             let function_name = args.function_name.to_string();
 
-            let arguments = args
-                .args
-                .iter()
-                .map(|arg| process_sc_val(arg))
-                .collect::<Vec<Value>>();
+            let arguments = args.args.iter().map(process_sc_val).collect::<Vec<Value>>();
 
             StellarParsedOperationResult {
-                contract_address: contract_address,
-                function_name: function_name,
+                contract_address,
+                function_name,
                 function_signature: get_function_signature(invoke_op),
-                arguments: arguments,
+                arguments,
             }
         }
         _ => StellarParsedOperationResult {

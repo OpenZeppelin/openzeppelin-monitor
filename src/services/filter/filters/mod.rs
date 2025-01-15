@@ -38,6 +38,12 @@ impl FilterService {
     }
 }
 
+impl Default for FilterService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FilterService {
     pub async fn filter_block(
         &self,
