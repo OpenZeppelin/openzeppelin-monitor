@@ -715,3 +715,239 @@ impl BlockFilter for EVMBlockFilter {
 		Ok(matching_results)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use web3::types::{H160, H256, U256, U64};
+
+	fn create_test_transaction(value: U256, from: Option<H160>, to: Option<H160>) -> Transaction {
+		Transaction {
+			hash: H256::zero(),
+			nonce: U256::zero(),
+			block_hash: None,
+			block_number: None,
+			transaction_index: None,
+			from,
+			to,
+			value,
+			gas_price: Some(U256::zero()),
+			gas: U256::zero(),
+			input: web3::types::Bytes(vec![]),
+			v: Some(U64::from(0)),
+			r: Some(U256::zero()),
+			s: Some(U256::zero()),
+			raw: None,
+			transaction_type: None,
+			access_list: None,
+			max_priority_fee_per_gas: None,
+			max_fee_per_gas: None,
+		}
+	}
+
+	#[test]
+	fn test_empty_conditions_matches_all() {
+		let filter = EVMBlockFilter {};
+		let mut matched = Vec::new();
+		let monitor = Monitor {
+			match_conditions: MatchConditions {
+				transactions: vec![],
+				events: vec![],
+				functions: vec![],
+			},
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			triggers: vec![],
+		};
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), None, None),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].status, TransactionStatus::Any);
+		assert!(matched[0].expression.is_none());
+	}
+
+	#[test]
+	fn test_status_matching() {
+		let filter = EVMBlockFilter {};
+		let mut matched = Vec::new();
+
+		let monitor = Monitor {
+			match_conditions: MatchConditions {
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Success,
+					expression: None,
+				}],
+				events: vec![],
+				functions: vec![],
+			},
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			triggers: vec![],
+		};
+
+		// Test successful transaction
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), None, None),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].status, TransactionStatus::Success);
+
+		// Test failed transaction
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Failure,
+			&create_test_transaction(U256::zero(), None, None),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_expression_matching() {
+		let filter = EVMBlockFilter {};
+		let mut matched = Vec::new();
+		let monitor = Monitor {
+			match_conditions: MatchConditions {
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Any,
+					expression: Some("value > 100".to_string()),
+				}],
+				events: vec![],
+				functions: vec![],
+			},
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			triggers: vec![],
+		};
+
+		// Test transaction with value > 100
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::from(150), None, None),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some("value > 100".to_string()));
+
+		// Test transaction with value < 100
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::from(50), None, None),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_address_expression_matching() {
+		let filter = EVMBlockFilter {};
+		let mut matched = Vec::new();
+		let test_address = H160::from_low_u64_be(12345);
+		println!("test_address: {}", h160_to_string(test_address));
+
+		let monitor = Monitor {
+			match_conditions: MatchConditions {
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Any,
+					expression: Some(format!("to == {}", h160_to_string(test_address))),
+				}],
+				events: vec![],
+				functions: vec![],
+			},
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			triggers: vec![],
+		};
+
+		// Test matching 'to' address
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), None, Some(test_address)),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+
+		// Test non-matching 'to' address
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), None, Some(H160::from_low_u64_be(54321))),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_from_address_expression_matching() {
+		let filter = EVMBlockFilter {};
+		let mut matched = Vec::new();
+		let test_address = H160::from_low_u64_be(12345);
+		println!("test_address: {}", h160_to_string(test_address));
+
+		let monitor = Monitor {
+			match_conditions: MatchConditions {
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Any,
+					expression: Some(format!("from == {}", h160_to_string(test_address))),
+				}],
+				events: vec![],
+				functions: vec![],
+			},
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			triggers: vec![],
+		};
+
+		// Test matching 'from' address
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), Some(test_address), None),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+
+		// Test non-matching 'from' address
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), Some(H160::from_low_u64_be(54321)), None),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+}
