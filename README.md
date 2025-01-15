@@ -217,7 +217,8 @@ cargo test integration
 
 ### Developer setup
 
-Run `git config core.hooksPath .githooks` to setup git hooks for linting and formatting.
+1. Run `chmod +x .githooks/*` to make the git hooks executable.
+2. Run `git config core.hooksPath .githooks` to setup git hooks for linting and formatting.
 
 ## Project Structure
 
