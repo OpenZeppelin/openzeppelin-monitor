@@ -19,6 +19,7 @@ COPY --from=base /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so.3
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
 COPY --chown=nonroot:nonroot config /app/config
 COPY --chown=nonroot:nonroot data /app/data
+COPY --chown=nonroot:nonroot env_prod /app/.env
 
 # starting up
 ENTRYPOINT ["/app/openzeppelin-monitor"]
