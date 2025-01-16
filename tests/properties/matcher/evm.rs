@@ -1,7 +1,7 @@
 use openzeppelin_monitor::{
 	models::{
-		AddressWithABI, EVMMatchArguments, EVMMatchParamEntry, EventCondition, FunctionCondition,
-		MatchConditions, Monitor, TransactionCondition, TransactionStatus,
+		AddressWithABI, EVMMatchArguments, EVMMatchParamEntry, FunctionCondition, MatchConditions,
+		Monitor, TransactionCondition, TransactionStatus,
 	},
 	services::filter::{
 		helpers::evm::{
@@ -180,83 +180,18 @@ prop_compose! {
 			}],
 			match_conditions: MatchConditions {
 				transactions: vec![],
-				functions: vec![FunctionCondition {
-					signature: format!("{}({})", function_name, param_type),
-					expression: Some(format!("value >= {}", min_value)),
-				}],
+				functions: vec![
+					FunctionCondition {
+						signature: format!("{}({})", function_name, param_type),
+						expression: Some(format!("value >= {}", min_value)),
+					},
+					// Extra function that should never match
+					FunctionCondition {
+						signature: format!("not_{}({})", function_name, param_type),
+						expression: Some(format!("value >= {}", min_value)),
+					},
+				],
 				events: vec![],
-			},
-			..Default::default()
-		}
-	}
-}
-
-prop_compose! {
-	fn generate_monitor_with_event()(
-		address in valid_address(),
-		event_name in prop_oneof![
-			Just("Approval"),
-			Just("ValueChanged"),
-		],
-		param_type in prop_oneof![
-			Just("address"),
-			Just("uint256")
-		],
-		min_value in 0u128..500000u128
-	) -> Monitor {
-		Monitor {
-			name: "Test Monitor".to_string(),
-			addresses: vec![AddressWithABI {
-				address,
-				abi: Some(json!([
-					{
-						"anonymous": false,
-						"inputs": [
-						  {
-							"indexed": false,
-							"internalType": "uint256",
-							"name": "value",
-							"type": "uint256"
-						  }
-						],
-						"name": "ValueChanged",
-						"type": "event"
-					  },
-					  {
-						"inputs": [],
-						"name": "retrieve",
-						"outputs": [
-						  {
-							"internalType": "uint256",
-							"name": "",
-							"type": "uint256"
-						  }
-						],
-						"stateMutability": "view",
-						"type": "function"
-					  },
-					  {
-						"inputs": [
-						  {
-							"internalType": "uint256",
-							"name": "value",
-							"type": "uint256"
-						  }
-						],
-						"name": "store",
-						"outputs": [],
-						"stateMutability": "nonpayable",
-						"type": "function"
-					  }
-				])),
-			}],
-			match_conditions: MatchConditions {
-				transactions: vec![],
-				functions: vec![],
-				events: vec![EventCondition {
-					signature: format!("{}({})", event_name, param_type),
-					expression: Some(format!("value >= {}", min_value)),
-				}],
 			},
 			..Default::default()
 		}
