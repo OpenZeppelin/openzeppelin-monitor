@@ -43,7 +43,7 @@ impl EVMBlockFilter {
 	/// * `transaction` - The transaction to check
 	/// * `monitor` - Monitor containing match conditions
 	/// * `matched_transactions` - Vector to store matching transactions
-	fn find_matching_transaction(
+	pub fn find_matching_transaction(
 		&self,
 		tx_status: &TransactionStatus,
 		transaction: &Transaction,
@@ -118,7 +118,7 @@ impl EVMBlockFilter {
 	/// * `monitor` - Monitor containing function match conditions
 	/// * `matched_functions` - Vector to store matching functions
 	/// * `matched_on_args` - Arguments from matched function calls
-	fn find_matching_functions_for_transaction(
+	pub fn find_matching_functions_for_transaction(
 		&self,
 		transaction: &Transaction,
 		monitor: &Monitor,
@@ -247,7 +247,7 @@ impl EVMBlockFilter {
 	/// * `matched_events` - Vector to store matching events
 	/// * `matched_on_args` - Arguments from matched events
 	/// * `involved_addresses` - Addresses involved in matched events
-	async fn find_matching_events_for_transaction(
+	pub async fn find_matching_events_for_transaction(
 		&self,
 		receipt: &TransactionReceipt,
 		monitor: &Monitor,
@@ -332,7 +332,7 @@ impl EVMBlockFilter {
 	///
 	/// # Returns
 	/// `true` if the expression matches, `false` otherwise
-	fn evaluate_expression(
+	pub fn evaluate_expression(
 		&self,
 		expression: &str,
 		args: &Option<Vec<EVMMatchParamEntry>>,
@@ -427,7 +427,7 @@ impl EVMBlockFilter {
 	///
 	/// # Returns
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
-	async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
+	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = Contract::load(abi.to_string().as_bytes())
 			.map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))

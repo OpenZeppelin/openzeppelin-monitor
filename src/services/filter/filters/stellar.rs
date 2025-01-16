@@ -33,7 +33,7 @@ use crate::{
 
 /// Represents a mapping between a Stellar event and its transaction hash
 #[derive(Debug)]
-struct EventMap {
+pub struct EventMap {
 	pub event: StellarMatchParamsMap,
 	pub tx_hash: String,
 }
@@ -48,7 +48,7 @@ impl StellarBlockFilter {
 	/// * `transaction` - The Stellar transaction to check
 	/// * `monitor` - The monitor containing match conditions
 	/// * `matched_transactions` - Vector to store matching transactions
-	fn find_matching_transaction(
+	pub fn find_matching_transaction(
 		&self,
 		transaction: &StellarTransaction,
 		monitor: &Monitor,
@@ -171,7 +171,7 @@ impl StellarBlockFilter {
 	/// * `monitor` - The monitor containing match conditions
 	/// * `matched_functions` - Vector to store matching functions
 	/// * `matched_on_args` - Arguments that matched the conditions
-	fn find_matching_functions_for_transaction(
+	pub fn find_matching_functions_for_transaction(
 		&self,
 		monitored_addresses: &[String],
 		transaction: &StellarTransaction,
@@ -257,7 +257,7 @@ impl StellarBlockFilter {
 	/// * `monitor` - The monitor containing match conditions
 	/// * `matched_events` - Vector to store matching events
 	/// * `matched_on_args` - Arguments that matched the conditions
-	fn find_matching_events_for_transaction(
+	pub fn find_matching_events_for_transaction(
 		&self,
 		events: &[EventMap],
 		transaction: &StellarTransaction,
@@ -322,7 +322,7 @@ impl StellarBlockFilter {
 	///
 	/// # Returns
 	/// Vector of decoded events mapped to their transaction hashes
-	async fn decode_events(
+	pub async fn decode_events(
 		&self,
 		events: &Vec<StellarEvent>,
 		monitored_addresses: &[String],
@@ -750,7 +750,7 @@ impl StellarBlockFilter {
 	///
 	/// # Returns
 	/// Boolean indicating if the expression evaluates to true
-	fn evaluate_expression(
+	pub fn evaluate_expression(
 		&self,
 		expression: &str,
 		args: &Option<Vec<StellarMatchParamEntry>>,
@@ -861,7 +861,7 @@ impl StellarBlockFilter {
 	///
 	/// # Returns
 	/// Vector of converted parameter entries
-	fn convert_arguments_to_match_param_entry(
+	pub fn convert_arguments_to_match_param_entry(
 		&self,
 		arguments: &[Value],
 	) -> Vec<StellarMatchParamEntry> {

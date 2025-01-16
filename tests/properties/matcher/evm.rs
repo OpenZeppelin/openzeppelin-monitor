@@ -1,0 +1,673 @@
+use openzeppelin_monitor::{
+	models::{
+		AddressWithABI, EVMMatchArguments, EVMMatchParamEntry, EventCondition, FunctionCondition,
+		MatchConditions, Monitor, TransactionCondition, TransactionStatus,
+	},
+	services::filter::{
+		helpers::evm::{
+			are_same_address, are_same_signature, normalize_address, normalize_signature,
+		},
+		EVMBlockFilter,
+	},
+};
+use proptest::{prelude::*, test_runner::Config};
+use serde_json::json;
+use web3::types::{Bytes, Transaction, H160, U256};
+
+prop_compose! {
+	fn valid_signatures()(
+		name in "[a-zA-Z][a-zA-Z0-9_]*",
+		count in 0..5usize
+	)(
+		name in Just(name),
+		params in prop::collection::vec(
+			prop_oneof![
+				Just("address"),
+				Just("uint256"),
+				Just("string"),
+				Just("bool"),
+				Just("bytes32")
+			],
+			count..=count
+		)
+	) -> String {
+		format!("{}({})", name, params.join(","))
+	}
+}
+
+prop_compose! {
+	fn valid_expression()(
+		param_name in "[a-zA-Z][a-zA-Z0-9_]*",
+		operator in prop_oneof![
+			Just(">"), Just(">="), Just("<"), Just("<="),
+			Just("=="), Just("!=")
+		],
+		value in 0u128..1000000u128
+	) -> String {
+		format!("{} {} {}", param_name, operator, value)
+	}
+}
+
+prop_compose! {
+	// Generate valid addresses in both checksummed and lowercase formats
+	fn valid_address()(hex in "[0-9a-fA-F]{40}") -> String {
+		format!("0x{}", hex)
+	}
+}
+
+prop_compose! {
+	fn generate_transaction()(
+		value in 0u128..1000000u128,
+		from_addr in valid_address(),
+		to_addr in valid_address(),
+		input_data in prop::collection::vec(any::<u8>(), 0..100)
+	) -> Transaction {
+		Transaction {
+			from: Some(H160::from_slice(&hex::decode(&from_addr[2..]).unwrap())),
+			to: Some(H160::from_slice(&hex::decode(&to_addr[2..]).unwrap())),
+			value: U256::from(value),
+			input: Bytes::from(input_data),
+			..Default::default()
+		}
+	}
+}
+
+prop_compose! {
+	fn generate_base_monitor()(
+		address in valid_address(),
+	) -> Monitor {
+		Monitor {
+			name: "Test Monitor".to_string(),
+			addresses: vec![AddressWithABI {
+				address,
+				abi: None,
+			}],
+			..Default::default()
+		}
+	}
+}
+
+prop_compose! {
+	fn generate_monitor_with_transaction()(
+		address in valid_address(),
+		min_value in 0u128..500000u128,
+		max_value in 500001u128..1000000u128
+	) -> Monitor {
+		Monitor {
+			name: "Test Monitor".to_string(),
+			addresses: vec![AddressWithABI {
+				address,
+				abi: None,
+			}],
+			match_conditions: MatchConditions {
+				transactions: vec![
+					TransactionCondition {
+						expression: Some(format!("value >= {}", min_value)),
+						status: TransactionStatus::Success,
+					},
+					TransactionCondition {
+						expression: Some(format!("value < {}", max_value)),
+						status: TransactionStatus::Any,
+					},
+				],
+				functions: vec![],
+				events: vec![],
+			},
+			..Default::default()
+		}
+	}
+}
+
+prop_compose! {
+	fn generate_monitor_with_function()(
+		address in valid_address(),
+		function_name in prop_oneof![
+			Just("store"),
+			Just("retrieve"),
+			Just("approve"),
+		],
+		param_type in prop_oneof![
+			Just("address"),
+			Just("uint256")
+		],
+		min_value in 0u128..500000u128
+	) -> Monitor {
+		Monitor {
+			name: "Test Monitor".to_string(),
+			addresses: vec![AddressWithABI {
+				address,
+				abi: Some(json!([
+					{
+						"anonymous": false,
+						"inputs": [
+						  {
+							"indexed": false,
+							"internalType": "uint256",
+							"name": "value",
+							"type": "uint256"
+						  }
+						],
+						"name": "ValueChanged",
+						"type": "event"
+					  },
+					  {
+						"inputs": [],
+						"name": "retrieve",
+						"outputs": [
+						  {
+							"internalType": "uint256",
+							"name": "",
+							"type": "uint256"
+						  }
+						],
+						"stateMutability": "view",
+						"type": "function"
+					  },
+					  {
+						"inputs": [
+						  {
+							"internalType": "uint256",
+							"name": "value",
+							"type": "uint256"
+						  }
+						],
+						"name": "store",
+						"outputs": [],
+						"stateMutability": "nonpayable",
+						"type": "function"
+					  }
+				])),
+			}],
+			match_conditions: MatchConditions {
+				transactions: vec![],
+				functions: vec![FunctionCondition {
+					signature: format!("{}({})", function_name, param_type),
+					expression: Some(format!("value >= {}", min_value)),
+				}],
+				events: vec![],
+			},
+			..Default::default()
+		}
+	}
+}
+
+prop_compose! {
+	fn generate_monitor_with_event()(
+		address in valid_address(),
+		event_name in prop_oneof![
+			Just("Approval"),
+			Just("ValueChanged"),
+		],
+		param_type in prop_oneof![
+			Just("address"),
+			Just("uint256")
+		],
+		min_value in 0u128..500000u128
+	) -> Monitor {
+		Monitor {
+			name: "Test Monitor".to_string(),
+			addresses: vec![AddressWithABI {
+				address,
+				abi: Some(json!([
+					{
+						"anonymous": false,
+						"inputs": [
+						  {
+							"indexed": false,
+							"internalType": "uint256",
+							"name": "value",
+							"type": "uint256"
+						  }
+						],
+						"name": "ValueChanged",
+						"type": "event"
+					  },
+					  {
+						"inputs": [],
+						"name": "retrieve",
+						"outputs": [
+						  {
+							"internalType": "uint256",
+							"name": "",
+							"type": "uint256"
+						  }
+						],
+						"stateMutability": "view",
+						"type": "function"
+					  },
+					  {
+						"inputs": [
+						  {
+							"internalType": "uint256",
+							"name": "value",
+							"type": "uint256"
+						  }
+						],
+						"name": "store",
+						"outputs": [],
+						"stateMutability": "nonpayable",
+						"type": "function"
+					  }
+				])),
+			}],
+			match_conditions: MatchConditions {
+				transactions: vec![],
+				functions: vec![],
+				events: vec![EventCondition {
+					signature: format!("{}({})", event_name, param_type),
+					expression: Some(format!("value >= {}", min_value)),
+				}],
+			},
+			..Default::default()
+		}
+	}
+}
+
+proptest! {
+	#![proptest_config(Config {
+		failure_persistence: None,
+		..Config::default()
+	})]
+
+	#[test]
+	fn test_signature_normalization(
+		sig1 in valid_signatures(),
+		spaces in " *",
+	) {
+		// First add random spaces between characters
+		let with_spaces = sig1.chars()
+			.flat_map(|c| vec![c, spaces.chars().next().unwrap_or(' ')])
+			.collect::<String>();
+
+		// Then randomly capitalize alphabetic characters
+		let sig2 = with_spaces.chars()
+			.map(|c| if c.is_alphabetic() && rand::random() {
+				c.to_ascii_uppercase()
+			} else {
+				c
+			})
+			.collect::<String>();
+
+		prop_assert!(are_same_signature(&sig1, &sig2));
+		prop_assert_eq!(normalize_signature(&sig1), normalize_signature(&sig2));
+	}
+
+	#[test]
+	fn test_address_normalization(
+		addr in "[0-9a-fA-F]{40}",
+		prefix in prop_oneof![Just("0x"), Just("")],
+
+	) {
+		let addr1 = format!("{}{}", prefix, addr);
+		let addr2 = format!("0x{}", addr.to_uppercase());
+
+		prop_assert!(are_same_address(&addr1, &addr2));
+		prop_assert_eq!(
+			normalize_address(&addr1),
+			normalize_address(&addr2)
+		);
+	}
+
+	#[test]
+	fn test_invalid_signature(
+		// Generate two different function names
+		name1 in "[a-zA-Z][a-zA-Z0-9_]*",
+		name2 in "[a-zA-Z][a-zA-Z0-9_]*",
+		params in prop::collection::vec(
+			prop_oneof![
+				Just("address"),
+				Just("uint256"),
+				Just("string"),
+				Just("bool"),
+				Just("bytes32")
+			],
+			0..5
+		),
+
+	) {
+		// Skip if names happen to be the same
+		prop_assume!(name1 != name2);
+
+		let sig1 = format!("{}({})", name1, params.join(","));
+		let sig2 = format!("{}({})", name2, params.join(","));
+
+		// Different function names should not match
+		prop_assert!(!are_same_signature(&sig1, &sig2));
+
+		// If we have parameters, test with different parameter counts
+		if !params.is_empty() {
+			let shorter_params = params[..params.len()-1].join(",");
+			let sig3 = format!("{}({})", name1, shorter_params);
+
+			// Different parameter counts should not match
+			prop_assert!(!are_same_signature(&sig1, &sig3));
+		}
+	}
+
+	#[test]
+	fn test_address_expression_evaluation(
+		addr1 in valid_address(),
+		addr2 in valid_address(),
+		operator in prop_oneof![Just("=="), Just("!=")],
+
+	) {
+		let param_name = "from";
+		let expr = format!("{} {} {}", param_name, operator, addr2);
+
+		let params = vec![EVMMatchParamEntry {
+			name: param_name.to_string(),
+			value: addr1.clone(),
+			kind: "address".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter {};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = match operator {
+			"==" => are_same_address(&addr1, &addr2),
+			"!=" => !are_same_address(&addr1, &addr2),
+			_ => false
+		};
+
+		prop_assert_eq!(result, expected);
+
+	}
+
+	#[test]
+	fn test_uint256_expression_evaluation(
+		value in 0u128..1000000u128,
+		operator in prop_oneof![
+			Just(">"), Just(">="), Just("<"), Just("<="),
+			Just("=="), Just("!=")
+		],
+		compare_to in 0u128..1000000u128,
+
+	) {
+		let expr = format!("amount {} {}", operator, compare_to);
+
+		let params = vec![EVMMatchParamEntry {
+			name: "amount".to_string(),
+			value: value.to_string(),
+			kind: "uint256".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter {};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = match operator {
+			">" => value > compare_to,
+			">=" => value >= compare_to,
+			"<" => value < compare_to,
+			"<=" => value <= compare_to,
+			"==" => value == compare_to,
+			"!=" => value != compare_to,
+			_ => false
+		};
+
+		prop_assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_and_expression_evaluation(
+		amount in 0u128..1000000u128,
+		addr in valid_address(),
+		recipient in valid_address(),
+
+	) {
+		let expr = format!("amount >= 100 AND recipient == {}", addr);
+
+		let params = vec![
+			EVMMatchParamEntry {
+				name: "amount".to_string(),
+				value: amount.to_string(),
+				kind: "uint256".to_string(),
+				indexed: false,
+			},
+			EVMMatchParamEntry {
+				name: "recipient".to_string(),
+				value: recipient.clone(),
+				kind: "address".to_string(),
+				indexed: false,
+			}
+		];
+
+		let filter = EVMBlockFilter {};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = amount >= 100 && are_same_address(&recipient, &addr);
+		prop_assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_or_expression_evaluation(
+		amount in 0u128..1000000u128,
+		threshold1 in 0u128..500000u128,
+		threshold2 in 500001u128..1000000u128,
+
+	) {
+		let expr = format!("amount < {} OR amount > {}", threshold1, threshold2);
+
+		let params = vec![EVMMatchParamEntry {
+			name: "amount".to_string(),
+			value: amount.to_string(),
+			kind: "uint256".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter {};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = amount < threshold1 || amount > threshold2;
+		prop_assert_eq!(result, expected);
+	}
+
+
+	#[test]
+	fn test_and_or_expression_evaluation(
+		value1 in 0u128..1000000u128,
+		value2 in 0u128..1000000u128,
+		addr1 in valid_address(),
+		addr2 in valid_address(),
+		threshold in 500000u128..1000000u128,
+
+	) {
+		// Test complex AND/OR combinations
+		let expr = format!(
+			"(value1 > {} AND value2 < {}) OR (from == {} AND to == {})",
+			threshold, threshold, addr1, addr2
+		);
+
+		let params = vec![
+			EVMMatchParamEntry {
+				name: "value1".to_string(),
+				value: value1.to_string(),
+				kind: "uint256".to_string(),
+				indexed: false,
+			},
+			EVMMatchParamEntry {
+				name: "value2".to_string(),
+				value: value2.to_string(),
+				kind: "uint256".to_string(),
+				indexed: false,
+			},
+			EVMMatchParamEntry {
+				name: "from".to_string(),
+				value: addr1.clone(),
+				kind: "address".to_string(),
+				indexed: false,
+			},
+			EVMMatchParamEntry {
+				name: "to".to_string(),
+				value: addr2.clone(),
+				kind: "address".to_string(),
+				indexed: false,
+			}
+		];
+
+		let filter = EVMBlockFilter {};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = (value1 > threshold && value2 < threshold) ||
+					  (are_same_address(&addr1, &addr1) && are_same_address(&addr2, &addr2));
+
+		prop_assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_invalid_expressions(
+		value in 0u128..1000000u128,
+		addr in valid_address(),
+
+	) {
+		let params = vec![
+			EVMMatchParamEntry {
+				name: "amount".to_string(),
+				value: value.to_string(),
+				kind: "uint256".to_string(),
+				indexed: false,
+			},
+			EVMMatchParamEntry {
+				name: "recipient".to_string(),
+				value: addr.clone(),
+				kind: "address".to_string(),
+				indexed: false,
+			}
+		];
+
+		let filter = EVMBlockFilter {};
+
+		// Test invalid operator
+		let invalid_operator = format!("amount <=> {}", value);
+		prop_assert!(!filter.evaluate_expression(&invalid_operator, &Some(params.clone())));
+
+		// Test invalid parameter name
+		let invalid_param = format!("nonexistent == {}", value);
+		prop_assert!(!filter.evaluate_expression(&invalid_param, &Some(params.clone())));
+
+		// Test invalid comparison (address with numeric)
+		let invalid_comparison = format!("recipient > {}", value);
+		prop_assert!(!filter.evaluate_expression(&invalid_comparison, &Some(params.clone())));
+
+		// Test malformed expression
+		let malformed = "amount > ".to_string();
+		prop_assert!(!filter.evaluate_expression(&malformed, &Some(params)));
+	}
+
+	#[test]
+	fn test_find_matching_transaction(
+		tx in generate_transaction(),
+		monitor in generate_monitor_with_transaction()
+	) {
+		let filter = EVMBlockFilter {};
+
+		// Test with different transaction statuses
+		for status in [TransactionStatus::Success, TransactionStatus::Failure, TransactionStatus::Any] {
+			let mut matched_transactions = Vec::new();
+			filter.find_matching_transaction(
+				&status,
+				&tx,
+				&monitor,
+				&mut matched_transactions
+			);
+
+			// Verify matches based on monitor conditions
+			let value = tx.value.as_u128();
+			let should_match = monitor.match_conditions.transactions.iter().any(|condition| {
+				// For non-matching status, should not match
+				let status_matches = matches!(condition.status, TransactionStatus::Any) || condition.status == status;
+				let mut expr_matches = true;
+
+				// Check value expression match
+				if let Some(expr) = &condition.expression {
+					expr_matches = filter.evaluate_expression(expr, &Some(vec![
+						EVMMatchParamEntry {
+							name: "value".to_string(),
+							value: value.to_string(),
+							kind: "uint256".to_string(),
+							indexed: false,
+						}
+					]))
+				}
+
+				status_matches && expr_matches
+			});
+
+			prop_assert_eq!(!matched_transactions.is_empty(), should_match);
+		}
+	}
+
+	#[test]
+	fn test_find_matching_transaction_empty_conditions(
+		tx in generate_transaction()
+
+	) {
+		let filter = EVMBlockFilter {};
+		let mut matched_transactions = Vec::new();
+
+		// Create monitor with empty conditions
+		let monitor = Monitor {
+			match_conditions: MatchConditions {
+				transactions: vec![],
+				functions: vec![],
+				events: vec![],
+			},
+			..Default::default()
+		};
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx,
+			&monitor,
+			&mut matched_transactions
+		);
+
+		// Should match when no conditions are specified
+		prop_assert_eq!(matched_transactions.len(), 1);
+		prop_assert!(matched_transactions[0].expression.is_none());
+		prop_assert!(matched_transactions[0].status == TransactionStatus::Any);
+	}
+
+	#[test]
+	fn test_find_matching_function_for_transaction(
+		monitor in generate_monitor_with_function()
+	) {
+		let filter = EVMBlockFilter {};
+		let mut matched_functions = Vec::new();
+		let mut matched_args = EVMMatchArguments {
+			events: None,
+			functions: Some(Vec::new()),
+		};
+
+		// Create a transaction that exactly matches the monitor's address
+		let monitor_address = H160::from_slice(&hex::decode(&monitor.addresses[0].address[2..]).unwrap());
+
+		// Correctly format the input data for store(uint256)
+		let store_signature = [96, 87, 54, 29];  // 0x6057361d
+		let mut input_data = store_signature.to_vec();
+		let value = U256::from(600000u128);
+		let mut bytes = [0u8; 32];
+		value.to_big_endian(&mut bytes);
+		input_data.extend_from_slice(&bytes);
+
+		let modified_tx = Transaction {
+			to: Some(monitor_address),
+			input: Bytes::from(input_data),
+			..Default::default()
+		};
+
+		filter.find_matching_functions_for_transaction(
+			&modified_tx,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_args
+		);
+
+		let should_match = monitor.match_conditions.functions.iter().any(|f|
+			f.signature == "store(uint256)"
+		);
+
+		prop_assert_eq!(!matched_functions.is_empty(), should_match);
+	}
+}
