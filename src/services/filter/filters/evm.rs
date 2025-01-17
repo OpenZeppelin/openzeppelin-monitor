@@ -86,6 +86,12 @@ impl EVMBlockFilter {
 								kind: "address".to_string(),
 								indexed: false,
 							},
+							EVMMatchParamEntry {
+								name: "hash".to_string(),
+								value: h256_to_string(transaction.hash),
+								kind: "string".to_string(),
+								indexed: false,
+							},
 						];
 
 						if self.evaluate_expression(expr, &Some(tx_params)) {

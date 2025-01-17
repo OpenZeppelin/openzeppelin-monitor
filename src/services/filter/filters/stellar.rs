@@ -119,35 +119,54 @@ impl StellarBlockFilter {
 
 				if status_matches {
 					if let Some(expr) = &condition.expression {
-						for operation in &tx_operations {
-							// Create a vector of transaction parameters
-							let tx_params = vec![
-								StellarMatchParamEntry {
-									name: "value".to_string(),
-									value: operation.value.clone().unwrap_or("0".to_string()),
-									kind: "i64".to_string(),
-									indexed: false,
-								},
-								StellarMatchParamEntry {
-									name: "from".to_string(),
-									value: operation.sender.clone(),
-									kind: "address".to_string(),
-									indexed: false,
-								},
-								StellarMatchParamEntry {
-									name: "to".to_string(),
-									value: operation.receiver.clone(),
-									kind: "address".to_string(),
-									indexed: false,
-								},
-							];
+						// Create base transaction parameters outside operation loop
+						let base_params = vec![StellarMatchParamEntry {
+							name: "hash".to_string(),
+							value: transaction.hash().clone(),
+							kind: "string".to_string(),
+							indexed: false,
+						}];
 
-							if self.evaluate_expression(expr, &Some(tx_params)) {
+						// If we have operations, check each one
+						if !tx_operations.is_empty() {
+							for operation in &tx_operations {
+								let mut tx_params = base_params.clone();
+								tx_params.extend(vec![
+									StellarMatchParamEntry {
+										name: "value".to_string(),
+										value: operation.value.clone().unwrap_or("0".to_string()),
+										kind: "i64".to_string(),
+										indexed: false,
+									},
+									StellarMatchParamEntry {
+										name: "from".to_string(),
+										value: operation.sender.clone(),
+										kind: "address".to_string(),
+										indexed: false,
+									},
+									StellarMatchParamEntry {
+										name: "to".to_string(),
+										value: operation.receiver.clone(),
+										kind: "address".to_string(),
+										indexed: false,
+									},
+								]);
+
+								if self.evaluate_expression(expr, &Some(tx_params)) {
+									matched_transactions.push(TransactionCondition {
+										expression: Some(expr.clone()),
+										status: tx_status,
+									});
+									break;
+								}
+							}
+						} else {
+							// Even with no operations, still evaluate base parameters
+							if self.evaluate_expression(expr, &Some(base_params)) {
 								matched_transactions.push(TransactionCondition {
 									expression: Some(expr.clone()),
 									status: tx_status,
 								});
-								break;
 							}
 						}
 					} else {
@@ -817,7 +836,8 @@ impl StellarBlockFilter {
 					}
 
 					let [map_name, key] = [parts[0], parts[1]];
-					let Some(param) = args.iter().find(|p| p.value == map_name) else {
+
+					let Some(param) = args.iter().find(|p| p.name == map_name) else {
 						warn!("Map {} not found", map_name);
 						return false;
 					};
@@ -909,7 +929,11 @@ impl StellarBlockFilter {
 							Value::Bool(_) => "Bool".to_string(),
 							_ => "String".to_string(),
 						},
-						value: arg.as_str().unwrap_or("").to_string(),
+						value: match arg {
+							Value::Number(n) => n.to_string(),
+							Value::Bool(b) => b.to_string(),
+							_ => arg.as_str().unwrap_or("").to_string(),
+						},
 						indexed: false,
 					});
 				}

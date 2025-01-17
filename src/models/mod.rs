@@ -19,9 +19,9 @@ pub use blockchain::evm::{
 };
 
 pub use blockchain::stellar::{
-	StellarBlock, StellarDecodedParamEntry, StellarEvent, StellarLedgerInfo, StellarMatchArguments,
-	StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch,
-	StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
+	StellarBlock, StellarDecodedParamEntry, StellarDecodedTransaction, StellarEvent,
+	StellarLedgerInfo, StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap,
+	StellarMonitorMatch, StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
 };
 
 // Re-export core types

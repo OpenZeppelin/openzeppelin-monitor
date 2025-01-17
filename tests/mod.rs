@@ -5,7 +5,6 @@
 
 mod properties {
 	mod matcher {
-		mod common;
 		mod evm;
 		mod stellar;
 	}

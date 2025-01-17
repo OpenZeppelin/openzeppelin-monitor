@@ -17,5 +17,6 @@ pub use monitor::{
 	MonitorMatch as StellarMonitorMatch, ParsedOperationResult as StellarParsedOperationResult,
 };
 pub use transaction::{
-	Transaction as StellarTransaction, TransactionInfo as StellarTransactionInfo,
+	DecodedTransaction as StellarDecodedTransaction, Transaction as StellarTransaction,
+	TransactionInfo as StellarTransactionInfo,
 };

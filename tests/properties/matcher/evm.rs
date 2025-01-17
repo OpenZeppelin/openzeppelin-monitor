@@ -1,3 +1,6 @@
+//! Property-based tests for EVM transaction matching and filtering.
+//! Tests cover signature/address normalization, expression evaluation, and transaction matching.
+
 use openzeppelin_monitor::{
 	models::{
 		AddressWithABI, EVMMatchArguments, EVMMatchParamEntry, FunctionCondition, MatchConditions,
@@ -14,6 +17,7 @@ use proptest::{prelude::*, test_runner::Config};
 use serde_json::json;
 use web3::types::{Bytes, Transaction, H160, U256};
 
+// Generates valid EVM function signatures with random parameters
 prop_compose! {
 	fn valid_signatures()(
 		name in "[a-zA-Z][a-zA-Z0-9_]*",
@@ -35,6 +39,7 @@ prop_compose! {
 	}
 }
 
+// Generates valid comparison expressions for testing parameter matching
 prop_compose! {
 	fn valid_expression()(
 		param_name in "[a-zA-Z][a-zA-Z0-9_]*",
@@ -48,13 +53,14 @@ prop_compose! {
 	}
 }
 
+// Generates valid EVM addresses in both checksummed and lowercase formats
 prop_compose! {
-	// Generate valid addresses in both checksummed and lowercase formats
 	fn valid_address()(hex in "[0-9a-fA-F]{40}") -> String {
 		format!("0x{}", hex)
 	}
 }
 
+// Generates mock EVM transactions with random values and addresses
 prop_compose! {
 	fn generate_transaction()(
 		value in 0u128..1000000u128,
@@ -72,6 +78,7 @@ prop_compose! {
 	}
 }
 
+// Generates basic monitor configuration
 prop_compose! {
 	fn generate_base_monitor()(
 		address in valid_address(),
@@ -87,6 +94,7 @@ prop_compose! {
 	}
 }
 
+// Generates monitor configured with transaction value thresholds and status conditions
 prop_compose! {
 	fn generate_monitor_with_transaction()(
 		address in valid_address(),
@@ -118,6 +126,7 @@ prop_compose! {
 	}
 }
 
+// Generates monitor configured with function matching conditions and ABI
 prop_compose! {
 	fn generate_monitor_with_function()(
 		address in valid_address(),
@@ -204,17 +213,17 @@ proptest! {
 		..Config::default()
 	})]
 
+	// Tests that function signatures match regardless of whitespace and case variations
 	#[test]
 	fn test_signature_normalization(
 		sig1 in valid_signatures(),
 		spaces in " *",
 	) {
-		// First add random spaces between characters
+		// Test that function signatures match regardless of whitespace and case variations
 		let with_spaces = sig1.chars()
 			.flat_map(|c| vec![c, spaces.chars().next().unwrap_or(' ')])
 			.collect::<String>();
 
-		// Then randomly capitalize alphabetic characters
 		let sig2 = with_spaces.chars()
 			.map(|c| if c.is_alphabetic() && rand::random() {
 				c.to_ascii_uppercase()
@@ -227,12 +236,13 @@ proptest! {
 		prop_assert_eq!(normalize_signature(&sig1), normalize_signature(&sig2));
 	}
 
+	// Tests that addresses match regardless of checksum and prefix variations
 	#[test]
 	fn test_address_normalization(
 		addr in "[0-9a-fA-F]{40}",
 		prefix in prop_oneof![Just("0x"), Just("")],
-
 	) {
+		// Test that addresses match regardless of prefix and case
 		let addr1 = format!("{}{}", prefix, addr);
 		let addr2 = format!("0x{}", addr.to_uppercase());
 
@@ -243,9 +253,9 @@ proptest! {
 		);
 	}
 
+	// Tests that different function signatures don't incorrectly match
 	#[test]
 	fn test_invalid_signature(
-		// Generate two different function names
 		name1 in "[a-zA-Z][a-zA-Z0-9_]*",
 		name2 in "[a-zA-Z][a-zA-Z0-9_]*",
 		params in prop::collection::vec(
@@ -258,34 +268,31 @@ proptest! {
 			],
 			0..5
 		),
-
 	) {
-		// Skip if names happen to be the same
+		// Skip test if names happen to be identical
 		prop_assume!(name1 != name2);
 
+		// Test that different function names with same parameters don't match
 		let sig1 = format!("{}({})", name1, params.join(","));
 		let sig2 = format!("{}({})", name2, params.join(","));
-
-		// Different function names should not match
 		prop_assert!(!are_same_signature(&sig1, &sig2));
 
-		// If we have parameters, test with different parameter counts
+		// Test that same function name with different parameter counts don't match
 		if !params.is_empty() {
 			let shorter_params = params[..params.len()-1].join(",");
 			let sig3 = format!("{}({})", name1, shorter_params);
-
-			// Different parameter counts should not match
 			prop_assert!(!are_same_signature(&sig1, &sig3));
 		}
 	}
 
+	// Tests address comparison expressions with equality operators
 	#[test]
 	fn test_address_expression_evaluation(
 		addr1 in valid_address(),
 		addr2 in valid_address(),
 		operator in prop_oneof![Just("=="), Just("!=")],
-
 	) {
+		// Test address comparison expressions with equality operators
 		let param_name = "from";
 		let expr = format!("{} {} {}", param_name, operator, addr2);
 
@@ -306,9 +313,10 @@ proptest! {
 		};
 
 		prop_assert_eq!(result, expected);
-
 	}
 
+	// Tests numeric comparison expressions for uint256 values
+	// Verifies all comparison operators work correctly with numeric values
 	#[test]
 	fn test_uint256_expression_evaluation(
 		value in 0u128..1000000u128,
@@ -317,8 +325,8 @@ proptest! {
 			Just("=="), Just("!=")
 		],
 		compare_to in 0u128..1000000u128,
-
 	) {
+		// Test numeric comparison expressions for uint256 values
 		let expr = format!("amount {} {}", operator, compare_to);
 
 		let params = vec![EVMMatchParamEntry {
@@ -344,14 +352,16 @@ proptest! {
 		prop_assert_eq!(result, expected);
 	}
 
+	// Tests logical AND combinations with mixed types
+	// Verifies that combining numeric and address comparisons works correctly
 	#[test]
 	fn test_and_expression_evaluation(
 		amount in 0u128..1000000u128,
+		threshold in 0u128..1000000u128,
 		addr in valid_address(),
-		recipient in valid_address(),
-
 	) {
-		let expr = format!("amount >= 100 AND recipient == {}", addr);
+		// Test logical AND combinations with mixed types (numeric and address)
+		let expr = format!("amount >= {} AND recipient == {}", threshold, addr);
 
 		let params = vec![
 			EVMMatchParamEntry {
@@ -362,7 +372,7 @@ proptest! {
 			},
 			EVMMatchParamEntry {
 				name: "recipient".to_string(),
-				value: recipient.clone(),
+				value: addr.clone(),
 				kind: "address".to_string(),
 				indexed: false,
 			}
@@ -371,17 +381,19 @@ proptest! {
 		let filter = EVMBlockFilter {};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
-		let expected = amount >= 100 && are_same_address(&recipient, &addr);
+		let expected = amount >= threshold && are_same_address(&addr, &addr);
 		prop_assert_eq!(result, expected);
 	}
 
+	// Tests logical OR with range conditions
+	// Verifies that value ranges can be properly checked using OR conditions
 	#[test]
 	fn test_or_expression_evaluation(
 		amount in 0u128..1000000u128,
 		threshold1 in 0u128..500000u128,
 		threshold2 in 500001u128..1000000u128,
-
 	) {
+		// Test logical OR with range conditions
 		let expr = format!("amount < {} OR amount > {}", threshold1, threshold2);
 
 		let params = vec![EVMMatchParamEntry {
@@ -398,7 +410,8 @@ proptest! {
 		prop_assert_eq!(result, expected);
 	}
 
-
+	// Tests complex expressions combining AND/OR with parentheses
+	// Verifies that nested logical operations work correctly with different types
 	#[test]
 	fn test_and_or_expression_evaluation(
 		value1 in 0u128..1000000u128,
@@ -406,9 +419,8 @@ proptest! {
 		addr1 in valid_address(),
 		addr2 in valid_address(),
 		threshold in 500000u128..1000000u128,
-
 	) {
-		// Test complex AND/OR combinations
+		// Test complex expression combining AND/OR with parentheses
 		let expr = format!(
 			"(value1 > {} AND value2 < {}) OR (from == {} AND to == {})",
 			threshold, threshold, addr1, addr2
@@ -450,11 +462,16 @@ proptest! {
 		prop_assert_eq!(result, expected);
 	}
 
+	// Tests various invalid expression scenarios
+	// Verifies proper handling of:
+	// - Invalid operators
+	// - Non-existent parameters
+	// - Type mismatches
+	// - Malformed expressions
 	#[test]
 	fn test_invalid_expressions(
 		value in 0u128..1000000u128,
 		addr in valid_address(),
-
 	) {
 		let params = vec![
 			EVMMatchParamEntry {
@@ -473,23 +490,25 @@ proptest! {
 
 		let filter = EVMBlockFilter {};
 
-		// Test invalid operator
+		// Test various invalid expression scenarios
 		let invalid_operator = format!("amount <=> {}", value);
 		prop_assert!(!filter.evaluate_expression(&invalid_operator, &Some(params.clone())));
 
-		// Test invalid parameter name
 		let invalid_param = format!("nonexistent == {}", value);
 		prop_assert!(!filter.evaluate_expression(&invalid_param, &Some(params.clone())));
 
-		// Test invalid comparison (address with numeric)
 		let invalid_comparison = format!("recipient > {}", value);
 		prop_assert!(!filter.evaluate_expression(&invalid_comparison, &Some(params.clone())));
 
-		// Test malformed expression
 		let malformed = "amount > ".to_string();
 		prop_assert!(!filter.evaluate_expression(&malformed, &Some(params)));
 	}
 
+	// Tests transaction matching against monitor conditions
+	// Verifies that transactions are correctly matched based on:
+	// - Transaction status
+	// - Value conditions
+	// - Expression evaluation
 	#[test]
 	fn test_find_matching_transaction(
 		tx in generate_transaction(),
@@ -497,7 +516,7 @@ proptest! {
 	) {
 		let filter = EVMBlockFilter {};
 
-		// Test with different transaction statuses
+		// Test transaction matching across different status types
 		for status in [TransactionStatus::Success, TransactionStatus::Failure, TransactionStatus::Any] {
 			let mut matched_transactions = Vec::new();
 			filter.find_matching_transaction(
@@ -507,14 +526,13 @@ proptest! {
 				&mut matched_transactions
 			);
 
-			// Verify matches based on monitor conditions
+			// Verify matches based on monitor conditions and transaction status
 			let value = tx.value.as_u128();
 			let should_match = monitor.match_conditions.transactions.iter().any(|condition| {
-				// For non-matching status, should not match
-				let status_matches = matches!(condition.status, TransactionStatus::Any) || condition.status == status;
+				let status_matches = matches!(condition.status, TransactionStatus::Any) ||
+								   condition.status == status;
 				let mut expr_matches = true;
 
-				// Check value expression match
 				if let Some(expr) = &condition.expression {
 					expr_matches = filter.evaluate_expression(expr, &Some(vec![
 						EVMMatchParamEntry {
@@ -533,15 +551,16 @@ proptest! {
 		}
 	}
 
+	// Tests transaction matching with empty conditions
+	// Verifies default matching behavior when no conditions are specified
 	#[test]
 	fn test_find_matching_transaction_empty_conditions(
 		tx in generate_transaction()
-
 	) {
 		let filter = EVMBlockFilter {};
 		let mut matched_transactions = Vec::new();
 
-		// Create monitor with empty conditions
+		// Test that transactions match when no conditions are specified
 		let monitor = Monitor {
 			match_conditions: MatchConditions {
 				transactions: vec![],
@@ -558,12 +577,16 @@ proptest! {
 			&mut matched_transactions
 		);
 
-		// Should match when no conditions are specified
 		prop_assert_eq!(matched_transactions.len(), 1);
 		prop_assert!(matched_transactions[0].expression.is_none());
 		prop_assert!(matched_transactions[0].status == TransactionStatus::Any);
 	}
 
+	// Tests function matching in transactions
+	// Verifies that function calls are correctly identified and matched based on:
+	// - Function signatures
+	// - Input data decoding
+	// - Parameter evaluation
 	#[test]
 	fn test_find_matching_function_for_transaction(
 		monitor in generate_monitor_with_function()
@@ -575,25 +598,23 @@ proptest! {
 			functions: Some(Vec::new()),
 		};
 
-		// Create a transaction that exactly matches the monitor's address
+		// Create transaction with specific function call data
 		let monitor_address = H160::from_slice(&hex::decode(&monitor.addresses[0].address[2..]).unwrap());
-
-		// Correctly format the input data for store(uint256)
-		let store_signature = [96, 87, 54, 29];  // 0x6057361d
+		let store_signature = [96, 87, 54, 29];  // store(uint256) function selector
 		let mut input_data = store_signature.to_vec();
 		let value = U256::from(600000u128);
 		let mut bytes = [0u8; 32];
 		value.to_big_endian(&mut bytes);
 		input_data.extend_from_slice(&bytes);
 
-		let modified_tx = Transaction {
+		let tx = Transaction {
 			to: Some(monitor_address),
 			input: Bytes::from(input_data),
 			..Default::default()
 		};
 
 		filter.find_matching_functions_for_transaction(
-			&modified_tx,
+			&tx,
 			&monitor,
 			&mut matched_functions,
 			&mut matched_args
