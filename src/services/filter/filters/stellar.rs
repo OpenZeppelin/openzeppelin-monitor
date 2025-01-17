@@ -311,13 +311,15 @@ impl StellarBlockFilter {
 				for condition in matching_conditions {
 					match &condition.expression {
 						Some(expr) => {
-							if self.evaluate_expression(expr, &Some(event.args.clone().unwrap())) {
-								matched_events.push(EventCondition {
-									signature: event.signature.clone(),
-									expression: Some(expr.clone()),
-								});
-								if let Some(events) = &mut matched_on_args.events {
-									events.push(event.clone());
+							if let Some(args) = &event.args {
+								if self.evaluate_expression(expr, &Some(args.clone())) {
+									matched_events.push(EventCondition {
+										signature: event.signature.clone(),
+										expression: Some(expr.clone()),
+									});
+									if let Some(events) = &mut matched_on_args.events {
+										events.push(event.clone());
+									}
 								}
 							}
 						}
@@ -735,18 +737,22 @@ impl StellarBlockFilter {
 			Value::Bool(_) => "Bool",
 			Value::Number(ref n) => {
 				if n.is_u64() {
-					if n.as_u64().unwrap() <= u32::MAX as u64 {
-						"U32"
-					} else {
-						"U64"
+					match n.as_u64() {
+						Some(val) if val <= u32::MAX as u64 => "U32",
+						Some(_) => "U64",
+						None => {
+							FilterError::internal_error("Failed to convert number to u64");
+							"String" // Fallback to string on conversion failure
+						}
 					}
 				} else if n.is_i64() {
-					if n.as_i64().unwrap() >= i32::MIN as i64
-						&& n.as_i64().unwrap() <= i32::MAX as i64
-					{
-						"I32"
-					} else {
-						"I64"
+					match n.as_i64() {
+						Some(val) if val >= i32::MIN as i64 && val <= i32::MAX as i64 => "I32",
+						Some(_) => "I64",
+						None => {
+							FilterError::internal_error("Failed to convert number to i64");
+							"String" // Fallback to string on conversion failure
+						}
 					}
 				} else {
 					"String" // Fallback for other number types

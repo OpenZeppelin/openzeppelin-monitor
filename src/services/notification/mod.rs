@@ -65,7 +65,14 @@ impl NotificationService {
 				title,
 				body,
 			} => {
-				let notifier = SlackNotifier::new(webhook_url.clone(), title.clone(), body.clone());
+				let notifier =
+					match SlackNotifier::new(webhook_url.clone(), title.clone(), body.clone()) {
+						Ok(notifier) => notifier,
+						Err(e) => {
+							return Err(e.into());
+						}
+					};
+
 				notifier
 					.notify(&notifier.format_message(&variables))
 					.await?;
@@ -92,7 +99,12 @@ impl NotificationService {
 					sender: sender.clone(),
 					recipients: recipients.clone(),
 				};
-				let notifier = EmailNotifier::new(smtp_config, email_content);
+				let notifier = match EmailNotifier::new(smtp_config, email_content) {
+					Ok(notifier) => notifier,
+					Err(e) => {
+						return Err(e.into());
+					}
+				};
 				notifier
 					.notify(&notifier.format_message(&variables))
 					.await?;

@@ -12,7 +12,7 @@ use ethabi::Contract;
 use log::{info, warn};
 use serde_json::Value;
 use std::str::FromStr;
-use web3::types::{Log, Transaction, TransactionReceipt};
+use web3::types::{Log, Transaction, TransactionReceipt, U64};
 
 use crate::{
 	models::{
@@ -435,9 +435,13 @@ impl EVMBlockFilter {
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
 	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
-		let contract = Contract::load(abi.to_string().as_bytes())
-			.map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
-			.unwrap();
+		let contract = match Contract::load(abi.to_string().as_bytes()) {
+			Ok(contract) => contract,
+			Err(e) => {
+				FilterError::internal_error(format!("Failed to parse ABI: {}", e));
+				return None;
+			}
+		};
 
 		let decoded_log = contract
 			.events()
@@ -514,7 +518,10 @@ impl BlockFilter for EVMBlockFilter {
 			}
 		};
 
-		info!("Processing block {}", evm_block.number.unwrap());
+		info!(
+			"Processing block {}",
+			evm_block.number.unwrap_or(U64::from(0))
+		);
 
 		let evm_client = match client {
 			BlockChainClientEnum::EVM(client) => client,

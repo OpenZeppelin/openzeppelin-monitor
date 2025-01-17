@@ -311,11 +311,13 @@ async fn process_new_blocks<B: BlockStorage>(
 	for block in &blocks {
 		let block_number = match block {
 			BlockType::EVM(block) => block.number(),
-			BlockType::Stellar(block) => block.number(),
+			BlockType::Stellar(block) => Some(block.number()),
 		};
 		// record the block number in the block tracker service
 		// so that if a block is missed, we can log it
-		block_tracker.record_block(network, block_number).await;
+		if let Some(number) = block_number {
+			block_tracker.record_block(network, number).await;
+		}
 
 		// process the block
 		(block_handler)(block, network);

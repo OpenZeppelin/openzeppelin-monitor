@@ -58,20 +58,26 @@ impl EmailNotifier {
 	/// # Arguments
 	/// * `smtp_config` - SMTP server configuration
 	/// * `email_content` - Email content configuration
-	pub fn new(smtp_config: SmtpConfig, email_content: EmailContent) -> Self {
-		let client = SmtpTransport::relay(&smtp_config.host)
-			.unwrap()
+	pub fn new(
+		smtp_config: SmtpConfig,
+		email_content: EmailContent,
+	) -> Result<Self, NotificationError> {
+		let relay = SmtpTransport::relay(&smtp_config.host).map_err(|e| {
+			NotificationError::internal_error(format!("Failed to build client: {}", e))
+		})?;
+
+		let client = relay
 			.port(smtp_config.port)
 			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
 			.build();
 
-		Self {
+		Ok(Self {
 			subject: email_content.subject,
 			body_template: email_content.body_template,
 			sender: email_content.sender,
 			recipients: email_content.recipients,
 			client,
-		}
+		})
 	}
 
 	/// Formats a message by substituting variables in the template
@@ -122,7 +128,7 @@ impl EmailNotifier {
 					recipients: recipients.clone(),
 				};
 
-				Some(Self::new(smtp_config, email_content))
+				Self::new(smtp_config, email_content).ok()
 			}
 			_ => None,
 		}
@@ -146,7 +152,9 @@ impl Notifier for EmailNotifier {
 			.collect::<Vec<_>>()
 			.join(", ");
 
-		let mailboxes: Mailboxes = recipients_str.parse().unwrap();
+		let mailboxes: Mailboxes = recipients_str.parse().map_err(|e| {
+			NotificationError::internal_error(format!("Failed to parse email recipients: {}", e))
+		})?;
 		let recipients_header: header::To = mailboxes.into();
 
 		let email = Message::builder()
@@ -156,7 +164,9 @@ impl Notifier for EmailNotifier {
 			.subject(&self.subject)
 			.header(ContentType::TEXT_PLAIN)
 			.body(message.to_owned())
-			.unwrap();
+			.map_err(|e| {
+				NotificationError::internal_error(format!("Failed to build email: {}", e))
+			})?;
 
 		self.client
 			.send(&email)

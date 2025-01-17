@@ -14,9 +14,9 @@ pub struct Block(pub Web3Block<Web3Transaction>);
 impl Block {
 	/// Get the block number
 	///
-	/// Unwraps the optional block number and converts it to u64.
-	pub fn number(&self) -> u64 {
-		self.0.number.unwrap().as_u64()
+	/// Returns the block number as an `Option<u64>`.
+	pub fn number(&self) -> Option<u64> {
+		self.0.number.map(|n| n.as_u64())
 	}
 }
 

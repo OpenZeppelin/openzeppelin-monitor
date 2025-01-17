@@ -19,8 +19,8 @@ impl Transaction {
 	}
 
 	/// Get the transaction sender address
-	pub fn sender(&self) -> &H160 {
-		self.0.from.as_ref().unwrap()
+	pub fn sender(&self) -> Option<&H160> {
+		self.0.from.as_ref()
 	}
 
 	/// Get the transaction recipient address (None for contract creation)
