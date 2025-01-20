@@ -23,28 +23,24 @@ pub mod repositories;
 pub mod services;
 pub mod utils;
 
-use models::BlockChainType;
-pub use models::{ConfigLoader, Monitor, Network, Trigger};
-pub use repositories::{
-	MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
-	TriggerService,
-};
-use services::blockchain::{BlockFilterFactory, EvmClient, StellarClient};
-pub use services::{
-	blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
-	filter::FilterService,
-	notification::{Notifier, SlackNotifier},
-};
-
 use crate::{
-	models::BlockType,
+	models::{BlockChainType, BlockType, Monitor, Network},
+	repositories::{
+		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
+		TriggerService,
+	},
 	services::{
-		filter::handle_match, notification::NotificationService, trigger::TriggerExecutionService,
+		blockchain::{BlockFilterFactory, EvmClient, StellarClient},
+		blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
+		filter::{handle_match, FilterService},
+		notification::NotificationService,
+		trigger::TriggerExecutionService,
 	},
 };
 
 use dotenvy::dotenv;
 use log::{error, info};
+use services::blockchain::BlockChainClient;
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::broadcast;
 
@@ -262,7 +258,7 @@ async fn process_block<T>(
 	trigger_service: &TriggerExecutionService<TriggerRepository>,
 	shutdown_rx: &mut broadcast::Receiver<()>,
 ) where
-	T: BlockFilterFactory<T>,
+	T: BlockChainClient + BlockFilterFactory<T>,
 {
 	tokio::select! {
 		result = filter_service.filter_block(client, network, block, applicable_monitors) => {

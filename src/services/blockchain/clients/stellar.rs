@@ -54,7 +54,7 @@ impl StellarClient {
 
 /// Extended functionality specific to the Stellar blockchain
 #[async_trait]
-pub trait StellarClientTrait: BlockChainClient {
+pub trait StellarClientTrait {
 	/// Retrieves transactions within a sequence range
 	///
 	/// # Arguments
