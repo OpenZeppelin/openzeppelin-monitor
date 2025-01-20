@@ -18,7 +18,6 @@ use crate::{
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
 
-// TODO: Remove this once we have a better way to handle async functions in traits
 #[async_trait]
 pub trait BlockFilter {
 	type Client;
