@@ -1076,7 +1076,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 				};
 
 				if should_match {
-					matching_results.push(MonitorMatch::Stellar(StellarMonitorMatch {
+					matching_results.push(MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
 						monitor: monitor.clone(),
 						// The conversion to StellarTransaction triggers decoding of the transaction
 						#[allow(clippy::useless_conversion)]
@@ -1111,7 +1111,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 								None
 							},
 						}),
-					}));
+					})));
 				}
 			}
 		}

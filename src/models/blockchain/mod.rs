@@ -35,7 +35,7 @@ pub enum BlockType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorMatch {
 	/// Matched conditions from EVM chains
-	EVM(evm::EVMMonitorMatch),
+	EVM(Box<evm::EVMMonitorMatch>),
 	/// Matched conditions from Stellar chains
-	Stellar(stellar::StellarMonitorMatch),
+	Stellar(Box<stellar::StellarMonitorMatch>),
 }

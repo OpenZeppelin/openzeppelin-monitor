@@ -33,7 +33,7 @@ use crate::{
 
 /// Filter implementation for EVM-compatible blockchains
 pub struct EVMBlockFilter<T> {
-	pub _client: PhantomData<T>
+	pub _client: PhantomData<T>,
 }
 
 impl<T> EVMBlockFilter<T> {
@@ -666,7 +666,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 						};
 
 						if should_match {
-							matching_results.push(MonitorMatch::EVM(EVMMonitorMatch {
+							matching_results.push(MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 								monitor: Monitor {
 									// Omit ABI from monitor since we do not need it here
 									addresses: monitor
@@ -710,7 +710,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 										None
 									},
 								}),
-							}));
+							})));
 						}
 					}
 				}
