@@ -9,6 +9,7 @@
 mod evm;
 mod stellar;
 
+use async_trait::async_trait;
 pub use evm::EVMBlockFilter;
 pub use stellar::StellarBlockFilter;
 
@@ -16,6 +17,9 @@ use crate::{
 	models::{BlockType, Monitor, MonitorMatch, Network},
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
+
+// TODO: Remove this once we have a better way to handle async functions in traits
+#[async_trait]
 pub trait BlockFilter {
 	type Client;
 	async fn filter_block(
