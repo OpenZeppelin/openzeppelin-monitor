@@ -12,7 +12,13 @@ use std::marker::PhantomData;
 
 use openzeppelin_monitor::{
 	models::{BlockType, StellarEvent, StellarTransaction},
-	services::{blockchain::{BlockChainClient, BlockChainError, BlockFilterFactory, EvmClientTrait, StellarClientTrait}, filter::StellarBlockFilter},
+	services::{
+		blockchain::{
+			BlockChainClient, BlockChainError, BlockFilterFactory, EvmClientTrait,
+			StellarClientTrait,
+		},
+		filter::StellarBlockFilter,
+	},
 };
 
 use async_trait::async_trait;
@@ -87,7 +93,7 @@ impl BlockFilterFactory<MockStellarClientTrait> for MockStellarClientTrait {
 	type Filter = StellarBlockFilter<MockStellarClientTrait>;
 	fn filter() -> Self::Filter {
 		StellarBlockFilter {
-			_client: PhantomData
+			_client: PhantomData,
 		}
-	} 
+	}
 }

@@ -26,9 +26,13 @@ pub enum BlockChainType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlockType {
 	/// EVM block and transaction data
+	///
+	/// # Note
 	/// Box is used here to equalize the enum variants
 	EVM(Box<evm::EVMBlock>),
 	/// Stellar ledger and transaction data
+	///
+	/// # Note
 	/// Box is used here to equalize the enum variants
 	Stellar(Box<stellar::StellarBlock>),
 }
@@ -37,9 +41,13 @@ pub enum BlockType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorMatch {
 	/// Matched conditions from EVM chains
+	///
+	/// # Note
 	/// Box is used here to equalize the enum variants
 	EVM(Box<evm::EVMMonitorMatch>),
 	/// Matched conditions from Stellar chains
+	///
+	/// # Note
 	/// Box is used here to equalize the enum variants
 	Stellar(Box<stellar::StellarMonitorMatch>),
 }
