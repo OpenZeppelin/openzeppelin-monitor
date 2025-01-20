@@ -13,9 +13,14 @@ use crate::{
 	models::{
 		BlockType, Network, StellarBlock, StellarEvent, StellarTransaction, StellarTransactionInfo,
 	},
-	services::{blockchain::{
-		client::{BlockChainClient, BlockFilterFactory}, transports::StellarTransportClient, BlockChainError,
-	}, filter::StellarBlockFilter},
+	services::{
+		blockchain::{
+			client::{BlockChainClient, BlockFilterFactory},
+			transports::StellarTransportClient,
+			BlockChainError,
+		},
+		filter::StellarBlockFilter,
+	},
 	utils::WithRetry,
 };
 
@@ -232,7 +237,7 @@ impl BlockFilterFactory<StellarClient> for StellarClient {
 
 	fn filter() -> Self::Filter {
 		StellarBlockFilter {
-			_client: PhantomData {}
+			_client: PhantomData {},
 		}
 	}
 }

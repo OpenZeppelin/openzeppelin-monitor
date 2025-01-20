@@ -437,13 +437,9 @@ impl<T> EVMBlockFilter<T> {
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
 	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
-		let contract = match Contract::load(abi.to_string().as_bytes()) {
-			Ok(contract) => contract,
-			Err(e) => {
-				FilterError::internal_error(format!("Failed to parse ABI: {}", e));
-				return None;
-			}
-		};
+		let contract = Contract::load(abi.to_string().as_bytes())
+			.map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
+			.ok()?;
 
 		let decoded_log = contract
 			.events()
