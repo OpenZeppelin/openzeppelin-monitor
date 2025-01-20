@@ -6,10 +6,7 @@
 use log::info;
 use openzeppelin_monitor::{
 	models::{MonitorMatch, StellarEvent, StellarTransaction, StellarTransactionInfo},
-	services::{
-		blockchain::BlockChainClientEnum,
-		filter::{handle_match, FilterError, FilterService},
-	},
+	services::filter::{handle_match, FilterError, FilterService},
 };
 
 use crate::integration::{

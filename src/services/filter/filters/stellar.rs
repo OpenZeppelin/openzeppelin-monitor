@@ -41,7 +41,7 @@ pub struct EventMap {
 
 /// Implementation of the block filter for Stellar blockchain
 pub struct StellarBlockFilter<T> {
-	pub _client: PhantomData<T>
+	pub _client: PhantomData<T>,
 }
 
 impl<T> StellarBlockFilter<T> {
@@ -1081,7 +1081,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 						// The conversion to StellarTransaction triggers decoding of the transaction
 						#[allow(clippy::useless_conversion)]
 						transaction: StellarTransaction::from(transaction.clone()),
-						ledger: stellar_block.clone(),
+						ledger: *stellar_block.clone(),
 						matched_on: MatchConditions {
 							events: matched_events
 								.clone()

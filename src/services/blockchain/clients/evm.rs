@@ -12,7 +12,10 @@ use web3::types::{BlockId, BlockNumber};
 use crate::{
 	models::{BlockType, EVMBlock, Network},
 	services::{
-		blockchain::{client::BlockChainClient, transports::Web3TransportClient, BlockChainError, BlockFilterFactory},
+		blockchain::{
+			client::BlockChainClient, transports::Web3TransportClient, BlockChainError,
+			BlockFilterFactory,
+		},
 		filter::{helpers::evm::string_to_h256, EVMBlockFilter},
 	},
 	utils::WithRetry,
@@ -50,7 +53,7 @@ impl BlockFilterFactory<Self> for EvmClient {
 	type Filter = EVMBlockFilter<Self>;
 	fn filter() -> Self::Filter {
 		EVMBlockFilter {
-			_client: PhantomData
+			_client: PhantomData,
 		}
 	}
 }
@@ -177,7 +180,7 @@ impl BlockChainClient for EvmClient {
 						.await?
 						.ok_or_else(|| BlockChainError::block_not_found(block_number))?;
 
-					blocks.push(BlockType::EVM(EVMBlock::from(block)));
+					blocks.push(BlockType::EVM(Box::new(EVMBlock::from(block))));
 				}
 				Ok(blocks)
 			})

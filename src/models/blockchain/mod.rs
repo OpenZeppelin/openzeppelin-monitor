@@ -26,9 +26,9 @@ pub enum BlockChainType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlockType {
 	/// EVM block and transaction data
-	EVM(evm::EVMBlock),
+	EVM(Box<evm::EVMBlock>),
 	/// Stellar ledger and transaction data
-	Stellar(stellar::StellarBlock),
+	Stellar(Box<stellar::StellarBlock>),
 }
 
 /// Monitor match results from different blockchain platforms

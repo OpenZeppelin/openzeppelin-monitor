@@ -25,12 +25,11 @@ pub mod utils;
 
 use models::BlockChainType;
 pub use models::{ConfigLoader, Monitor, Network, Trigger};
-use services::blockchain::{EvmClient, StellarClient};
 pub use repositories::{
 	MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
 	TriggerService,
 };
-use services::blockchain::BlockFilterFactory;
+use services::blockchain::{BlockFilterFactory, EvmClient, StellarClient};
 pub use services::{
 	blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
 	filter::FilterService,
@@ -40,8 +39,7 @@ pub use services::{
 use crate::{
 	models::BlockType,
 	services::{
-		filter::handle_match,
-		notification::NotificationService, trigger::TriggerExecutionService,
+		filter::handle_match, notification::NotificationService, trigger::TriggerExecutionService,
 	},
 };
 
@@ -51,7 +49,6 @@ use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::broadcast;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-// type BlockHandlerFn<T: Fn(&BlockType, &Network) + Send + Sync> = Arc<T>;
 type ServiceResult = Result<(
 	Arc<FilterService>,
 	Arc<NetworkService<NetworkRepository>>,
@@ -241,10 +238,8 @@ fn create_block_handler(
 					.await;
 				}
 				BlockChainType::Midnight => unimplemented!("Midnight not implemented"),
-				BlockChainType::Solana => unimplemented!("Solana not implemented")
+				BlockChainType::Solana => unimplemented!("Solana not implemented"),
 			}
-
-			
 		});
 	})
 }
@@ -266,9 +261,9 @@ async fn process_block<T>(
 	filter_service: &FilterService,
 	trigger_service: &TriggerExecutionService<TriggerRepository>,
 	shutdown_rx: &mut broadcast::Receiver<()>,
-)
-where T: BlockFilterFactory<T> {
-
+) where
+	T: BlockFilterFactory<T>,
+{
 	tokio::select! {
 		result = filter_service.filter_block(client, network, block, applicable_monitors) => {
 			match result {

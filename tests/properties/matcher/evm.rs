@@ -1,16 +1,21 @@
 //! Property-based tests for EVM transaction matching and filtering.
 //! Tests cover signature/address normalization, expression evaluation, and transaction matching.
 
+use std::marker::PhantomData;
+
 use openzeppelin_monitor::{
 	models::{
 		AddressWithABI, EVMMatchArguments, EVMMatchParamEntry, FunctionCondition, MatchConditions,
 		Monitor, TransactionCondition, TransactionStatus,
 	},
-	services::filter::{
-		helpers::evm::{
-			are_same_address, are_same_signature, normalize_address, normalize_signature,
+	services::{
+		blockchain::EvmClient,
+		filter::{
+			helpers::evm::{
+				are_same_address, are_same_signature, normalize_address, normalize_signature,
+			},
+			EVMBlockFilter,
 		},
-		EVMBlockFilter,
 	},
 };
 use proptest::{prelude::*, test_runner::Config};
@@ -303,7 +308,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = match operator {
@@ -336,7 +343,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = match operator {
@@ -378,7 +387,9 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = amount >= threshold && are_same_address(&addr, &addr);
@@ -403,7 +414,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = amount < threshold1 || amount > threshold2;
@@ -453,7 +466,9 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = (value1 > threshold && value2 < threshold) ||
@@ -488,7 +503,9 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 
 		// Test various invalid expression scenarios
 		let invalid_operator = format!("amount <=> {}", value);
@@ -514,7 +531,9 @@ proptest! {
 		tx in generate_transaction(),
 		monitor in generate_monitor_with_transaction()
 	) {
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 
 		// Test transaction matching across different status types
 		for status in [TransactionStatus::Success, TransactionStatus::Failure, TransactionStatus::Any] {
@@ -557,7 +576,9 @@ proptest! {
 	fn test_find_matching_transaction_empty_conditions(
 		tx in generate_transaction()
 	) {
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 		let mut matched_transactions = Vec::new();
 
 		// Test that transactions match when no conditions are specified
@@ -591,7 +612,9 @@ proptest! {
 	fn test_find_matching_function_for_transaction(
 		monitor in generate_monitor_with_function()
 	) {
-		let filter = EVMBlockFilter {};
+		let filter = EVMBlockFilter::<EvmClient> {
+			_client: PhantomData,
+		};
 		let mut matched_functions = Vec::new();
 		let mut matched_args = EVMMatchArguments {
 			events: None,

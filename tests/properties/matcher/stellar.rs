@@ -8,16 +8,19 @@ use openzeppelin_monitor::{
 		StellarMatchArguments, StellarMatchParamEntry, StellarTransaction, StellarTransactionInfo,
 		TransactionCondition, TransactionStatus,
 	},
-	services::filter::{
-		helpers::stellar::{
-			are_same_address, are_same_signature, normalize_address, normalize_signature,
+	services::{
+		blockchain::StellarClient,
+		filter::{
+			helpers::stellar::{
+				are_same_address, are_same_signature, normalize_address, normalize_signature,
+			},
+			StellarBlockFilter,
 		},
-		StellarBlockFilter,
 	},
 };
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::{json, Value};
-use std::str::FromStr;
+use std::{marker::PhantomData, str::FromStr};
 use stellar_strkey::Contract;
 use stellar_xdr::curr::{
 	AccountId, HostFunction, Int128Parts, InvokeContractArgs, InvokeHostFunctionOp, Memo,
@@ -393,7 +396,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		// Test address comparison based on normalized form
@@ -423,7 +428,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = match operator {
@@ -455,7 +462,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = match operator {
@@ -494,7 +503,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		// Handle different vector operations: contains checks for membership,
@@ -533,7 +544,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = match operator {
@@ -569,7 +582,9 @@ proptest! {
 			}
 		];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = amount >= threshold && are_same_address(&addr, &addr);
@@ -593,7 +608,9 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		let expected = amount < threshold1 || amount > threshold2;
@@ -643,7 +660,9 @@ proptest! {
 			}
 		];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
 
 		// Expected result combines numeric threshold checks with address equality checks
@@ -674,7 +693,9 @@ proptest! {
 			}
 		];
 
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 
 		// Test cases for expression validation:
 		// 1. Invalid operator syntax
@@ -701,7 +722,9 @@ proptest! {
 		monitor in generate_monitor_with_transaction(),
 	) {
 		let mut matched_transactions = Vec::new();
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 
 		filter.find_matching_transaction(&tx, &monitor, &mut matched_transactions);
 
@@ -749,7 +772,9 @@ proptest! {
 		tx in generate_transaction()
 
 	) {
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let mut matched_transactions = Vec::new();
 
 		// Create monitor with empty conditions
@@ -781,7 +806,9 @@ proptest! {
 		envelope in generate_envelope(),
 		tx in generate_transaction(),
 	) {
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let mut matched_functions = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: None,
@@ -880,7 +907,9 @@ proptest! {
 		bool_value in any::<bool>(),
 		string_value in "[a-zA-Z0-9]*",
 	) {
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 
 		// Create array of JSON values with explicit types
 		let arguments = vec![
@@ -926,7 +955,9 @@ proptest! {
 	fn test_convert_array_arguments(
 		values in prop::collection::vec(any::<i64>(), 1..5),
 	) {
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let arguments = vec![json!(values)];
 
 		let params = filter.convert_arguments_to_match_param_entry(&arguments);
@@ -947,7 +978,9 @@ proptest! {
 		key in "[a-zA-Z][a-zA-Z0-9_]*",
 		value in any::<i64>(),
 	) {
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 
 		// Test regular object to parameter conversion
 		let map = json!({
@@ -984,7 +1017,9 @@ proptest! {
 	// Verifies proper handling of empty argument lists
 	#[test]
 	fn test_convert_empty_arguments(_ in prop::collection::vec(any::<i64>(), 0..1)) {
-		let filter = StellarBlockFilter {};
+		let filter = StellarBlockFilter::<StellarClient> {
+			_client: PhantomData,
+		};
 		let arguments = Vec::new();
 
 		let params = filter.convert_arguments_to_match_param_entry(&arguments);
