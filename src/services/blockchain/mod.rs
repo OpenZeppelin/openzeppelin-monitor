@@ -13,7 +13,7 @@ mod error;
 mod factory;
 mod transports;
 
-pub use client::BlockChainClient;
+pub use client::{BlockChainClient, BlockFilterFactory};
 pub use clients::{
 	BlockChainClientEnum, EvmClient, EvmClientTrait, StellarClient, StellarClientTrait,
 };

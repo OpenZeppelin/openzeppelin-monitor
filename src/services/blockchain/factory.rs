@@ -23,11 +23,11 @@ pub async fn create_blockchain_client(
 	match network.network_type {
 		BlockChainType::EVM => {
 			let client = EvmClient::new(network).await?;
-			Ok(BlockChainClientEnum::EVM(Box::new(client)))
+			Ok(BlockChainClientEnum::EVM(client))
 		}
 		BlockChainType::Stellar => {
 			let client = StellarClient::new(network).await?;
-			Ok(BlockChainClientEnum::Stellar(Box::new(client)))
+			Ok(BlockChainClientEnum::Stellar(client))
 		}
 		// Future blockchain implementations
 		BlockChainType::Midnight => unimplemented!("Midnight client not yet implemented"),

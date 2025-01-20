@@ -45,7 +45,8 @@ async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> 
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
 
-	let mock_client = BlockChainClientEnum::Stellar(Box::new(mock));
+	// let mock_client = BlockChainClientEnum::Stellar(Box::new(mock));
+	let mock_client = mock;
 	let filter_service = FilterService::new();
 
 	let matches = filter_service

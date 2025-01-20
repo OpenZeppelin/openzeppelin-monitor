@@ -6,7 +6,8 @@
 //! - Compare different types of parameter values
 //! - Evaluate complex matching expressions
 
-use async_trait::async_trait;
+use std::marker::PhantomData;
+
 use base64::Engine;
 use log::{info, warn};
 use serde_json::Value;
@@ -20,7 +21,7 @@ use crate::{
 		TransactionStatus,
 	},
 	services::{
-		blockchain::BlockChainClientEnum,
+		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
 			helpers::stellar::{
 				are_same_signature, normalize_address, parse_xdr_value,
@@ -39,9 +40,11 @@ pub struct EventMap {
 }
 
 /// Implementation of the block filter for Stellar blockchain
-pub struct StellarBlockFilter {}
+pub struct StellarBlockFilter<T> {
+	pub _client: PhantomData<T>
+}
 
-impl StellarBlockFilter {
+impl<T> StellarBlockFilter<T> {
 	/// Finds matching transactions based on monitor conditions
 	///
 	/// # Arguments
@@ -950,8 +953,8 @@ impl StellarBlockFilter {
 	}
 }
 
-#[async_trait]
-impl BlockFilter for StellarBlockFilter {
+impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilter<T> {
+	type Client = T;
 	/// Filters a Stellar block against provided monitors
 	///
 	/// # Arguments
@@ -964,7 +967,7 @@ impl BlockFilter for StellarBlockFilter {
 	/// Result containing vector of matching monitors or a filter error
 	async fn filter_block(
 		&self,
-		client: &BlockChainClientEnum,
+		client: &Self::Client,
 		_network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
@@ -980,16 +983,7 @@ impl BlockFilter for StellarBlockFilter {
 
 		let mut matching_results = Vec::new();
 
-		let stellar_client = match client {
-			BlockChainClientEnum::Stellar(client) => client,
-			_ => {
-				return Err(FilterError::internal_error(
-					"Expected Stellar client".to_string(),
-				));
-			}
-		};
-
-		let transactions = stellar_client
+		let transactions = client
 			.get_transactions(stellar_block.sequence, None)
 			.await
 			.map_err(|e| {
@@ -1003,7 +997,7 @@ impl BlockFilter for StellarBlockFilter {
 
 		info!("Processing {} transaction(s)", transactions.len());
 
-		let events = stellar_client
+		let events = client
 			.get_events(stellar_block.sequence, None)
 			.await
 			.map_err(|e| FilterError::network_error(format!("Failed to get events: {}", e)))?;
@@ -1082,12 +1076,12 @@ impl BlockFilter for StellarBlockFilter {
 				};
 
 				if should_match {
-					matching_results.push(MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
+					matching_results.push(MonitorMatch::Stellar(StellarMonitorMatch {
 						monitor: monitor.clone(),
 						// The conversion to StellarTransaction triggers decoding of the transaction
 						#[allow(clippy::useless_conversion)]
 						transaction: StellarTransaction::from(transaction.clone()),
-						ledger: *stellar_block.clone(),
+						ledger: stellar_block.clone(),
 						matched_on: MatchConditions {
 							events: matched_events
 								.clone()
@@ -1117,7 +1111,7 @@ impl BlockFilter for StellarBlockFilter {
 								None
 							},
 						}),
-					})));
+					}));
 				}
 			}
 		}

@@ -8,9 +8,11 @@
 //! These mocks allow testing blockchain-related functionality without actual
 //! network connections.
 
+use std::marker::PhantomData;
+
 use openzeppelin_monitor::{
 	models::{BlockType, StellarEvent, StellarTransaction},
-	services::blockchain::{BlockChainClient, BlockChainError, EvmClientTrait, StellarClientTrait},
+	services::{blockchain::{BlockChainClient, BlockChainError, BlockFilterFactory, EvmClientTrait, StellarClientTrait}, filter::StellarBlockFilter},
 };
 
 use async_trait::async_trait;
@@ -79,4 +81,13 @@ mock! {
 			end_sequence: Option<u32>,
 		) -> Result<Vec<StellarEvent>, BlockChainError>;
 	}
+}
+
+impl BlockFilterFactory<MockStellarClientTrait> for MockStellarClientTrait {
+	type Filter = StellarBlockFilter<MockStellarClientTrait>;
+	fn filter() -> Self::Filter {
+		StellarBlockFilter {
+			_client: PhantomData
+		}
+	} 
 }

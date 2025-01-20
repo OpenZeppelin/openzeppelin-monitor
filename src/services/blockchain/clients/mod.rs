@@ -24,9 +24,9 @@ use crate::{
 /// while maintaining type safety and specific functionality for each chain.
 pub enum BlockChainClientEnum {
 	/// EVM-compatible blockchain client implementation
-	EVM(Box<dyn EvmClientTrait>),
+	EVM(EvmClient),
 	/// Stellar blockchain client implementation
-	Stellar(Box<dyn StellarClientTrait>),
+	Stellar(StellarClient),
 }
 
 #[async_trait]

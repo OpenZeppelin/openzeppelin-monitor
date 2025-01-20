@@ -4,14 +4,16 @@
 //! blockchains, supporting operations like block retrieval, transaction receipt lookup,
 //! and log filtering.
 
+use std::marker::PhantomData;
+
 use async_trait::async_trait;
 use web3::types::{BlockId, BlockNumber};
 
 use crate::{
 	models::{BlockType, EVMBlock, Network},
 	services::{
-		blockchain::{client::BlockChainClient, transports::Web3TransportClient, BlockChainError},
-		filter::helpers::evm::string_to_h256,
+		blockchain::{client::BlockChainClient, transports::Web3TransportClient, BlockChainError, BlockFilterFactory},
+		filter::{helpers::evm::string_to_h256, EVMBlockFilter},
 	},
 	utils::WithRetry,
 };
@@ -41,6 +43,15 @@ impl EvmClient {
 			web3_client,
 			_network: network.clone(),
 		})
+	}
+}
+
+impl BlockFilterFactory<Self> for EvmClient {
+	type Filter = EVMBlockFilter<Self>;
+	fn filter() -> Self::Filter {
+		EVMBlockFilter {
+			_client: PhantomData
+		}
 	}
 }
 
@@ -166,7 +177,7 @@ impl BlockChainClient for EvmClient {
 						.await?
 						.ok_or_else(|| BlockChainError::block_not_found(block_number))?;
 
-					blocks.push(BlockType::EVM(Box::new(EVMBlock::from(block))));
+					blocks.push(BlockType::EVM(EVMBlock::from(block)));
 				}
 				Ok(blocks)
 			})

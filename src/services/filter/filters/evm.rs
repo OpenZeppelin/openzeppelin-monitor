@@ -7,11 +7,10 @@
 //! - Event log processing and filtering
 //! - ABI-based decoding of function calls and events
 
-use async_trait::async_trait;
 use ethabi::Contract;
 use log::{info, warn};
 use serde_json::Value;
-use std::str::FromStr;
+use std::{marker::PhantomData, str::FromStr};
 use web3::types::{Log, Transaction, TransactionReceipt, U64};
 
 use crate::{
@@ -21,7 +20,7 @@ use crate::{
 		Monitor, MonitorMatch, Network, TransactionCondition, TransactionStatus,
 	},
 	services::{
-		blockchain::BlockChainClientEnum,
+		blockchain::{BlockChainClient, EvmClientTrait},
 		filter::{
 			helpers::evm::{
 				are_same_address, are_same_signature, format_token_value, h160_to_string,
@@ -33,9 +32,11 @@ use crate::{
 };
 
 /// Filter implementation for EVM-compatible blockchains
-pub struct EVMBlockFilter {}
+pub struct EVMBlockFilter<T> {
+	pub _client: PhantomData<T>
+}
 
-impl EVMBlockFilter {
+impl<T> EVMBlockFilter<T> {
 	/// Finds transactions that match the monitor's conditions.
 	///
 	/// # Arguments
@@ -490,8 +491,8 @@ impl EVMBlockFilter {
 	}
 }
 
-#[async_trait]
-impl BlockFilter for EVMBlockFilter {
+impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
+	type Client = T;
 	/// Processes a block and finds matches based on monitor conditions.
 	///
 	/// # Arguments
@@ -504,7 +505,7 @@ impl BlockFilter for EVMBlockFilter {
 	/// Vector of matches found in the block
 	async fn filter_block(
 		&self,
-		client: &BlockChainClientEnum,
+		client: &T,
 		_network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
@@ -523,22 +524,13 @@ impl BlockFilter for EVMBlockFilter {
 			evm_block.number.unwrap_or(U64::from(0))
 		);
 
-		let evm_client = match client {
-			BlockChainClientEnum::EVM(client) => client,
-			_ => {
-				return Err(FilterError::internal_error(
-					"Expected EVM client".to_string(),
-				));
-			}
-		};
-
 		// Process all transaction receipts in parallel
 		let receipt_futures: Vec<_> = evm_block
 			.transactions
 			.iter()
 			.map(|transaction| {
 				let tx_hash = h256_to_string(transaction.hash);
-				evm_client.get_transaction_receipt(tx_hash)
+				client.get_transaction_receipt(tx_hash)
 			})
 			.collect();
 
@@ -674,7 +666,7 @@ impl BlockFilter for EVMBlockFilter {
 						};
 
 						if should_match {
-							matching_results.push(MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+							matching_results.push(MonitorMatch::EVM(EVMMonitorMatch {
 								monitor: Monitor {
 									// Omit ABI from monitor since we do not need it here
 									addresses: monitor
@@ -718,7 +710,7 @@ impl BlockFilter for EVMBlockFilter {
 										None
 									},
 								}),
-							})));
+							}));
 						}
 					}
 				}

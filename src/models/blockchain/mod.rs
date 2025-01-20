@@ -26,16 +26,16 @@ pub enum BlockChainType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlockType {
 	/// EVM block and transaction data
-	EVM(Box<evm::EVMBlock>),
+	EVM(evm::EVMBlock),
 	/// Stellar ledger and transaction data
-	Stellar(Box<stellar::StellarBlock>),
+	Stellar(stellar::StellarBlock),
 }
 
 /// Monitor match results from different blockchain platforms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorMatch {
 	/// Matched conditions from EVM chains
-	EVM(Box<evm::EVMMonitorMatch>),
+	EVM(evm::EVMMonitorMatch),
 	/// Matched conditions from Stellar chains
-	Stellar(Box<stellar::StellarMonitorMatch>),
+	Stellar(stellar::StellarMonitorMatch),
 }

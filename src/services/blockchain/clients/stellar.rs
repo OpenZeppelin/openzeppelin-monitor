@@ -4,6 +4,8 @@
 //! supporting operations like block retrieval, transaction lookup, and event filtering.
 //! It works with both Stellar Core nodes and Horizon API endpoints.
 
+use std::marker::PhantomData;
+
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -11,9 +13,9 @@ use crate::{
 	models::{
 		BlockType, Network, StellarBlock, StellarEvent, StellarTransaction, StellarTransactionInfo,
 	},
-	services::blockchain::{
-		client::BlockChainClient, transports::StellarTransportClient, BlockChainError,
-	},
+	services::{blockchain::{
+		client::{BlockChainClient, BlockFilterFactory}, transports::StellarTransportClient, BlockChainError,
+	}, filter::StellarBlockFilter},
 	utils::WithRetry,
 };
 
@@ -225,6 +227,16 @@ impl StellarClientTrait for StellarClient {
 	}
 }
 
+impl BlockFilterFactory<StellarClient> for StellarClient {
+	type Filter = StellarBlockFilter<Self>;
+
+	fn filter() -> Self::Filter {
+		StellarBlockFilter {
+			_client: PhantomData {}
+		}
+	}
+}
+
 #[async_trait]
 impl BlockChainClient for StellarClient {
 	/// Retrieves the latest block number with retry functionality
@@ -309,7 +321,7 @@ impl BlockChainClient for StellarClient {
 						if (sequence as u64) > target_block {
 							return Ok(blocks);
 						}
-						blocks.push(BlockType::Stellar(Box::new(ledger)));
+						blocks.push(BlockType::Stellar(ledger));
 					}
 
 					cursor = response["result"]["cursor"]
