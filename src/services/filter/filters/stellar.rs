@@ -8,6 +8,7 @@
 
 use std::marker::PhantomData;
 
+use async_trait::async_trait;
 use base64::Engine;
 use log::{info, warn};
 use serde_json::Value;
@@ -953,6 +954,7 @@ impl<T> StellarBlockFilter<T> {
 	}
 }
 
+#[async_trait]
 impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilter<T> {
 	type Client = T;
 	/// Filters a Stellar block against provided monitors

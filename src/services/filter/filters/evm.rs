@@ -7,6 +7,7 @@
 //! - Event log processing and filtering
 //! - ABI-based decoding of function calls and events
 
+use async_trait::async_trait;
 use ethabi::Contract;
 use log::{info, warn};
 use serde_json::Value;
@@ -491,6 +492,7 @@ impl<T> EVMBlockFilter<T> {
 	}
 }
 
+#[async_trait]
 impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 	type Client = T;
 	/// Processes a block and finds matches based on monitor conditions.
