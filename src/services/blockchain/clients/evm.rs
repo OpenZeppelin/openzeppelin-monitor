@@ -60,7 +60,7 @@ impl BlockFilterFactory<Self> for EvmClient {
 
 /// Extended functionality specific to EVM-compatible blockchains
 #[async_trait]
-pub trait EvmClientTrait: BlockChainClient {
+pub trait EvmClientTrait {
 	/// Retrieves a transaction receipt by its hash
 	///
 	/// # Arguments

@@ -21,7 +21,6 @@ async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> 
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	// let client = create_blockchain_client(&test_data.network).await.unwrap();
 	let client = EvmClient::new(&test_data.network).await.unwrap();
 
 	// Run filter_block with the test data
