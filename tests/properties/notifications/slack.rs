@@ -37,7 +37,7 @@ proptest! {
 			"https://hooks.slack.com/test".to_string(),
 			"Test".to_string(),
 			template.clone()
-		);
+		).unwrap();
 
 		let first_pass = notifier.format_message(&vars);
 		let second_pass = notifier.format_message(&vars);
@@ -60,7 +60,7 @@ proptest! {
 			"https://hooks.slack.com/test".to_string(),
 			"Test".to_string(),
 			template.clone()
-		);
+		).unwrap();
 
 		let formatted = notifier.format_message(&vars);
 
@@ -82,7 +82,7 @@ proptest! {
 			"https://hooks.slack.com/test".to_string(),
 			"Test".to_string(),
 			template.clone()
-		);
+		).unwrap();
 
 		let empty_vars = HashMap::new();
 		let formatted = notifier.format_message(&empty_vars);
