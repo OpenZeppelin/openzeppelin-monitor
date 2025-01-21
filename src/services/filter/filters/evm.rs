@@ -721,7 +721,7 @@ mod tests {
 	use super::*;
 	use ethabi::{Function, Param, ParamType};
 	use serde_json::json;
-	use web3::types::{H160, U256};
+	use web3::types::{H160, H256, U256};
 
 	fn create_test_transaction(
 		value: U256,
@@ -738,55 +738,158 @@ mod tests {
 		}
 	}
 
-	fn create_test_abi() -> Value {
-		json!([{
-			"type": "function",
-			"name": "transfer",
-			"inputs": [
-				{
-					"name": "recipient",
-					"type": "address",
-					"indexed": false,
-					"internalType": "address"
-				},
-				{
-					"name": "amount",
-					"type": "uint256",
-					"indexed": false,
-					"internalType": "uint256"
-				}
-			],
-			"outputs": [
-				{
-					"name": "",
-					"type": "bool",
-					"indexed": false,
-					"internalType": "bool"
-				}
-			],
-			"stateMutability": "nonpayable",
-			"payable": false,
-			"constant": false
-		}])
+	/// Creates a test monitor with customizable parameters
+	fn create_test_monitor(
+		event_conditions: Vec<EventCondition>,
+		function_conditions: Vec<FunctionCondition>,
+		transaction_conditions: Vec<TransactionCondition>,
+		addresses: Vec<AddressWithABI>,
+	) -> Monitor {
+		Monitor {
+			match_conditions: MatchConditions {
+				events: event_conditions,
+				functions: function_conditions,
+				transactions: transaction_conditions,
+			},
+			addresses,
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			triggers: vec![],
+		}
 	}
 
+	fn create_test_abi(abi_type: &str) -> Value {
+		match abi_type {
+			"function" => json!([{
+				"type": "function",
+				"name": "transfer",
+				"inputs": [
+					{
+						"name": "recipient",
+						"type": "address",
+						"indexed": false,
+						"internalType": "address"
+					},
+					{
+						"name": "amount",
+						"type": "uint256",
+						"indexed": false,
+						"internalType": "uint256"
+					}
+				],
+				"outputs": [
+					{
+						"name": "",
+						"type": "bool",
+						"indexed": false,
+						"internalType": "bool"
+					}
+				],
+				"stateMutability": "nonpayable",
+				"payable": false,
+				"constant": false
+			}]),
+			"event" => json!([{
+				"type": "event",
+				"name": "Transfer",
+				"inputs": [
+					{
+						"name": "from",
+						"type": "address",
+						"indexed": true
+					},
+					{
+						"name": "to",
+						"type": "address",
+						"indexed": true
+					},
+					{
+						"name": "value",
+						"type": "uint256",
+						"indexed": false
+					}
+				],
+				"anonymous": false,
+			}]),
+			_ => json!([]),
+		}
+	}
+
+	/// Creates a test address with ABI
+	fn create_test_address(address: &str, abi: Option<Value>) -> AddressWithABI {
+		AddressWithABI {
+			address: address.to_string(),
+			abi,
+		}
+	}
+
+	fn create_test_log(
+		contract_address: H160,
+		event_signature: &str,
+		from_address: &str,
+		to_address: &str,
+		value_hex: &str,
+	) -> Log {
+		Log {
+			address: contract_address,
+			topics: vec![
+				H256::from_str(event_signature).unwrap(),
+				H256::from_str(from_address).unwrap(),
+				H256::from_str(to_address).unwrap(),
+			],
+			data: web3::types::Bytes(hex::decode(value_hex).unwrap()),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(0.into()),
+			transaction_log_index: Some(0.into()),
+			log_type: None,
+			removed: Some(false),
+		}
+	}
+
+	fn create_test_transfer_receipt(
+		contract_address: H160,
+		from_address: &str,
+		to_address: &str,
+		value: u64,
+	) -> TransactionReceipt {
+		// Standard Transfer event signature
+		let event_signature = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+		// Convert value to 32-byte hex string with leading zeros
+		let value_hex = format!("{:064x}", value);
+
+		TransactionReceipt {
+			logs: vec![create_test_log(
+				contract_address,
+				event_signature,
+				from_address,
+				to_address,
+				&value_hex,
+			)],
+			status: Some(1.into()),
+			transaction_hash: H256::zero(),
+			transaction_index: 0.into(),
+			block_hash: Some(H256::zero()),
+			block_number: Some(1.into()),
+			cumulative_gas_used: 0.into(),
+			gas_used: Some(0.into()),
+			contract_address: None,
+			..Default::default()
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
 	// Test cases for find_matching_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
 	#[test]
 	fn test_empty_conditions_matches_all() {
 		let filter = EVMBlockFilter {};
 		let mut matched = Vec::new();
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				transactions: vec![],
-				events: vec![],
-				functions: vec![],
-			},
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			addresses: vec![],
-			triggers: vec![],
-		};
+		let monitor = create_test_monitor(vec![], vec![], vec![], vec![]);
 
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
@@ -805,21 +908,15 @@ mod tests {
 		let filter = EVMBlockFilter {};
 		let mut matched = Vec::new();
 
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				transactions: vec![TransactionCondition {
-					status: TransactionStatus::Success,
-					expression: None,
-				}],
-				events: vec![],
-				functions: vec![],
-			},
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			addresses: vec![],
-			triggers: vec![],
-		};
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: None,
+			}], // transactions
+			vec![], // addresses
+		);
 
 		// Test successful transaction
 		filter.find_matching_transaction(
@@ -848,21 +945,15 @@ mod tests {
 	fn test_expression_matching() {
 		let filter = EVMBlockFilter {};
 		let mut matched = Vec::new();
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				transactions: vec![TransactionCondition {
-					status: TransactionStatus::Any,
-					expression: Some("value > 100".to_string()),
-				}],
-				events: vec![],
-				functions: vec![],
-			},
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			addresses: vec![],
-			triggers: vec![],
-		};
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Any,
+				expression: Some("value > 100".to_string()),
+			}], // transactions
+			vec![], // addresses
+		);
 
 		// Test transaction with value > 100
 		filter.find_matching_transaction(
@@ -893,21 +984,15 @@ mod tests {
 		let mut matched = Vec::new();
 		let test_address = H160::from_low_u64_be(12345);
 
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				transactions: vec![TransactionCondition {
-					status: TransactionStatus::Any,
-					expression: Some(format!("to == {}", h160_to_string(test_address))),
-				}],
-				events: vec![],
-				functions: vec![],
-			},
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			addresses: vec![],
-			triggers: vec![],
-		};
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Any,
+				expression: Some(format!("to == {}", h160_to_string(test_address))),
+			}], // transactions
+			vec![], // addresses
+		);
 
 		// Test matching 'to' address
 		filter.find_matching_transaction(
@@ -942,21 +1027,15 @@ mod tests {
 		let mut matched = Vec::new();
 		let test_address = H160::from_low_u64_be(12345);
 
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				transactions: vec![TransactionCondition {
-					status: TransactionStatus::Any,
-					expression: Some(format!("from == {}", h160_to_string(test_address))),
-				}],
-				events: vec![],
-				functions: vec![],
-			},
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			addresses: vec![],
-			triggers: vec![],
-		};
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Any,
+				expression: Some(format!("from == {}", h160_to_string(test_address))),
+			}], // transactions
+			vec![], // addresses
+		);
 
 		// Test matching 'from' address
 		filter.find_matching_transaction(
@@ -985,7 +1064,9 @@ mod tests {
 		assert_eq!(matched.len(), 0);
 	}
 
+	//////////////////////////////////////////////////////////////////////////////	
 	// Test cases for find_matching_functions_for_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
 	#[test]
 	fn test_find_matching_functions_basic_match() {
 		let filter = EVMBlockFilter {};
@@ -996,24 +1077,18 @@ mod tests {
 		};
 
 		// Create a monitor with a simple function match condition
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				functions: vec![FunctionCondition {
-					signature: "transfer(address,uint256)".to_string(),
-					expression: None,
-				}],
-				events: vec![],
-				transactions: vec![],
-			},
-			addresses: vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000003039".to_string(),
-				abi: Some(create_test_abi()),
-			}],
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			triggers: vec![],
-		};
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: None,
+			}], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("function")),
+			)], // addresses
+		);
 
 		// Create a transaction with transfer function call
 		let function = Function {
@@ -1080,24 +1155,18 @@ mod tests {
 		};
 
 		// Create a monitor with a function match condition including an expression
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				functions: vec![FunctionCondition {
-					signature: "transfer(address,uint256)".to_string(),
-					expression: Some("amount > 500".to_string()),
-				}],
-				events: vec![],
-				transactions: vec![],
-			},
-			addresses: vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000003039".to_string(),
-				abi: Some(create_test_abi()),
-			}],
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			triggers: vec![],
-		};
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: Some("amount > 500".to_string()),
+			}], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("function")),
+			)], // addresses
+		);
 
 		let function = Function {
 			name: "transfer".to_string(),
@@ -1198,7 +1267,7 @@ mod tests {
 			},
 			addresses: vec![AddressWithABI {
 				address: "0x0000000000000000000000000000000000003039".to_string(),
-				abi: Some(create_test_abi()),
+				abi: Some(create_test_abi("function")),
 			}],
 			name: "test".to_string(),
 			networks: vec!["evm_mainnet".to_string()],
@@ -1273,7 +1342,7 @@ mod tests {
 			},
 			addresses: vec![AddressWithABI {
 				address: "0x0000000000000000000000000000000000003039".to_string(),
-				abi: Some(create_test_abi()),
+				abi: Some(create_test_abi("function")),
 			}],
 			name: "test".to_string(),
 			networks: vec!["evm_mainnet".to_string()],
@@ -1297,5 +1366,190 @@ mod tests {
 		);
 
 		assert_eq!(matched_functions.len(), 0);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for find_matching_events_for_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_find_matching_events_basic_match() {
+		let filter = EVMBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+		let mut involved_addresses = Vec::new();
+
+		// Create a monitor with a simple event match condition
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,address,uint256)".to_string(),
+				expression: None,
+			}], // events
+			vec![], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("event")), // Changed to event ABI
+			)], // addresses
+		);
+
+		// Create a transaction receipt with a Transfer event
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let receipt = create_test_transfer_receipt(
+			contract_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			100,
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 1);
+		assert_eq!(
+			matched_events[0].signature,
+			"Transfer(address,address,uint256)"
+		);
+		assert!(matched_events[0].expression.is_none());
+		assert_eq!(involved_addresses.len(), 1);
+		assert_eq!(
+			involved_addresses[0],
+			"0x0000000000000000000000000000000000003039"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_find_matching_events_with_expression() {
+		let filter = EVMBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+		let mut involved_addresses = Vec::new();
+
+		// Create a monitor with an event match condition including an expression
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,address,uint256)".to_string(),
+				expression: Some("value > 500".to_string()),
+			}], // events
+			vec![], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("event")), // Changed to event ABI
+			)], // addresses
+		);
+
+		// Create a receipt with value > 500 (should match)
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let receipt = create_test_transfer_receipt(
+			contract_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			1000, // Changed to 1000 to be > 500
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 1);
+		assert_eq!(
+			matched_events[0].expression,
+			Some("value > 500".to_string())
+		);
+
+		// Test with value <= 500 (should not match)
+		matched_events.clear();
+		if let Some(events) = &mut matched_on_args.events {
+			events.clear();
+		}
+		involved_addresses.clear();
+
+		let receipt_no_match = create_test_transfer_receipt(
+			contract_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			50,
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt_no_match,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_find_matching_events_non_matching_address() {
+		let filter = EVMBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+		let mut involved_addresses = Vec::new();
+
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: None,
+			}], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("function")),
+			)], // addresses
+		);
+
+		// Create a receipt with non-matching contract address
+		let different_address =
+			H160::from_str("0x0000000000000000000000000000000000001234").unwrap();
+		let receipt = create_test_transfer_receipt(
+			different_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			100,
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 0);
+		assert_eq!(involved_addresses.len(), 0);
 	}
 }
