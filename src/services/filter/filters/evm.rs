@@ -1552,4 +1552,284 @@ mod tests {
 		assert_eq!(matched_events.len(), 0);
 		assert_eq!(involved_addresses.len(), 0);
 	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for evaluate_expression method:
+	//////////////////////////////////////////////////////////////////////////////
+	fn create_test_param(name: &str, value: &str, kind: &str) -> EVMMatchParamEntry {
+		EVMMatchParamEntry {
+			name: name.to_string(),
+			value: value.to_string(),
+			kind: kind.to_string(),
+			indexed: false,
+		}
+	}
+
+	#[test]
+	fn test_evaluate_expression_simple_uint_comparisons() {
+		let filter = EVMBlockFilter {};
+		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
+
+		// Test all operators
+		assert!(filter.evaluate_expression("amount > 500", &args));
+		assert!(filter.evaluate_expression("amount >= 1000", &args));
+		assert!(filter.evaluate_expression("amount < 2000", &args));
+		assert!(filter.evaluate_expression("amount <= 1000", &args));
+		assert!(filter.evaluate_expression("amount == 1000", &args));
+		assert!(filter.evaluate_expression("amount != 999", &args));
+
+		// Test false conditions
+		assert!(!filter.evaluate_expression("amount > 1000", &args));
+		assert!(!filter.evaluate_expression("amount < 1000", &args));
+		assert!(!filter.evaluate_expression("amount == 999", &args));
+	}
+
+	#[test]
+	fn test_evaluate_expression_address_comparisons() {
+		let filter = EVMBlockFilter {};
+		let args = Some(vec![create_test_param(
+			"recipient",
+			"0x1234567890123456789012345678901234567890",
+			"address",
+		)]);
+
+		// Test equality
+		assert!(filter.evaluate_expression(
+			"recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(filter.evaluate_expression(
+			"recipient != 0x0000000000000000000000000000000000000000",
+			&args
+		));
+
+		// Test case-insensitive comparison
+		assert!(filter.evaluate_expression(
+			"recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+
+		// Test false conditions
+		assert!(!filter.evaluate_expression(
+			"recipient == 0x0000000000000000000000000000000000000000",
+			&args
+		));
+	}
+
+	#[test]
+	fn test_evaluate_expression_logical_combinations() {
+		let filter = EVMBlockFilter {};
+		let args = Some(vec![
+			create_test_param("amount", "1000", "uint256"),
+			create_test_param(
+				"recipient",
+				"0x1234567890123456789012345678901234567890",
+				"address",
+			),
+		]);
+
+		// Test AND combinations
+		assert!(filter.evaluate_expression(
+			"amount > 500 AND recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(!filter.evaluate_expression(
+			"amount > 2000 AND recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+
+		// Test OR combinations
+		assert!(filter.evaluate_expression(
+			"amount > 2000 OR recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(!filter.evaluate_expression(
+			"amount > 2000 OR recipient == 0x0000000000000000000000000000000000000000",
+			&args
+		));
+
+		// Test complex combinations
+		assert!(filter.evaluate_expression(
+			"(amount > 500 AND amount < 2000) OR recipient == \
+			 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(!filter.evaluate_expression(
+			"(amount > 2000 AND amount < 3000) OR recipient == \
+			 0x0000000000000000000000000000000000000000",
+			&args
+		));
+	}
+
+	#[test]
+	fn test_evaluate_expression_error_cases() {
+		let filter = EVMBlockFilter {};
+
+		// Test with no args
+		assert!(!filter.evaluate_expression("amount > 1000", &None));
+
+		// Test with empty args
+		assert!(!filter.evaluate_expression("amount > 1000", &Some(vec![])));
+
+		// Test with invalid parameter name
+		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
+		assert!(!filter.evaluate_expression("invalid_param > 1000", &args));
+
+		// Test with invalid operator
+		assert!(!filter.evaluate_expression("amount >>> 1000", &args));
+
+		// Test with invalid value format
+		let args = Some(vec![create_test_param("amount", "not_a_number", "uint256")]);
+		assert!(!filter.evaluate_expression("amount > 1000", &args));
+
+		// Test with unsupported parameter type
+		let args = Some(vec![create_test_param("param", "value", "string")]);
+		assert!(!filter.evaluate_expression("param == value", &args));
+
+		// Test with invalid expression format
+		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
+		assert!(!filter.evaluate_expression("amount > ", &args));
+		assert!(!filter.evaluate_expression("amount", &args));
+		assert!(!filter.evaluate_expression("> 1000", &args));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for decode_events method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_decode_events_successful_decode() {
+		let filter = EVMBlockFilter {};
+
+		// Create contract address and log
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let log = create_test_log(
+			contract_address,
+			// Transfer event signature
+			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+			// from address
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			// to address
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			// value (100 in hex)
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+
+		// Use the event ABI
+		let abi = create_test_abi("event");
+
+		let result = filter.decode_events(&abi, &log).await;
+
+		assert!(result.is_some());
+		let decoded = result.unwrap();
+
+		// Verify decoded event signature
+		assert_eq!(decoded.signature, "Transfer(address,address,uint256)");
+
+		// Verify decoded arguments
+		let args = decoded.args.unwrap();
+		assert_eq!(args.len(), 3); // Transfer event has 3 parameters
+
+		// Check each parameter
+		let from_param = args.iter().find(|p| p.name == "from").unwrap();
+		assert_eq!(from_param.kind, "address");
+		assert!(from_param.indexed);
+
+		let to_param = args.iter().find(|p| p.name == "to").unwrap();
+		assert_eq!(to_param.kind, "address");
+		assert!(to_param.indexed);
+
+		let value_param = args.iter().find(|p| p.name == "value").unwrap();
+		assert_eq!(value_param.kind, "uint256");
+		assert!(!value_param.indexed);
+		assert_eq!(value_param.value, "100"); // 0x64 in decimal
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_invalid_abi() {
+		let filter = EVMBlockFilter {};
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let log = create_test_log(
+			contract_address,
+			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+
+		// Use invalid ABI
+		let invalid_abi = json!([{
+			"type": "event",
+			"name": "InvalidEvent",
+			"inputs": [], // Empty inputs won't match our log
+			"anonymous": false,
+		}]);
+
+		let result = filter.decode_events(&invalid_abi, &log).await;
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_mismatched_signature() {
+		let filter = EVMBlockFilter {};
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+
+		// Create log with different event signature
+		let log = create_test_log(
+			contract_address,
+			// Different event signature
+			"0x0000000000000000000000000000000000000000000000000000000000000000",
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+
+		let abi = create_test_abi("event");
+		let result = filter.decode_events(&abi, &log).await;
+
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_malformed_log_data() {
+		let filter = EVMBlockFilter {};
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+
+		// Create log with invalid data length
+		let log = Log {
+			address: contract_address,
+			topics: vec![
+				H256::from_str(
+					"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+				)
+				.unwrap(),
+				H256::from_str(
+					"0x0000000000000000000000000000000000000000000000000000000000001234",
+				)
+				.unwrap(),
+				H256::from_str(
+					"0x0000000000000000000000000000000000000000000000000000000000005678",
+				)
+				.unwrap(),
+			],
+			data: web3::types::Bytes(vec![0x00]), // Invalid data length
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(0.into()),
+			transaction_log_index: Some(0.into()),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let abi = create_test_abi("event");
+		let result = filter.decode_events(&abi, &log).await;
+
+		assert!(result.is_none());
+	}
 }
