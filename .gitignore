@@ -32,3 +32,8 @@ config/**/*.json
 
 # Ignore proptest regressions
 tests/**/*.proptest-regressions
+
+# Coverage files
+coverage-*.profraw
+coverage-data/
+coverage/

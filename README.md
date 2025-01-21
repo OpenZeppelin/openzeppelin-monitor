@@ -243,6 +243,13 @@ cargo test properties
 cargo test integration
 ```
 
+### Generate Test Coverage Report
+
+```bash
+RUSTFLAGS="-C instrument-coverage" LLVM_PROFILE_FILE="coverage-data/coverage-%p-%m.profraw" cargo test
+grcov . -s . --binary-path ./target/debug/ -t html --branch --ignore-not-existing -o ./coverage/
+```
+
 ### Developer setup
 
 1. Run `chmod +x .githooks/*` to make the git hooks executable.
