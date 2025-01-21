@@ -107,16 +107,22 @@ impl EvmClientTrait for EvmClient {
 			))
 		})?;
 
-		let receipt = self
-			.web3_client
-			.client
-			.eth()
-			.transaction_receipt(hash)
-			.await?;
+		let with_retry = WithRetry::with_default_config();
+		with_retry
+			.attempt(|| async {
+				let receipt = self
+					.web3_client
+					.client
+					.eth()
+					.transaction_receipt(hash)
+					.await
+					.map_err(|e| BlockChainError::request_error(e.to_string()))?;
 
-		Ok(receipt.ok_or_else(|| {
-			BlockChainError::request_error("Transaction receipt not found".to_string())
-		})?)
+				receipt.ok_or_else(|| {
+					BlockChainError::request_error("Transaction receipt not found".to_string())
+				})
+			})
+			.await
 	}
 
 	/// Retrieves logs within the specified block range
@@ -127,17 +133,22 @@ impl EvmClientTrait for EvmClient {
 		from_block: u64,
 		to_block: u64,
 	) -> Result<Vec<web3::types::Log>, BlockChainError> {
-		self.web3_client
-			.client
-			.eth()
-			.logs(
-				web3::types::FilterBuilder::default()
-					.from_block(BlockNumber::Number(from_block.into()))
-					.to_block(BlockNumber::Number(to_block.into()))
-					.build(),
-			)
+		let with_retry = WithRetry::with_default_config();
+		with_retry
+			.attempt(|| async {
+				self.web3_client
+					.client
+					.eth()
+					.logs(
+						web3::types::FilterBuilder::default()
+							.from_block(BlockNumber::Number(from_block.into()))
+							.to_block(BlockNumber::Number(to_block.into()))
+							.build(),
+					)
+					.await
+					.map_err(|e| BlockChainError::request_error(e.to_string()))
+			})
 			.await
-			.map_err(|e| BlockChainError::request_error(e.to_string()))
 	}
 }
 
