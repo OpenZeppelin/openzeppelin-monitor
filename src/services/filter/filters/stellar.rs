@@ -1094,3 +1094,89 @@ impl BlockFilter for StellarBlockFilter {
 		Ok(matching_results)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::{
+		AddressWithABI, MatchConditions, Monitor, StellarTransaction, StellarTransactionInfo,
+		TransactionStatus,
+	};
+
+	/// Creates a test monitor with customizable parameters
+	fn create_test_monitor(
+		event_conditions: Vec<EventCondition>,
+		function_conditions: Vec<FunctionCondition>,
+		transaction_conditions: Vec<TransactionCondition>,
+		addresses: Vec<AddressWithABI>,
+	) -> Monitor {
+		Monitor {
+			match_conditions: MatchConditions {
+				events: event_conditions,
+				functions: function_conditions,
+				transactions: transaction_conditions,
+			},
+			addresses,
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			triggers: vec![],
+		}
+	}
+
+	/// Creates a mock transaction for testing purposes
+	fn create_test_transaction(
+		status: &str,
+		transaction_hash: &str,
+		application_order: i32,
+	) -> StellarTransaction {
+		let transaction_info = StellarTransactionInfo {
+			status: status.to_string(),
+			transaction_hash: transaction_hash.to_string(),
+			application_order,
+			fee_bump: false,
+			envelope_xdr: Some("AAAAAExample base64 encoded XDR...".to_string()),
+			envelope_json: Some(serde_json::json!({
+				"type": "ENVELOPE_TYPE_TX",
+				"tx": {
+					"sourceAccount": "GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU",
+					"fee": 100,
+					"seqNum": "4384801150",
+				}
+			})),
+			result_xdr: Some("AAAAAExample result XDR...".to_string()),
+			result_json: Some(serde_json::json!({"result": "success"})),
+			result_meta_xdr: Some("AAAAAExample meta XDR...".to_string()),
+			result_meta_json: Some(serde_json::json!({"meta": "data"})),
+			diagnostic_events_xdr: Some(vec!["AAAAAExample event XDR...".to_string()]),
+			diagnostic_events_json: Some(vec![serde_json::json!({"event": "data"})]),
+			ledger: 123456,
+			ledger_close_time: 1234567890,
+			decoded: None,
+		};
+
+		StellarTransaction::from(transaction_info)
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for find_matching_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
+	#[test]
+	fn test_find_matching_transaction_empty_conditions_matches_all() {
+		let filter = StellarBlockFilter {};
+		let mut matched_transactions = Vec::new();
+
+		let monitor = create_test_monitor(vec![], vec![], vec![], vec![]);
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
+			1,
+		);
+
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+		assert_eq!(matched_transactions[0].status, TransactionStatus::Any);
+		assert!(matched_transactions[0].expression.is_none());
+	}
+}
