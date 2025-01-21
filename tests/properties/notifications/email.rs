@@ -46,7 +46,7 @@ proptest! {
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
 			}
-		);
+		).unwrap();
 
 		let first_pass = notifier.format_message(&vars);
 		let second_pass = notifier.format_message(&vars);
@@ -78,7 +78,7 @@ proptest! {
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
 			}
-		);
+		).unwrap();
 
 		let formatted = notifier.format_message(&vars);
 
@@ -109,7 +109,7 @@ proptest! {
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
 			}
-		);
+		).unwrap();
 
 		let empty_vars = HashMap::new();
 		let formatted = notifier.format_message(&empty_vars);
