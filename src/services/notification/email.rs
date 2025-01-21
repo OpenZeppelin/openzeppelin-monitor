@@ -143,8 +143,8 @@ impl Notifier for EmailNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), Box<dyn std::error::Error>>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		let recipients_str = self
 			.recipients
 			.iter()
@@ -159,8 +159,12 @@ impl Notifier for EmailNotifier {
 
 		let email = Message::builder()
 			.mailbox(recipients_header)
-			.from(self.sender.to_string().parse()?)
-			.reply_to(self.sender.to_string().parse()?)
+			.from(self.sender.to_string().parse().map_err(|e| {
+				NotificationError::internal_error(format!("Failed to parse email sender: {}", e))
+			})?)
+			.reply_to(self.sender.to_string().parse().map_err(|e| {
+				NotificationError::internal_error(format!("Failed to parse email sender: {}", e))
+			})?)
 			.subject(&self.subject)
 			.header(ContentType::TEXT_PLAIN)
 			.body(message.to_owned())
