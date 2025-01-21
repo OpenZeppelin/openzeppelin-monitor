@@ -9,7 +9,7 @@
 
 use async_trait::async_trait;
 use ethabi::Contract;
-use log::{info, warn};
+use log::{debug, warn};
 use serde_json::Value;
 use std::{marker::PhantomData, str::FromStr};
 use web3::types::{Log, Transaction, TransactionReceipt, U64};
@@ -517,7 +517,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			}
 		};
 
-		info!(
+		debug!(
 			"Processing block {}",
 			evm_block.number.unwrap_or(U64::from(0))
 		);
@@ -545,23 +545,26 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			.collect();
 
 		if receipts.is_empty() {
-			info!("No transactions in block");
+			debug!(
+				"No transactions found for block {}",
+				evm_block.number.unwrap_or(U64::from(0))
+			);
 			return Ok(vec![]);
 		}
 
 		let mut matching_results = Vec::new();
 
-		info!("Processing {} monitor(s)", monitors.len());
+		debug!("Processing {} monitor(s)", monitors.len());
 
 		for monitor in monitors {
-			info!("Processing monitor: {:?}", monitor.name);
+			debug!("Processing monitor: {:?}", monitor.name);
 			let monitored_addresses: Vec<String> = monitor
 				.addresses
 				.iter()
 				.map(|a| a.address.clone())
 				.collect();
 			// Check each receipt and transaction for matches
-			info!("Processing {} receipt(s)", receipts.len());
+			debug!("Processing {} receipt(s)", receipts.len());
 			for receipt in &receipts {
 				let matching_transaction = evm_block
 					.transactions

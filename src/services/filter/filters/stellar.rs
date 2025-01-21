@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 
 use async_trait::async_trait;
 use base64::Engine;
-use log::{info, warn};
+use log::{debug, warn};
 use serde_json::Value;
 use stellar_xdr::curr::{OperationBody, TransactionEnvelope};
 
@@ -993,22 +993,23 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 			})?;
 
 		if transactions.is_empty() {
-			info!("No transactions found for block {}", stellar_block.sequence);
+			debug!("No transactions found for block {}", stellar_block.sequence);
 			return Ok(vec![]);
 		}
 
-		info!("Processing {} transaction(s)", transactions.len());
+		debug!("Processing {} transaction(s)", transactions.len());
 
 		let events = client
 			.get_events(stellar_block.sequence, None)
 			.await
 			.map_err(|e| FilterError::network_error(format!("Failed to get events: {}", e)))?;
 
-		info!("Processing {} event(s)", events.len());
+		debug!("Processing {} event(s)", events.len());
 
+		debug!("Processing {} monitor(s)", monitors.len());
 		// Process each monitor first
 		for monitor in monitors {
-			info!("Processing monitor: {}", monitor.name);
+			debug!("Processing monitor: {}", monitor.name);
 
 			let monitored_addresses = monitor
 				.addresses
@@ -1028,7 +1029,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 					functions: Some(Vec::new()),
 				};
 
-				info!("Processing transaction: {:?}", transaction.hash());
+				debug!("Processing transaction: {:?}", transaction.hash());
 
 				self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
 

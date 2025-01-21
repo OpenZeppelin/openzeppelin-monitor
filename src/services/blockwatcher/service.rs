@@ -3,20 +3,26 @@
 //! Provides functionality to watch and process blockchain blocks across multiple networks,
 //! managing individual watchers for each network and coordinating block processing.
 
+use futures::{channel::mpsc, future::BoxFuture, stream::StreamExt, SinkExt};
 use log::{error, info};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::{BTreeMap, HashMap},
+	sync::Arc,
+};
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
-	models::{BlockType, Network},
+	models::{BlockType, Network, ProcessedBlock},
 	services::{
 		blockchain::BlockChainClient,
 		blockwatcher::{error::BlockWatcherError, storage::BlockStorage, BlockTracker},
 	},
 };
 
-type BlockHandler = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
+type BlockHandler =
+	Arc<dyn Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync>;
+type TriggerHandler = Arc<dyn Fn(&ProcessedBlock) + Send + Sync>;
 
 /// Watcher implementation for a single network
 ///
@@ -29,6 +35,7 @@ where
 	network: Network,
 	block_storage: Arc<B>,
 	block_handler: BlockHandler,
+	trigger_handler: TriggerHandler,
 	scheduler: JobScheduler,
 	block_tracker: Arc<BlockTracker<B>>,
 }
@@ -43,6 +50,7 @@ where
 {
 	block_storage: Arc<B>,
 	block_handler: BlockHandler,
+	trigger_handler: TriggerHandler,
 	active_watchers: Arc<RwLock<HashMap<String, NetworkBlockWatcher<B>>>>,
 	block_tracker: Arc<BlockTracker<B>>,
 }
@@ -64,6 +72,7 @@ where
 		network: Network,
 		block_storage: Arc<B>,
 		block_handler: BlockHandler,
+		trigger_handler: TriggerHandler,
 		block_tracker: Arc<BlockTracker<B>>,
 	) -> Result<Self, BlockWatcherError> {
 		let scheduler = JobScheduler::new().await.map_err(|e| {
@@ -73,6 +82,7 @@ where
 			network,
 			block_storage,
 			block_handler,
+			trigger_handler,
 			scheduler,
 			block_tracker,
 		})
@@ -89,6 +99,7 @@ where
 		let network = self.network.clone();
 		let block_storage = self.block_storage.clone();
 		let block_handler = self.block_handler.clone();
+		let trigger_handler = self.trigger_handler.clone();
 		let block_tracker = self.block_tracker.clone();
 
 		let job = Job::new_async(self.network.cron_schedule.as_str(), move |_uuid, _l| {
@@ -97,24 +108,25 @@ where
 			let block_handler = block_handler.clone();
 			let block_tracker = block_tracker.clone();
 			let rpc_client = rpc_client.clone();
-
+			let trigger_handler = trigger_handler.clone();
 			Box::pin(async move {
 				match process_new_blocks(
 					&network,
 					&rpc_client,
 					block_storage,
 					block_handler,
+					trigger_handler,
 					block_tracker,
 				)
 				.await
 				{
 					Ok(_) => info!(
-						"Successfully processed blocks for network: {}",
-						network.slug
+						"Network {} ({}) processed blocks successfully",
+						network.name, network.slug
 					),
 					Err(e) => error!(
-						"Error processing blocks for network {}: {}",
-						network.slug, e
+						"Network {} ({}) error processing blocks: {}",
+						network.name, network.slug, e
 					),
 				}
 			})
@@ -160,11 +172,13 @@ where
 	pub async fn new(
 		block_storage: Arc<B>,
 		block_handler: BlockHandler,
+		trigger_handler: TriggerHandler,
 		block_tracker: Arc<BlockTracker<B>>,
 	) -> Result<Self, BlockWatcherError> {
 		Ok(BlockWatcherService {
 			block_storage,
 			block_handler,
+			trigger_handler,
 			active_watchers: Arc::new(RwLock::new(HashMap::new())),
 			block_tracker,
 		})
@@ -193,6 +207,7 @@ where
 			network.clone(),
 			self.block_storage.clone(),
 			self.block_handler.clone(),
+			self.trigger_handler.clone(),
 			self.block_tracker.clone(),
 		)
 		.await?;
@@ -232,8 +247,11 @@ async fn process_new_blocks<B: BlockStorage, C: BlockChainClient + Send + Clone 
 	rpc_client: &C,
 	block_storage: Arc<B>,
 	block_handler: BlockHandler,
+	trigger_handler: TriggerHandler,
 	block_tracker: Arc<BlockTracker<B>>,
 ) -> Result<(), BlockWatcherError> {
+	let start_time = std::time::Instant::now();
+
 	let last_processed_block = block_storage
 		.get_last_processed_block(&network.slug)
 		.await
@@ -252,13 +270,28 @@ async fn process_new_blocks<B: BlockStorage, C: BlockChainClient + Send + Clone 
 
 	let max_past_blocks = network.max_past_blocks.unwrap_or(recommended_past_blocks);
 
+	// Calculate the start block number, using the default if max_past_blocks is not set
+	let start_block = std::cmp::max(
+		last_processed_block + 1,
+		latest_confirmed_block.saturating_sub(max_past_blocks.saturating_sub(1)),
+	);
+
 	info!(
-		"Processing blocks for network {} ({}). Last processed: {}, Latest confirmed: {} (waiting \
-		 {} confirmations, max past blocks: {})",
+		"Network {} ({}) processing blocks:\n\tLast processed block: {}\n\tLatest confirmed \
+		 block: {}\n\tStart block: {}{}\n\tConfirmations required: {}\n\tMax past blocks: {}",
 		network.name,
 		network.slug,
 		last_processed_block,
 		latest_confirmed_block,
+		start_block,
+		if start_block > last_processed_block + 1 {
+			format!(
+				" (skipped {} blocks)",
+				start_block - (last_processed_block + 1)
+			)
+		} else {
+			String::new()
+		},
 		network.confirmation_blocks,
 		max_past_blocks
 	);
@@ -275,12 +308,6 @@ async fn process_new_blocks<B: BlockStorage, C: BlockChainClient + Send + Clone 
 				))
 			})?;
 	} else if last_processed_block < latest_confirmed_block {
-		// Calculate the start block number, using the default if max_past_blocks is not set
-		let start_block = std::cmp::max(
-			last_processed_block + 1,
-			latest_confirmed_block.saturating_sub(max_past_blocks.saturating_sub(1)),
-		);
-
 		blocks = rpc_client
 			.get_blocks(start_block, Some(latest_confirmed_block))
 			.await
@@ -292,20 +319,109 @@ async fn process_new_blocks<B: BlockStorage, C: BlockChainClient + Send + Clone 
 			})?;
 	}
 
-	for block in &blocks {
-		let block_number = match block {
-			BlockType::EVM(block) => block.number(),
-			BlockType::Stellar(block) => Some(block.number()),
-		};
-		// record the block number in the block tracker service
-		// so that if a block is missed, we can log it
-		if let Some(number) = block_number {
-			block_tracker.record_block(network, number).await;
-		}
+	// Create channels for our pipeline
+	let (mut process_tx, process_rx) = mpsc::channel::<(BlockType, u64)>(blocks.len() * 2);
+	let (trigger_tx, trigger_rx) = mpsc::channel::<ProcessedBlock>(blocks.len() * 2);
 
-		// process the block
-		(block_handler)(block, network);
+	// Stage 1: Block Processing Pipeline
+	let process_handle = tokio::spawn({
+		let network = network.clone();
+		let block_handler = block_handler.clone();
+		let mut trigger_tx = trigger_tx.clone();
+
+		async move {
+			// Process blocks concurrently, up to 32 at a time
+			let mut results = process_rx
+				.map(|(block, _)| {
+					let network = network.clone();
+					let block_handler = block_handler.clone();
+					async move { (block_handler)(block, network).await }
+				})
+				.buffer_unordered(32); // TODO: This is an arbitrary number. Make this configurable
+
+			// Process all results and send them to trigger channel
+			while let Some(result) = results.next().await {
+				trigger_tx.send(result).await.map_err(|e| {
+					BlockWatcherError::processing_error(format!(
+						"Failed to send processed block: {}",
+						e
+					))
+				})?;
+			}
+
+			Ok::<(), BlockWatcherError>(())
+		}
+	});
+
+	// Stage 2: Trigger Pipeline (maintains order)
+	let trigger_handle = tokio::spawn({
+		let trigger_handler = trigger_handler.clone();
+
+		async move {
+			use futures::StreamExt;
+			let mut trigger_rx = trigger_rx;
+			let mut expected_block = None;
+			let mut pending_blocks = BTreeMap::new();
+
+			while let Some(processed_block) = trigger_rx.next().await {
+				let block_number = processed_block.block_number;
+
+				// Initialize expected_block if this is the first block
+				if expected_block.is_none() {
+					expected_block = Some(block_number);
+				}
+
+				// Store block in pending map if it's not the next expected block
+				if Some(block_number) != expected_block {
+					pending_blocks.insert(block_number, processed_block);
+					continue;
+				}
+
+				// Process the current block
+				(trigger_handler)(&processed_block);
+
+				// Process any subsequent pending blocks that are now ready
+				expected_block = Some(block_number + 1);
+				while let Some(expected) = expected_block {
+					if let Some(next_block) = pending_blocks.remove(&expected) {
+						(trigger_handler)(&next_block);
+						expected_block = Some(expected + 1);
+					} else {
+						break;
+					}
+				}
+			}
+			Ok::<(), BlockWatcherError>(())
+		}
+	});
+
+	// Feed blocks into the pipeline
+	for block in &blocks {
+		// Record block in tracker
+		block_tracker
+			.record_block(network, block.number().unwrap_or(0))
+			.await;
+
+		// Send block to processing pipeline
+		process_tx
+			.send((block.clone(), block.number().unwrap_or(0)))
+			.await
+			.map_err(|e| {
+				BlockWatcherError::processing_error(format!(
+					"Failed to send block to pipeline: {}",
+					e
+				))
+			})?;
 	}
+
+	// Drop the sender after all blocks are sent
+	drop(process_tx);
+	drop(trigger_tx);
+
+	// Wait for both pipeline stages to complete
+	let (process_result, trigger_result) = tokio::join!(process_handle, trigger_handle);
+	process_result.map_err(|e| BlockWatcherError::processing_error(e.to_string()))??;
+	trigger_result.map_err(|e| BlockWatcherError::processing_error(e.to_string()))??;
 
 	if network.store_blocks.unwrap_or(false) {
 		// Delete old blocks before saving new ones
@@ -330,6 +446,15 @@ async fn process_new_blocks<B: BlockStorage, C: BlockChainClient + Send + Clone 
 		.map_err(|e| {
 			BlockWatcherError::storage_error(format!("Failed to save last processed block: {}", e))
 		})?;
+
+	let duration = start_time.elapsed();
+	info!(
+		"Network {} ({}) processed {} blocks in {:.2?}",
+		network.name,
+		network.slug,
+		blocks.len(),
+		duration
+	);
 
 	Ok(())
 }
