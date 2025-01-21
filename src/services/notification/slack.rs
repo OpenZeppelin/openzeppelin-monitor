@@ -99,8 +99,8 @@ impl Notifier for SlackNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), Box<dyn std::error::Error>>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		let payload = SlackMessage {
 			text: message.to_string(),
 		};
@@ -110,7 +110,7 @@ impl Notifier for SlackNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| Box::new(NotificationError::network_error(e.to_string())))?;
+			.map_err(|e| NotificationError::network_error(e.to_string()))?;
 
 		Ok(())
 	}
