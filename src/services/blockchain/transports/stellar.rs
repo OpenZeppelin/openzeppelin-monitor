@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use stellar_rpc_client::Client as StellarHttpClient;
 
 /// A client for interacting with Stellar Core RPC endpoints
+#[derive(Clone)]
 pub struct StellarTransportClient {
 	/// The underlying HTTP client for Stellar RPC requests
 	pub client: StellarHttpClient,

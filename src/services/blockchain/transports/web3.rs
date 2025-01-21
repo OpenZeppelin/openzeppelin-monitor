@@ -9,6 +9,7 @@ use web3::{transports::Http, Web3};
 use crate::{models::Network, services::blockchain::BlockChainError};
 
 /// A client for interacting with EVM-compatible blockchain nodes via Web3
+#[derive(Clone)]
 pub struct Web3TransportClient {
 	/// The underlying Web3 client for RPC requests
 	pub client: Web3<Http>,

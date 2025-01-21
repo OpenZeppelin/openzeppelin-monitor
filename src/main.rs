@@ -47,7 +47,6 @@ use tokio::sync::broadcast;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type ServiceResult = Result<(
 	Arc<FilterService>,
-	Arc<NetworkService<NetworkRepository>>,
 	Arc<TriggerExecutionService<TriggerRepository>>,
 	Vec<Monitor>,
 	HashMap<String, Network>,
@@ -63,7 +62,7 @@ async fn main() -> Result<()> {
 	dotenv().ok();
 	env_logger::init();
 
-	let (filter_service, network_service, trigger_execution_service, active_monitors, networks) =
+	let (filter_service, trigger_execution_service, active_monitors, networks) =
 		initialize_services()?;
 
 	let networks_with_monitors: Vec<Network> = networks
@@ -87,8 +86,7 @@ async fn main() -> Result<()> {
 	);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
-	let block_watcher = BlockWatcherService::<NetworkRepository, FileBlockStorage>::new(
-		network_service,
+	let block_watcher = BlockWatcherService::<FileBlockStorage>::new(
 		file_block_storage.clone(),
 		block_handler,
 		Arc::new(BlockTracker::new(1000, Some(file_block_storage.clone()))),
@@ -96,7 +94,19 @@ async fn main() -> Result<()> {
 	.await?;
 
 	for network in networks_with_monitors {
-		block_watcher.start_network_watcher(&network).await?;
+		match network.network_type {
+			BlockChainType::EVM => {
+				let client = EvmClient::new(&network).await?;
+				let _ = block_watcher.start_network_watcher(&network, client).await;
+			}
+
+			BlockChainType::Stellar => {
+				let client = StellarClient::new(&network).await?;
+				let _ = block_watcher.start_network_watcher(&network, client).await;
+			}
+			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),
+			BlockChainType::Solana => unimplemented!("Solana not implemented"),
+		}
 	}
 
 	info!("Service started. Press Ctrl+C to shutdown");
@@ -159,7 +169,6 @@ fn initialize_services() -> ServiceResult {
 
 	Ok((
 		filter_service,
-		Arc::new(network_service),
 		trigger_execution_service,
 		active_monitors,
 		networks,
