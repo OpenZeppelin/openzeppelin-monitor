@@ -721,7 +721,7 @@ mod tests {
 	use super::*;
 	use ethabi::{Function, Param, ParamType};
 	use serde_json::json;
-	use web3::types::{H160, H256, U256, U64};
+	use web3::types::{H160, U256};
 
 	fn create_test_transaction(
 		value: U256,
@@ -730,25 +730,11 @@ mod tests {
 		input_data: Vec<u8>,
 	) -> Transaction {
 		Transaction {
-			hash: H256::zero(),
-			nonce: U256::zero(),
-			block_hash: None,
-			block_number: None,
-			transaction_index: None,
+			value,
 			from,
 			to,
-			value,
-			gas_price: Some(U256::zero()),
-			gas: U256::zero(),
 			input: web3::types::Bytes(input_data),
-			v: Some(U64::from(0)),
-			r: Some(U256::zero()),
-			s: Some(U256::zero()),
-			raw: None,
-			transaction_type: None,
-			access_list: None,
-			max_priority_fee_per_gas: None,
-			max_fee_per_gas: None,
+			..Default::default()
 		}
 	}
 
