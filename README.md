@@ -209,20 +209,31 @@ cargo run
 
 ### Run as a container
 
-You have the option of running as a development container or as production (`Dockerfile.development` and `Dockerfile.production`).
+You have the option of running as a development container or as production one (`Dockerfile.development` and `Dockerfile.production`).
 
 To adjust the `.env` file, you can edit `env_dev` or `env_prod` at the root of the repository.
 
 Assuming your docker environment is installed and properly set up, you can build the image with:
-`docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all`
+```bash
+docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
+```
 
 This will generate an image including the appropriate `.env` file and the configurations in the `./config` folder.
 
+Now we need to create the docker volume to keep the monitor internal data (if you want to keep it when you restart the container, otherwise just skip this step).
+```bash
+docker volume create <volume_tag>
+```
+
 After the build is finished, you can run it with:
-`docker run <your_image_tag>`
+```bash
+docker run --volume <volume_tag>:/app/data <your_image_tag>`
+```
 
 If you need to change the monitor configurations, there's no need to rebuild the image. Assuming you have the configuration files in `./config`, you can just bind the directory to the container:
-`docker run --mount type=bind,src=./config,dst=/app/config,ro <your_image_tag>`
+```bash
+docker run --mount type=bind,src=./config,dst=/app/config,ro --volume <volume_tag>:/app/data <your_image_tag>
+```
 
 ### Run Tests
 
