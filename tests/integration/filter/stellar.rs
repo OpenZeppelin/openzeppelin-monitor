@@ -27,23 +27,23 @@ async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> 
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
 		.collect();
 
 	// Setup mock expectations
-	mock.expect_get_transactions()
+	mock_client
+		.expect_get_transactions()
 		.times(1)
 		.returning(move |_, _| Ok(decoded_transactions.clone()));
 
-	mock.expect_get_events()
+	mock_client
+		.expect_get_events()
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
 
-	// let mock_client = BlockChainClientEnum::Stellar(Box::new(mock));
-	let mock_client = mock;
 	let filter_service = FilterService::new();
 
 	let matches = filter_service
