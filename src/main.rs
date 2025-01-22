@@ -24,13 +24,13 @@ pub mod services;
 pub mod utils;
 
 use crate::{
-	models::{BlockChainType, BlockType, Monitor, Network},
+	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
 	repositories::{
 		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
 		TriggerService,
 	},
 	services::{
-		blockchain::{BlockFilterFactory, EvmClient, StellarClient},
+		blockchain::{BlockChainClient, BlockFilterFactory, EvmClient, StellarClient},
 		blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
@@ -41,8 +41,6 @@ use crate::{
 use dotenvy::dotenv;
 use futures::future::BoxFuture;
 use log::{error, info};
-use models::{MonitorMatch, ProcessedBlock};
-use services::blockchain::BlockChainClient;
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::broadcast;
 
