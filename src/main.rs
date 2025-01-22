@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
 	);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
-	let block_watcher = BlockWatcherService::<FileBlockStorage>::new(
+	let block_watcher = BlockWatcherService::new(
 		file_block_storage.clone(),
 		block_handler,
 		Arc::new(BlockTracker::new(1000, Some(file_block_storage.clone()))),

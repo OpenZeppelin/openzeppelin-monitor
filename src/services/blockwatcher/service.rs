@@ -16,40 +16,33 @@ use crate::{
 	},
 };
 
-type BlockHandler = Arc<dyn Fn(&BlockType, &Network) + Send + Sync>;
-
 /// Watcher implementation for a single network
 ///
 /// Manages block watching and processing for a specific blockchain network,
 /// including scheduling and block handling.
-pub struct NetworkBlockWatcher<B>
-where
-	B: BlockStorage + Send + Sync + 'static,
-{
+pub struct NetworkBlockWatcher<S, H> {
 	network: Network,
-	block_storage: Arc<B>,
-	block_handler: BlockHandler,
+	block_storage: Arc<S>,
+	block_handler: Arc<H>,
 	scheduler: JobScheduler,
-	block_tracker: Arc<BlockTracker<B>>,
+	block_tracker: Arc<BlockTracker<S>>,
 }
 
 /// Service for managing multiple network watchers
 ///
 /// Coordinates block watching across multiple networks, managing individual
 /// watchers and their lifecycles.
-pub struct BlockWatcherService<B>
-where
-	B: BlockStorage + Send + Sync + 'static,
-{
-	block_storage: Arc<B>,
-	block_handler: BlockHandler,
-	active_watchers: Arc<RwLock<HashMap<String, NetworkBlockWatcher<B>>>>,
-	block_tracker: Arc<BlockTracker<B>>,
+pub struct BlockWatcherService<S, H> {
+	block_storage: Arc<S>,
+	block_handler: Arc<H>,
+	active_watchers: Arc<RwLock<HashMap<String, NetworkBlockWatcher<S, H>>>>,
+	block_tracker: Arc<BlockTracker<S>>,
 }
 
-impl<B> NetworkBlockWatcher<B>
+impl<S, H> NetworkBlockWatcher<S, H>
 where
-	B: BlockStorage + Send + Sync + 'static,
+	S: BlockStorage + Send + Sync + 'static,
+	H: Fn(&BlockType, &Network) + Send + Sync + 'static,
 {
 	/// Creates a new network watcher instance
 	///
@@ -62,9 +55,9 @@ where
 	/// * `Result<Self, BlockWatcherError>` - New watcher instance or error
 	pub async fn new(
 		network: Network,
-		block_storage: Arc<B>,
-		block_handler: BlockHandler,
-		block_tracker: Arc<BlockTracker<B>>,
+		block_storage: Arc<S>,
+		block_handler: Arc<H>,
+		block_tracker: Arc<BlockTracker<S>>,
 	) -> Result<Self, BlockWatcherError> {
 		let scheduler = JobScheduler::new().await.map_err(|e| {
 			BlockWatcherError::scheduler_error(format!("Failed to create scheduler: {}", e))
@@ -147,9 +140,10 @@ where
 	}
 }
 
-impl<B> BlockWatcherService<B>
+impl<S, H> BlockWatcherService<S, H>
 where
-	B: BlockStorage + Send + Sync + 'static,
+	S: BlockStorage + Send + Sync + 'static,
+	H: Fn(&BlockType, &Network) + Send + Sync + 'static,
 {
 	/// Creates a new block watcher service
 	///
@@ -158,9 +152,9 @@ where
 	/// * `block_storage` - Storage implementation for blocks
 	/// * `block_handler` - Handler function for processed blocks
 	pub async fn new(
-		block_storage: Arc<B>,
-		block_handler: BlockHandler,
-		block_tracker: Arc<BlockTracker<B>>,
+		block_storage: Arc<S>,
+		block_handler: Arc<H>,
+		block_tracker: Arc<BlockTracker<S>>,
 	) -> Result<Self, BlockWatcherError> {
 		Ok(BlockWatcherService {
 			block_storage,
@@ -227,12 +221,16 @@ where
 ///
 /// # Returns
 /// * `Result<(), BlockWatcherError>` - Success or error
-async fn process_new_blocks<B: BlockStorage, C: BlockChainClient + Send + Clone + 'static>(
+async fn process_new_blocks<
+	S: BlockStorage,
+	C: BlockChainClient + Send + Clone + 'static,
+	H: Fn(&BlockType, &Network) + Send + Sync + 'static,
+>(
 	network: &Network,
 	rpc_client: &C,
-	block_storage: Arc<B>,
-	block_handler: BlockHandler,
-	block_tracker: Arc<BlockTracker<B>>,
+	block_storage: Arc<S>,
+	block_handler: Arc<H>,
+	block_tracker: Arc<BlockTracker<S>>,
 ) -> Result<(), BlockWatcherError> {
 	let last_processed_block = block_storage
 		.get_last_processed_block(&network.slug)
