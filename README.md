@@ -236,7 +236,15 @@ cargo test integration
 
 ```bash
 RUSTFLAGS="-C instrument-coverage" LLVM_PROFILE_FILE="coverage-data/coverage-%p-%m.profraw" cargo test
-grcov . -s . --binary-path ./target/debug/ -t html --branch --ignore-not-existing -o ./coverage/
+grcov . -s . \
+  --binary-path ./target/debug/ \
+  -t html \
+  --branch \
+  --ignore-not-existing \
+  --ignore "/*" \
+  --ignore "tests/*" \
+  --ignore "src/**/tests/*" \
+  -o ./coverage/
 ```
 
 ### Developer setup
