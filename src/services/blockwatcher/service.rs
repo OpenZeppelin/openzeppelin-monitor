@@ -322,7 +322,7 @@ async fn process_new_blocks<
 	}
 
 	// Create channels for our pipeline
-	let (mut process_tx, process_rx) = mpsc::channel::<(BlockType, u64)>(blocks.len() * 2);
+	let (process_tx, process_rx) = mpsc::channel::<(BlockType, u64)>(blocks.len() * 2);
 	let (trigger_tx, trigger_rx) = mpsc::channel::<ProcessedBlock>(blocks.len() * 2);
 
 	// Stage 1: Block Processing Pipeline
@@ -339,7 +339,7 @@ async fn process_new_blocks<
 					let block_handler = block_handler.clone();
 					async move { (block_handler)(block, network).await }
 				})
-				.buffer_unordered(32); // TODO: This is an arbitrary number. Make this configurable
+				.buffer_unordered(32);
 
 			// Process all results and send them to trigger channel
 			while let Some(result) = results.next().await {
@@ -355,42 +355,35 @@ async fn process_new_blocks<
 		}
 	});
 
-	// Stage 2: Trigger Pipeline (maintains order)
+	// Stage 2: Trigger Pipeline
 	let trigger_handle = tokio::spawn({
 		let trigger_handler = trigger_handler.clone();
 
 		async move {
-			use futures::StreamExt;
 			let mut trigger_rx = trigger_rx;
-			let mut expected_block = None;
 			let mut pending_blocks = BTreeMap::new();
+			let mut next_block_number = Some(start_block);
 
+			// Process all incoming blocks
 			while let Some(processed_block) = trigger_rx.next().await {
 				let block_number = processed_block.block_number;
+				pending_blocks.insert(block_number, processed_block);
 
-				// Initialize expected_block if this is the first block
-				if expected_block.is_none() {
-					expected_block = Some(block_number);
-				}
-
-				// Store block in pending map if it's not the next expected block
-				if Some(block_number) != expected_block {
-					pending_blocks.insert(block_number, processed_block);
-					continue;
-				}
-
-				// Process the current block
-				(trigger_handler)(&processed_block);
-
-				// Process any subsequent pending blocks that are now ready
-				expected_block = Some(block_number + 1);
-				while let Some(expected) = expected_block {
-					if let Some(next_block) = pending_blocks.remove(&expected) {
-						(trigger_handler)(&next_block);
-						expected_block = Some(expected + 1);
+				// Process blocks in order as long as we have the next expected block
+				while let Some(expected) = next_block_number {
+					if let Some(block) = pending_blocks.remove(&expected) {
+						(trigger_handler)(&block);
+						next_block_number = Some(expected + 1);
 					} else {
 						break;
 					}
+				}
+			}
+
+			// Process any remaining blocks in order after the channel is closed
+			while let Some(min_block) = pending_blocks.keys().next().copied() {
+				if let Some(block) = pending_blocks.remove(&min_block) {
+					(trigger_handler)(&block);
 				}
 			}
 			Ok::<(), BlockWatcherError>(())
@@ -398,23 +391,31 @@ async fn process_new_blocks<
 	});
 
 	// Feed blocks into the pipeline
-	for block in &blocks {
-		// Record block in tracker
-		block_tracker
-			.record_block(network, block.number().unwrap_or(0))
-			.await;
+	futures::future::join_all(blocks.iter().map(|block| {
+		let network = network.clone();
+		let block_tracker = block_tracker.clone();
+		let mut process_tx = process_tx.clone();
+		async move {
+			let block_number = block.number().unwrap_or(0);
 
-		// Send block to processing pipeline
-		process_tx
-			.send((block.clone(), block.number().unwrap_or(0)))
-			.await
-			.map_err(|e| {
-				BlockWatcherError::processing_error(format!(
-					"Failed to send block to pipeline: {}",
-					e
-				))
-			})?;
-	}
+			// Record block in tracker
+			block_tracker.record_block(&network, block_number).await;
+
+			// Send block to processing pipeline
+			process_tx
+				.send((block.clone(), block_number))
+				.await
+				.map_err(|e| {
+					BlockWatcherError::processing_error(format!(
+						"Failed to send block to pipeline: {}",
+						e
+					))
+				})
+		}
+	}))
+	.await
+	.into_iter()
+	.collect::<Result<Vec<_>, _>>()?;
 
 	// Drop the sender after all blocks are sent
 	drop(process_tx);
@@ -449,13 +450,12 @@ async fn process_new_blocks<
 			BlockWatcherError::storage_error(format!("Failed to save last processed block: {}", e))
 		})?;
 
-	let duration = start_time.elapsed();
 	info!(
-		"Network {} ({}) processed {} blocks in {:.2?}",
+		"Network {} ({}) processed {} blocks in {}ms",
 		network.name,
 		network.slug,
 		blocks.len(),
-		duration
+		start_time.elapsed().as_millis()
 	);
 
 	Ok(())
