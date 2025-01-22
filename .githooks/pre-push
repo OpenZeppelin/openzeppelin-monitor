@@ -7,7 +7,8 @@ STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 echo "---------------------------"
 echo "- ✨  Running clippy   ✨ -"
 echo "---------------------------"
-cargo clippy -- -D warnings
+cargo clean
+cargo clippy --workspace -- -D warnings
 echo "✅"
 
 echo "---------------------------"
