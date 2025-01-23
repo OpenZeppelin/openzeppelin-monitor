@@ -113,14 +113,23 @@ jobs:
           | sarif-fmt
         continue-on-error: true
 
-      - name: Upload
-        uses: github/codeql-action/upload-sarif@dd196fa9ce80b6bacc74ca1c32bd5b0ba22efca7  # v3.28.3
+      - name: upload sarif artifact
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
         with:
-          sarif_file: clippy-results.sarif
-          wait-for-processing: true
+          name: clippy-results.sarif
+          path: clippy-results.sarif
+          retention-days: 1
+
+      # TODO: enable this when the repo is made public.
+      # - name: Upload
+      #   uses: github/codeql-action/upload-sarif@dd196fa9ce80b6bacc74ca1c32bd5b0ba22efca7  # v3.28.3
+      #   with:
+      #     sarif_file: clippy-results.sarif
+      #     wait-for-processing: true
 
       - name: Report status
         run: cargo clippy --all-features --all-targets -- -D warnings --allow deprecated
+          --locked
 
   test:
     runs-on: ubuntu-latest
@@ -141,7 +150,7 @@ jobs:
         uses: taiki-e/install-action@cargo-hack
 
       - name: Build
-        run: cargo test --no-run
+        run: cargo test --no-run --locked
 
       - name: Test
         run: cargo hack test --feature-powerset --locked --all-targets
