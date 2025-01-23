@@ -20,8 +20,7 @@ COPY --chown=nonroot:nonroot config /app/config
 COPY --chown=nonroot:nonroot data /app/data
 COPY --chown=nonroot:nonroot env_prod /app/.env
 
-EXPOSE 8080 
+EXPOSE 8080
 
 # starting up
 ENTRYPOINT ["/app/openzeppelin-monitor"]
-

@@ -55,7 +55,7 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
      ```
 
    - Set up environment variables:
-  
+
      ```sh
      cp .env.example .env
      ```
