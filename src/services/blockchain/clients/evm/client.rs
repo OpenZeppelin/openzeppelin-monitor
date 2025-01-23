@@ -16,7 +16,7 @@ use crate::{
 			client::BlockChainClient, transports::Web3TransportClient, BlockChainError,
 			BlockFilterFactory,
 		},
-		filter::{helpers::evm::string_to_h256, EVMBlockFilter},
+		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
 	},
 	utils::WithRetry,
 };
