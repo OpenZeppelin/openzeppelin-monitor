@@ -18,35 +18,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      # - uses: actions-rs/toolchain@v1
-      #   with:
-      #     profile: minimal
-      #     toolchain: nightly
-      #     override: true
 
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: "llvm-tools-preview"
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+          with:
+            toolchain: nightly
+            components: llvm-tools-preview
+            rustflags: ""
 
-      # - name: Setup upterm session
-      #   uses: lhotari/action-upterm@v1
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Test
+      - name: Run Tests
         env:
           LLVM_PROFILE_FILE: grcov-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
         run: cargo test
 
-      - name: Generate coverage
-        run: |
-            cargo install cargo2junit grcov;
-            grcov $(find . -name "grcov-*.profraw" -print) \
-            --branch \
-            --ignore-not-existing \
-            -s . \
-            -t lcov \
-            --ignore "/*" \
-            -o lcov.info
+      - name: Cargo llvm-cov
+        run: cargo llvm-cov --locked --features std --lcov --output-path lcov.info
+
+
+      # - name: Generate coverage
+      #   run: |
+      #       cargo install cargo2junit grcov;
+      #       grcov $(find . -name "grcov-*.profraw" -print) \
+      #       --branch \
+      #       --ignore-not-existing \
+      #       -s . \
+      #       -t lcov \
+      #       --ignore "/*" \
+      #       -o lcov.info
 
       # - name: Generate test result and coverage report
       #   run: |
@@ -55,16 +57,15 @@ jobs:
       #       zip -0 ccov.zip `find . \( -name "$PROJECT_NAME_UNDERSCORE*.gc*" \) -print`;
       #       grcov ccov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" --ignore "tests/*" -o lcov.info;
 
-      - name: Upload test results
-        uses: EnricoMi/publish-unit-test-result-action@v1
-        with:
-          check_name: Test Results
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          files: results.xml
+      # - name: Upload test results
+      #   uses: EnricoMi/publish-unit-test-result-action@v1
+      #   with:
+      #     check_name: Test Results
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     files: results.xml
 
       - name: Upload to CodeCov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./lcov.info
           fail_ci_if_error: true
