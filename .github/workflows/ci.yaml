@@ -10,11 +10,6 @@ name: CI
 jobs:
   Tests:
     name: Unit Tests
-    # env:
-    #   PROJECT_NAME_UNDERSCORE: openzeppelin_monitor
-    #   CARGO_INCREMENTAL: 0
-    #   RUSTFLAGS: "-Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
-    #   RUSTDOCFLAGS: -Cpanic=abort
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -37,32 +32,6 @@ jobs:
 
       - name: Cargo llvm-cov
         run: cargo llvm-cov --locked --lcov --output-path lcov.info
-
-
-      # - name: Generate coverage
-      #   run: |
-      #       cargo install cargo2junit grcov;
-      #       grcov $(find . -name "grcov-*.profraw" -print) \
-      #       --branch \
-      #       --ignore-not-existing \
-      #       -s . \
-      #       -t lcov \
-      #       --ignore "/*" \
-      #       -o lcov.info
-
-      # - name: Generate test result and coverage report
-      #   run: |
-      #       cargo install cargo2junit grcov;
-      #       cargo test $CARGO_OPTIONS -- -Z unstable-options --format json | cargo2junit > results.xml
-      #       zip -0 ccov.zip `find . \( -name "$PROJECT_NAME_UNDERSCORE*.gc*" \) -print`;
-      #       grcov ccov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" --ignore "tests/*" -o lcov.info;
-
-      # - name: Upload test results
-      #   uses: EnricoMi/publish-unit-test-result-action@v1
-      #   with:
-      #     check_name: Test Results
-      #     github_token: ${{ secrets.GITHUB_TOKEN }}
-      #     files: results.xml
 
       - name: Upload to CodeCov
         uses: codecov/codecov-action@v5
