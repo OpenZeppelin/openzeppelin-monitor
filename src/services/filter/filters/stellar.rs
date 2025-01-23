@@ -1105,6 +1105,7 @@ mod tests {
 	use serde_json::json;
 	use stellar_strkey::ed25519::PublicKey as StrPublicKey;
 
+	use base64::engine::general_purpose::STANDARD as BASE64;
 	use stellar_xdr::curr::{
 		Asset, Hash, HostFunction, InvokeContractArgs, InvokeHostFunctionOp, MuxedAccount,
 		Operation, OperationBody, PaymentOp, ScAddress, ScString, ScSymbol, ScVal, SequenceNumber,
@@ -1286,6 +1287,52 @@ mod tests {
 
 		// Return the wrapped transaction
 		StellarTransaction(tx_info)
+	}
+
+	/// Creates a test event for testing
+	fn create_test_event(
+		tx_hash: &str,
+		event_signature: &str,
+		args: Option<Vec<StellarMatchParamEntry>>,
+	) -> EventMap {
+		EventMap {
+			event: StellarMatchParamsMap {
+				signature: event_signature.to_string(),
+				args,
+			},
+			tx_hash: tx_hash.to_string(),
+		}
+	}
+
+	// Helper function to create a basic StellarEvent
+	fn create_test_stellar_event(
+		contract_id: &str,
+		tx_hash: &str,
+		topics: Vec<String>,
+		value: Option<String>,
+	) -> StellarEvent {
+		StellarEvent {
+			contract_id: contract_id.to_string(),
+			transaction_hash: tx_hash.to_string(),
+			topic_xdr: Some(topics),
+			value_xdr: value,
+			event_type: "contract".to_string(),
+			ledger: 0,
+			ledger_closed_at: "0".to_string(),
+			id: "0".to_string(),
+			paging_token: "0".to_string(),
+			in_successful_contract_call: true,
+			topic_json: None,
+			value_json: None,
+		}
+	}
+
+	// Helper function to create base64 encoded event name
+	fn encode_event_name(name: &str) -> String {
+		// Create a buffer with 8 bytes prefix (4 for size, 4 for type) + name
+		let mut buffer = vec![0u8; 8];
+		buffer.extend_from_slice(name.as_bytes());
+		BASE64.encode(buffer)
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
@@ -1552,11 +1599,11 @@ mod tests {
 		);
 
 		// Create monitor with matching function signature condition - match the full signature
+		// from the operation
 		let monitor = create_test_monitor(
 			vec![],
 			vec![FunctionCondition {
-				signature: "mock_function(I32,String)".to_string(), /* Match the exact signature
-				                                                     * from the operation */
+				signature: "mock_function(I32,String)".to_string(),
 				expression: None,
 			}],
 			vec![],
@@ -1734,5 +1781,1473 @@ mod tests {
 
 		assert_eq!(matched_functions.len(), 1);
 		assert_eq!(matched_functions[0].signature, "mock_function(I32,String)");
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for find_matching_events_for_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_find_matching_events_empty_conditions_matches_all() {
+		let filter = StellarBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		// Create test transaction and event
+		let transaction =
+			create_test_transaction("SUCCESS", "tx_hash_123", 1, None, None, None, None);
+
+		let test_event = create_test_event(
+			"tx_hash_123",
+			"Transfer(address,uint256)",
+			Some(vec![
+				StellarMatchParamEntry {
+					name: "0".to_string(),
+					value: "address1".to_string(),
+					kind: "address".to_string(),
+					indexed: true,
+				},
+				StellarMatchParamEntry {
+					name: "1".to_string(),
+					value: "100".to_string(),
+					kind: "u256".to_string(),
+					indexed: false,
+				},
+			]),
+		);
+
+		let events = vec![test_event];
+		let monitor = create_test_monitor(vec![], vec![], vec![], vec![]);
+
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_events.len(), 1);
+		assert!(matched_events[0].expression.is_none());
+		assert_eq!(matched_events[0].signature, "Transfer(address,uint256)");
+		assert_eq!(matched_args.events.as_ref().unwrap().len(), 1);
+	}
+
+	#[test]
+	fn test_find_matching_events_with_signature_match() {
+		let filter = StellarBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let transaction =
+			create_test_transaction("SUCCESS", "tx_hash_123", 1, None, None, None, None);
+
+		let test_event = create_test_event(
+			"tx_hash_123",
+			"Transfer(address,uint256)",
+			Some(vec![StellarMatchParamEntry {
+				name: "0".to_string(),
+				value: "address1".to_string(),
+				kind: "address".to_string(),
+				indexed: true,
+			}]),
+		);
+
+		let events = vec![test_event];
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,uint256)".to_string(),
+				expression: None,
+			}],
+			vec![],
+			vec![],
+			vec![],
+		);
+
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_events.len(), 1);
+		assert!(matched_events[0].expression.is_none());
+		assert_eq!(matched_events[0].signature, "Transfer(address,uint256)");
+	}
+
+	#[test]
+	fn test_find_matching_events_with_expression() {
+		let filter = StellarBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let transaction =
+			create_test_transaction("SUCCESS", "tx_hash_123", 1, None, None, None, None);
+
+		let test_event = create_test_event(
+			"tx_hash_123",
+			"Transfer(address,uint256)",
+			Some(vec![StellarMatchParamEntry {
+				name: "0".to_string(),
+				value: "100".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			}]),
+		);
+
+		let events = vec![test_event];
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,uint256)".to_string(),
+				expression: Some("0 > 50".to_string()),
+			}],
+			vec![],
+			vec![],
+			vec![],
+		);
+
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_events.len(), 1);
+		assert_eq!(matched_events[0].expression.as_ref().unwrap(), "0 > 50");
+		assert_eq!(matched_args.events.as_ref().unwrap().len(), 1);
+	}
+
+	#[test]
+	fn test_find_matching_events_no_match() {
+		let filter = StellarBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let transaction =
+			create_test_transaction("SUCCESS", "tx_hash_123", 1, None, None, None, None);
+
+		let test_event = create_test_event(
+			"tx_hash_123",
+			"Transfer(address,uint256)",
+			Some(vec![StellarMatchParamEntry {
+				name: "0".to_string(),
+				value: "10".to_string(),
+				kind: "u256".to_string(),
+				indexed: true,
+			}]),
+		);
+
+		let events = vec![test_event];
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,uint256)".to_string(),
+				expression: Some("0 > 100".to_string()), // This won't match
+			}],
+			vec![],
+			vec![],
+			vec![],
+		);
+
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_events.len(), 0);
+		assert_eq!(matched_args.events.as_ref().unwrap().len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_events_wrong_transaction() {
+		let filter = StellarBlockFilter {};
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let transaction =
+			create_test_transaction("SUCCESS", "wrong_tx_hash", 1, None, None, None, None);
+
+		let test_event = create_test_event(
+			"tx_hash_123",
+			"Transfer(address,uint256)",
+			Some(vec![StellarMatchParamEntry {
+				name: "0".to_string(),
+				value: "100".to_string(),
+				kind: "u256".to_string(),
+				indexed: true,
+			}]),
+		);
+
+		let events = vec![test_event];
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,uint256)".to_string(),
+				expression: None,
+			}],
+			vec![],
+			vec![],
+			vec![],
+		);
+
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_events.len(), 0);
+		assert_eq!(matched_args.events.as_ref().unwrap().len(), 0);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for decode_event method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_decode_events_basic_success() {
+		let filter = StellarBlockFilter {};
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let monitored_addresses = vec![normalize_address(contract_address)];
+
+		// Create a test event with a simple Transfer event name and one parameter
+		let event_name = encode_event_name("Transfer");
+		// Encode a simple u32 value (100) in base64
+		let value = BASE64.encode([0u8; 4]); // Simplified value encoding
+
+		let event = create_test_stellar_event(
+			contract_address,
+			"tx_hash_123",
+			vec![event_name],
+			Some(value),
+		);
+
+		let events = vec![event];
+		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+
+		assert_eq!(decoded.len(), 1);
+		assert_eq!(decoded[0].tx_hash, "tx_hash_123");
+		assert!(decoded[0].event.signature.starts_with("Transfer"));
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_address_mismatch() {
+		let filter = StellarBlockFilter {};
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let different_address = "CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBSC4";
+		let monitored_addresses = vec![normalize_address(different_address)];
+
+		let event_name = encode_event_name("Transfer");
+		let event =
+			create_test_stellar_event(contract_address, "tx_hash_123", vec![event_name], None);
+
+		let events = vec![event];
+		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+
+		assert_eq!(decoded.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_invalid_event_name() {
+		let filter = StellarBlockFilter {};
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let monitored_addresses = vec![normalize_address(contract_address)];
+
+		// Create invalid base64 for event name
+		let event = create_test_stellar_event(
+			contract_address,
+			"tx_hash_123",
+			vec!["invalid_base64!!!".to_string()],
+			None,
+		);
+
+		let events = vec![event];
+		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+
+		assert_eq!(decoded.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_with_indexed_and_value_args() {
+		let filter = StellarBlockFilter {};
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let monitored_addresses = vec![normalize_address(contract_address)];
+
+		let event_name = encode_event_name("Transfer");
+
+		// Create a proper XDR-encoded ScVal::Symbol for the first topic
+		let mut symbol_bytes = vec![0, 0, 0, 10]; // discriminant for ScVal::Symbol
+		symbol_bytes.extend_from_slice(b"address1"); // symbol value
+		let symbol_topic = BASE64.encode(&symbol_bytes);
+
+		// Create a proper XDR-encoded value for int64
+		let mut value_bytes = vec![0, 0, 0, 6]; // discriminant for ScVal::I64
+		value_bytes.extend_from_slice(&42i64.to_be_bytes()); // 8 bytes for int64
+		let value = BASE64.encode(&value_bytes);
+
+		let event = create_test_stellar_event(
+			contract_address,
+			"tx_hash_123",
+			vec![event_name, symbol_topic],
+			Some(value),
+		);
+
+		let events = vec![event];
+		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+
+		assert_eq!(decoded.len(), 1);
+
+		let decoded_event = &decoded[0].event;
+
+		assert!(decoded_event.signature.starts_with("Transfer"));
+		assert!(decoded_event.args.is_some());
+
+		let args = decoded_event.args.as_ref().unwrap();
+
+		assert_eq!(args.len(), 1);
+
+		assert!(args[0].kind.contains("64"));
+		assert_eq!(args[0].value, "42");
+		assert_eq!(args[0].indexed, false);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for compare_values method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_compare_bool() {
+		let filter = StellarBlockFilter {};
+
+		// Test true/false equality
+		assert!(filter.compare_values("bool", "true", "==", "true"));
+		assert!(filter.compare_values("Bool", "false", "==", "false"));
+		assert!(!filter.compare_values("bool", "true", "==", "false"));
+
+		// Test inequality
+		assert!(filter.compare_values("bool", "true", "!=", "false"));
+		assert!(!filter.compare_values("bool", "true", "!=", "true"));
+
+		// Test invalid operator
+		assert!(!filter.compare_values("bool", "true", ">", "false"));
+
+		// Test invalid bool values
+		assert!(!filter.compare_values("bool", "invalid", "==", "true"));
+		assert!(!filter.compare_values("bool", "true", "==", "invalid"));
+	}
+
+	#[test]
+	fn test_compare_integers() {
+		let filter = StellarBlockFilter {};
+
+		// Test u32
+		assert!(filter.compare_values("u32", "100", ">", "50"));
+		assert!(filter.compare_values("U32", "50", "<", "100"));
+		assert!(filter.compare_values("u32", "100", "==", "100"));
+		assert!(filter.compare_values("u32", "50", "!=", "100"));
+		assert!(!filter.compare_values("u32", "invalid", ">", "50"));
+
+		// Test i32
+		assert!(filter.compare_values("i32", "-10", "<", "0"));
+		assert!(filter.compare_values("I32", "0", ">", "-10"));
+		assert!(!filter.compare_values("i32", "invalid", "<", "0"));
+
+		// Test u64
+		assert!(filter.compare_values("u64", "1000000", ">", "999999"));
+		assert!(filter.compare_values("Timepoint", "100", "<", "200"));
+		assert!(filter.compare_values("duration", "50", "==", "50"));
+
+		// Test i64
+		assert!(filter.compare_values("i64", "-1000000", "<", "0"));
+		assert!(filter.compare_values("I64", "0", ">", "-1000000"));
+
+		// Test u128
+		assert!(filter.compare_values(
+			"u128",
+			"340282366920938463463374607431768211455",
+			"==",
+			"340282366920938463463374607431768211455"
+		));
+		assert!(filter.compare_values("U128", "100", "<", "200"));
+
+		// Test i128
+		assert!(filter.compare_values(
+			"i128",
+			"-170141183460469231731687303715884105728",
+			"<",
+			"0"
+		));
+		assert!(filter.compare_values("I128", "0", ">", "-100"));
+	}
+
+	#[test]
+	fn test_compare_strings() {
+		let filter = StellarBlockFilter {};
+
+		// Test basic string equality
+		assert!(filter.compare_values("string", "hello", "==", "hello"));
+		assert!(filter.compare_values("String", "HELLO", "==", "hello")); // Case insensitive
+		assert!(filter.compare_values("string", "  hello  ", "==", "hello")); // Trim whitespace
+
+		// Test string inequality
+		assert!(filter.compare_values("string", "hello", "!=", "world"));
+		assert!(!filter.compare_values("String", "hello", "!=", "HELLO")); // Case insensitive
+
+		// Test address comparison
+		assert!(filter.compare_values("address", "0x123", "==", "0x123"));
+		assert!(filter.compare_values("Address", "0x123", "!=", "0x456"));
+
+		// Test symbol comparison
+		assert!(filter.compare_values("symbol", "SYM", "==", "sym"));
+		assert!(filter.compare_values("Symbol", "sym1", "!=", "sym2"));
+
+		// Test invalid operators
+		assert!(!filter.compare_values("string", "hello", ">", "world"));
+		assert!(!filter.compare_values("string", "hello", "<", "world"));
+	}
+
+	#[test]
+	fn test_compare_vectors() {
+		let filter = StellarBlockFilter {};
+
+		// Test vector contains
+		assert!(filter.compare_values("vec", "value1,value2,value3", "contains", "value2"));
+		assert!(!filter.compare_values("Vec", "value1,value2,value3", "contains", "value4"));
+
+		// Test vector equality
+		assert!(filter.compare_values("vec", "1,2,3", "==", "1,2,3"));
+		assert!(filter.compare_values("Vec", "1,2,3", "!=", "1,2,4"));
+
+		// Test invalid operators
+		assert!(!filter.compare_values("vec", "1,2,3", ">", "1,2,3"));
+	}
+
+	#[test]
+	fn test_unsupported_type() {
+		let filter = StellarBlockFilter {};
+
+		// Test unsupported type
+		assert!(!filter.compare_values("unsupported_type", "value", "==", "value"));
+		assert!(!filter.compare_values("float", "1.0", "==", "1.0"));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for compare_bool method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_compare_bool_valid_equality() {
+		let filter = StellarBlockFilter {};
+
+		// Test true == true
+		assert!(filter.compare_bool("true", "==", "true"));
+
+		// Test false == false
+		assert!(filter.compare_bool("false", "==", "false"));
+
+		// Test true != false
+		assert!(filter.compare_bool("true", "!=", "false"));
+
+		// Test false != true
+		assert!(filter.compare_bool("false", "!=", "true"));
+
+		// Test false == true (should be false)
+		assert!(!filter.compare_bool("false", "==", "true"));
+
+		// Test true == false (should be false)
+		assert!(!filter.compare_bool("true", "==", "false"));
+	}
+
+	#[test]
+	fn test_compare_bool_invalid_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test invalid param_value
+		assert!(!filter.compare_bool("not_a_bool", "==", "true"));
+
+		// Test invalid compare_value
+		assert!(!filter.compare_bool("true", "==", "not_a_bool"));
+
+		// Test both invalid values
+		assert!(!filter.compare_bool("invalid1", "==", "invalid2"));
+
+		// Test empty strings
+		assert!(!filter.compare_bool("", "==", "true"));
+		assert!(!filter.compare_bool("true", "==", ""));
+		assert!(!filter.compare_bool("", "==", ""));
+	}
+
+	#[test]
+	fn test_compare_bool_unsupported_operators() {
+		let filter = StellarBlockFilter {};
+
+		// Test greater than operator
+		assert!(!filter.compare_bool("true", ">", "false"));
+
+		// Test less than operator
+		assert!(!filter.compare_bool("false", "<", "true"));
+
+		// Test greater than or equal operator
+		assert!(!filter.compare_bool("true", ">=", "false"));
+
+		// Test less than or equal operator
+		assert!(!filter.compare_bool("false", "<=", "true"));
+
+		// Test empty operator
+		assert!(!filter.compare_bool("true", "", "false"));
+
+		// Test invalid operator
+		assert!(!filter.compare_bool("true", "invalid", "false"));
+	}
+
+	#[test]
+	fn test_compare_bool_case_sensitivity() {
+		let filter = StellarBlockFilter {};
+
+		// Test TRUE (uppercase)
+		assert!(!filter.compare_bool("TRUE", "==", "true"));
+
+		// Test False (mixed case)
+		assert!(!filter.compare_bool("False", "==", "false"));
+
+		// Test TRUE == TRUE (both uppercase)
+		assert!(!filter.compare_bool("TRUE", "==", "TRUE"));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for compare_u64 method:
+	//////////////////////////////////////////////////////////////////////////////	
+
+	#[test]
+	fn test_compare_u64_valid_comparisons() {
+		let filter = StellarBlockFilter {};
+
+		// Test greater than
+		assert!(filter.compare_u64("100", ">", "50"));
+		assert!(!filter.compare_u64("50", ">", "100"));
+		assert!(!filter.compare_u64("100", ">", "100"));
+
+		// Test greater than or equal
+		assert!(filter.compare_u64("100", ">=", "50"));
+		assert!(filter.compare_u64("100", ">=", "100"));
+		assert!(!filter.compare_u64("50", ">=", "100"));
+
+		// Test less than
+		assert!(filter.compare_u64("50", "<", "100"));
+		assert!(!filter.compare_u64("100", "<", "50"));
+		assert!(!filter.compare_u64("100", "<", "100"));
+
+		// Test less than or equal
+		assert!(filter.compare_u64("50", "<=", "100"));
+		assert!(filter.compare_u64("100", "<=", "100"));
+		assert!(!filter.compare_u64("100", "<=", "50"));
+
+		// Test equality
+		assert!(filter.compare_u64("100", "==", "100"));
+		assert!(!filter.compare_u64("100", "==", "50"));
+
+		// Test inequality
+		assert!(filter.compare_u64("100", "!=", "50"));
+		assert!(!filter.compare_u64("100", "!=", "100"));
+	}
+
+	#[test]
+	fn test_compare_u64_invalid_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test invalid param_value
+		assert!(!filter.compare_u64("not_a_number", ">", "100"));
+		assert!(!filter.compare_u64("", ">", "100"));
+		assert!(!filter.compare_u64("-100", ">", "100")); // Negative numbers aren't valid u64
+
+		// Test invalid compare_value
+		assert!(!filter.compare_u64("100", ">", "not_a_number"));
+		assert!(!filter.compare_u64("100", ">", ""));
+		assert!(!filter.compare_u64("100", ">", "-100")); // Negative numbers aren't valid u64
+
+		// Test values exceeding u64::MAX
+		assert!(!filter.compare_u64("18446744073709551616", ">", "100")); // u64::MAX + 1
+		assert!(!filter.compare_u64("100", ">", "18446744073709551616")); // u64::MAX + 1
+	}
+
+	#[test]
+	fn test_compare_u64_invalid_operators() {
+		let filter = StellarBlockFilter {};
+
+		// Test unsupported operators
+		assert!(!filter.compare_u64("100", "<<", "50")); // Bit shift operator
+		assert!(!filter.compare_u64("100", "contains", "50")); // String operator
+		assert!(!filter.compare_u64("100", "", "50")); // Empty operator
+		assert!(!filter.compare_u64("100", "invalid", "50")); // Invalid operator
+	}
+
+	#[test]
+	fn test_compare_u64_boundary_values() {
+		let filter = StellarBlockFilter {};
+		let max = u64::MAX.to_string();
+		let zero = "0";
+
+		// Test with u64::MAX
+		assert!(filter.compare_u64(&max, "==", &max));
+		assert!(filter.compare_u64(&max, ">=", zero));
+		assert!(filter.compare_u64(zero, "<=", &max));
+		assert!(!filter.compare_u64(&max, "<", &max));
+		assert!(!filter.compare_u64(&max, ">", &max));
+
+		// Test with zero
+		assert!(filter.compare_u64(zero, "==", zero));
+		assert!(filter.compare_u64(zero, "<=", zero));
+		assert!(filter.compare_u64(zero, ">=", zero));
+		assert!(!filter.compare_u64(zero, "<", zero));
+		assert!(!filter.compare_u64(zero, ">", zero));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for compare_i32 method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_compare_i32_valid_comparisons() {
+		let filter = StellarBlockFilter {};
+
+		// Test greater than
+		assert!(filter.compare_i32("100", ">", "50"));
+		assert!(!filter.compare_i32("50", ">", "100"));
+		assert!(!filter.compare_i32("100", ">", "100"));
+
+		// Test greater than or equal
+		assert!(filter.compare_i32("100", ">=", "50"));
+		assert!(filter.compare_i32("100", ">=", "100"));
+		assert!(!filter.compare_i32("50", ">=", "100"));
+
+		// Test less than
+		assert!(filter.compare_i32("50", "<", "100"));
+		assert!(!filter.compare_i32("100", "<", "50"));
+		assert!(!filter.compare_i32("100", "<", "100"));
+
+		// Test less than or equal
+		assert!(filter.compare_i32("50", "<=", "100"));
+		assert!(filter.compare_i32("100", "<=", "100"));
+		assert!(!filter.compare_i32("100", "<=", "50"));
+
+		// Test equality
+		assert!(filter.compare_i32("100", "==", "100"));
+		assert!(!filter.compare_i32("100", "==", "50"));
+
+		// Test inequality
+		assert!(filter.compare_i32("100", "!=", "50"));
+		assert!(!filter.compare_i32("100", "!=", "100"));
+	}
+
+	#[test]
+	fn test_compare_i32_negative_numbers() {
+		let filter = StellarBlockFilter {};
+
+		// Test negative numbers
+		assert!(filter.compare_i32("-100", ">", "-200"));
+		assert!(filter.compare_i32("-200", "<", "-100"));
+		assert!(filter.compare_i32("-100", "==", "-100"));
+		assert!(filter.compare_i32("0", ">", "-100"));
+		assert!(filter.compare_i32("-100", "<", "0"));
+	}
+
+	#[test]
+	fn test_compare_i32_invalid_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test invalid param_value
+		assert!(!filter.compare_i32("not_a_number", ">", "100"));
+		assert!(!filter.compare_i32("", ">", "100"));
+		assert!(!filter.compare_i32("2147483648", ">", "100")); // i32::MAX + 1
+
+		// Test invalid compare_value
+		assert!(!filter.compare_i32("100", ">", "not_a_number"));
+		assert!(!filter.compare_i32("100", ">", ""));
+		assert!(!filter.compare_i32("100", ">", "2147483648")); // i32::MAX + 1
+
+		// Test floating point numbers (invalid for i32)
+		assert!(!filter.compare_i32("100.5", ">", "100"));
+		assert!(!filter.compare_i32("100", ">", "99.9"));
+	}
+
+	#[test]
+	fn test_compare_i32_boundary_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test i32::MAX and i32::MIN
+		assert!(filter.compare_i32("2147483647", ">", "0")); // i32::MAX
+		assert!(filter.compare_i32("-2147483648", "<", "0")); // i32::MIN
+		assert!(filter.compare_i32("2147483647", "==", "2147483647")); // i32::MAX == i32::MAX
+		assert!(filter.compare_i32("-2147483648", "==", "-2147483648")); // i32::MIN == i32::MIN
+		assert!(filter.compare_i32("2147483647", ">", "-2147483648")); // i32::MAX > i32::MIN
+	}
+
+	#[test]
+	fn test_compare_i32_invalid_operators() {
+		let filter = StellarBlockFilter {};
+
+		// Test unsupported operators
+		assert!(!filter.compare_i32("100", "<<", "50")); // Bit shift operator
+		assert!(!filter.compare_i32("100", "contains", "50")); // String operator
+		assert!(!filter.compare_i32("100", "", "50")); // Empty operator
+		assert!(!filter.compare_i32("100", "&", "50")); // Bitwise operator
+		assert!(!filter.compare_i32("100", "===", "50")); // JavaScript-style equality
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for compare_u32 method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_compare_u32_valid_comparisons() {
+		let filter = StellarBlockFilter {};
+
+		// Test greater than
+		assert!(filter.compare_u32("100", ">", "50"));
+		assert!(!filter.compare_u32("50", ">", "100"));
+		assert!(!filter.compare_u32("100", ">", "100"));
+
+		// Test greater than or equal
+		assert!(filter.compare_u32("100", ">=", "50"));
+		assert!(filter.compare_u32("100", ">=", "100"));
+		assert!(!filter.compare_u32("50", ">=", "100"));
+
+		// Test less than
+		assert!(filter.compare_u32("50", "<", "100"));
+		assert!(!filter.compare_u32("100", "<", "50"));
+		assert!(!filter.compare_u32("100", "<", "100"));
+
+		// Test less than or equal
+		assert!(filter.compare_u32("50", "<=", "100"));
+		assert!(filter.compare_u32("100", "<=", "100"));
+		assert!(!filter.compare_u32("100", "<=", "50"));
+
+		// Test equality
+		assert!(filter.compare_u32("100", "==", "100"));
+		assert!(!filter.compare_u32("100", "==", "50"));
+
+		// Test inequality
+		assert!(filter.compare_u32("100", "!=", "50"));
+		assert!(!filter.compare_u32("100", "!=", "100"));
+	}
+
+	#[test]
+	fn test_compare_u32_boundary_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test with u32::MAX
+		assert!(filter.compare_u32(&u32::MAX.to_string(), ">", "0"));
+		assert!(filter.compare_u32("0", "<", &u32::MAX.to_string()));
+		assert!(filter.compare_u32(&u32::MAX.to_string(), "==", &u32::MAX.to_string()));
+
+		// Test with u32::MIN (0)
+		assert!(filter.compare_u32("0", "==", "0"));
+		assert!(filter.compare_u32("1", ">", "0"));
+		assert!(filter.compare_u32("0", "<", "1"));
+	}
+
+	#[test]
+	fn test_compare_u32_invalid_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test invalid param_value
+		assert!(!filter.compare_u32("not_a_number", ">", "100"));
+		assert!(!filter.compare_u32("", ">", "100"));
+		assert!(!filter.compare_u32("-100", ">", "100")); // Negative numbers aren't valid u32
+
+		// Test invalid compare_value
+		assert!(!filter.compare_u32("100", ">", "not_a_number"));
+		assert!(!filter.compare_u32("100", ">", ""));
+		assert!(!filter.compare_u32("100", ">", "-100")); // Negative numbers aren't valid u32
+
+		// Test values exceeding u32::MAX
+		assert!(!filter.compare_u32("4294967296", ">", "100")); // u32::MAX + 1
+		assert!(!filter.compare_u32("100", ">", "4294967296")); // u32::MAX + 1
+
+		// Test floating point numbers
+		assert!(!filter.compare_u32("100.5", ">", "100"));
+		assert!(!filter.compare_u32("100", ">", "99.9"));
+	}
+
+	#[test]
+	fn test_compare_u32_invalid_operators() {
+		let filter = StellarBlockFilter {};
+
+		// Test unsupported operators
+		assert!(!filter.compare_u32("100", "invalid", "50"));
+		assert!(!filter.compare_u32("100", "", "50"));
+		assert!(!filter.compare_u32("100", ">>", "50"));
+		assert!(!filter.compare_u32("100", "=", "50"));
+		assert!(!filter.compare_u32("100", "===", "50"));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for compare_i64 method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_compare_i64_valid_comparisons() {
+		let filter = StellarBlockFilter {};
+
+		// Test greater than
+		assert!(filter.compare_i64("100", ">", "50"));
+		assert!(!filter.compare_i64("50", ">", "100"));
+		assert!(!filter.compare_i64("100", ">", "100"));
+
+		// Test greater than or equal
+		assert!(filter.compare_i64("100", ">=", "50"));
+		assert!(filter.compare_i64("100", ">=", "100"));
+		assert!(!filter.compare_i64("50", ">=", "100"));
+
+		// Test less than
+		assert!(filter.compare_i64("50", "<", "100"));
+		assert!(!filter.compare_i64("100", "<", "50"));
+		assert!(!filter.compare_i64("100", "<", "100"));
+
+		// Test less than or equal
+		assert!(filter.compare_i64("50", "<=", "100"));
+		assert!(filter.compare_i64("100", "<=", "100"));
+		assert!(!filter.compare_i64("100", "<=", "50"));
+
+		// Test equality
+		assert!(filter.compare_i64("100", "==", "100"));
+		assert!(!filter.compare_i64("100", "==", "50"));
+
+		// Test inequality
+		assert!(filter.compare_i64("100", "!=", "50"));
+		assert!(!filter.compare_i64("100", "!=", "100"));
+	}
+
+	#[test]
+	fn test_compare_i64_negative_numbers() {
+		let filter = StellarBlockFilter {};
+
+		// Test negative numbers
+		assert!(filter.compare_i64("-100", ">", "-200"));
+		assert!(filter.compare_i64("-200", "<", "-100"));
+		assert!(filter.compare_i64("-100", "==", "-100"));
+		assert!(filter.compare_i64("-100", "!=", "-200"));
+		assert!(filter.compare_i64("-100", ">=", "-100"));
+		assert!(filter.compare_i64("-100", "<=", "-100"));
+
+		// Test negative vs positive
+		assert!(filter.compare_i64("-100", "<", "100"));
+		assert!(filter.compare_i64("100", ">", "-100"));
+		assert!(!filter.compare_i64("-100", "==", "100"));
+	}
+
+	#[test]
+	fn test_compare_i64_invalid_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test invalid param_value
+		assert!(!filter.compare_i64("not_a_number", ">", "100"));
+		assert!(!filter.compare_i64("", ">", "100"));
+		assert!(!filter.compare_i64("9223372036854775808", ">", "100")); // i64::MAX + 1
+
+		// Test invalid compare_value
+		assert!(!filter.compare_i64("100", ">", "not_a_number"));
+		assert!(!filter.compare_i64("100", ">", ""));
+		assert!(!filter.compare_i64("100", ">", "9223372036854775808")); // i64::MAX + 1
+
+		// Test floating point numbers (invalid for i64)
+		assert!(!filter.compare_i64("100.5", ">", "100"));
+		assert!(!filter.compare_i64("100", ">", "99.9"));
+	}
+
+	#[test]
+	fn test_compare_i64_boundary_values() {
+		let filter = StellarBlockFilter {};
+
+		// Test with i64::MAX and i64::MIN
+		assert!(filter.compare_i64("9223372036854775807", ">", "0"));
+		assert!(filter.compare_i64("-9223372036854775808", "<", "0"));
+		assert!(filter.compare_i64("9223372036854775807", "==", "9223372036854775807"));
+		assert!(filter.compare_i64("-9223372036854775808", "==", "-9223372036854775808"));
+		assert!(filter.compare_i64("9223372036854775807", ">=", "9223372036854775807"));
+		assert!(filter.compare_i64("-9223372036854775808", "<=", "-9223372036854775808"));
+	}
+
+	#[test]
+	fn test_compare_i64_invalid_operators() {
+		let filter = StellarBlockFilter {};
+
+		// Test unsupported operators
+		assert!(!filter.compare_i64("100", "<<", "50"));
+		assert!(!filter.compare_i64("100", "contains", "50"));
+		assert!(!filter.compare_i64("100", "", "50"));
+		assert!(!filter.compare_i64("100", "invalid", "50"));
+	}
+
+	#[test]
+	fn test_compare_u128_valid_comparisons() {
+		let filter = StellarBlockFilter {};
+
+		// Test basic comparisons
+		assert!(filter.compare_u128("100", ">", "50"));
+		assert!(filter.compare_u128("100", ">=", "50"));
+		assert!(filter.compare_u128("50", "<", "100"));
+		assert!(filter.compare_u128("50", "<=", "100"));
+		assert!(filter.compare_u128("100", "==", "100"));
+		assert!(filter.compare_u128("100", "!=", "50"));
+
+		// Test equality edge cases
+		assert!(filter.compare_u128("0", "==", "0"));
+		assert!(filter.compare_u128(
+			"340282366920938463463374607431768211455",
+			"==",
+			"340282366920938463463374607431768211455"
+		)); // max u128
+
+		// Test boundary values
+		assert!(filter.compare_u128("0", "<=", "0"));
+		assert!(filter.compare_u128(
+			"340282366920938463463374607431768211455",
+			">=",
+			"340282366920938463463374607431768211455"
+		));
+
+		// Test false conditions
+		assert!(!filter.compare_u128("50", ">", "100"));
+		assert!(!filter.compare_u128("100", "<", "50"));
+		assert!(!filter.compare_u128("100", "==", "50"));
+		assert!(!filter.compare_u128("100", "!=", "100"));
+	}
+
+	#[test]
+	fn test_compare_u128_invalid_inputs() {
+		let filter = StellarBlockFilter {};
+
+		// Test invalid number formats
+		assert!(!filter.compare_u128("not_a_number", ">", "100"));
+		assert!(!filter.compare_u128("100", ">", "not_a_number"));
+		assert!(!filter.compare_u128("", ">", "100"));
+		assert!(!filter.compare_u128("100", ">", ""));
+
+		// Test negative numbers (invalid for u128)
+		assert!(!filter.compare_u128("-100", ">", "100"));
+		assert!(!filter.compare_u128("100", ">", "-100"));
+
+		// Test invalid operator
+		assert!(!filter.compare_u128("100", "invalid_operator", "50"));
+		assert!(!filter.compare_u128("100", "", "50"));
+	}
+
+	#[test]
+	fn test_compare_i128_valid_comparisons() {
+		let filter = StellarBlockFilter {};
+
+		// Test basic comparisons
+		assert!(filter.compare_i128("100", ">", "50"));
+		assert!(filter.compare_i128("100", ">=", "50"));
+		assert!(filter.compare_i128("50", "<", "100"));
+		assert!(filter.compare_i128("50", "<=", "100"));
+		assert!(filter.compare_i128("100", "==", "100"));
+		assert!(filter.compare_i128("100", "!=", "50"));
+
+		// Test negative numbers
+		assert!(filter.compare_i128("-100", "<", "0"));
+		assert!(filter.compare_i128("0", ">", "-100"));
+		assert!(filter.compare_i128("-100", "==", "-100"));
+		assert!(filter.compare_i128("-50", ">", "-100"));
+
+		// Test equality edge cases
+		assert!(filter.compare_i128("0", "==", "0"));
+		assert!(filter.compare_i128(
+			"-170141183460469231731687303715884105728",
+			"==",
+			"-170141183460469231731687303715884105728"
+		)); // min i128
+		assert!(filter.compare_i128(
+			"170141183460469231731687303715884105727",
+			"==",
+			"170141183460469231731687303715884105727"
+		)); // max i128
+
+		// Test false conditions
+		assert!(!filter.compare_i128("50", ">", "100"));
+		assert!(!filter.compare_i128("-100", ">", "0"));
+		assert!(!filter.compare_i128("100", "==", "-100"));
+		assert!(!filter.compare_i128("-100", "!=", "-100"));
+	}
+
+	#[test]
+	fn test_compare_i128_invalid_inputs() {
+		let filter = StellarBlockFilter {};
+
+		// Test invalid number formats
+		assert!(!filter.compare_i128("not_a_number", ">", "100"));
+		assert!(!filter.compare_i128("100", ">", "not_a_number"));
+		assert!(!filter.compare_i128("", ">", "100"));
+		assert!(!filter.compare_i128("100", ">", ""));
+
+		// Test numbers exceeding i128 bounds
+		assert!(!filter.compare_i128("170141183460469231731687303715884105728", ">", "0")); // > max i128
+		assert!(!filter.compare_i128("-170141183460469231731687303715884105729", "<", "0")); // < min i128
+
+		// Test invalid operator
+		assert!(!filter.compare_i128("100", "invalid_operator", "50"));
+		assert!(!filter.compare_i128("100", "", "50"));
+	}
+
+	// Tests for compare_i256
+	#[test]
+	fn test_compare_i256() {
+		let filter = StellarBlockFilter {};
+
+		// Test equality operator
+		assert!(filter.compare_i256("12345", "==", "12345"));
+		assert!(!filter.compare_i256("12345", "==", "54321"));
+
+		// Test inequality operator
+		assert!(filter.compare_i256("12345", "!=", "54321"));
+		assert!(!filter.compare_i256("12345", "!=", "12345"));
+
+		// Test unsupported operators
+		assert!(!filter.compare_i256("12345", ">", "54321"));
+		assert!(!filter.compare_i256("12345", "<", "54321"));
+		assert!(!filter.compare_i256("12345", ">=", "54321"));
+		assert!(!filter.compare_i256("12345", "<=", "54321"));
+
+		// Test with large numbers
+		assert!(filter.compare_i256(
+			"115792089237316195423570985008687907853269984665640564039457584007913129639935",
+			"==",
+			"115792089237316195423570985008687907853269984665640564039457584007913129639935"
+		));
+		assert!(filter.compare_i256(
+			"115792089237316195423570985008687907853269984665640564039457584007913129639935",
+			"!=",
+			"0"
+		));
+	}
+
+	// Tests for compare_string
+	#[test]
+	fn test_compare_string() {
+		let filter = StellarBlockFilter {};
+
+		// Test basic equality
+		assert!(filter.compare_string("hello", "==", "hello"));
+		assert!(!filter.compare_string("hello", "==", "world"));
+
+		// Test case insensitivity
+		assert!(filter.compare_string("Hello", "==", "hello"));
+		assert!(filter.compare_string("HELLO", "==", "hello"));
+		assert!(filter.compare_string("HeLLo", "==", "hEllO"));
+
+		// Test whitespace trimming
+		assert!(filter.compare_string("  hello  ", "==", "hello"));
+		assert!(filter.compare_string("hello", "==", "  hello  "));
+		assert!(filter.compare_string("  hello  ", "==", "  hello  "));
+
+		// Test inequality
+		assert!(filter.compare_string("hello", "!=", "world"));
+		assert!(!filter.compare_string("hello", "!=", "hello"));
+		assert!(!filter.compare_string("Hello", "!=", "hello"));
+
+		// Test empty strings
+		assert!(filter.compare_string("", "==", ""));
+		assert!(filter.compare_string("  ", "==", ""));
+		assert!(filter.compare_string("hello", "!=", ""));
+
+		// Test unsupported operators
+		assert!(!filter.compare_string("hello", ">", "world"));
+		assert!(!filter.compare_string("hello", "<", "world"));
+		assert!(!filter.compare_string("hello", ">=", "world"));
+		assert!(!filter.compare_string("hello", "<=", "world"));
+	}
+
+	// Tests for compare_vec
+	#[test]
+	fn test_compare_vec() {
+		let filter = StellarBlockFilter {};
+
+		// Test contains operator
+		assert!(filter.compare_vec("value1,value2,value3", "contains", "value2"));
+		assert!(!filter.compare_vec("value1,value2,value3", "contains", "value4"));
+
+		// Test with whitespace
+		assert!(filter.compare_vec("value1, value2, value3", "contains", "value2"));
+		assert!(filter.compare_vec("value1,  value2  ,value3", "contains", "value2"));
+
+		// Test exact equality
+		assert!(filter.compare_vec("value1,value2,value3", "==", "value1,value2,value3"));
+		assert!(!filter.compare_vec("value1,value2,value3", "==", "value1,value2"));
+		assert!(!filter.compare_vec("value1,value2", "==", "value1,value2,value3"));
+
+		// Test inequality
+		assert!(filter.compare_vec("value1,value2,value3", "!=", "value1,value2"));
+		assert!(!filter.compare_vec("value1,value2,value3", "!=", "value1,value2,value3"));
+
+		// Test empty vectors
+		assert!(filter.compare_vec("", "==", ""));
+		assert!(!filter.compare_vec("", "contains", "value1"));
+		assert!(filter.compare_vec("value1", "!=", ""));
+
+		// Test single value
+		assert!(filter.compare_vec("value1", "contains", "value1"));
+		assert!(filter.compare_vec("value1", "==", "value1"));
+
+		// Test unsupported operators
+		assert!(!filter.compare_vec("value1,value2,value3", ">", "value1"));
+		assert!(!filter.compare_vec("value1,value2,value3", "<", "value1"));
+		assert!(!filter.compare_vec("value1,value2,value3", ">=", "value1"));
+		assert!(!filter.compare_vec("value1,value2,value3", "<=", "value1"));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for compare_map method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	// TODO: We should see if the compare_map method is working as expected because I was unable to
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for evaluate_expression method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_evaluate_expression_regular_parameters() {
+		let filter = StellarBlockFilter {};
+
+		// Test setup with simple numeric parameters
+		let args = Some(vec![
+			StellarMatchParamEntry {
+				name: "amount".to_string(),
+				value: "100".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "status".to_string(),
+				value: "true".to_string(),
+				kind: "bool".to_string(),
+				indexed: false,
+			},
+		]);
+
+		// Test simple numeric comparison
+		assert!(filter.evaluate_expression("amount > 50", &args));
+		assert!(!filter.evaluate_expression("amount < 50", &args));
+
+		// Test boolean comparison
+		assert!(filter.evaluate_expression("status == true", &args));
+		assert!(!filter.evaluate_expression("status == false", &args));
+
+		// Test non-existent parameter
+		assert!(!filter.evaluate_expression("invalid_param == 100", &args));
+	}
+
+	#[test]
+	fn test_evaluate_expression_array_indexing() {
+		let filter = StellarBlockFilter {};
+
+		// Test setup with array parameter
+		let args = Some(vec![StellarMatchParamEntry {
+			name: "0".to_string(),
+			value: "10,20,30".to_string(),
+			kind: "Vec".to_string(),
+			indexed: false,
+		}]);
+
+		// Test valid array access
+		assert!(filter.evaluate_expression("arguments[0][1] == 20", &args));
+
+		// Test out of bounds index
+		assert!(!filter.evaluate_expression("arguments[0][5] == 10", &args));
+
+		// Test invalid array format
+		assert!(!filter.evaluate_expression("arguments[0] == 10", &args));
+	}
+
+	#[test]
+	fn test_evaluate_expression_logical_operators() {
+		let filter = StellarBlockFilter {};
+
+		// Test setup with multiple parameters
+		let args = Some(vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "100".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "active".to_string(),
+				value: "true".to_string(),
+				kind: "bool".to_string(),
+				indexed: false,
+			},
+		]);
+
+		// Test AND operator
+		assert!(filter.evaluate_expression("value > 50 AND active == true", &args));
+		assert!(!filter.evaluate_expression("value < 50 AND active == true", &args));
+
+		// Test OR operator
+		assert!(filter.evaluate_expression("value < 50 OR active == true", &args));
+		assert!(!filter.evaluate_expression("value < 50 OR active == false", &args));
+
+		// Test complex expression
+		assert!(filter.evaluate_expression("value > 50 AND active == true OR value == 100", &args));
+	}
+
+	#[test]
+	fn test_evaluate_expression_edge_cases() {
+		let filter = StellarBlockFilter {};
+
+		// Test with empty args
+		assert!(!filter.evaluate_expression("value == 100", &None));
+
+		// Test with empty vector
+		assert!(!filter.evaluate_expression("value == 100", &Some(vec![])));
+
+		// Test invalid expression formats
+		let args = Some(vec![StellarMatchParamEntry {
+			name: "value".to_string(),
+			value: "100".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}]);
+
+		// Invalid number of parts
+		assert!(!filter.evaluate_expression("value 100", &args));
+		assert!(!filter.evaluate_expression("value == 100 invalid", &args));
+
+		// Invalid operator
+		assert!(!filter.evaluate_expression("value invalid 100", &args));
+
+		// Empty expression
+		assert!(!filter.evaluate_expression("", &args));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for convert_arguments_to_match_param_entry method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_convert_primitive_values() {
+		let filter = StellarBlockFilter {};
+
+		let arguments = vec![
+			// Use explicit type/value pairs with string values
+			json!({
+				"type": "U64",
+				"value": "42"
+			}),
+			json!({
+				"type": "I64",
+				"value": "-42"
+			}),
+			// For bool and string, use type/value format consistently
+			json!({
+				"type": "Bool",
+				"value": "true"
+			}),
+			json!({
+				"type": "String",
+				"value": "hello"
+			}),
+		];
+
+		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+
+		assert_eq!(result.len(), 4);
+
+		// Check U64
+		assert_eq!(result[0].name, "0");
+		assert_eq!(result[0].kind, "U64");
+		assert_eq!(result[0].value, "42");
+		assert!(!result[0].indexed);
+
+		// Check I64
+		assert_eq!(result[1].name, "1");
+		assert_eq!(result[1].kind, "I64");
+		assert_eq!(result[1].value, "-42");
+		assert!(!result[1].indexed);
+
+		// Check Bool
+		assert_eq!(result[2].name, "2");
+		assert_eq!(result[2].kind, "Bool");
+		assert_eq!(result[2].value, "true");
+		assert!(!result[2].indexed);
+
+		// Check String
+		assert_eq!(result[3].name, "3");
+		assert_eq!(result[3].kind, "String");
+		assert_eq!(result[3].value, "hello");
+		assert!(!result[3].indexed);
+	}
+
+	#[test]
+	fn test_convert_array_values() {
+		let filter = StellarBlockFilter {};
+
+		let arguments = vec![json!([1, 2, 3]), json!(["a", "b", "c"])];
+
+		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+
+		assert_eq!(result.len(), 2);
+
+		// Check first array
+		assert_eq!(result[0].name, "0");
+		assert_eq!(result[0].kind, "Vec");
+		assert_eq!(result[0].value, "[1,2,3]");
+		assert!(!result[0].indexed);
+
+		// Check second array
+		assert_eq!(result[1].name, "1");
+		assert_eq!(result[1].kind, "Vec");
+		assert_eq!(result[1].value, "[\"a\",\"b\",\"c\"]");
+		assert!(!result[1].indexed);
+	}
+
+	#[test]
+	fn test_convert_object_with_type_value() {
+		let filter = StellarBlockFilter {};
+
+		let arguments = vec![
+			json!({
+				"type": "Address",
+				"value": "0x123"
+			}),
+			json!({
+				"type": "U256",
+				"value": "1000000"
+			}),
+		];
+
+		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+
+		assert_eq!(result.len(), 2);
+
+		// Check Address object
+		assert_eq!(result[0].name, "0");
+		assert_eq!(result[0].kind, "Address");
+		assert_eq!(result[0].value, "0x123");
+		assert!(!result[0].indexed);
+
+		// Check U256 object
+		assert_eq!(result[1].name, "1");
+		assert_eq!(result[1].kind, "U256");
+		assert_eq!(result[1].value, "1000000");
+		assert!(!result[1].indexed);
+	}
+
+	#[test]
+	fn test_convert_generic_objects() {
+		let filter = StellarBlockFilter {};
+
+		let arguments = vec![
+			json!({
+				"key1": "value1",
+				"key2": 42
+			}),
+			json!({
+				"nested": {
+					"key": "value"
+				}
+			}),
+		];
+
+		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+
+		assert_eq!(result.len(), 2);
+
+		// Check first object
+		assert_eq!(result[0].name, "0");
+		assert_eq!(result[0].kind, "Map");
+		assert_eq!(result[0].value, "{\"key1\":\"value1\",\"key2\":42}");
+		assert!(!result[0].indexed);
+
+		// Check nested object
+		assert_eq!(result[1].name, "1");
+		assert_eq!(result[1].kind, "Map");
+		assert_eq!(result[1].value, "{\"nested\":{\"key\":\"value\"}}");
+		assert!(!result[1].indexed);
+	}
+
+	#[test]
+	fn test_convert_empty_array() {
+		let filter = StellarBlockFilter {};
+		let arguments = vec![];
+
+		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+
+		assert_eq!(result.len(), 0);
+	}
+
+	#[test]
+	fn test_convert_mixed_values() {
+		let filter = StellarBlockFilter {};
+
+		let arguments = vec![
+			json!({
+				"type": "U64",
+				"value": "42"
+			}),
+			json!({
+				"type": "Vec",
+				"value": "1,2"
+			}),
+			json!({
+				"type": "Address",
+				"value": "0x123"
+			}),
+			json!({
+				"type": "Map",
+				"value": "{\"key\":\"value\"}"
+			}),
+		];
+
+		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+
+		assert_eq!(result.len(), 4);
+
+		// Check primitive
+		assert_eq!(result[0].name, "0");
+		assert_eq!(result[0].kind, "U64");
+		assert_eq!(result[0].value, "42");
+		assert!(!result[0].indexed);
+
+		// Check array
+		assert_eq!(result[1].name, "1");
+		assert_eq!(result[1].kind, "Vec");
+		assert_eq!(result[1].value, "1,2");
+		assert!(!result[1].indexed);
+
+		// Check typed object
+		assert_eq!(result[2].name, "2");
+		assert_eq!(result[2].kind, "Address");
+		assert_eq!(result[2].value, "0x123");
+		assert!(!result[2].indexed);
+
+		// Check generic object
+		assert_eq!(result[3].name, "3");
+		assert_eq!(result[3].kind, "Map");
+		assert_eq!(result[3].value, "{\"key\":\"value\"}");
+		assert!(!result[3].indexed);
 	}
 }
