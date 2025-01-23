@@ -488,7 +488,6 @@ async fn test_handle_match() -> Result<(), FilterError> {
 				&& variables.get("transaction_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
 				&& variables.get("transaction_to") == Some(&"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string())
 				&& variables.get("transaction_value") == Some(&"0".to_string())
-				
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Mint USDC Token".to_string())
 		})
