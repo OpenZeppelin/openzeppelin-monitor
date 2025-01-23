@@ -302,9 +302,11 @@ impl<T> StellarBlockFilter<T> {
 					signature: event.signature.clone(),
 					expression: None,
 				});
-				if let Some(events) = &mut matched_on_args.events {
-					events.push(event.clone());
-				}
+				// We do not want to populate matched_on_args.events if there are no
+				// expressions
+				// if let Some(events) = &mut matched_on_args.events {
+				// 	events.push(event.clone());
+				// }
 			} else {
 				// Find all matching conditions for this event
 				let matching_conditions =
