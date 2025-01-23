@@ -24,7 +24,7 @@ use crate::{
 	services::{
 		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
-			helpers::stellar::{
+			stellar_helpers::{
 				are_same_signature, is_address, normalize_address, parse_xdr_value,
 				process_invoke_host_function,
 			},

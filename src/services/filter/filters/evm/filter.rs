@@ -23,7 +23,7 @@ use crate::{
 	services::{
 		blockchain::{BlockChainClient, EvmClientTrait},
 		filter::{
-			helpers::evm::{
+			evm_helpers::{
 				are_same_address, are_same_signature, format_token_value, h160_to_string,
 				h256_to_string, normalize_address,
 			},

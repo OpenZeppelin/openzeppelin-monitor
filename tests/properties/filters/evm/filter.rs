@@ -11,7 +11,7 @@ use openzeppelin_monitor::{
 	services::{
 		blockchain::EvmClient,
 		filter::{
-			helpers::evm::{
+			evm_helpers::{
 				are_same_address, are_same_signature, normalize_address, normalize_signature,
 			},
 			EVMBlockFilter,
