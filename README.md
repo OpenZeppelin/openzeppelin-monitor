@@ -250,9 +250,19 @@ cargo test integration
 ### Developer setup
 
 1. Run `chmod +x .githooks/*` to make the git hooks executable.
-2. Run `git config core.hooksPath .githooks` to setup git hooks for linting and formatting.
-3. Run `rustup toolchain install nightly` to install the nightly toolchain.
-4. Run `rustup component add rustfmt --toolchain nightly` to install rustfmt for the nightly toolchain.
+1. Run `git config core.hooksPath .githooks` to setup git hooks for linting and formatting.
+1. Run the following commands to install pre-commit hooks:
+
+   ```bash
+    # Use pipx install pre-commit if you prefer to install it globally.
+    pip install pre-commit
+    pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+    ```
+
+  > Note: If you run into issues with pip install, you may need [pipx](https://github.com/pypa/pipx?tab=readme-ov-file#install-pipx) to install pre-commit globally.
+
+1. Run `rustup toolchain install nightly` to install the nightly toolchain.
+1. Run `rustup component add rustfmt --toolchain nightly` to install rustfmt for the nightly toolchain.
 
 ## Project Structure
 
