@@ -4,7 +4,7 @@
 //! including event and transaction filtering.
 
 use openzeppelin_monitor::{
-	models::{BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch},
+	models::{BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, TransactionCondition, TransactionStatus},
 	services::{
 		blockchain::EvmClient,
 		filter::{handle_match, FilterError, FilterService},
@@ -47,6 +47,21 @@ fn make_monitor_with_functions(mut monitor: Monitor, include_expression: bool) -
 	monitor
 }
 
+fn make_monitor_with_transactions(mut monitor: Monitor, include_expression: bool) -> Monitor {
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.functions = vec![];
+	monitor.match_conditions.transactions = vec![];
+	monitor.match_conditions.transactions.push(TransactionCondition {
+		status: TransactionStatus::Success,
+		expression: if include_expression {
+			Some("value == 0".to_string())
+		} else {
+			None
+		},
+	});
+	monitor
+}
+
 #[tokio::test]
 async fn test_monitor_events_with_no_expressions() -> Result<(), FilterError> {
 	let _ = env_logger::builder().is_test(true).try_init();
@@ -72,7 +87,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), FilterError> {
 	assert_eq!(
 		matches.len(),
 		1,
-		"Expected exactly one match for the token transfer"
+		"Expected exactly one match"
 	);
 
 	match &matches[0] {
@@ -123,7 +138,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), FilterError> {
 	assert_eq!(
 		matches.len(),
 		1,
-		"Expected exactly one match for the token transfer"
+		"Expected exactly one match"
 	);
 
 	match &matches[0] {
@@ -194,7 +209,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), FilterError>
 	assert_eq!(
 		matches.len(),
 		1,
-		"Expected exactly one match for the token transfer"
+		"Expected exactly one match"
 	);
 
 	match &matches[0] {
@@ -243,7 +258,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), FilterError> {
 	assert_eq!(
 		matches.len(),
 		1,
-		"Expected exactly one match for the token transfer"
+		"Expected exactly one match"
 	);
 
 	match &matches[0] {
@@ -282,12 +297,90 @@ async fn test_monitor_functions_with_expressions() -> Result<(), FilterError> {
 
 #[tokio::test]
 async fn test_monitor_transactions_with_no_expressions() -> Result<(), FilterError> {
-	todo!()
+	let _ = env_logger::builder().is_test(true).try_init();
+
+	// Load test data using common utility
+	let test_data = load_test_data("evm");
+	let filter_service = FilterService::new();
+	let client = EvmClient::new(&test_data.network).await.unwrap();
+
+	let monitor = make_monitor_with_transactions(test_data.monitor, false);
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matching transactions");
+	assert_eq!(
+		matches.len(),
+		1,
+		"Expected exactly one match"
+	);
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(evm_match.matched_on.transactions.len() == 1);
+			assert!(evm_match.matched_on.events.is_empty());
+			assert!(evm_match.matched_on.functions.is_empty());
+			assert!(evm_match.matched_on.transactions[0].status == TransactionStatus::Success);
+			assert!(evm_match.matched_on.transactions[0].expression.is_none());
+		}
+		_ => {
+			panic!("Expected EVM match");
+		}
+	}
+
+	Ok(())
 }
 
 #[tokio::test]
 async fn test_monitor_transactions_with_expressions() -> Result<(), FilterError> {
-	todo!()
+	let _ = env_logger::builder().is_test(true).try_init();
+
+	// Load test data using common utility
+	let test_data = load_test_data("evm");
+	let filter_service = FilterService::new();
+	let client = EvmClient::new(&test_data.network).await.unwrap();
+
+	let monitor = make_monitor_with_transactions(test_data.monitor, true);
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matching transactions");
+	assert_eq!(
+		matches.len(),
+		1,
+		"Expected exactly one match"
+	);
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(evm_match.matched_on.transactions.len() == 1);
+			assert!(evm_match.matched_on.events.is_empty());
+			assert!(evm_match.matched_on.functions.is_empty());
+			assert!(evm_match.matched_on.transactions[0].status == TransactionStatus::Success);
+			assert!(evm_match.matched_on.transactions[0].expression == Some("value == 0".to_string()));
+		}
+		_ => {
+			panic!("Expected EVM match");
+		}
+	}
+
+	Ok(())
 }
 
 #[tokio::test]
@@ -391,28 +484,25 @@ async fn test_handle_match() -> Result<(), FilterError> {
 		.expect_execute()
 		.withf(|trigger_name, variables| {
 			trigger_name == ["large_transfer_slack"]
-				&& variables.get("event_0_to")
-					== Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
-				&& variables.get("transaction_hash")
-					== Some(
-						&"0xd5069b22a3a89a36d592d5a1f72a281bc5d11d6d0bac6f0a878c13abb764b6d8"
-							.to_string(),
-					) && variables.get("transaction_value") == Some(&"0".to_string())
-				&& variables.get("event_0_from")
-					== Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
+				// Event variables
+				&& variables.get("event_0_signature") == Some(&"Transfer(address,address,uint256)".to_string())
+				&& variables.get("event_0_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
+				&& variables.get("event_0_to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
 				&& variables.get("event_0_value") == Some(&"8181710000".to_string())
-				&& variables.get("function_0_to")
-					== Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
+				
+				// Function variables
+				&& variables.get("function_0_signature") == Some(&"transfer(address,uint256)".to_string())
+				&& variables.get("function_0_to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
 				&& variables.get("function_0_value") == Some(&"8181710000".to_string())
-				&& variables.get("event_0_signature")
-					== Some(&"Transfer(address,address,uint256)".to_string())
-				&& variables.get("transaction_to")
-					== Some(&"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string())
+				
+				// Transaction variables
+				&& variables.get("transaction_hash") == Some(&"0xd5069b22a3a89a36d592d5a1f72a281bc5d11d6d0bac6f0a878c13abb764b6d8".to_string())
+				&& variables.get("transaction_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
+				&& variables.get("transaction_to") == Some(&"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string())
+				&& variables.get("transaction_value") == Some(&"0".to_string())
+				
+				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Mint USDC Token".to_string())
-				&& variables.get("function_0_signature")
-					== Some(&"transfer(address,uint256)".to_string())
-				&& variables.get("transaction_from")
-					== Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
 		})
 		.once()
 		.returning(|_, _| Ok(()));

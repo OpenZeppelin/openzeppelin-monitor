@@ -25,7 +25,7 @@ use crate::{
 		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
 			helpers::stellar::{
-				are_same_signature, normalize_address, parse_xdr_value,
+				are_same_signature, is_address, normalize_address, parse_xdr_value,
 				process_invoke_host_function,
 			},
 			BlockFilter, FilterError,
@@ -65,6 +65,7 @@ impl<T> StellarBlockFilter<T> {
 			_ => TransactionStatus::Any,
 		};
 
+		#[derive(Debug)]
 		struct TxOperation {
 			_operation_type: String,
 			sender: String,
@@ -939,6 +940,13 @@ impl<T> StellarBlockFilter<T> {
 							Value::Number(n) if n.is_u64() => "U64".to_string(),
 							Value::Number(n) if n.is_i64() => "I64".to_string(),
 							Value::Bool(_) => "Bool".to_string(),
+							Value::String(s) => {
+								if is_address(s) {
+									"Address".to_string()
+								} else {
+									"String".to_string()
+								}
+							}
 							_ => "String".to_string(),
 						},
 						value: match arg {
