@@ -4,7 +4,10 @@
 //! including event and transaction filtering.
 
 use openzeppelin_monitor::{
-	models::{BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, TransactionCondition, TransactionStatus},
+	models::{
+		BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, TransactionCondition,
+		TransactionStatus,
+	},
 	services::{
 		blockchain::EvmClient,
 		filter::{handle_match, FilterError, FilterService},
@@ -51,14 +54,17 @@ fn make_monitor_with_transactions(mut monitor: Monitor, include_expression: bool
 	monitor.match_conditions.events = vec![];
 	monitor.match_conditions.functions = vec![];
 	monitor.match_conditions.transactions = vec![];
-	monitor.match_conditions.transactions.push(TransactionCondition {
-		status: TransactionStatus::Success,
-		expression: if include_expression {
-			Some("value == 0".to_string())
-		} else {
-			None
-		},
-	});
+	monitor
+		.match_conditions
+		.transactions
+		.push(TransactionCondition {
+			status: TransactionStatus::Success,
+			expression: if include_expression {
+				Some("value == 0".to_string())
+			} else {
+				None
+			},
+		});
 	monitor
 }
 
@@ -84,11 +90,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), FilterError> {
 		.await?;
 
 	assert!(!matches.is_empty(), "Should have found matching events");
-	assert_eq!(
-		matches.len(),
-		1,
-		"Expected exactly one match"
-	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
 
 	match &matches[0] {
 		MonitorMatch::EVM(evm_match) => {
@@ -135,11 +137,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), FilterError> {
 		.await?;
 
 	assert!(!matches.is_empty(), "Should have found matching events");
-	assert_eq!(
-		matches.len(),
-		1,
-		"Expected exactly one match"
-	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
 
 	match &matches[0] {
 		MonitorMatch::EVM(evm_match) => {
@@ -206,11 +204,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), FilterError>
 		.await?;
 
 	assert!(!matches.is_empty(), "Should have found matching functions");
-	assert_eq!(
-		matches.len(),
-		1,
-		"Expected exactly one match"
-	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
 
 	match &matches[0] {
 		MonitorMatch::EVM(evm_match) => {
@@ -255,11 +249,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), FilterError> {
 		.await?;
 
 	assert!(!matches.is_empty(), "Should have found matching functions");
-	assert_eq!(
-		matches.len(),
-		1,
-		"Expected exactly one match"
-	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
 
 	match &matches[0] {
 		MonitorMatch::EVM(evm_match) => {
@@ -316,12 +306,11 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), FilterErr
 		)
 		.await?;
 
-	assert!(!matches.is_empty(), "Should have found matching transactions");
-	assert_eq!(
-		matches.len(),
-		1,
-		"Expected exactly one match"
+	assert!(
+		!matches.is_empty(),
+		"Should have found matching transactions"
 	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
 
 	match &matches[0] {
 		MonitorMatch::EVM(evm_match) => {
@@ -360,12 +349,11 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), FilterError>
 		)
 		.await?;
 
-	assert!(!matches.is_empty(), "Should have found matching transactions");
-	assert_eq!(
-		matches.len(),
-		1,
-		"Expected exactly one match"
+	assert!(
+		!matches.is_empty(),
+		"Should have found matching transactions"
 	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
 
 	match &matches[0] {
 		MonitorMatch::EVM(evm_match) => {
@@ -373,7 +361,9 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), FilterError>
 			assert!(evm_match.matched_on.events.is_empty());
 			assert!(evm_match.matched_on.functions.is_empty());
 			assert!(evm_match.matched_on.transactions[0].status == TransactionStatus::Success);
-			assert!(evm_match.matched_on.transactions[0].expression == Some("value == 0".to_string()));
+			assert!(
+				evm_match.matched_on.transactions[0].expression == Some("value == 0".to_string())
+			);
 		}
 		_ => {
 			panic!("Expected EVM match");
@@ -489,12 +479,10 @@ async fn test_handle_match() -> Result<(), FilterError> {
 				&& variables.get("event_0_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
 				&& variables.get("event_0_to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
 				&& variables.get("event_0_value") == Some(&"8181710000".to_string())
-				
 				// Function variables
 				&& variables.get("function_0_signature") == Some(&"transfer(address,uint256)".to_string())
 				&& variables.get("function_0_to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
 				&& variables.get("function_0_value") == Some(&"8181710000".to_string())
-				
 				// Transaction variables
 				&& variables.get("transaction_hash") == Some(&"0xd5069b22a3a89a36d592d5a1f72a281bc5d11d6d0bac6f0a878c13abb764b6d8".to_string())
 				&& variables.get("transaction_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
