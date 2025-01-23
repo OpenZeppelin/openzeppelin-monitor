@@ -36,7 +36,7 @@ jobs:
         run: cargo test
 
       - name: Cargo llvm-cov
-        run: cargo llvm-cov --locked --features std --lcov --output-path lcov.info
+        run: cargo llvm-cov --locked --lcov --output-path lcov.info
 
 
       # - name: Generate coverage
