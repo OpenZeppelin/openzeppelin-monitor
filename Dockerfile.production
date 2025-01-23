@@ -2,9 +2,11 @@
 FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/rust:latest AS base
 
 WORKDIR /usr/app
-COPY . .
+
 USER root
 RUN apk update && apk add openssl-dev
+
+COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo install --root /usr/app --path . --locked

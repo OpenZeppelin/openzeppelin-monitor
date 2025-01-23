@@ -1,0 +1,21 @@
+name: Cache
+description: 'Caches cargo dependencies'
+outputs:
+  cache-hit:
+    description: "Cache Hit"
+    value: ${{ steps.cache.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    # Checkout the repository
+    - name: Checkout Code
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: setup rust tool chain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        components: rustfmt, clippy
+    - name: Restore cargo dependencies from cache
+      uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 # v2.7.7
+      id: cache
+    

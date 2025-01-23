@@ -101,7 +101,7 @@ git clone https://github.com/openzeppelin/openzeppelin-monitor
 cd openzeppelin-monitor
 ```
 
-2. Install dependencies:
+1. Install dependencies:
 
 ```bash
 cargo build
@@ -115,7 +115,7 @@ cargo build
 cp .env.example .env
 ```
 
-2. Copy example configuration files:
+1. Copy example configuration files:
 
 ```bash
 # EVM
@@ -131,17 +131,17 @@ cp config/triggers/email_notifications.json.example config/triggers/email_notifi
 cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
 ```
 
-3. Configure your networks in `config/networks/`:
+1. Configure your networks in `config/networks/`:
 
 - EVM networks: See `evm_mainnet.json`
 - Stellar networks: See `stellar_mainnet.json`
 
-4. Configure your monitors in `config/monitors/`:
+1. Configure your monitors in `config/monitors/`:
 
 - EVM monitors: See `evm_transfer_usdc.json`
 - Stellar monitors: See `stellar_transfer_usdc.json`
 
-5. Configure your triggers in `config/triggers/`:
+1. Configure your triggers in `config/triggers/`:
 
 - Slack notifications: See `slack_notifications.json`
 - Email notifications: See `email_notifications.json`
@@ -214,6 +214,7 @@ You have the option of running as a development container or as production one (
 To adjust the `.env` file, you can edit `env_dev` or `env_prod` at the root of the repository.
 
 Assuming your docker environment is installed and properly set up, you can build the image with:
+
 ```bash
 docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
 ```
@@ -221,16 +222,19 @@ docker build --tag <your_image_tag> -f Dockerfile.<development | production> --s
 This will generate an image including the appropriate `.env` file and the configurations in the `./config` folder.
 
 Now we need to create the docker volume to keep the monitor internal data (if you want to keep it when you restart the container, otherwise just skip this step).
+
 ```bash
 docker volume create <volume_tag>
 ```
 
 After the build is finished, you can run it with:
+
 ```bash
 docker run --volume <volume_tag>:/app/data <your_image_tag>`
 ```
 
 If you need to change the monitor configurations, there's no need to rebuild the image. Assuming you have the configuration files in `./config`, you can just bind the directory to the container:
+
 ```bash
 docker run --mount type=bind,src=./config,dst=/app/config,ro --volume <volume_tag>:/app/data <your_image_tag>
 ```
@@ -298,7 +302,7 @@ For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 ## Contact
 
-For support or inquiries, contact defender-support@openzeppelin.com.
+For support or inquiries, contact <defender-support@openzeppelin.com>.
 
 ## Maintainers
 

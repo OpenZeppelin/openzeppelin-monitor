@@ -1,7 +1,6 @@
 # Base image
 FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/rust:latest-dev AS base
 
-
 WORKDIR /usr/app
 
 USER root
@@ -27,4 +26,3 @@ EXPOSE 8080
 
 # starting up
 ENTRYPOINT ["/app/openzeppelin-monitor"]
-

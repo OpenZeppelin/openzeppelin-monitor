@@ -1,7 +1,12 @@
 # Contributing
 
+Thank you for your interest in contributing to the OpenZeppelin Monitor project! This document provides guidelines to ensure your contributions are effectively integrated into the project.
+
+There are many ways to contribute, regardless of your experience level. Whether you're new to Rust or a seasoned expert, your help is invaluable. Every contribution matters, no matter how small, and all efforts are greatly appreciated. This document is here to guide you through the process. Don’t feel overwhelmed—it’s meant to support and simplify your contribution journey.
+
 - [Contributing](#contributing)
   - [Communication](#communication)
+  - [Development Workflow](#development-workflow)
   - [GitHub workflow](#github-workflow)
     - [1. Fork in the cloud](#1-fork-in-the-cloud)
     - [2. Clone fork to local storage](#2-clone-fork-to-local-storage)
@@ -17,22 +22,20 @@
     - [Opening a Pull Request](#opening-a-pull-request)
   - [Code Review](#code-review)
   - [Best practices](#best-practices)
+  - [Coding Standards](#coding-standards)
   - [Testing](#testing)
   - [Security](#security)
   - [Documentation](#documentation)
   - [Issues Management or Triage](#issues-management-or-triage)
+  - [License](#license)
+  - [Code of Conduct](#code-of-conduct)
 
-OpenZeppelin Monitor is open source, but many of the people working on it do so as their day job.
-In order to avoid forcing people to be "at work" effectively 24/7, we want to establish some semi-formal protocols around development.
-Hopefully, these rules make things go more smoothly.
-If you find that this is not the case, please complain loudly.
+OpenZeppelin Monitor is open source and welcomes contributions from the community.
 
 As a potential contributor, your changes and ideas are welcome at any hour of the day or night, weekdays, weekends, and holidays.
 Please do not ever hesitate to ask a question or send a pull request.
 
 Beginner focused information can be found below in [Open a Pull Request](#opening-a-pull-request) and [Code Review](#code-review).
-
-For quick reference on contributor resources, we have a handy [contributor cheatsheet](./contributor-cheatsheet/).
 
 ## Communication
 
@@ -42,11 +45,52 @@ For quick reference on contributor resources, we have a handy [contributor cheat
 - [Blog](https://blog.openzeppelin.com/)
 - [X](https://x.com/OpenZeppelin)
 
+## Development Workflow
+
+1. **Set Up Development Environment**:
+   - Install dependencies:
+
+     ```sh
+     cargo build
+     ```
+
+   - Set up environment variables:
+  
+     ```sh
+     cp .env.example .env
+     ```
+
+2. **Run Tests**:
+   - Unit tests:
+
+     ```sh
+     cargo test
+     ```
+
+   - Integration tests:
+
+     ```sh
+     cargo test integration
+     ```
+
+3. **Follow Git Hooks**:
+   - Make hooks executable:
+
+     ```sh
+     chmod +x .githooks/*
+     ```
+
+   - Configure hooks:
+
+     ```sh
+     git config core.hooksPath .githooks
+     ```
+
 ## GitHub workflow
 
 ### 1. Fork in the cloud
 
-1. Visit https://github.com/openzeppelin/openzeppelin-monitor
+1. Visit <https://github.com/openzeppelin/openzeppelin-monitor>
 2. Click `Fork` button (top right) to establish a cloud-based fork.
 
 ### 2. Clone fork to local storage
@@ -103,7 +147,6 @@ git checkout -b myfeature
 
 You may now edit files on the `myfeature` branch.
 
-
 ### 4. Keep your branch in sync
 
 You will need to periodically fetch changes from the `upstream`
@@ -121,7 +164,7 @@ git rebase upstream/main
 Please don't use `git pull` instead of the above `fetch` and
 `rebase`. Since `git pull` executes a merge, it creates merge commits. These make the commit history messy
 and violate the principle that commits ought to be individually understandable
-and useful (see below). 
+and useful (see below).
 
 You might also consider changing your `.git/config` file via
 `git config branch.autoSetupRebase always` to change the behavior of `git pull`, or another non-merge option such as `git pull --rebase`.
@@ -136,7 +179,8 @@ build, and test multiple times. After a few cycles of this, you might
 git commit
 ```
 
-Make sure to sign your commits. This is a requirement for all commits. You can read more about signing commits [here](https://help.github.com/en/github/authenticating-to-github/signing-commits).
+**signing commits**
+We use signed commits enforcement as a best practice. Make sure to sign your commits. This is a requirement for all commits. You can read more about signing commits [here](https://help.github.com/en/github/authenticating-to-github/signing-commits).
 
 ```sh
 git commit -s
@@ -191,26 +235,26 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
 
 1. Check your git branch:
 
-  ```
+  ```sh
   git status
   ```
 
   The output should be similar to this:
 
-  ```
+  ```sh
   On branch your-contribution
   Your branch is up to date with 'origin/your-contribution'.
   ```
 
-2. Start an interactive rebase using a specific commit hash, or count backwards from your last commit using `HEAD~<n>`, where `<n>` represents the number of commits to include in the rebase.
+1. Start an interactive rebase using a specific commit hash, or count backwards from your last commit using `HEAD~<n>`, where `<n>` represents the number of commits to include in the rebase.
 
-  ```
+  ```sh
   git rebase -i HEAD~3
   ```
 
   The output should be similar to this:
 
-  ```
+  ```sh
   pick 2ebe926 Original commit
   pick 31f33e9 Address feedback
   pick b0315fe Second unit of work
@@ -228,9 +272,9 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
 
   ```
 
-3. Use a command line text editor to change the word `pick` to `squash` for the commits you want to squash, then save your changes and continue the rebase:
+1. Use a command line text editor to change the word `pick` to `squash` for the commits you want to squash, then save your changes and continue the rebase:
 
-  ```
+  ```sh
   pick 2ebe926 Original commit
   squash 31f33e9 Address feedback
   pick b0315fe Second unit of work
@@ -241,7 +285,7 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
 
   The output after saving changes should look similar to this:
 
-  ```
+  ```sh
   [detached HEAD 61fdded] Second unit of work
    Date: Thu Mar 5 19:01:32 2020 +0100
    2 files changed, 15 insertions(+), 1 deletion(-)
@@ -250,9 +294,10 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
 
   Successfully rebased and updated refs/heads/main.
   ```
-4. Force push your changes to your remote branch:
 
-  ```
+1. Force push your changes to your remote branch:
+
+  ```sh
   git push --force-with-lease
   ```
 
@@ -280,6 +325,7 @@ _If you have upstream write access_, please refrain from using the
 will create the PR branch inside the main repository rather than inside your fork.
 
 - Create a branch and sync it with upstream. Note that depending on which repository you are working from, the default branch may be called 'main' instead of 'master'.
+
   ```sh
   # create a branch
   git checkout -b myrevert
@@ -288,18 +334,23 @@ will create the PR branch inside the main repository rather than inside your for
   git fetch upstream
   git rebase upstream/master
   ```
-- If the commit you wish to revert is a *merge commit*, use this command:
+
+- If the commit you wish to revert is a _merge commit_, use this command:
+
   ```sh
   # SHA is the hash of the merge commit you wish to revert
   git revert -m 1 <SHA>
   ```
-  If it is a *single commit*, use this command:
+
+  If it is a _single commit_, use this command:
+
   ```sh
   # SHA is the hash of the single commit you wish to revert
   git revert <SHA>
   ```
 
 - This will create a new commit reverting the changes. Push this new commit to your remote.
+
   ```sh
   git push <your_remote_name> myrevert
   ```
@@ -313,8 +364,8 @@ OpenZeppelin Monitor generally follows the standard [github pull request](https:
 
 Common new contributor PR issues are:
 
-* Dealing with test cases which fail on your PR, unrelated to the changes you introduce.
-* Include mentions (like @person) and [keywords](https://help.github.com/en/articles/closing-issues-using-keywords) which could close the issue (like fixes #xxxx) in commit messages.
+- Dealing with test cases which fail on your PR, unrelated to the changes you introduce.
+- Include mentions (like @person) and [keywords](https://help.github.com/en/articles/closing-issues-using-keywords) which could close the issue (like fixes #xxxx) in commit messages.
 
 ## Code Review
 
@@ -329,53 +380,78 @@ There are two aspects of code review: giving and receiving.
 
 To make it easier for your PR to receive reviews, consider the reviewers will need you to:
 
-* Write [good commit messages](https://chris.beams.io/posts/git-commit/)
-* Break large changes into a logical series of smaller patches which individually make easily understandable changes, and in aggregate solve a broader issue
-* Label PRs: to do this read the messages the bot sends you to guide you through the PR process
+- Write [good commit messages](https://chris.beams.io/posts/git-commit/)
+- Break large changes into a logical series of smaller patches which individually make easily understandable changes, and in aggregate solve a broader issue
+- Label PRs: to do this read the messages the bot sends you to guide you through the PR process
 
 Reviewers, the people giving the review, are highly encouraged to revisit the [Code of Conduct](./CODE_OF_CONDUCT.md) and must go above and beyond to promote a collaborative, respectful community.
 When reviewing PRs from others [The Gentle Art of Patch Review](http://sage.thesharps.us/2014/09/01/the-gentle-art-of-patch-review/) suggests an iterative series of focuses which is designed to lead new contributors to positive collaboration without inundating them initially with nuances:
 
-* Is the idea behind the contribution sound?
-* Is the contribution architected correctly?
-* Is the contribution polished?
+- Is the idea behind the contribution sound?
+- Is the contribution architected correctly?
+- Is the contribution polished?
 
-Note: if your pull request isn't getting enough attention, you can email us at defender-support@openzeppelin.com to get help finding reviewers.
+Note: if your pull request isn't getting enough attention, you can email us at `defender-support@openzeppelin.com` to get help finding reviewers.
 
 ## Best practices
 
 - Write clear and meaningful git commit messages.
-- If the PR will *completely* fix a specific issue, include `fixes #123` in the PR body (where 123 is the specific issue number the PR will fix. This will automatically close the issue when the PR is merged.
+- If the PR will _completely_ fix a specific issue, include `fixes #123` in the PR body (where 123 is the specific issue number the PR will fix. This will automatically close the issue when the PR is merged.
 - Make sure you don't include `@mentions` or `fixes` keywords in your git commit messages. These should be included in the PR body instead.
 - When you make a PR for small change (such as fixing a typo, style change, or grammar fix), please squash your commits so that we can maintain a cleaner git history.
 - Make sure you include a clear and detailed PR description explaining the reasons for the changes, and ensuring there is sufficient information for the reviewer to understand your PR.
-- Additional Readings: 
+- Additional Readings:
   - [chris.beams.io/posts/git-commit/](https://chris.beams.io/posts/git-commit/)
-  - [github.com/blog/1506-closing-issues-via-pull-requests ](https://github.com/blog/1506-closing-issues-via-pull-requests)
-  - [davidwalsh.name/squash-commits-git ](https://davidwalsh.name/squash-commits-git)
+  - [github.com/blog/1506-closing-issues-via-pull-requests](https://github.com/blog/1506-closing-issues-via-pull-requests)
+  - [davidwalsh.name/squash-commits-git](https://davidwalsh.name/squash-commits-git)
   - [https://mtlynch.io/code-review-love/](https://mtlynch.io/code-review-love/)
+
+## Coding Standards
+
+- Use **Rust 2021 edition**.
+- Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/).
+- Format code with `rustfmt`:
+
+  ```sh
+  rustup component add rustfmt --toolchain nightly
+  cargo +nightly fmt
+  ```
+
+- Lint code with `clippy`:
+
+  ```sh
+  cargo clippy --all-targets --all-features
+  ```
 
 ## Testing
 
-Testing is the responsibility of all contributors.
+Testing is the responsibility of all contributors as such all contributions must pass existing tests and include new tests when applicable:
 
-There are multiple types of tests.
-The location of the test code varies with type, as do the specifics of the environment needed to successfully run the test:
+1. Write tests for new features or bug fixes.
+2. Run the test suite:
 
-* Unit: These are easily run locally by any developer on any OS.
-* Integration: These tests cover interactions of package components or interactions between several monitor components.
-* Conformance: These are a set of testcases, currently a subset of the integration/e2e tests.
+   ```sh
+   cargo test
+   ```
 
-Continuous integration will run these tests either as pre-submits on PRs, post-submits against main/release branches, or both.  
+3. Ensure no warnings or errors.
 
 ## Security
 
-- Follow the stated [Security Policy](./SECURITY.md).
+- Follow the stated [Security Policy](SECURITY.md).
 
 ## Documentation
 
-- Contributing to documentation.
+- TBD
 
 ## Issues Management or Triage
 
-- Reviewing and triaging issues.
+- TBD
+
+## License
+
+By contributing to this project, you agree that your contributions will be licensed under the [AGPL-3.0 License](LICENSE).
+
+## Code of Conduct
+
+This project and everyone participating in it is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report any unacceptable behavior to `defender-support@openzeppelin.com`

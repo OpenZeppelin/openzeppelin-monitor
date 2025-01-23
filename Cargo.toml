@@ -2,6 +2,7 @@
 name = "openzeppelin-monitor"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.84" #MSRV
 
 [dependencies]
 async-trait = "0.1"
@@ -33,3 +34,10 @@ mockall = "0.13.1"
 proptest = "1.6.0"
 rand = "0.8.5"
 tempfile = "3.2"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "openzeppelin-monitor"
