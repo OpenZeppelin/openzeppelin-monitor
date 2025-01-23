@@ -286,7 +286,7 @@ mod tests {
 	fn test_filter_network_monitors() {
 		let monitors = vec![
 			create_test_monitor("1", vec!["ethereum_mainnet"], false),
-			create_test_monitor("2", vec!["stellar_mainnet"], false),
+			create_test_monitor("2", vec!["stellar_mainnet"], true),
 			create_test_monitor("3", vec!["ethereum_mainnet", "stellar_mainnet"], false),
 		];
 
