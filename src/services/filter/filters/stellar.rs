@@ -1099,8 +1099,16 @@ impl BlockFilter for StellarBlockFilter {
 mod tests {
 	use super::*;
 	use crate::models::{
-		AddressWithABI, MatchConditions, Monitor, StellarTransaction, StellarTransactionInfo,
-		TransactionStatus,
+		AddressWithABI, MatchConditions, Monitor, StellarDecodedTransaction, StellarTransaction,
+		StellarTransactionInfo, TransactionStatus,
+	};
+	use serde_json::json;
+	use stellar_strkey::ed25519::PublicKey as StrPublicKey;
+
+	use stellar_xdr::curr::{
+		Asset, Hash, HostFunction, InvokeContractArgs, InvokeHostFunctionOp, MuxedAccount,
+		Operation, OperationBody, PaymentOp, ScAddress, ScString, ScSymbol, ScVal, SequenceNumber,
+		StringM, Transaction, TransactionEnvelope, TransactionV1Envelope, Uint256, VecM,
 	};
 
 	/// Creates a test monitor with customizable parameters
@@ -1124,38 +1132,160 @@ mod tests {
 		}
 	}
 
-	/// Creates a mock transaction for testing purposes
+	/// Creates a mock transaction for testing
 	fn create_test_transaction(
 		status: &str,
 		transaction_hash: &str,
 		application_order: i32,
+		amount: Option<&str>,
+		from: Option<&str>,
+		to: Option<&str>,
+		operation_type: Option<&str>,
 	) -> StellarTransaction {
-		let transaction_info = StellarTransactionInfo {
+		let sender = if let Some(from_addr) = from {
+			StrPublicKey::from_string(from_addr)
+				.map(|key| MuxedAccount::Ed25519(Uint256(key.0)))
+				.unwrap_or_else(|_| MuxedAccount::Ed25519(Uint256([1; 32])))
+		} else {
+			MuxedAccount::Ed25519(Uint256([1; 32]))
+		};
+
+		let receiver = if let Some(to_addr) = to {
+			StrPublicKey::from_string(to_addr)
+				.map(|key| MuxedAccount::Ed25519(Uint256(key.0)))
+				.unwrap_or_else(|_| MuxedAccount::Ed25519(Uint256([2; 32])))
+		} else {
+			MuxedAccount::Ed25519(Uint256([2; 32]))
+		};
+
+		let payment_amount = amount.and_then(|a| a.parse::<i64>().ok()).unwrap_or(100);
+
+		// Create operation based on type
+		let operation_body = match operation_type {
+			Some("invoke_host_function") => {
+				// Create a mock host function call with proper signature format
+				let function_name = ScSymbol("mock_function".try_into().unwrap());
+				let args = VecM::try_from(vec![
+					ScVal::I32(123),
+					ScVal::String(ScString::from(StringM::try_from("test").unwrap())),
+				])
+				.unwrap();
+
+				// Create contract address from the provided address
+				let contract_address = if let Some(_addr) = to {
+					// Convert Stellar address to ScAddress
+					let bytes = [0u8; 32]; // Initialize with zeros
+					ScAddress::Contract(Hash(bytes))
+				} else {
+					// Default contract address
+					let bytes = [0u8; 32];
+					ScAddress::Contract(Hash(bytes))
+				};
+
+				OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+					host_function: HostFunction::InvokeContract(InvokeContractArgs {
+						contract_address,
+						function_name,
+						args,
+					}),
+					auth: Default::default(),
+				})
+			}
+			_ => {
+				// Default to payment operation
+				OperationBody::Payment(PaymentOp {
+					destination: receiver.clone(),
+					asset: Asset::Native,
+					amount: payment_amount,
+				})
+			}
+		};
+
+		let operation = Operation {
+			source_account: None,
+			body: operation_body,
+		};
+
+		// Construct the transaction
+		let tx = Transaction {
+			source_account: sender.clone(),
+			fee: 100,
+			seq_num: SequenceNumber::from(4384801150),
+			operations: vec![operation].try_into().unwrap(),
+			cond: stellar_xdr::curr::Preconditions::None,
+			ext: stellar_xdr::curr::TransactionExt::V0,
+			memo: stellar_xdr::curr::Memo::None,
+		};
+
+		// Create the V1 envelope
+		let tx_envelope = TransactionV1Envelope {
+			tx,
+			signatures: Default::default(),
+		};
+
+		// Wrap in TransactionEnvelope
+		let envelope = TransactionEnvelope::Tx(tx_envelope);
+
+		// Create the transaction info with appropriate JSON based on operation type
+		let envelope_json = match operation_type {
+			Some("invoke_host_function") => json!({
+				"type": "ENVELOPE_TYPE_TX",
+				"tx": {
+					"sourceAccount": from.unwrap_or("GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU"),
+					"fee": 100,
+					"seqNum": "4384801150",
+					"operations": [{
+						"type": "invokeHostFunction",
+						"sourceAccount": from.unwrap_or("GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU"),
+						"function": "mock_function",
+						"parameters": [123, "test"]
+					}]
+				}
+			}),
+			_ => json!({
+				"type": "ENVELOPE_TYPE_TX",
+				"tx": {
+					"sourceAccount": from.unwrap_or("GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU"),
+					"fee": 100,
+					"seqNum": "4384801150",
+					"operations": [{
+						"type": "payment",
+						"sourceAccount": from.unwrap_or("GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU"),
+						"destination": to.unwrap_or("GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"),
+						"asset": {
+							"type": "native"
+						},
+						"amount": amount.unwrap_or("100")
+					}]
+				}
+			}),
+		};
+
+		// Create the transaction info
+		let tx_info = StellarTransactionInfo {
 			status: status.to_string(),
 			transaction_hash: transaction_hash.to_string(),
 			application_order,
 			fee_bump: false,
-			envelope_xdr: Some("AAAAAExample base64 encoded XDR...".to_string()),
-			envelope_json: Some(serde_json::json!({
-				"type": "ENVELOPE_TYPE_TX",
-				"tx": {
-					"sourceAccount": "GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU",
-					"fee": 100,
-					"seqNum": "4384801150",
-				}
-			})),
-			result_xdr: Some("AAAAAExample result XDR...".to_string()),
-			result_json: Some(serde_json::json!({"result": "success"})),
-			result_meta_xdr: Some("AAAAAExample meta XDR...".to_string()),
-			result_meta_json: Some(serde_json::json!({"meta": "data"})),
-			diagnostic_events_xdr: Some(vec!["AAAAAExample event XDR...".to_string()]),
-			diagnostic_events_json: Some(vec![serde_json::json!({"event": "data"})]),
-			ledger: 123456,
-			ledger_close_time: 1234567890,
-			decoded: None,
+			envelope_xdr: Some(base64::engine::general_purpose::STANDARD.encode("mock_xdr")),
+			envelope_json: Some(envelope_json),
+			result_xdr: Some(base64::engine::general_purpose::STANDARD.encode("mock_result")),
+			result_json: None,
+			result_meta_xdr: Some(base64::engine::general_purpose::STANDARD.encode("mock_meta")),
+			result_meta_json: None,
+			diagnostic_events_xdr: None,
+			diagnostic_events_json: None,
+			ledger: 1,
+			ledger_close_time: 0,
+			decoded: Some(StellarDecodedTransaction {
+				envelope: Some(envelope),
+				result: None,
+				meta: None,
+			}),
 		};
 
-		StellarTransaction::from(transaction_info)
+		// Return the wrapped transaction
+		StellarTransaction(tx_info)
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
@@ -1171,6 +1301,10 @@ mod tests {
 			"SUCCESS",
 			"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
 			1,
+			None,
+			None,
+			None,
+			None,
 		);
 
 		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
@@ -1178,5 +1312,427 @@ mod tests {
 		assert_eq!(matched_transactions.len(), 1);
 		assert_eq!(matched_transactions[0].status, TransactionStatus::Any);
 		assert!(matched_transactions[0].expression.is_none());
+	}
+
+	#[test]
+	fn test_find_matching_transaction_status_match() {
+		let filter = StellarBlockFilter {};
+		let mut matched_transactions = Vec::new();
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
+			1,
+			None,
+			None,
+			None,
+			None,
+		);
+
+		let monitor = create_test_monitor(
+			vec![],
+			vec![],
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: None,
+			}],
+			vec![],
+		);
+
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+		assert_eq!(matched_transactions[0].status, TransactionStatus::Success);
+		assert!(matched_transactions[0].expression.is_none());
+	}
+
+	#[test]
+	fn test_find_matching_transaction_with_expression() {
+		let filter = StellarBlockFilter {};
+		let mut matched_transactions = Vec::new();
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
+			1,
+			Some("150"),
+			None,
+			None,
+			None,
+		);
+
+		let monitor = create_test_monitor(
+			vec![],
+			vec![],
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: Some("value > 100".to_string()),
+			}],
+			vec![],
+		);
+
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+		assert_eq!(matched_transactions[0].status, TransactionStatus::Success);
+		assert_eq!(
+			matched_transactions[0].expression.as_ref().unwrap(),
+			"value > 100"
+		);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_no_match() {
+		let filter = StellarBlockFilter {};
+		let mut matched_transactions = Vec::new();
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
+			1,
+			None,
+			None,
+			None,
+			None,
+		);
+
+		let monitor = create_test_monitor(
+			vec![],
+			vec![],
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: Some("value > 1000000".to_string()),
+			}],
+			vec![],
+		);
+
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_status_mismatch() {
+		let filter = StellarBlockFilter {};
+		let mut matched_transactions = Vec::new();
+		let transaction = create_test_transaction(
+			"FAILED",
+			"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
+			1,
+			None,
+			None,
+			None,
+			None,
+		);
+
+		let monitor = create_test_monitor(
+			vec![],
+			vec![],
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: None,
+			}],
+			vec![],
+		);
+
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_complex_expression() {
+		let filter = StellarBlockFilter {};
+		let mut matched_transactions = Vec::new();
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
+			1,
+			Some("120"),
+			Some("GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU"),
+			None,
+			None,
+		);
+
+		let monitor = create_test_monitor(
+			vec![],
+			vec![],
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: Some(
+					"value >= 100 AND from == \
+					 GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU"
+						.to_string(),
+				),
+			}],
+			vec![],
+		);
+
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+		println!("matched_transactions ===> {:?}", matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+		assert_eq!(matched_transactions[0].status, TransactionStatus::Success);
+		assert!(matched_transactions[0].expression.is_some());
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for find_matching_functions_for_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_find_matching_functions_empty_conditions_matches_all() {
+		let filter = StellarBlockFilter {};
+		let mut matched_functions = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		// Use the Stellar format address
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let normalized_contract_address = normalize_address(contract_address);
+
+		// Create a transaction with an invoke_host_function operation targeting our contract
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"hash123",
+			1,
+			None,
+			None,
+			Some(contract_address),
+			Some("invoke_host_function"),
+		);
+
+		// Create monitor with empty function conditions but using normalized address
+		let monitor = create_test_monitor(
+			vec![],
+			vec![],
+			vec![],
+			vec![AddressWithABI {
+				address: normalized_contract_address.clone(),
+				abi: None,
+			}],
+		);
+
+		// Use normalized address in monitored addresses
+		let monitored_addresses = vec![normalized_contract_address];
+
+		filter.find_matching_functions_for_transaction(
+			&monitored_addresses,
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_functions.len(), 1);
+		assert!(matched_functions[0].expression.is_none(),);
+		assert!(matched_functions[0].signature.contains("mock_function"),);
+	}
+
+	#[test]
+	fn test_find_matching_functions_with_signature_match() {
+		let filter = StellarBlockFilter {};
+		let mut matched_functions = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let normalized_contract_address = normalize_address(contract_address);
+
+		// Create transaction with specific function signature
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"hash123",
+			1,
+			None,
+			None,
+			Some(contract_address),
+			Some("invoke_host_function"),
+		);
+
+		// Create monitor with matching function signature condition - match the full signature
+		let monitor = create_test_monitor(
+			vec![],
+			vec![FunctionCondition {
+				signature: "mock_function(I32,String)".to_string(), /* Match the exact signature
+				                                                     * from the operation */
+				expression: None,
+			}],
+			vec![],
+			vec![AddressWithABI {
+				address: normalized_contract_address.clone(),
+				abi: None,
+			}],
+		);
+
+		let monitored_addresses = vec![normalized_contract_address];
+
+		filter.find_matching_functions_for_transaction(
+			&monitored_addresses,
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_functions.len(), 1);
+		assert!(matched_functions[0].expression.is_none());
+		assert_eq!(matched_functions[0].signature, "mock_function(I32,String)");
+	}
+
+	#[test]
+	fn test_find_matching_functions_with_expression() {
+		let filter = StellarBlockFilter {};
+		let mut matched_functions = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let normalized_contract_address = normalize_address(contract_address);
+
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"hash123",
+			1,
+			None,
+			None,
+			Some(contract_address),
+			Some("invoke_host_function"),
+		);
+
+		// Create monitor with function signature and expression
+		let monitor = create_test_monitor(
+			vec![],
+			vec![FunctionCondition {
+				signature: "mock_function(i32,string)".to_string(),
+				expression: Some("0 > 100".to_string()), // This should not match
+			}],
+			vec![],
+			vec![AddressWithABI {
+				address: normalized_contract_address.clone(),
+				abi: None,
+			}],
+		);
+
+		let monitored_addresses = vec![normalized_contract_address];
+
+		filter.find_matching_functions_for_transaction(
+			&monitored_addresses,
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_functions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_functions_address_mismatch() {
+		let filter = StellarBlockFilter {};
+		let mut matched_functions = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let different_address = "CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBSC4";
+		let normalized_different_address = normalize_address(different_address);
+
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"hash123",
+			1,
+			None,
+			None,
+			Some(contract_address),
+			Some("invoke_host_function"),
+		);
+
+		// Create monitor with different address
+		let monitor = create_test_monitor(
+			vec![],
+			vec![FunctionCondition {
+				signature: "mock_function(i32,string)".to_string(),
+				expression: None,
+			}],
+			vec![],
+			vec![AddressWithABI {
+				address: normalized_different_address.clone(),
+				abi: None,
+			}],
+		);
+
+		let monitored_addresses = vec![normalized_different_address];
+
+		filter.find_matching_functions_for_transaction(
+			&monitored_addresses,
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_functions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_functions_multiple_conditions() {
+		let filter = StellarBlockFilter {};
+		let mut matched_functions = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let normalized_contract_address = normalize_address(contract_address);
+
+		let transaction = create_test_transaction(
+			"SUCCESS",
+			"hash123",
+			1,
+			None,
+			None,
+			Some(contract_address),
+			Some("invoke_host_function"),
+		);
+
+		// Create monitor with multiple function conditions
+		let monitor = create_test_monitor(
+			vec![],
+			vec![
+				FunctionCondition {
+					signature: "wrong_function()".to_string(),
+					expression: None,
+				},
+				FunctionCondition {
+					signature: "mock_function(i32,string)".to_string(),
+					expression: None,
+				},
+			],
+			vec![],
+			vec![AddressWithABI {
+				address: normalized_contract_address.clone(),
+				abi: None,
+			}],
+		);
+
+		let monitored_addresses = vec![normalized_contract_address];
+
+		filter.find_matching_functions_for_transaction(
+			&monitored_addresses,
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_args,
+		);
+
+		assert_eq!(matched_functions.len(), 1);
+		assert_eq!(matched_functions[0].signature, "mock_function(I32,String)");
 	}
 }
