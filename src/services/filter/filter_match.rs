@@ -15,7 +15,7 @@ use crate::{
 	repositories::TriggerRepositoryTrait,
 	services::{
 		filter::{
-			helpers::evm::{h160_to_string, h256_to_string},
+			evm_helpers::{h160_to_string, h256_to_string},
 			FilterError,
 		},
 		trigger::TriggerExecutionService,

@@ -5,8 +5,12 @@
 
 mod properties {
 	mod filters {
-		mod evm;
-		mod stellar;
+		mod evm {
+			mod filter;
+		}
+		mod stellar {
+			mod filter;
+		}
 	}
 	mod notifications {
 		mod email;
@@ -22,9 +26,13 @@ mod properties {
 
 mod integration {
 	mod mocks;
-	mod filter {
+	mod filters {
 		mod common;
-		mod evm;
-		mod stellar;
+		mod evm {
+			mod filter;
+		}
+		mod stellar {
+			mod filter;
+		}
 	}
 }

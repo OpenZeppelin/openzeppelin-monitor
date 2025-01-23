@@ -10,7 +10,7 @@ use openzeppelin_monitor::{
 };
 
 use crate::integration::{
-	filter::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
+	filters::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
 	mocks::MockStellarClientTrait,
 };
 

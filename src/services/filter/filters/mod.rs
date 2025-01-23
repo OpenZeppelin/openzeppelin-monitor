@@ -6,12 +6,19 @@
 //! - EVM-specific implementation
 //! - Stellar-specific implementation
 
-mod evm;
-mod stellar;
+pub mod evm {
+	pub mod filter;
+	pub mod helpers;
+}
+pub mod stellar {
+	pub mod filter;
+	pub mod helpers;
+}
 
 use async_trait::async_trait;
-pub use evm::EVMBlockFilter;
-pub use stellar::StellarBlockFilter;
+
+pub use evm::filter::EVMBlockFilter;
+pub use stellar::filter::StellarBlockFilter;
 
 use crate::{
 	models::{BlockType, Monitor, MonitorMatch, Network},
