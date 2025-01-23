@@ -25,7 +25,7 @@ pub mod services;
 pub mod utils;
 
 use crate::{
-	bootstrap::{has_active_monitors, initialize_services, Result},
+	bootstrap::{create_block_handler, has_active_monitors, initialize_services, Result},
 	models::{BlockChainType, Network},
 	services::{
 		blockchain::{EvmClient, StellarClient},
@@ -33,7 +33,6 @@ use crate::{
 	},
 };
 
-use bootstrap::create_block_handler;
 use dotenvy::dotenv;
 use log::{error, info};
 use std::sync::Arc;
