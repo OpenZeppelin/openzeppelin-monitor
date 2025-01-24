@@ -12,13 +12,12 @@ use web3::types::H160;
 
 use crate::{
 	models::MonitorMatch,
-	repositories::TriggerRepositoryTrait,
 	services::{
 		filter::{
 			evm_helpers::{h160_to_string, h256_to_string},
 			FilterError,
 		},
-		trigger::TriggerExecutionService,
+		trigger::TriggerExecutionServiceTrait,
 	},
 };
 
@@ -48,9 +47,9 @@ use crate::{
 /// "event_0_from": "0x2e8135be71230c6b1b4045696d41c09db0414226"
 /// "event_0_value": "88248701"
 /// ```
-pub async fn handle_match<T: TriggerRepositoryTrait>(
+pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 	matching_monitor: MonitorMatch,
-	trigger_service: &TriggerExecutionService<T>,
+	trigger_service: &T,
 ) -> Result<(), FilterError> {
 	match matching_monitor {
 		MonitorMatch::EVM(evm_monitor_match) => {
@@ -121,7 +120,7 @@ pub async fn handle_match<T: TriggerRepositoryTrait>(
 						.monitor
 						.triggers
 						.iter()
-						.map(|s| s.as_str())
+						.map(|s| s.to_string())
 						.collect::<Vec<_>>(),
 					data,
 				)
@@ -201,7 +200,7 @@ pub async fn handle_match<T: TriggerRepositoryTrait>(
 						.monitor
 						.triggers
 						.iter()
-						.map(|s| s.as_str())
+						.map(|s| s.to_string())
 						.collect::<Vec<_>>(),
 					data,
 				)

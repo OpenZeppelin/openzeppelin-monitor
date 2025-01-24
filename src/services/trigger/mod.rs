@@ -7,4 +7,5 @@
 mod error;
 mod service;
 
-pub use service::TriggerExecutionService;
+pub use error::TriggerError;
+pub use service::{TriggerExecutionService, TriggerExecutionServiceTrait};

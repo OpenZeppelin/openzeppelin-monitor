@@ -6,11 +6,11 @@
 use openzeppelin_monitor::{
 	models::{BlockType, Monitor, Network, Trigger},
 	repositories::TriggerService,
-	services::{notification::NotificationService, trigger::TriggerExecutionService},
+	services::notification::NotificationService,
 };
 use std::{collections::HashMap, fs};
 
-use crate::integration::mocks::MockTriggerRepository;
+use crate::integration::mocks::{MockTriggerExecutionService, MockTriggerRepository};
 
 pub const TEST_FIXTURES_BASE: &str = "tests/integration/fixtures";
 
@@ -42,7 +42,7 @@ pub fn read_and_parse_json<T: serde::de::DeserializeOwned>(path: &str) -> T {
 
 pub fn setup_trigger_execution_service(
 	trigger_json: &str,
-) -> TriggerExecutionService<MockTriggerRepository> {
+) -> MockTriggerExecutionService<MockTriggerRepository> {
 	let trigger_map: HashMap<String, Trigger> = read_and_parse_json(trigger_json);
 	let mut mock_trigger_repository = MockTriggerRepository::new();
 
@@ -60,5 +60,12 @@ pub fn setup_trigger_execution_service(
 	let trigger_service = TriggerService::new_with_repository(mock_trigger_repository).unwrap();
 	let notification_service = NotificationService::new();
 
-	TriggerExecutionService::new(trigger_service, notification_service)
+	// Set up expectation for the constructor
+	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
+	ctx.expect()
+		.with(mockall::predicate::always(), mockall::predicate::always())
+		.returning(|_, _| MockTriggerExecutionService::default());
+
+	// Then make the actual call that will match the expectation
+	MockTriggerExecutionService::new(trigger_service, notification_service)
 }

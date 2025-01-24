@@ -52,7 +52,7 @@ impl<S, H, T> NetworkBlockWatcher<S, H, T>
 where
 	S: BlockStorage + Send + Sync + 'static,
 	H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
-	T: Fn(&ProcessedBlock) + Send + Sync + 'static,
+	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static,
 {
 	/// Creates a new network watcher instance
 	///
@@ -158,7 +158,7 @@ impl<S, H, T> BlockWatcherService<S, H, T>
 where
 	S: BlockStorage + Send + Sync + 'static,
 	H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
-	T: Fn(&ProcessedBlock) + Send + Sync + 'static,
+	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static,
 {
 	/// Creates a new block watcher service
 	///
@@ -243,7 +243,7 @@ async fn process_new_blocks<
 	S: BlockStorage,
 	C: BlockChainClient + Send + Clone + 'static,
 	H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
-	T: Fn(&ProcessedBlock) + Send + Sync + 'static,
+	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static,
 >(
 	network: &Network,
 	rpc_client: &C,
