@@ -29,7 +29,7 @@ jobs:
 
       - name: Run Tests
         env:
-          LLVM_PROFILE_FILE: grcov-%p-%m.profraw
+          LLVM_PROFILE_FILE: llvm-cov-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
         run: cargo test
 

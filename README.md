@@ -247,18 +247,7 @@ cargo test integration
 
 ### Generate Test Coverage Report
 
-```bash
-RUSTFLAGS="-C instrument-coverage" LLVM_PROFILE_FILE="coverage-data/coverage-%p-%m.profraw" cargo test
-grcov . -s . \
-  --binary-path ./target/debug/ \
-  -t html \
-  --branch \
-  --ignore-not-existing \
-  --ignore "/*" \
-  --ignore "tests/*" \
-  --ignore "src/**/tests/*" \
-  -o ./coverage/
-```
+Run `cargo llvm-cov --html --open` (creates an interactive HTML coverage report) or `cargo llvm-cov` to view coverage in the terminal.
 
 ### Developer setup
 
