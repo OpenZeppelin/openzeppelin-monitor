@@ -1139,6 +1139,12 @@ mod tests {
 		StringM, Transaction, TransactionEnvelope, TransactionV1Envelope, Uint256, VecM,
 	};
 
+	fn create_test_filter() -> StellarBlockFilter<()> {
+		StellarBlockFilter::<()> {
+			_client: PhantomData,
+		}
+	}
+
 	/// Creates a test monitor with customizable parameters
 	fn create_test_monitor(
 		event_conditions: Vec<EventCondition>,
@@ -1367,7 +1373,7 @@ mod tests {
 	//////////////////////////////////////////////////////////////////////////////
 	#[test]
 	fn test_find_matching_transaction_empty_conditions_matches_all() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_transactions = Vec::new();
 
 		let monitor = create_test_monitor(vec![], vec![], vec![], vec![]);
@@ -1390,7 +1396,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_transaction_status_match() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_transactions = Vec::new();
 		let transaction = create_test_transaction(
 			"SUCCESS",
@@ -1421,7 +1427,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_transaction_with_expression() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_transactions = Vec::new();
 		let transaction = create_test_transaction(
 			"SUCCESS",
@@ -1455,7 +1461,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_transaction_no_match() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_transactions = Vec::new();
 		let transaction = create_test_transaction(
 			"SUCCESS",
@@ -1484,7 +1490,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_transaction_status_mismatch() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_transactions = Vec::new();
 		let transaction = create_test_transaction(
 			"FAILED",
@@ -1513,7 +1519,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_transaction_complex_expression() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_transactions = Vec::new();
 		let transaction = create_test_transaction(
 			"SUCCESS",
@@ -1553,7 +1559,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_functions_empty_conditions_matches_all() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1604,7 +1610,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_functions_with_signature_match() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1657,7 +1663,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_functions_with_expression() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1681,8 +1687,8 @@ mod tests {
 		let monitor = create_test_monitor(
 			vec![],
 			vec![FunctionCondition {
-				signature: "mock_function(i32,string)".to_string(),
-				expression: Some("0 > 100".to_string()), // This should not match
+				signature: "mock_function(I32,String)".to_string(),
+				expression: Some("0 < 50".to_string()),
 			}],
 			vec![],
 			vec![AddressWithABI {
@@ -1701,12 +1707,13 @@ mod tests {
 			&mut matched_args,
 		);
 
+		// Now this assertion is correct since 123 is not less than 50
 		assert_eq!(matched_functions.len(), 0);
 	}
 
 	#[test]
 	fn test_find_matching_functions_address_mismatch() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1756,7 +1763,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_functions_multiple_conditions() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1816,7 +1823,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_events_empty_conditions_matches_all() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1865,7 +1872,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_events_with_signature_match() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1912,7 +1919,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_events_with_expression() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -1959,7 +1966,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_events_no_match() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -2005,7 +2012,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_events_wrong_transaction() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_args = StellarMatchArguments {
 			events: Some(Vec::new()),
@@ -2055,7 +2062,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_basic_success() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 		let monitored_addresses = vec![normalize_address(contract_address)];
 
@@ -2081,7 +2088,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_address_mismatch() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 		let different_address = "CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBSC4";
 		let monitored_addresses = vec![normalize_address(different_address)];
@@ -2098,7 +2105,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_invalid_event_name() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 		let monitored_addresses = vec![normalize_address(contract_address)];
 
@@ -2118,7 +2125,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_with_indexed_and_value_args() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 		let monitored_addresses = vec![normalize_address(contract_address)];
 
@@ -2166,7 +2173,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_bool() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test true/false equality
 		assert!(filter.compare_values("bool", "true", "==", "true"));
@@ -2187,7 +2194,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_integers() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test u32
 		assert!(filter.compare_values("u32", "100", ">", "50"));
@@ -2231,8 +2238,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_strings() {
-		let filter = StellarBlockFilter {};
-
+		let filter = create_test_filter();
 		// Test basic string equality
 		assert!(filter.compare_values("string", "hello", "==", "hello"));
 		assert!(filter.compare_values("String", "HELLO", "==", "hello")); // Case insensitive
@@ -2257,7 +2263,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_vectors() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test vector contains
 		assert!(filter.compare_values("vec", "value1,value2,value3", "contains", "value2"));
@@ -2273,7 +2279,7 @@ mod tests {
 
 	#[test]
 	fn test_unsupported_type() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test unsupported type
 		assert!(!filter.compare_values("unsupported_type", "value", "==", "value"));
@@ -2286,7 +2292,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_bool_valid_equality() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test true == true
 		assert!(filter.compare_bool("true", "==", "true"));
@@ -2309,7 +2315,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_bool_invalid_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test invalid param_value
 		assert!(!filter.compare_bool("not_a_bool", "==", "true"));
@@ -2328,7 +2334,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_bool_unsupported_operators() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test greater than operator
 		assert!(!filter.compare_bool("true", ">", "false"));
@@ -2351,7 +2357,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_bool_case_sensitivity() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test TRUE (uppercase)
 		assert!(!filter.compare_bool("TRUE", "==", "true"));
@@ -2369,7 +2375,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u64_valid_comparisons() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test greater than
 		assert!(filter.compare_u64("100", ">", "50"));
@@ -2402,7 +2408,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u64_invalid_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test invalid param_value
 		assert!(!filter.compare_u64("not_a_number", ">", "100"));
@@ -2421,7 +2427,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u64_invalid_operators() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test unsupported operators
 		assert!(!filter.compare_u64("100", "<<", "50")); // Bit shift operator
@@ -2432,7 +2438,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u64_boundary_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let max = u64::MAX.to_string();
 		let zero = "0";
 
@@ -2457,7 +2463,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i32_valid_comparisons() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test greater than
 		assert!(filter.compare_i32("100", ">", "50"));
@@ -2490,7 +2496,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i32_negative_numbers() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test negative numbers
 		assert!(filter.compare_i32("-100", ">", "-200"));
@@ -2502,7 +2508,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i32_invalid_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test invalid param_value
 		assert!(!filter.compare_i32("not_a_number", ">", "100"));
@@ -2521,7 +2527,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i32_boundary_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test i32::MAX and i32::MIN
 		assert!(filter.compare_i32("2147483647", ">", "0")); // i32::MAX
@@ -2533,7 +2539,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i32_invalid_operators() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test unsupported operators
 		assert!(!filter.compare_i32("100", "<<", "50")); // Bit shift operator
@@ -2549,7 +2555,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u32_valid_comparisons() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test greater than
 		assert!(filter.compare_u32("100", ">", "50"));
@@ -2582,7 +2588,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u32_boundary_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test with u32::MAX
 		assert!(filter.compare_u32(&u32::MAX.to_string(), ">", "0"));
@@ -2597,7 +2603,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u32_invalid_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test invalid param_value
 		assert!(!filter.compare_u32("not_a_number", ">", "100"));
@@ -2620,7 +2626,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u32_invalid_operators() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test unsupported operators
 		assert!(!filter.compare_u32("100", "invalid", "50"));
@@ -2636,7 +2642,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i64_valid_comparisons() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test greater than
 		assert!(filter.compare_i64("100", ">", "50"));
@@ -2669,7 +2675,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i64_negative_numbers() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test negative numbers
 		assert!(filter.compare_i64("-100", ">", "-200"));
@@ -2687,7 +2693,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i64_invalid_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test invalid param_value
 		assert!(!filter.compare_i64("not_a_number", ">", "100"));
@@ -2706,7 +2712,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i64_boundary_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test with i64::MAX and i64::MIN
 		assert!(filter.compare_i64("9223372036854775807", ">", "0"));
@@ -2719,7 +2725,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i64_invalid_operators() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test unsupported operators
 		assert!(!filter.compare_i64("100", "<<", "50"));
@@ -2730,7 +2736,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u128_valid_comparisons() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test basic comparisons
 		assert!(filter.compare_u128("100", ">", "50"));
@@ -2765,7 +2771,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_u128_invalid_inputs() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test invalid number formats
 		assert!(!filter.compare_u128("not_a_number", ">", "100"));
@@ -2784,7 +2790,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i128_valid_comparisons() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test basic comparisons
 		assert!(filter.compare_i128("100", ">", "50"));
@@ -2822,8 +2828,7 @@ mod tests {
 
 	#[test]
 	fn test_compare_i128_invalid_inputs() {
-		let filter = StellarBlockFilter {};
-
+		let filter = create_test_filter();
 		// Test invalid number formats
 		assert!(!filter.compare_i128("not_a_number", ">", "100"));
 		assert!(!filter.compare_i128("100", ">", "not_a_number"));
@@ -2842,7 +2847,7 @@ mod tests {
 	// Tests for compare_i256
 	#[test]
 	fn test_compare_i256() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test equality operator
 		assert!(filter.compare_i256("12345", "==", "12345"));
@@ -2874,8 +2879,7 @@ mod tests {
 	// Tests for compare_string
 	#[test]
 	fn test_compare_string() {
-		let filter = StellarBlockFilter {};
-
+		let filter = create_test_filter();
 		// Test basic equality
 		assert!(filter.compare_string("hello", "==", "hello"));
 		assert!(!filter.compare_string("hello", "==", "world"));
@@ -2910,7 +2914,7 @@ mod tests {
 	// Tests for compare_vec
 	#[test]
 	fn test_compare_vec() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test contains operator
 		assert!(filter.compare_vec("value1,value2,value3", "contains", "value2"));
@@ -2957,7 +2961,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_regular_parameters() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test setup with simple numeric parameters
 		let args = Some(vec![
@@ -2989,7 +2993,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_array_indexing() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test setup with array parameter
 		let args = Some(vec![StellarMatchParamEntry {
@@ -3011,7 +3015,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_logical_operators() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test setup with multiple parameters
 		let args = Some(vec![
@@ -3043,7 +3047,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_edge_cases() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test with empty args
 		assert!(!filter.evaluate_expression("value == 100", &None));
@@ -3076,7 +3080,7 @@ mod tests {
 
 	#[test]
 	fn test_convert_primitive_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		let arguments = vec![
 			// Use explicit type/value pairs with string values
@@ -3130,7 +3134,7 @@ mod tests {
 
 	#[test]
 	fn test_convert_array_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		let arguments = vec![json!([1, 2, 3]), json!(["a", "b", "c"])];
 
@@ -3153,7 +3157,7 @@ mod tests {
 
 	#[test]
 	fn test_convert_object_with_type_value() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		let arguments = vec![
 			json!({
@@ -3185,7 +3189,7 @@ mod tests {
 
 	#[test]
 	fn test_convert_generic_objects() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		let arguments = vec![
 			json!({
@@ -3218,7 +3222,7 @@ mod tests {
 
 	#[test]
 	fn test_convert_empty_array() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 		let arguments = vec![];
 
 		let result = filter.convert_arguments_to_match_param_entry(&arguments);
@@ -3228,7 +3232,7 @@ mod tests {
 
 	#[test]
 	fn test_convert_mixed_values() {
-		let filter = StellarBlockFilter {};
+		let filter = create_test_filter();
 
 		let arguments = vec![
 			json!({

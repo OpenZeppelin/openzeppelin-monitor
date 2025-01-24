@@ -729,6 +729,12 @@ mod tests {
 	use serde_json::json;
 	use web3::types::{H160, H256, U256};
 
+	fn create_test_filter() -> EVMBlockFilter<()> {
+		EVMBlockFilter::<()> {
+			_client: PhantomData,
+		}
+	}
+
 	fn create_test_transaction(
 		value: U256,
 		from: Option<H160>,
@@ -885,7 +891,7 @@ mod tests {
 	//////////////////////////////////////////////////////////////////////////////
 	#[test]
 	fn test_empty_conditions_matches_all() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched = Vec::new();
 		let monitor = create_test_monitor(vec![], vec![], vec![], vec![]);
 
@@ -903,7 +909,7 @@ mod tests {
 
 	#[test]
 	fn test_status_matching() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched = Vec::new();
 
 		let monitor = create_test_monitor(
@@ -941,7 +947,7 @@ mod tests {
 
 	#[test]
 	fn test_expression_matching() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched = Vec::new();
 		let monitor = create_test_monitor(
 			vec![], // events
@@ -978,7 +984,7 @@ mod tests {
 
 	#[test]
 	fn test_address_expression_matching() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched = Vec::new();
 		let test_address = H160::from_low_u64_be(12345);
 
@@ -1021,7 +1027,7 @@ mod tests {
 
 	#[test]
 	fn test_from_address_expression_matching() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched = Vec::new();
 		let test_address = H160::from_low_u64_be(12345);
 
@@ -1067,7 +1073,7 @@ mod tests {
 	//////////////////////////////////////////////////////////////////////////////
 	#[test]
 	fn test_find_matching_functions_basic_match() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_on_args = EVMMatchArguments {
 			events: None,
@@ -1145,7 +1151,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_functions_with_expression() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_on_args = EVMMatchArguments {
 			events: None,
@@ -1247,7 +1253,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_functions_non_matching_address() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_on_args = EVMMatchArguments {
 			events: None,
@@ -1316,7 +1322,7 @@ mod tests {
 
 	#[test]
 	fn test_find_matching_functions_invalid_input_data() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
 		let mut matched_on_args = EVMMatchArguments {
 			events: None,
@@ -1366,7 +1372,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_find_matching_events_basic_match() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_on_args = EVMMatchArguments {
 			events: Some(Vec::new()),
@@ -1423,7 +1429,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_find_matching_events_with_expression() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_on_args = EVMMatchArguments {
 			events: Some(Vec::new()),
@@ -1500,7 +1506,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_find_matching_events_non_matching_address() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let mut matched_events = Vec::new();
 		let mut matched_on_args = EVMMatchArguments {
 			events: Some(Vec::new()),
@@ -1559,7 +1565,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_simple_uint_comparisons() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
 
 		// Test all operators
@@ -1578,7 +1584,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_address_comparisons() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let args = Some(vec![create_test_param(
 			"recipient",
 			"0x1234567890123456789012345678901234567890",
@@ -1610,7 +1616,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_logical_combinations() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let args = Some(vec![
 			create_test_param("amount", "1000", "uint256"),
 			create_test_param(
@@ -1655,7 +1661,7 @@ mod tests {
 
 	#[test]
 	fn test_evaluate_expression_error_cases() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 
 		// Test with no args
 		assert!(!filter.evaluate_expression("amount > 1000", &None));
@@ -1691,7 +1697,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_successful_decode() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 
 		// Create contract address and log
 		let contract_address =
@@ -1740,7 +1746,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_invalid_abi() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let contract_address =
 			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
 		let log = create_test_log(
@@ -1765,7 +1771,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_mismatched_signature() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let contract_address =
 			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
 
@@ -1787,7 +1793,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_decode_events_malformed_log_data() {
-		let filter = EVMBlockFilter {};
+		let filter = create_test_filter();
 		let contract_address =
 			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
 
