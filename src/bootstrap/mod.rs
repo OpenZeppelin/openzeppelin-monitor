@@ -45,10 +45,6 @@ pub fn initialize_services() -> ServiceResult {
 		Some(&trigger_service),
 	)?);
 
-	println!("network_service: {:?}", network_service.get_all());
-	println!("trigger_service: {:?}", trigger_service.get_all());
-	println!("monitor_service: {:?}", monitor_service.get_all());
-
 	let notification_service = NotificationService::new();
 
 	let filter_service = Arc::new(FilterService::new());
