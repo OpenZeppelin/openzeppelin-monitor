@@ -1,7 +1,7 @@
 use futures::future::BoxFuture;
 use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 
 use crate::{
 	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
@@ -72,14 +72,14 @@ pub fn initialize_services() -> ServiceResult {
 /// Creates a block handler function that processes new blocks from the blockchain.
 ///
 /// # Arguments
-/// * `shutdown_tx` - Broadcast channel for shutdown signals
+/// * `shutdown_tx` - Watch channel for shutdown signals
 /// * `filter_service` - Service for filtering blockchain data
 /// * `active_monitors` - List of active monitors
 ///
 /// # Returns
 /// Returns a function that handles incoming blocks
 pub fn create_block_handler(
-	shutdown_tx: broadcast::Sender<()>,
+	shutdown_tx: watch::Sender<bool>,
 	filter_service: Arc<FilterService>,
 	active_monitors: Vec<Monitor>,
 ) -> Arc<impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync> {
@@ -161,7 +161,7 @@ pub async fn process_block<T>(
 	block: &BlockType,
 	applicable_monitors: &[Monitor],
 	filter_service: &FilterService,
-	shutdown_rx: &mut broadcast::Receiver<()>,
+	shutdown_rx: &mut watch::Receiver<bool>,
 ) -> Option<Vec<MonitorMatch>>
 where
 	T: BlockChainClient + BlockFilterFactory<T>,
@@ -176,7 +176,7 @@ where
 				}
 			}
 		}
-		_ = shutdown_rx.recv() => {
+		_ = shutdown_rx.changed() => {
 			info!("Shutting down block processing task");
 			None
 		}
@@ -187,13 +187,13 @@ where
 /// pipeline.
 ///
 /// # Arguments
-/// * `shutdown_tx` - Broadcast channel for shutdown signals
+/// * `shutdown_tx` - Watch channel for shutdown signals
 /// * `trigger_service` - Service for executing triggers
 ///
 /// # Returns
 /// Returns a function that handles trigger execution for matching monitors
 pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 'static>(
-	shutdown_tx: broadcast::Sender<()>,
+	shutdown_tx: watch::Sender<bool>,
 	trigger_service: Arc<S>,
 ) -> Arc<impl Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync> {
 	Arc::new(move |block: &ProcessedBlock| {
@@ -209,7 +209,7 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 						}
 					}
 				} => {}
-				_ = shutdown_rx.recv() => {
+				_ = shutdown_rx.changed() => {
 					info!("Shutting down trigger handling task");
 				}
 			}

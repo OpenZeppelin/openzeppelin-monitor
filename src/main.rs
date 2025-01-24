@@ -39,7 +39,7 @@ use crate::{
 use dotenvy::dotenv;
 use log::{error, info};
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 
 /// Main entry point for the blockchain monitoring service.
 ///
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 		return Ok(());
 	}
 
-	let (shutdown_tx, _) = broadcast::channel(1);
+	let (shutdown_tx, _) = watch::channel(false);
 
 	let block_handler = create_block_handler(shutdown_tx.clone(), filter_service, active_monitors);
 	let trigger_handler = create_trigger_handler(shutdown_tx.clone(), trigger_execution_service);
@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
 	tokio::select! {
 		_ = tokio::signal::ctrl_c() => {
 			info!("Shutdown signal received, stopping services...");
-			let _ = shutdown_tx.send(());
+			let _ = shutdown_tx.send(true);
 
 			// Create a future for all network shutdown operations
 			let shutdown_futures = networks.values().map(|network| {
