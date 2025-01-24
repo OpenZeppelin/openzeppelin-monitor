@@ -39,13 +39,17 @@ impl SlackNotifier {
 	/// * `webhook_url` - Slack webhook URL
 	/// * `title` - Message title
 	/// * `body_template` - Message template with variables
-	pub fn new(webhook_url: String, title: String, body_template: String) -> Self {
-		Self {
+	pub fn new(
+		webhook_url: String,
+		title: String,
+		body_template: String,
+	) -> Result<Self, NotificationError> {
+		Ok(Self {
 			webhook_url,
 			title,
 			body_template,
 			client: Client::new(),
-		}
+		})
 	}
 
 	/// Formats a message by substituting variables in the template
@@ -95,8 +99,8 @@ impl Notifier for SlackNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), Box<dyn std::error::Error>>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		let payload = SlackMessage {
 			text: message.to_string(),
 		};
@@ -106,7 +110,7 @@ impl Notifier for SlackNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| Box::new(NotificationError::network_error(e.to_string())))?;
+			.map_err(|e| NotificationError::network_error(e.to_string()))?;
 
 		Ok(())
 	}

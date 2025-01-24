@@ -4,8 +4,18 @@
 //! chains (EVM and Stellar) and mock implementations for testing.
 
 mod properties {
-	mod matching;
-	mod notification;
+	mod filters {
+		mod evm {
+			mod filter;
+		}
+		mod stellar {
+			mod filter;
+		}
+	}
+	mod notifications {
+		mod email;
+		mod slack;
+	}
 	mod repositories {
 		mod monitor;
 		mod network;
@@ -16,9 +26,13 @@ mod properties {
 
 mod integration {
 	mod mocks;
-	mod filter {
+	mod filters {
 		mod common;
-		mod evm;
-		mod stellar;
+		mod evm {
+			mod filter;
+		}
+		mod stellar {
+			mod filter;
+		}
 	}
 }

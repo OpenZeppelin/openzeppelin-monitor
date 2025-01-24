@@ -13,6 +13,8 @@ pub enum NotificationError {
 	NetworkError(String),
 	/// Configuration-related errors
 	ConfigError(String),
+	/// Internal errors (e.g., failed to build email)
+	InternalError(String),
 }
 
 use reqwest;
@@ -23,6 +25,7 @@ impl NotificationError {
 		match self {
 			Self::NetworkError(msg) => format!("Network error: {}", msg),
 			Self::ConfigError(msg) => format!("Config error: {}", msg),
+			Self::InternalError(msg) => format!("Internal error: {}", msg),
 		}
 	}
 
@@ -36,6 +39,13 @@ impl NotificationError {
 	/// Creates a new configuration error with logging
 	pub fn config_error(msg: impl Into<String>) -> Self {
 		let error = Self::ConfigError(msg.into());
+		error!("{}", error.format_message());
+		error
+	}
+
+	/// Creates a new internal error with logging
+	pub fn internal_error(msg: impl Into<String>) -> Self {
+		let error = Self::InternalError(msg.into());
 		error!("{}", error.format_message());
 		error
 	}

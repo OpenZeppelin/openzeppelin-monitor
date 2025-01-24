@@ -11,7 +11,7 @@ mod config;
 mod core;
 
 // Re-export blockchain types
-pub use blockchain::{BlockChainType, BlockType, MonitorMatch};
+pub use blockchain::{BlockChainType, BlockType, MonitorMatch, ProcessedBlock};
 
 pub use blockchain::evm::{
 	EVMBlock, EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch,

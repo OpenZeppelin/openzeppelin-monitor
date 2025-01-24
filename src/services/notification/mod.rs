@@ -33,8 +33,8 @@ pub trait Notifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), Box<dyn std::error::Error>>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), Box<dyn std::error::Error>>;
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), NotificationError>;
 }
 
 /// Service for managing notifications across different channels
@@ -53,22 +53,24 @@ impl NotificationService {
 	/// * `variables` - Variables to substitute in message templates
 	///
 	/// # Returns
-	/// * `Result<(), Box<dyn std::error::Error>>` - Success or error
+	/// * `Result<(), NotificationError>` - Success or error
 	pub async fn execute(
 		&self,
 		config: &TriggerTypeConfig,
 		variables: HashMap<String, String>,
-	) -> Result<(), Box<dyn std::error::Error>> {
+	) -> Result<(), NotificationError> {
 		match config {
 			TriggerTypeConfig::Slack {
 				webhook_url,
 				title,
 				body,
 			} => {
-				let notifier = SlackNotifier::new(webhook_url.clone(), title.clone(), body.clone());
+				let notifier = SlackNotifier::new(webhook_url.clone(), title.clone(), body.clone())
+					.map_err(|e| NotificationError::config_error(e.to_string()))?;
 				notifier
 					.notify(&notifier.format_message(&variables))
-					.await?;
+					.await
+					.map_err(|e| NotificationError::config_error(e.to_string()))?;
 			}
 			TriggerTypeConfig::Email {
 				host,
@@ -92,10 +94,14 @@ impl NotificationService {
 					sender: sender.clone(),
 					recipients: recipients.clone(),
 				};
-				let notifier = EmailNotifier::new(smtp_config, email_content);
+
+				let notifier = EmailNotifier::new(smtp_config, email_content)
+					.map_err(|e| NotificationError::config_error(e.to_string()))?;
+
 				notifier
 					.notify(&notifier.format_message(&variables))
-					.await?;
+					.await
+					.map_err(|e| NotificationError::config_error(e.to_string()))?;
 			}
 			TriggerTypeConfig::Webhook { .. } => {
 				// TODO: Implement webhook notifier

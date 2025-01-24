@@ -4,14 +4,19 @@
 //! blockchains, supporting operations like block retrieval, transaction receipt lookup,
 //! and log filtering.
 
+use std::marker::PhantomData;
+
 use async_trait::async_trait;
 use web3::types::{BlockId, BlockNumber};
 
 use crate::{
 	models::{BlockType, EVMBlock, Network},
 	services::{
-		blockchain::{client::BlockChainClient, transports::Web3TransportClient, BlockChainError},
-		filter::helpers::evm::string_to_h256,
+		blockchain::{
+			client::BlockChainClient, transports::Web3TransportClient, BlockChainError,
+			BlockFilterFactory,
+		},
+		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
 	},
 	utils::WithRetry,
 };
@@ -20,6 +25,7 @@ use crate::{
 ///
 /// Provides high-level access to EVM blockchain data and operations through Web3
 /// transport layer.
+#[derive(Clone)]
 pub struct EvmClient {
 	/// The underlying Web3 transport client for RPC communication
 	web3_client: Web3TransportClient,
@@ -44,9 +50,18 @@ impl EvmClient {
 	}
 }
 
+impl BlockFilterFactory<Self> for EvmClient {
+	type Filter = EVMBlockFilter<Self>;
+	fn filter() -> Self::Filter {
+		EVMBlockFilter {
+			_client: PhantomData,
+		}
+	}
+}
+
 /// Extended functionality specific to EVM-compatible blockchains
 #[async_trait]
-pub trait EvmClientTrait: BlockChainClient {
+pub trait EvmClientTrait {
 	/// Retrieves a transaction receipt by its hash
 	///
 	/// # Arguments
@@ -92,16 +107,22 @@ impl EvmClientTrait for EvmClient {
 			))
 		})?;
 
-		let receipt = self
-			.web3_client
-			.client
-			.eth()
-			.transaction_receipt(hash)
-			.await?;
+		let with_retry = WithRetry::with_default_config();
+		with_retry
+			.attempt(|| async {
+				let receipt = self
+					.web3_client
+					.client
+					.eth()
+					.transaction_receipt(hash)
+					.await
+					.map_err(|e| BlockChainError::request_error(e.to_string()))?;
 
-		Ok(receipt.ok_or_else(|| {
-			BlockChainError::request_error("Transaction receipt not found".to_string())
-		})?)
+				receipt.ok_or_else(|| {
+					BlockChainError::request_error("Transaction receipt not found".to_string())
+				})
+			})
+			.await
 	}
 
 	/// Retrieves logs within the specified block range
@@ -112,17 +133,22 @@ impl EvmClientTrait for EvmClient {
 		from_block: u64,
 		to_block: u64,
 	) -> Result<Vec<web3::types::Log>, BlockChainError> {
-		self.web3_client
-			.client
-			.eth()
-			.logs(
-				web3::types::FilterBuilder::default()
-					.from_block(BlockNumber::Number(from_block.into()))
-					.to_block(BlockNumber::Number(to_block.into()))
-					.build(),
-			)
+		let with_retry = WithRetry::with_default_config();
+		with_retry
+			.attempt(|| async {
+				self.web3_client
+					.client
+					.eth()
+					.logs(
+						web3::types::FilterBuilder::default()
+							.from_block(BlockNumber::Number(from_block.into()))
+							.to_block(BlockNumber::Number(to_block.into()))
+							.build(),
+					)
+					.await
+					.map_err(|e| BlockChainError::request_error(e.to_string()))
+			})
 			.await
-			.map_err(|e| BlockChainError::request_error(e.to_string()))
 	}
 }
 

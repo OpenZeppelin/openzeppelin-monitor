@@ -9,10 +9,10 @@
 
 use async_trait::async_trait;
 use ethabi::Contract;
-use log::{info, warn};
+use log::{debug, warn};
 use serde_json::Value;
-use std::str::FromStr;
-use web3::types::{Log, Transaction, TransactionReceipt};
+use std::{marker::PhantomData, str::FromStr};
+use web3::types::{Log, Transaction, TransactionReceipt, U64};
 
 use crate::{
 	models::{
@@ -21,9 +21,9 @@ use crate::{
 		Monitor, MonitorMatch, Network, TransactionCondition, TransactionStatus,
 	},
 	services::{
-		blockchain::BlockChainClientEnum,
+		blockchain::{BlockChainClient, EvmClientTrait},
 		filter::{
-			helpers::evm::{
+			evm_helpers::{
 				are_same_address, are_same_signature, format_token_value, h160_to_string,
 				h256_to_string, normalize_address,
 			},
@@ -33,9 +33,11 @@ use crate::{
 };
 
 /// Filter implementation for EVM-compatible blockchains
-pub struct EVMBlockFilter {}
+pub struct EVMBlockFilter<T> {
+	pub _client: PhantomData<T>,
+}
 
-impl EVMBlockFilter {
+impl<T> EVMBlockFilter<T> {
 	/// Finds transactions that match the monitor's conditions.
 	///
 	/// # Arguments
@@ -43,7 +45,7 @@ impl EVMBlockFilter {
 	/// * `transaction` - The transaction to check
 	/// * `monitor` - Monitor containing match conditions
 	/// * `matched_transactions` - Vector to store matching transactions
-	fn find_matching_transaction(
+	pub fn find_matching_transaction(
 		&self,
 		tx_status: &TransactionStatus,
 		transaction: &Transaction,
@@ -86,6 +88,12 @@ impl EVMBlockFilter {
 								kind: "address".to_string(),
 								indexed: false,
 							},
+							EVMMatchParamEntry {
+								name: "hash".to_string(),
+								value: h256_to_string(transaction.hash),
+								kind: "string".to_string(),
+								indexed: false,
+							},
 						];
 
 						if self.evaluate_expression(expr, &Some(tx_params)) {
@@ -118,7 +126,7 @@ impl EVMBlockFilter {
 	/// * `monitor` - Monitor containing function match conditions
 	/// * `matched_functions` - Vector to store matching functions
 	/// * `matched_on_args` - Arguments from matched function calls
-	fn find_matching_functions_for_transaction(
+	pub fn find_matching_functions_for_transaction(
 		&self,
 		transaction: &Transaction,
 		monitor: &Monitor,
@@ -247,7 +255,7 @@ impl EVMBlockFilter {
 	/// * `matched_events` - Vector to store matching events
 	/// * `matched_on_args` - Arguments from matched events
 	/// * `involved_addresses` - Addresses involved in matched events
-	async fn find_matching_events_for_transaction(
+	pub async fn find_matching_events_for_transaction(
 		&self,
 		receipt: &TransactionReceipt,
 		monitor: &Monitor,
@@ -332,7 +340,7 @@ impl EVMBlockFilter {
 	///
 	/// # Returns
 	/// `true` if the expression matches, `false` otherwise
-	fn evaluate_expression(
+	pub fn evaluate_expression(
 		&self,
 		expression: &str,
 		args: &Option<Vec<EVMMatchParamEntry>>,
@@ -427,11 +435,11 @@ impl EVMBlockFilter {
 	///
 	/// # Returns
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
-	async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
+	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = Contract::load(abi.to_string().as_bytes())
 			.map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
-			.unwrap();
+			.ok()?;
 
 		let decoded_log = contract
 			.events()
@@ -481,7 +489,8 @@ impl EVMBlockFilter {
 }
 
 #[async_trait]
-impl BlockFilter for EVMBlockFilter {
+impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
+	type Client = T;
 	/// Processes a block and finds matches based on monitor conditions.
 	///
 	/// # Arguments
@@ -494,7 +503,7 @@ impl BlockFilter for EVMBlockFilter {
 	/// Vector of matches found in the block
 	async fn filter_block(
 		&self,
-		client: &BlockChainClientEnum,
+		client: &T,
 		_network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
@@ -508,16 +517,10 @@ impl BlockFilter for EVMBlockFilter {
 			}
 		};
 
-		info!("Processing block {}", evm_block.number.unwrap());
-
-		let evm_client = match client {
-			BlockChainClientEnum::EVM(client) => client,
-			_ => {
-				return Err(FilterError::internal_error(
-					"Expected EVM client".to_string(),
-				));
-			}
-		};
+		debug!(
+			"Processing block {}",
+			evm_block.number.unwrap_or(U64::from(0))
+		);
 
 		// Process all transaction receipts in parallel
 		let receipt_futures: Vec<_> = evm_block
@@ -525,7 +528,7 @@ impl BlockFilter for EVMBlockFilter {
 			.iter()
 			.map(|transaction| {
 				let tx_hash = h256_to_string(transaction.hash);
-				evm_client.get_transaction_receipt(tx_hash)
+				client.get_transaction_receipt(tx_hash)
 			})
 			.collect();
 
@@ -542,23 +545,26 @@ impl BlockFilter for EVMBlockFilter {
 			.collect();
 
 		if receipts.is_empty() {
-			info!("No transactions in block");
+			debug!(
+				"No transactions found for block {}",
+				evm_block.number.unwrap_or(U64::from(0))
+			);
 			return Ok(vec![]);
 		}
 
 		let mut matching_results = Vec::new();
 
-		info!("Processing {} monitor(s)", monitors.len());
+		debug!("Processing {} monitor(s)", monitors.len());
 
 		for monitor in monitors {
-			info!("Processing monitor: {:?}", monitor.name);
+			debug!("Processing monitor: {:?}", monitor.name);
 			let monitored_addresses: Vec<String> = monitor
 				.addresses
 				.iter()
 				.map(|a| a.address.clone())
 				.collect();
 			// Check each receipt and transaction for matches
-			info!("Processing {} receipt(s)", receipts.len());
+			debug!("Processing {} receipt(s)", receipts.len());
 			for receipt in &receipts {
 				let matching_transaction = evm_block
 					.transactions

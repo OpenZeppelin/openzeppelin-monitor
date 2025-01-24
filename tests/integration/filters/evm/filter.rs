@@ -7,12 +7,12 @@ use log::info;
 use openzeppelin_monitor::{
 	models::MonitorMatch,
 	services::{
-		blockchain::create_blockchain_client,
+		blockchain::EvmClient,
 		filter::{handle_match, FilterError, FilterService},
 	},
 };
 
-use crate::integration::filter::common::{load_test_data, setup_trigger_execution_service};
+use crate::integration::filters::common::{load_test_data, setup_trigger_execution_service};
 
 #[tokio::test]
 async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> {
@@ -21,7 +21,7 @@ async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> 
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = create_blockchain_client(&test_data.network).await.unwrap();
+	let client = EvmClient::new(&test_data.network).await.unwrap();
 
 	// Run filter_block with the test data
 	let matches = filter_service

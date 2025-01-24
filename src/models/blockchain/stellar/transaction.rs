@@ -14,7 +14,7 @@ use stellar_xdr::curr::{Limits, ReadXdr, TransactionEnvelope, TransactionMeta, T
 ///
 /// This structure represents the response from the Stellar RPC endpoint
 /// and matches the format defined in the stellar-rpc repository.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct TransactionInfo {
 	// Status fields
 	/// Current status of the transaction

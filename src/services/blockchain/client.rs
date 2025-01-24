@@ -5,7 +5,10 @@
 
 use async_trait::async_trait;
 
-use crate::{models::BlockType, services::blockchain::error::BlockChainError};
+use crate::{
+	models::BlockType,
+	services::{blockchain::error::BlockChainError, filter::BlockFilter},
+};
 
 /// Defines the core interface for blockchain clients
 ///
@@ -36,4 +39,9 @@ pub trait BlockChainClient: Send + Sync {
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, BlockChainError>;
+}
+
+pub trait BlockFilterFactory<T> {
+	type Filter: BlockFilter<Client = T>;
+	fn filter() -> Self::Filter;
 }

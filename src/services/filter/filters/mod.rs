@@ -6,23 +6,31 @@
 //! - EVM-specific implementation
 //! - Stellar-specific implementation
 
-mod evm;
-mod stellar;
+pub mod evm {
+	pub mod filter;
+	pub mod helpers;
+}
+pub mod stellar {
+	pub mod filter;
+	pub mod helpers;
+}
 
 use async_trait::async_trait;
-pub use evm::EVMBlockFilter;
-pub use stellar::StellarBlockFilter;
+
+pub use evm::filter::EVMBlockFilter;
+pub use stellar::filter::StellarBlockFilter;
 
 use crate::{
 	models::{BlockType, Monitor, MonitorMatch, Network},
-	services::{blockchain::BlockChainClientEnum, filter::error::FilterError},
+	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
 
 #[async_trait]
 pub trait BlockFilter {
+	type Client;
 	async fn filter_block(
 		&self,
-		client: &BlockChainClientEnum,
+		client: &Self::Client,
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
@@ -44,22 +52,14 @@ impl Default for FilterService {
 }
 
 impl FilterService {
-	pub async fn filter_block(
+	pub async fn filter_block<T: BlockFilterFactory<T>>(
 		&self,
-		client: &BlockChainClientEnum,
+		client: &T,
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
-		match block {
-			BlockType::EVM(_) => {
-				let filter = EVMBlockFilter {};
-				filter.filter_block(client, network, block, monitors).await
-			}
-			BlockType::Stellar(_) => {
-				let filter = StellarBlockFilter {};
-				filter.filter_block(client, network, block, monitors).await
-			}
-		}
+		let filter = T::filter();
+		filter.filter_block(client, network, block, monitors).await
 	}
 }
