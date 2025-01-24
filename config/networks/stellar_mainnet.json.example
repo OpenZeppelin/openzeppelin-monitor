@@ -7,7 +7,7 @@
       "type_": "rpc",
       "url": "https://soroban.stellar.org",
       "weight": 100
-    },
+    }
   ],
   "network_passphrase": "Public Global Stellar Network ; September 2015",
   "block_time_ms": 5000,
