@@ -176,7 +176,6 @@ and useful (see below).
 You might also consider changing your `.git/config` file via
 `git config branch.autoSetupRebase always` to change the behavior of `git pull`, or another non-merge option such as `git pull --rebase`.
 
-
 ### 5. Pre Commit Hooks
 
 We use pre-commit hooks to ensure that all code is formatted and linted correctly.
@@ -240,95 +239,7 @@ Very small PRs are easy to review.  Very large PRs are very difficult to review.
 
 ### Squash commits
 
-After a review, prepare your PR for merging by squashing your commits.
-
-All commits left on your branch after a review should represent meaningful milestones or units of work. Use commits to add clarity to the development and review process.
-
-Before merging a PR, squash the following kinds of commits:
-
-- Fixes/review feedback
-- Typos
-- Merges and rebases
-- Work in progress
-
-Aim to have every commit in a PR compile and pass tests independently if you can, but it's not a requirement. In particular, `merge` commits must be removed, as they will not pass tests.
-
-To squash your commits, perform an [interactive rebase](https://git-scm.com/book/en/v2/Git-Tools-Rewriting-History):
-
-- Check your git branch:
-
-  ```sh
-  git status
-  ```
-
-  The output should be similar to this:
-
-  ```sh
-  On branch your-contribution
-  Your branch is up to date with 'origin/your-contribution'.
-  ```
-
-- Start an interactive rebase using a specific commit hash, or count backwards from your last commit using `HEAD~<n>`, where `<n>` represents the number of commits to include in the rebase.
-
-  ```sh
-  git rebase -i HEAD~3
-  ```
-
-  The output should be similar to this:
-
-  ```sh
-  pick 2ebe926 Original commit
-  pick 31f33e9 Address feedback
-  pick b0315fe Second unit of work
-
-  # Rebase 7c34fc9..b0315ff onto 7c34fc9 (3 commands)
-  #
-  # Commands:
-  # p, pick <commit> = use commit
-  # r, reword <commit> = use commit, but edit the commit message
-  # e, edit <commit> = use commit, but stop for amending
-  # s, squash <commit> = use commit, but meld into previous commit
-  # f, fixup <commit> = like "squash", but discard this commit's log message
-
-  ...
-
-  ```
-
-- Use a command line text editor to change the word `pick` to `squash` for the commits you want to squash, then save your changes and continue the rebase:
-
-  ```sh
-  pick 2ebe926 Original commit
-  squash 31f33e9 Address feedback
-  pick b0315fe Second unit of work
-
-  ...
-
-  ```
-
-  The output after saving changes should look similar to this:
-
-  ```sh
-  [detached HEAD 61fdded] Second unit of work
-   Date: Thu Mar 5 19:01:32 2020 +0100
-   2 files changed, 15 insertions(+), 1 deletion(-)
-
-   ...
-
-  Successfully rebased and updated refs/heads/main.
-  ```
-
-- Force push your changes to your remote branch:
-
-  ```sh
-  git push --force-with-lease
-  ```
-
-For mass automated fixups such as automated doc formatting, use one or more
-commits for the changes to tooling and a final commit to apply the fixup en
-masse. This makes reviews easier.
-
-By squashing locally, you control the commit message(s) for your work, and can separate a large PR into logically separate changes.
-For example: you have a pull request that is code complete and has 24 commits. You rebase this against the same merge base, simplifying the change to two commits. Each of those two commits represents a single logical change and each commit message summarizes what changes. Reviewers see that the set of changes are now understandable, and approve your PR.
+After a review, we automatically squash commits when merging a PR. This means that all commits in your PR will be combined into a single commit in the main branch. This is done to keep the commit history clean and easy to read.
 
 ### Merging a commit
 
@@ -375,7 +286,7 @@ will create the PR branch inside the main repository rather than inside your for
   git push <your_remote_name> myrevert
   ```
 
-- Finally, [create a Pull Request](#7-create-a-pull-request) using this branch.
+- Finally, [create a Pull Request](#8-create-a-pull-request) using this branch.
 
 ### Opening a Pull Request
 
