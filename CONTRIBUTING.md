@@ -475,7 +475,7 @@ These labels identify the part of the project the issue or PR pertains to:
 **`A-arch`**: High-level architectural concerns or changes.
 **`A-blocks`**: Related to block fetching, storage, or processing.
 **`A-clients`**: Issues related to blockchain clients (e.g., EVMClient, StellarClient).
-**`A-pipeline`**: Filter, Trigger, and Notification Services.
+**`A-pipeline`**: Filter, Trigger, and Notification Services and CI pipelines.
 **`A-notifs`**: Slack, Email, or other notification methods.
 **`A-configs`**: Issues related to `.env` files, monitor configuration, or network settings.
 **`A-tests`**: Test setup and integration.
