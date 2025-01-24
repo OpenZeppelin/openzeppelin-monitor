@@ -426,15 +426,6 @@ async fn process_new_blocks<
 	process_result.map_err(|e| BlockWatcherError::processing_error(e.to_string()))??;
 	trigger_result.map_err(|e| BlockWatcherError::processing_error(e.to_string()))??;
 
-	// Drop the sender after all blocks are sent
-	drop(process_tx);
-	drop(trigger_tx);
-
-	// Wait for both pipeline stages to complete
-	let (process_result, trigger_result) = tokio::join!(process_handle, trigger_handle);
-	process_result.map_err(|e| BlockWatcherError::processing_error(e.to_string()))??;
-	trigger_result.map_err(|e| BlockWatcherError::processing_error(e.to_string()))??;
-
 	if network.store_blocks.unwrap_or(false) {
 		// Delete old blocks before saving new ones
 		block_storage

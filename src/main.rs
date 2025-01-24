@@ -41,8 +41,6 @@ use crate::{
 use dotenvy::dotenv;
 use futures::future::BoxFuture;
 use log::{error, info};
-use models::{MonitorMatch, ProcessedBlock};
-use services::blockchain::BlockChainClient;
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::broadcast;
 
