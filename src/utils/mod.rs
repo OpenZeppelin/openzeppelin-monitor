@@ -7,7 +7,9 @@
 //! - cron_utils: Utilities for working with cron schedules and time intervals
 
 mod cron_utils;
+mod expression;
 mod retry;
 
 pub use cron_utils::*;
+pub use expression::*;
 pub use retry::*;
