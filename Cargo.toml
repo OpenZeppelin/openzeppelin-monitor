@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.release]
-debug = true
 opt-level = 0
 overflow-checks = false
 panic = 'unwind'
@@ -12,7 +11,7 @@ panic = 'unwind'
 [profile.test]
 debug = true
 opt-level = 0
-overflow-checks = false
+overflow-checks = true
 panic = 'unwind'
 
 [dependencies]
