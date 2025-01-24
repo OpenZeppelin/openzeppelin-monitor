@@ -12,9 +12,10 @@ There are many ways to contribute, regardless of your experience level. Whether 
     - [2. Clone fork to local storage](#2-clone-fork-to-local-storage)
     - [3. Create a Working Branch](#3-create-a-working-branch)
     - [4. Keep your branch in sync](#4-keep-your-branch-in-sync)
-    - [5. Commit Your Changes](#5-commit-your-changes)
-    - [6. Push to GitHub](#6-push-to-github)
-    - [7. Create a Pull Request](#7-create-a-pull-request)
+    - [5. Pre Commit Hooks](#5-pre-commit-hooks)
+    - [6. Commit Your Changes](#6-commit-your-changes)
+    - [7. Push to GitHub](#7-push-to-github)
+    - [8. Create a Pull Request](#8-create-a-pull-request)
     - [Get a code review](#get-a-code-review)
     - [Squash commits](#squash-commits)
     - [Merging a commit](#merging-a-commit)
@@ -26,7 +27,14 @@ There are many ways to contribute, regardless of your experience level. Whether 
   - [Testing](#testing)
   - [Security](#security)
   - [Documentation](#documentation)
-  - [Issues Management or Triage](#issues-management-or-triage)
+  - [Issue and Pull Request Labeling Guidelines](#issue-and-pull-request-labeling-guidelines)
+    - [1. Area Labels (`A-`)](#1-area-labels-a-)
+    - [2. Type Labels (`T-`)](#2-type-labels-t-)
+    - [3. Priority Labels (`P-`)](#3-priority-labels-p-)
+    - [4. Status Labels (`S-`)](#4-status-labels-s-)
+    - [5. Difficulty Labels (`D-`)](#5-difficulty-labels-d-)
+    - [6. Other Useful Labels](#6-other-useful-labels)
+    - [How to Use These Labels](#how-to-use-these-labels)
   - [License](#license)
   - [Code of Conduct](#code-of-conduct)
 
@@ -73,25 +81,26 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
      cargo test integration
      ```
 
-3. **Follow Git Hooks**:
-   - Make hooks executable:
+3. **Configure Pre commit Hooks**:
 
-     ```sh
-     chmod +x .githooks/*
-     ```
+   - Install & Configure Pre-Commit hooks
 
-   - Configure hooks:
+    ```sh
 
-     ```sh
-     git config core.hooksPath .githooks
-     ```
+      # Use <pipx install pre-commit> if you prefer to install it globally
+
+      pip install pre-commit
+      pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+    ```
+
+    > Note: If you run into issues with pip install, you may need [pipx](https://github.com/pypa/pipx?tab=readme-ov-file#install-pipx) to install pre-commit globally.
 
 ## GitHub workflow
 
 ### 1. Fork in the cloud
 
-1. Visit <https://github.com/openzeppelin/openzeppelin-monitor>
-2. Click `Fork` button (top right) to establish a cloud-based fork.
+- Visit <https://github.com/openzeppelin/openzeppelin-monitor>
+- Click `Fork` button (top right) to establish a cloud-based fork.
 
 ### 2. Clone fork to local storage
 
@@ -128,8 +137,7 @@ git remote -v
 
 ### 3. Create a Working Branch
 
-Get your local master up to date. Note that depending on which repository you are working from,
-the default branch may be called "main" instead of "master".
+Get your local main up to date.
 
 ```sh
 cd $working_dir/openzeppelin-monitor
@@ -150,8 +158,7 @@ You may now edit files on the `myfeature` branch.
 ### 4. Keep your branch in sync
 
 You will need to periodically fetch changes from the `upstream`
-repository to keep your working branch in sync. Note that depending on which repository you are working from,
-the default branch may be called 'main' instead of 'master'.
+repository to keep your working branch in sync.
 
 Make sure your local repository is on your working branch and run the
 following commands to keep it in sync:
@@ -169,24 +176,39 @@ and useful (see below).
 You might also consider changing your `.git/config` file via
 `git config branch.autoSetupRebase always` to change the behavior of `git pull`, or another non-merge option such as `git pull --rebase`.
 
-### 5. Commit Your Changes
+
+### 5. Pre Commit Hooks
+
+We use pre-commit hooks to ensure that all code is formatted and linted correctly.
+
+We assume you already have `pipx` installed. If not, you can install it by following documentation [here](https://pipx.pypa.io/stable/installation/).
+
+To install and configure pre-commit hooks, run the following commands:
+
+```sh
+# Use <pipx install pre-commit> if you prefer to install it globally
+pip install pre-commit
+pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+```
+
+This will install pre-commit hooks that will run on every commit and push. The hooks will check for linting, formatting, and other issues in your code.
+
+### 6. Commit Your Changes
 
 You will probably want to regularly commit your changes. It is likely that you will go back and edit,
 build, and test multiple times. After a few cycles of this, you might
 [amend your previous commit](https://www.w3schools.com/git/git_amend.asp).
 
+We use signed commits enforcement as a best practice. Make sure to sign your commits. This is a requirement for all commits.
+You can read more about signing commits [here](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits). Also see telling git about your signing key [here](https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key).
+
+Once you enable gpg signing globally in git, all commits will be signed by default. If you want to sign a commit manually, you can use the `-S` flag with the `git commit` command.
+
 ```sh
 git commit
 ```
 
-**signing commits**
-We use signed commits enforcement as a best practice. Make sure to sign your commits. This is a requirement for all commits. You can read more about signing commits [here](https://help.github.com/en/github/authenticating-to-github/signing-commits).
-
-```sh
-git commit -s
-```
-
-### 6. Push to GitHub
+### 7. Push to GitHub
 
 When your changes are ready for review, push your working branch to
 your fork on GitHub.
@@ -195,10 +217,10 @@ your fork on GitHub.
 git push -f <your_remote_name> myfeature
 ```
 
-### 7. Create a Pull Request
+### 8. Create a Pull Request
 
-1. Visit your fork at `https://github.com/<user>/openzeppelin-monitor`
-2. Click the **Compare & Pull Request** button next to your `myfeature` branch.
+- Visit your fork at `https://github.com/<user>/openzeppelin-monitor`
+- Click the **Compare & Pull Request** button next to your `myfeature` branch.
 
 _If you have upstream write access_, please refrain from using the GitHub UI for
 creating PRs, because GitHub will create the PR branch inside the main
@@ -233,7 +255,7 @@ Aim to have every commit in a PR compile and pass tests independently if you can
 
 To squash your commits, perform an [interactive rebase](https://git-scm.com/book/en/v2/Git-Tools-Rewriting-History):
 
-1. Check your git branch:
+- Check your git branch:
 
   ```sh
   git status
@@ -246,7 +268,7 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
   Your branch is up to date with 'origin/your-contribution'.
   ```
 
-1. Start an interactive rebase using a specific commit hash, or count backwards from your last commit using `HEAD~<n>`, where `<n>` represents the number of commits to include in the rebase.
+- Start an interactive rebase using a specific commit hash, or count backwards from your last commit using `HEAD~<n>`, where `<n>` represents the number of commits to include in the rebase.
 
   ```sh
   git rebase -i HEAD~3
@@ -272,7 +294,7 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
 
   ```
 
-1. Use a command line text editor to change the word `pick` to `squash` for the commits you want to squash, then save your changes and continue the rebase:
+- Use a command line text editor to change the word `pick` to `squash` for the commits you want to squash, then save your changes and continue the rebase:
 
   ```sh
   pick 2ebe926 Original commit
@@ -295,7 +317,7 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
   Successfully rebased and updated refs/heads/main.
   ```
 
-1. Force push your changes to your remote branch:
+- Force push your changes to your remote branch:
 
   ```sh
   git push --force-with-lease
@@ -304,8 +326,6 @@ To squash your commits, perform an [interactive rebase](https://git-scm.com/book
 For mass automated fixups such as automated doc formatting, use one or more
 commits for the changes to tooling and a final commit to apply the fixup en
 masse. This makes reviews easier.
-
-An alternative to this manual squashing process is to use the Prow and Tide based automation that is configured in GitHub: adding a comment to your PR with `/label tide/merge-method-squash` will trigger the automation so that GitHub squash your commits onto the target branch once the PR is approved. Using this approach simplifies things for those less familiar with Git, but there are situations in where it's better to squash locally; reviewers will have this in mind and can ask for manual squashing to be done.
 
 By squashing locally, you control the commit message(s) for your work, and can separate a large PR into logically separate changes.
 For example: you have a pull request that is code complete and has 24 commits. You rebase this against the same merge base, simplifying the change to two commits. Each of those two commits represents a single logical change and each commit message summarizes what changes. Reviewers see that the set of changes are now understandable, and approve your PR.
@@ -324,7 +344,7 @@ _If you have upstream write access_, please refrain from using the
 `Revert` button in the GitHub UI for creating the PR, because GitHub
 will create the PR branch inside the main repository rather than inside your fork.
 
-- Create a branch and sync it with upstream. Note that depending on which repository you are working from, the default branch may be called 'main' instead of 'master'.
+- Create a branch and sync it with upstream.
 
   ```sh
   # create a branch
@@ -332,7 +352,7 @@ will create the PR branch inside the main repository rather than inside your for
 
   # sync the branch with upstream
   git fetch upstream
-  git rebase upstream/master
+  git rebase upstream/main
   ```
 
 - If the commit you wish to revert is a _merge commit_, use this command:
@@ -444,9 +464,83 @@ Testing is the responsibility of all contributors as such all contributions must
 
 - TBD
 
-## Issues Management or Triage
+## Issue and Pull Request Labeling Guidelines
 
-- TBD
+To ensure clarity and effective project management, we use a structured labeling system for issues and pull requests. Below are the label categories and their purposes:
+
+### 1. Area Labels (`A-`)
+
+These labels identify the part of the project the issue or PR pertains to:
+
+**`A-arch`**: High-level architectural concerns or changes.
+**`A-blocks`**: Related to block fetching, storage, or processing.
+**`A-clients`**: Issues related to blockchain clients (e.g., EVMClient, StellarClient).
+**`A-pipeline`**: Filter, Trigger, and Notification Services.
+**`A-notifs`**: Slack, Email, or other notification methods.
+**`A-configs`**: Issues related to `.env` files, monitor configuration, or network settings.
+**`A-tests`**: Test setup and integration.
+**`A-docs`**: Updates or fixes to project documentation.
+
+---
+
+### 2. Type Labels (`T-`)
+
+These labels describe the nature of the issue or PR:
+
+**`T-bug`**: Indicates a bug report.
+**`T-feature`**: Suggests a new feature or enhancement.
+**`T-task`**: General tasks or chores (e.g., refactoring, cleanup).
+**`T-documentation`**: Issues or PRs related to documentation updates.
+**`T-performance`**: Performance optimizations or bottlenecks.
+**`T-security`**: Security vulnerabilities or related fixes.
+
+---
+
+### 3. Priority Labels (`P-`)
+
+Define the priority level for addressing issues:
+
+**`P-high`**: Critical tasks or blockers.
+**`P-medium`**: Important but not urgent.
+**`P-low`**: Low-priority or non-urgent tasks.
+
+---
+
+### 4. Status Labels (`S-`)
+
+Labels to track the workflow status of an issue:
+
+**`S-needs-triage`**: Requires initial triage or categorization.
+**`S-in-progress`**: Actively being worked on.
+**`S-blocked`**: Blocked by another issue or dependency.
+**`S-needs-review`**: Awaiting review (code or design).
+**`S-closed`**: Completed and closed issues.
+
+---
+
+### 5. Difficulty Labels (`D-`)
+
+Indicate the complexity or effort required to address the issue:
+
+**`D-easy`**: Beginner-friendly tasks.
+**`D-medium`**: Intermediate-level tasks.
+**`D-hard`**: Complex or advanced issues.
+
+---
+
+### 6. Other Useful Labels
+
+**`good-first-issue`**: Beginner-friendly, low-complexity issues to help new contributors.
+**`help-wanted`**: Issues where community contributions are welcome.
+**`discussion`**: Requires community or team input.
+
+---
+
+### How to Use These Labels
+
+When creating or triaging an issue or PR, apply the appropriate labels from the categories above. This helps maintain clarity, improve collaboration, and ensure smooth workflow management for all contributors.
+
+If you are unsure which label to apply, feel free to leave the issue or PR with the **`S-needs-triage`** label, and a maintainer will review it.
 
 ## License
 
