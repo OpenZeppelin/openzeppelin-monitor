@@ -25,9 +25,12 @@ mod properties {
 }
 
 mod integration {
+	mod bootstrap {
+		mod main;
+	}
 	mod mocks;
 	mod filters {
-		mod common;
+		pub mod common;
 		mod evm {
 			mod filter;
 		}

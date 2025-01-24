@@ -8,7 +8,7 @@ use web3::types::{Block as Web3Block, Transaction as Web3Transaction};
 ///
 /// This type provides a convenient interface for working with EVM blocks
 /// while maintaining compatibility with the web3 types.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Block(pub Web3Block<Web3Transaction>);
 
 impl Block {

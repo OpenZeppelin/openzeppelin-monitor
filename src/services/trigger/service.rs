@@ -5,15 +5,26 @@
 
 use std::collections::HashMap;
 
+use async_trait::async_trait;
+
 use crate::{
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{notification::NotificationService, trigger::error::TriggerError},
 };
 
+#[async_trait]
+pub trait TriggerExecutionServiceTrait {
+	async fn execute(
+		&self,
+		trigger_slugs: &[String],
+		variables: HashMap<String, String>,
+	) -> Result<(), TriggerError>;
+}
+
 /// Service for executing triggers with notifications
 ///
 /// Coordinates trigger lookup, variable substitution, and notification
-/// delivery across different notification channels.
+/// delivery across different notification channels
 pub struct TriggerExecutionService<T: TriggerRepositoryTrait> {
 	/// Service for trigger management and lookup
 	trigger_service: TriggerService<T>,
@@ -39,7 +50,12 @@ impl<T: TriggerRepositoryTrait> TriggerExecutionService<T> {
 			notification_service,
 		}
 	}
+}
 
+#[async_trait]
+impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
+	for TriggerExecutionService<T>
+{
 	/// Executes multiple triggers with variable substitution
 	///
 	/// # Arguments
@@ -52,9 +68,10 @@ impl<T: TriggerRepositoryTrait> TriggerExecutionService<T> {
 	/// # Errors
 	/// - Returns `TriggerError::NotFound` if a trigger cannot be found
 	/// - Returns `TriggerError::ExecutionError` if notification delivery fails
-	pub async fn execute(
+	/// - Returns `TriggerError::ConfigurationError` if trigger configuration is invalid
+	async fn execute(
 		&self,
-		trigger_slugs: &[&str],
+		trigger_slugs: &[String],
 		variables: HashMap<String, String>,
 	) -> Result<(), TriggerError> {
 		for trigger_slug in trigger_slugs {

@@ -25,11 +25,16 @@
         "expression": "2 > 1000"
       }
     ],
-    "events": [],
+    "events": [
+      {
+        "signature": "transfer(Address,Address,String,I128)",
+        "expression": "0 == GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY AND 3 >= 2240"
+      }
+    ],
     "transactions": [
       {
         "status": "Success",
-        "expression": null
+        "expression": "value >= 0"
       }
     ]
   },

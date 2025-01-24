@@ -228,6 +228,10 @@ pub fn process_invoke_host_function(
 	}
 }
 
+pub fn is_address(address: &str) -> bool {
+	StrkeyPublicKey::from_string(address).is_ok() || Contract::from_string(address).is_ok()
+}
+
 /// Compares two Stellar addresses for equality, ignoring case and whitespace.
 ///
 /// # Arguments
