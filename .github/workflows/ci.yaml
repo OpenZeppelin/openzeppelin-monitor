@@ -36,7 +36,7 @@ jobs:
         with:
           files_yaml: |
             code:
-              - **/*.rs
+              - '**/*.rs'
               - 'rustfmt.toml'
               - 'rust-toolchain.toml'
             lockfile:
@@ -47,7 +47,7 @@ jobs:
               - 'Cargo.lock'
               - 'Cargo.toml'
             tests:
-              - **/*.rs
+              - '**/*.rs'
               - tests/**/*.json
 
   ci:
