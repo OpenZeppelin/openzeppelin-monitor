@@ -1,7 +1,6 @@
-use std::{collections::HashMap, error::Error, sync::Arc};
-
 use futures::future::BoxFuture;
 use log::{error, info};
+use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::broadcast;
 
 use crate::{
@@ -14,7 +13,7 @@ use crate::{
 		blockchain::{BlockChainClient, BlockFilterFactory, EvmClient, StellarClient},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
-		trigger::TriggerExecutionService,
+		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 };
 
@@ -45,6 +44,11 @@ pub fn initialize_services() -> ServiceResult {
 		Some(&network_service),
 		Some(&trigger_service),
 	)?);
+
+	println!("network_service: {:?}", network_service.get_all());
+	println!("trigger_service: {:?}", trigger_service.get_all());
+	println!("monitor_service: {:?}", monitor_service.get_all());
+
 	let notification_service = NotificationService::new();
 
 	let filter_service = Arc::new(FilterService::new());
@@ -151,7 +155,7 @@ pub fn create_block_handler(
 /// * `filter_service` - Service for filtering blockchain data
 /// * `trigger_service` - Service for executing triggers
 /// * `shutdown_rx` - Receiver for shutdown signals
-async fn process_block<T>(
+pub async fn process_block<T>(
 	client: &T,
 	network: &Network,
 	block: &BlockType,
@@ -188,10 +192,10 @@ where
 ///
 /// # Returns
 /// Returns a function that handles trigger execution for matching monitors
-pub fn create_trigger_handler(
+pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 'static>(
 	shutdown_tx: broadcast::Sender<()>,
-	trigger_service: Arc<TriggerExecutionService<TriggerRepository>>,
-) -> Arc<impl Fn(&ProcessedBlock) + Send + Sync> {
+	trigger_service: Arc<S>,
+) -> Arc<impl Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync> {
 	Arc::new(move |block: &ProcessedBlock| {
 		let mut shutdown_rx = shutdown_tx.subscribe();
 		let trigger_service = trigger_service.clone();
@@ -209,7 +213,7 @@ pub fn create_trigger_handler(
 					info!("Shutting down trigger handling task");
 				}
 			}
-		});
+		})
 	})
 }
 

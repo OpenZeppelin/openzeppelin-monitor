@@ -3,8 +3,11 @@ use mockall::mock;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
+	models::{BlockType, Monitor, MonitorMatch, Network},
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
+		blockchain::BlockFilterFactory,
+		filter::FilterError,
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionServiceTrait},
 	},
@@ -22,5 +25,19 @@ mock! {
 			trigger_slugs: &[String],
 			variables: HashMap<String, String>,
 		) -> Result<(), TriggerError>;
+	}
+}
+
+mock! {
+	pub FilterService {
+		pub fn new() -> Self;
+
+		pub async fn filter_block<T: BlockFilterFactory<T> + Send + Sync + 'static>(
+			&self,
+			client: &T,
+			network: &Network,
+			block: &BlockType,
+			monitors: &[Monitor],
+		) -> Result<Vec<MonitorMatch>, FilterError>;
 	}
 }
