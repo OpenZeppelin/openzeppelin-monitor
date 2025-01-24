@@ -12,7 +12,7 @@ use openzeppelin_monitor::{
 	},
 };
 
-use crate::integration::filter::common::{load_test_data, setup_trigger_execution_service};
+use crate::integration::filters::common::{load_test_data, setup_trigger_execution_service};
 
 #[tokio::test]
 async fn test_monitor_should_detect_token_transfer() -> Result<(), FilterError> {

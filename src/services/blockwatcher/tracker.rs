@@ -30,7 +30,7 @@ use crate::{
 ///
 /// * `S` - A type that implements the `BlockStorage` trait for persisting missed block information
 #[derive(Clone)]
-pub struct BlockTracker<S: BlockStorage> {
+pub struct BlockTracker<S> {
 	/// Tracks the last N blocks processed for each network
 	/// Key: network_slug, Value: Queue of block numbers
 	block_history: Arc<Mutex<HashMap<String, VecDeque<u64>>>>,

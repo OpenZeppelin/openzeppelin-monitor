@@ -24,13 +24,13 @@ pub mod services;
 pub mod utils;
 
 use crate::{
-	models::{BlockChainType, BlockType, Monitor, Network},
+	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
 	repositories::{
 		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
 		TriggerService,
 	},
 	services::{
-		blockchain::{BlockFilterFactory, EvmClient, StellarClient},
+		blockchain::{BlockChainClient, BlockFilterFactory, EvmClient, StellarClient},
 		blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
 	let trigger_handler = create_trigger_handler(shutdown_tx.clone(), trigger_execution_service);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
-	let block_watcher = BlockWatcherService::<FileBlockStorage>::new(
+	let block_watcher = BlockWatcherService::new(
 		file_block_storage.clone(),
 		block_handler,
 		trigger_handler,

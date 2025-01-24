@@ -9,8 +9,10 @@ mod error;
 mod filter_match;
 mod filters;
 
-pub mod helpers;
-
 pub use error::FilterError;
 pub use filter_match::handle_match;
-pub use filters::{BlockFilter, EVMBlockFilter, FilterService, StellarBlockFilter};
+
+pub use filters::{
+	evm::helpers as evm_helpers, stellar::helpers as stellar_helpers, BlockFilter, EVMBlockFilter,
+	FilterService, StellarBlockFilter,
+};
