@@ -54,8 +54,8 @@ pub struct Block(pub LedgerInfo);
 
 impl Block {
 	/// Get the block number (sequence)
-	pub fn number(&self) -> u64 {
-		self.0.sequence as u64
+	pub fn number(&self) -> Option<u64> {
+		Some(self.0.sequence as u64)
 	}
 }
 

@@ -37,6 +37,15 @@ pub enum BlockType {
 	Stellar(Box<stellar::StellarBlock>),
 }
 
+impl BlockType {
+	pub fn number(&self) -> Option<u64> {
+		match self {
+			BlockType::EVM(b) => b.number(),
+			BlockType::Stellar(b) => b.number(),
+		}
+	}
+}
+
 /// Monitor match results from different blockchain platforms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorMatch {
@@ -50,4 +59,14 @@ pub enum MonitorMatch {
 	/// # Note
 	/// Box is used here to equalize the enum variants
 	Stellar(Box<stellar::StellarMonitorMatch>),
+}
+
+/// Structure to hold block processing results
+///
+/// This is used to pass the results of block processing to the trigger handler
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessedBlock {
+	pub block_number: u64,
+	pub network_slug: String,
+	pub processing_results: Vec<MonitorMatch>,
 }

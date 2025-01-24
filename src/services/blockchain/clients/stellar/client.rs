@@ -97,9 +97,6 @@ impl StellarClientTrait for StellarClient {
 		start_sequence: u32,
 		end_sequence: Option<u32>,
 	) -> Result<Vec<StellarTransaction>, BlockChainError> {
-		// max limit for the RPC endpoint is 200
-		const PAGE_LIMIT: u32 = 200;
-
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
@@ -109,55 +106,60 @@ impl StellarClientTrait for StellarClient {
 			}
 		}
 
-		let mut transactions = Vec::new();
-		let target_sequence = end_sequence.unwrap_or(start_sequence);
-		let mut cursor = None;
+		let with_retry = WithRetry::with_default_config();
+		with_retry
+			.attempt(|| async {
+				// max limit for the RPC endpoint is 200
+				const PAGE_LIMIT: u32 = 200;
+				let mut transactions = Vec::new();
+				let target_sequence = end_sequence.unwrap_or(start_sequence);
+				let mut cursor = None;
 
-		while cursor.unwrap_or(start_sequence) <= target_sequence {
-			let params = json!({
-				"startLedger": cursor.unwrap_or(start_sequence),
-				"pagination": {
-					"limit": PAGE_LIMIT
+				while cursor.unwrap_or(start_sequence) <= target_sequence {
+					let params = json!({
+						"startLedger": cursor.unwrap_or(start_sequence),
+						"pagination": {
+							"limit": PAGE_LIMIT
+						}
+					});
+
+					let response = self
+						.stellar_client
+						.send_raw_request("getTransactions", params)
+						.await?;
+
+					let ledger_transactions: Vec<StellarTransactionInfo> =
+						serde_json::from_value(response["result"]["transactions"].clone())
+							.map_err(|e| {
+								BlockChainError::request_error(format!(
+									"Failed to parse transaction response: {}",
+									e
+								))
+							})?;
+
+					if ledger_transactions.is_empty() {
+						break;
+					}
+
+					for transaction in ledger_transactions {
+						let sequence = transaction.ledger;
+						if sequence > target_sequence {
+							return Ok(transactions);
+						}
+						transactions.push(StellarTransaction::from(transaction));
+					}
+
+					cursor = response["result"]["cursor"]
+						.as_str()
+						.and_then(|s| s.parse::<u32>().ok());
+
+					if cursor.is_none() {
+						break;
+					}
 				}
-			});
-
-			// TODO: Replace this once the SDK is updated with `get_transactions`
-			let response = self
-				.stellar_client
-				.send_raw_request("getTransactions", params)
-				.await?;
-
-			let ledger_transactions: Vec<StellarTransactionInfo> = serde_json::from_value(
-				response["result"]["transactions"].clone(),
-			)
-			.map_err(|e| {
-				BlockChainError::request_error(format!(
-					"Failed to parse transaction response: {}",
-					e
-				))
-			})?;
-
-			if ledger_transactions.is_empty() {
-				break;
-			}
-
-			for transaction in ledger_transactions {
-				let sequence = transaction.ledger;
-				if sequence > target_sequence {
-					return Ok(transactions);
-				}
-				transactions.push(StellarTransaction::from(transaction));
-			}
-
-			cursor = response["result"]["cursor"]
-				.as_str()
-				.and_then(|s| s.parse::<u32>().ok());
-
-			if cursor.is_none() {
-				break;
-			}
-		}
-		Ok(transactions)
+				Ok(transactions)
+			})
+			.await
 	}
 
 	/// Retrieves events within a sequence range with pagination
@@ -170,9 +172,6 @@ impl StellarClientTrait for StellarClient {
 		start_sequence: u32,
 		end_sequence: Option<u32>,
 	) -> Result<Vec<StellarEvent>, BlockChainError> {
-		// max limit for the RPC endpoint is 200
-		const PAGE_LIMIT: u32 = 200;
-
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
@@ -182,54 +181,64 @@ impl StellarClientTrait for StellarClient {
 			}
 		}
 
-		let mut events = Vec::new();
-		let target_sequence = end_sequence.unwrap_or(start_sequence);
-		let mut cursor = None;
+		let with_retry = WithRetry::with_default_config();
+		with_retry
+			.attempt(|| async {
+				// max limit for the RPC endpoint is 200
+				const PAGE_LIMIT: u32 = 200;
+				let mut events = Vec::new();
+				let target_sequence = end_sequence.unwrap_or(start_sequence);
+				let mut cursor = None;
 
-		while cursor.unwrap_or(start_sequence) <= target_sequence {
-			let params = json!({
-				"startLedger": cursor.unwrap_or(start_sequence),
-				"filters": [{
-					"type": "contract",
-				}],
-				"pagination": {
-					"limit": PAGE_LIMIT
+				while cursor.unwrap_or(start_sequence) <= target_sequence {
+					let params = json!({
+						"startLedger": cursor.unwrap_or(start_sequence),
+						"filters": [{
+							"type": "contract",
+						}],
+						"pagination": {
+							"limit": PAGE_LIMIT
+						}
+					});
+
+					let response = self
+						.stellar_client
+						.send_raw_request("getEvents", params)
+						.await?;
+
+					let ledger_events: Vec<StellarEvent> = serde_json::from_value(
+						response["result"]["events"].clone(),
+					)
+					.map_err(|e| {
+						BlockChainError::request_error(format!(
+							"Failed to parse event response: {}",
+							e
+						))
+					})?;
+
+					if ledger_events.is_empty() {
+						break;
+					}
+
+					for event in ledger_events {
+						let sequence = event.ledger;
+						if sequence > target_sequence {
+							return Ok(events);
+						}
+						events.push(event);
+					}
+
+					cursor = response["result"]["cursor"]
+						.as_str()
+						.and_then(|s| s.parse::<u32>().ok());
+
+					if cursor.is_none() {
+						break;
+					}
 				}
-			});
-
-			// TODO: Replace this once the SDK is updated with `get_events`
-			let response = self
-				.stellar_client
-				.send_raw_request("getEvents", params)
-				.await?;
-
-			let ledger_events: Vec<StellarEvent> =
-				serde_json::from_value(response["result"]["events"].clone()).map_err(|e| {
-					BlockChainError::request_error(format!("Failed to parse event response: {}", e))
-				})?;
-
-			if ledger_events.is_empty() {
-				break;
-			}
-
-			for event in ledger_events {
-				let sequence = event.ledger;
-				if sequence > target_sequence {
-					return Ok(events);
-				}
-				events.push(event);
-			}
-
-			cursor = response["result"]["cursor"]
-				.as_str()
-				.and_then(|s| s.parse::<u32>().ok());
-
-			if cursor.is_none() {
-				break;
-			}
-		}
-
-		Ok(events)
+				Ok(events)
+			})
+			.await
 	}
 }
 

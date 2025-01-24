@@ -47,7 +47,7 @@ use crate::{
 /// "event_0_from": "0x2e8135be71230c6b1b4045696d41c09db0414226"
 /// "event_0_value": "88248701"
 /// ```
-pub async fn handle_match<T: TriggerExecutionServiceTrait + Send + Sync>(
+pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 	matching_monitor: MonitorMatch,
 	trigger_service: &T,
 ) -> Result<(), FilterError> {

@@ -25,7 +25,10 @@ pub mod services;
 pub mod utils;
 
 use crate::{
-	bootstrap::{create_block_handler, has_active_monitors, initialize_services, Result},
+	bootstrap::{
+		create_block_handler, create_trigger_handler, has_active_monitors, initialize_services,
+		Result,
+	},
 	models::{BlockChainType, Network},
 	services::{
 		blockchain::{EvmClient, StellarClient},
@@ -64,17 +67,14 @@ async fn main() -> Result<()> {
 
 	let (shutdown_tx, _) = broadcast::channel(1);
 
-	let block_handler = create_block_handler(
-		shutdown_tx.clone(),
-		trigger_execution_service,
-		filter_service,
-		active_monitors,
-	);
+	let block_handler = create_block_handler(shutdown_tx.clone(), filter_service, active_monitors);
+	let trigger_handler = create_trigger_handler(shutdown_tx.clone(), trigger_execution_service);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
 	let block_watcher = BlockWatcherService::new(
 		file_block_storage.clone(),
 		block_handler,
+		trigger_handler,
 		Arc::new(BlockTracker::new(1000, Some(file_block_storage.clone()))),
 	)
 	.await?;
