@@ -480,6 +480,7 @@ These labels identify the part of the project the issue or PR pertains to:
 **`A-configs`**: Issues related to `.env` files, monitor configuration, or network settings.
 **`A-tests`**: Test setup and integration.
 **`A-docs`**: Updates or fixes to project documentation.
+**`A-deps`**: Pull requests that update a dependency file.
 
 ---
 
