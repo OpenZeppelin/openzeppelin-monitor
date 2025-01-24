@@ -534,6 +534,8 @@ Indicate the complexity or effort required to address the issue:
 **`good-first-issue`**: Beginner-friendly, low-complexity issues to help new contributors.
 **`help-wanted`**: Issues where community contributions are welcome.
 **`discussion`**: Requires community or team input.
+**`wontfix`**: This will not be worked on.
+**`duplicate`**: This issue or pull request already exists.
 
 ---
 
