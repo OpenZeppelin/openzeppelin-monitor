@@ -5,6 +5,7 @@
 //! operation processing.
 
 use hex::encode;
+use log::debug;
 use serde_json::{json, Value};
 use stellar_strkey::{ed25519::PublicKey as StrkeyPublicKey, Contract};
 use stellar_xdr::curr::{
@@ -228,6 +229,13 @@ pub fn process_invoke_host_function(
 	}
 }
 
+/// Checks if a string is a valid Stellar address.
+///
+/// # Arguments
+/// * `address` - The string to check
+///
+/// # Returns
+/// `true` if the string is a valid Stellar address, `false` otherwise
 pub fn is_address(address: &str) -> bool {
 	StrkeyPublicKey::from_string(address).is_ok() || Contract::from_string(address).is_ok()
 }
@@ -403,5 +411,121 @@ pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedPara
 			log::warn!("Failed to parse XDR bytes: {}", e);
 			None
 		}
+	}
+}
+
+/// Safely parse a string into a `serde_json::Value`.
+/// Returns `Some(Value)` if successful, `None` otherwise.
+pub fn parse_json_safe(input: &str) -> Option<Value> {
+	match serde_json::from_str::<Value>(input) {
+		Ok(val) => Some(val),
+		Err(e) => {
+			debug!("Failed to parse JSON: {}, error: {}", input, e);
+			None
+		}
+	}
+}
+
+/// Recursively navigate through a JSON structure using dot notation (e.g. "user.address.street").
+/// Returns `Some(&Value)` if found, `None` otherwise.
+pub fn get_nested_value<'a>(json_value: &'a Value, path: &str) -> Option<&'a Value> {
+	let mut current_val = json_value;
+
+	for segment in path.split('.') {
+		let obj = current_val.as_object()?;
+		current_val = obj.get(segment)?;
+	}
+
+	Some(current_val)
+}
+
+/// Compare two plain strings with the given operator.
+pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -> bool {
+	match operator {
+		"==" => param_value.trim_matches('"') == compare_value.trim_matches('"'),
+		"!=" => param_value.trim_matches('"') != compare_value.trim_matches('"'),
+		_ => {
+			debug!("Unsupported operator for string comparison: {operator}");
+			false
+		}
+	}
+}
+
+/// Compare a JSON `Value` with a plain string using a specific operator.
+/// This mimics the logic you had in single-key comparisons:
+pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_value: &str) -> bool {
+	// We can add more logic here: if `value` is a string, compare its unquoted form, etc.
+	// For now, let's replicate the old `to_string().trim_matches('"') == compare_value`.
+	match operator {
+		"==" => value.to_string().trim_matches('"') == compare_value,
+		"!=" => value.to_string().trim_matches('"') != compare_value,
+		_ => {
+			debug!("Unsupported operator for JSON-value vs. string comparison: {operator}");
+			false
+		}
+	}
+}
+
+/// Compare two JSON values with the given operator.
+///
+/// # Arguments
+/// * `param_val` - The first JSON value to compare
+/// * `operator` - The operator to use for comparison
+/// * `compare_val` - The second JSON value to compare
+///
+/// # Returns
+/// A boolean indicating if the comparison is true
+pub fn compare_json_values(param_val: &Value, operator: &str, compare_val: &Value) -> bool {
+	match operator {
+		"==" => param_val == compare_val,
+		"!=" => param_val != compare_val,
+		">" | ">=" | "<" | "<=" => match (param_val.as_f64(), compare_val.as_f64()) {
+			(Some(param_num), Some(compare_num)) => match operator {
+				">" => param_num > compare_num,
+				">=" => param_num >= compare_num,
+				"<" => param_num < compare_num,
+				"<=" => param_num <= compare_num,
+				_ => unreachable!(),
+			},
+			_ => {
+				debug!("Numeric comparison operator {operator} requires numeric JSON values");
+				false
+			}
+		},
+		_ => {
+			debug!("Unsupported operator for JSON-to-JSON comparison: {operator}");
+			false
+		}
+	}
+}
+
+/// Get the kind of a value from a JSON value.
+///
+/// This is used to determine the kind of a value for the `kind` field in the
+/// `StellarMatchParamEntry` struct.
+pub fn get_kind_from_value(value: &Value) -> String {
+	match value {
+		Value::Number(n) => {
+			if n.is_u64() {
+				"U64".to_string()
+			} else if n.is_i64() {
+				"I64".to_string()
+			} else if n.is_f64() {
+				"F64".to_string()
+			} else {
+				"I64".to_string() // fallback
+			}
+		}
+		Value::Bool(_) => "Bool".to_string(),
+		Value::String(s) => {
+			if is_address(s) {
+				"Address".to_string()
+			} else {
+				"String".to_string()
+			}
+		}
+		Value::Array(_) => "Vec".to_string(),
+		Value::Object(_) => "Map".to_string(),
+		Value::Null => "Null".to_string(),
 	}
 }

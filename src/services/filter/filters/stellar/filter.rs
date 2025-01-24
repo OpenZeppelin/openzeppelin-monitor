@@ -25,12 +25,14 @@ use crate::{
 		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
 			stellar_helpers::{
-				are_same_signature, is_address, normalize_address, parse_xdr_value,
-				process_invoke_host_function,
+				are_same_signature, compare_json_values, compare_json_values_vs_string,
+				compare_strings, get_kind_from_value, get_nested_value, normalize_address,
+				parse_json_safe, parse_xdr_value, process_invoke_host_function,
 			},
 			BlockFilter, FilterError,
 		},
 	},
+	utils::split_expression,
 };
 
 /// Represents a mapping between a Stellar event and its transaction hash
@@ -65,7 +67,6 @@ impl<T> StellarBlockFilter<T> {
 			_ => TransactionStatus::Any,
 		};
 
-		#[derive(Debug)]
 		struct TxOperation {
 			_operation_type: String,
 			sender: String,
@@ -125,17 +126,34 @@ impl<T> StellarBlockFilter<T> {
 				if status_matches {
 					if let Some(expr) = &condition.expression {
 						// Create base transaction parameters outside operation loop
-						let base_params = vec![StellarMatchParamEntry {
-							name: "hash".to_string(),
-							value: transaction.hash().clone(),
-							kind: "string".to_string(),
-							indexed: false,
-						}];
+						let base_params = vec![
+							StellarMatchParamEntry {
+								name: "hash".to_string(),
+								value: transaction.hash().clone(),
+								kind: "string".to_string(),
+								indexed: false,
+							},
+							StellarMatchParamEntry {
+								name: "ledger".to_string(),
+								value: transaction.ledger.to_string(),
+								kind: "i64".to_string(),
+								indexed: false,
+							},
+							// Default value for value
+							StellarMatchParamEntry {
+								name: "value".to_string(),
+								value: "0".to_string(),
+								kind: "i64".to_string(),
+								indexed: false,
+							},
+						];
 
 						// If we have operations, check each one
 						if !tx_operations.is_empty() {
 							for operation in &tx_operations {
 								let mut tx_params = base_params.clone();
+								// Remove default value for value
+								tx_params.remove(tx_params.len() - 1);
 								tx_params.extend(vec![
 									StellarMatchParamEntry {
 										name: "value".to_string(),
@@ -303,11 +321,9 @@ impl<T> StellarBlockFilter<T> {
 					signature: event.signature.clone(),
 					expression: None,
 				});
-				// We do not want to populate matched_on_args.events if there are no
-				// expressions
-				// if let Some(events) = &mut matched_on_args.events {
-				// 	events.push(event.clone());
-				// }
+				if let Some(events) = &mut matched_on_args.events {
+					events.push(event.clone());
+				}
 			} else {
 				// Find all matching conditions for this event
 				let matching_conditions =
@@ -500,6 +516,10 @@ impl<T> StellarBlockFilter<T> {
 		operator: &str,
 		compare_value: &str,
 	) -> bool {
+		// Remove quotes from the values to normalize them
+		let param_value = param_value.trim_matches('"');
+		let compare_value = compare_value.trim_matches('"');
+
 		match param_type {
 			"Bool" | "bool" => self.compare_bool(param_value, operator, compare_value),
 			"U32" | "u32" => self.compare_u32(param_value, operator, compare_value),
@@ -731,47 +751,66 @@ impl<T> StellarBlockFilter<T> {
 		}
 	}
 
-	fn compare_map(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		// Parse the map from JSON string
-		let Ok(map_value) = serde_json::from_str::<serde_json::Value>(param_value) else {
-			warn!("Failed to parse map value: {}", param_value);
-			return false;
-		};
+	/// Compares two values that might be JSON or plain strings using the specified operator.
+	///
+	/// # Arguments
+	/// * `param_value` - The first value to compare, which could be a JSON string or plain string
+	/// * `operator` - The comparison operator ("==", "!=", ">", ">=", "<", "<=")
+	/// * `compare_value` - The second value to compare against, which could be a JSON string or
+	///   plain string
+	///
+	/// # Supported Comparison Cases
+	/// 1. **JSON vs JSON**: Both values are valid JSON
+	///    - Supports equality (==, !=)
+	///    - Supports numeric comparisons (>, >=, <, <=) when both values are numbers
+	///
+	/// 2. **JSON vs String**: First value is JSON, second is plain string
+	///    - Supports dot notation to access nested JSON values (e.g., "user.address.city")
+	///    - Can check if the string matches a key in a JSON object
+	///    - Falls back to direct string comparison if above checks fail
+	///
+	/// 3. **String vs JSON**: First value is string, second is JSON
+	///    - Currently returns false as this is an invalid comparison
+	///
+	/// 4. **String vs String**: Neither value is valid JSON
+	///    - Performs direct string comparison
+	///
+	/// # Returns
+	/// * `bool` - True if the comparison succeeds, false otherwise
+	pub fn compare_map(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
+		let param_json = parse_json_safe(param_value);
+		let compare_json = parse_json_safe(compare_value);
 
-		// arguments[0].bool_key == true AND arguments[0].number_key > 100 AND
-		// arguments[0].array_key contains \"value\" Determine the type based on the JSON value
-		let param_type = match map_value {
-			Value::Bool(_) => "Bool",
-			Value::Number(ref n) => {
-				if n.is_u64() {
-					match n.as_u64() {
-						Some(val) if val <= u32::MAX as u64 => "U32",
-						Some(_) => "U64",
-						None => {
-							FilterError::internal_error("Failed to convert number to u64");
-							"String" // Fallback to string on conversion failure
-						}
-					}
-				} else if n.is_i64() {
-					match n.as_i64() {
-						Some(val) if val >= i32::MIN as i64 && val <= i32::MAX as i64 => "I32",
-						Some(_) => "I64",
-						None => {
-							FilterError::internal_error("Failed to convert number to i64");
-							"String" // Fallback to string on conversion failure
-						}
-					}
-				} else {
-					"String" // Fallback for other number types
-				}
+		match (param_json, compare_json) {
+			(Some(ref param_val), Some(ref compare_val)) => {
+				compare_json_values(param_val, operator, compare_val)
 			}
-			Value::Array(_) => "Vec",
-			Value::Object(_) => "Map",
-			_ => "String", // Default to string for other types
-		};
 
-		// Compare using the appropriate type comparison function
-		self.compare_values(param_type, &map_value.to_string(), operator, compare_value)
+			(Some(param_val), None) => {
+				if compare_value.contains('.') {
+					return get_nested_value(&param_val, compare_value)
+						.map(|nested_val| {
+							compare_json_values_vs_string(nested_val, operator, compare_value)
+						})
+						.unwrap_or(false);
+				}
+
+				if let Some(obj) = param_val.as_object() {
+					if let Some(value) = obj.get(compare_value) {
+						return compare_json_values_vs_string(value, operator, compare_value);
+					}
+				}
+
+				compare_strings(param_value, operator, compare_value)
+			}
+
+			(None, Some(_)) => {
+				debug!("Invalid comparison: non-JSON value compared against JSON value");
+				false
+			}
+
+			(None, None) => compare_strings(param_value, operator, compare_value),
+		}
 	}
 
 	/// Evaluates a complex matching expression against provided arguments
@@ -804,8 +843,15 @@ impl<T> StellarBlockFilter<T> {
 				// Remove surrounding parentheses and trim
 				let clean_condition = condition.trim().trim_matches(|c| c == '(' || c == ')');
 
-				// Split into parts (param operator value)
-				let parts: Vec<&str> = clean_condition.split_whitespace().collect();
+				// Split into parts while preserving quoted strings
+				let parts = if let Some((left, operator, right)) = split_expression(clean_condition)
+				{
+					vec![left, operator, right]
+				} else {
+					warn!("Invalid expression format: {}", clean_condition);
+					return false;
+				};
+
 				if parts.len() != 3 {
 					warn!("Invalid expression format: {}", clean_condition);
 					return false;
@@ -823,14 +869,14 @@ impl<T> StellarBlockFilter<T> {
 						.collect();
 
 					if indices.len() != 2 || indices[0] >= args.len() {
-						warn!("Invalid array indices: {:?}", indices);
+						debug!("Invalid array indices: {:?}", indices);
 						return false;
 					}
 
 					let param = &args[indices[0]];
 					let array_values: Vec<&str> = param.value.split(',').collect();
 					if indices[1] >= array_values.len() {
-						warn!("Array index out of bounds: {}", indices[1]);
+						debug!("Array index out of bounds: {}", indices[1]);
 						return false;
 					}
 
@@ -844,30 +890,43 @@ impl<T> StellarBlockFilter<T> {
 					// Map access: map.key
 					let parts: Vec<&str> = param_expr.split('.').collect();
 					if parts.len() != 2 {
-						warn!("Invalid map access format: {}", param_expr);
+						debug!("Invalid map access format: {}", param_expr);
 						return false;
 					}
 
 					let [map_name, key] = [parts[0], parts[1]];
 
 					let Some(param) = args.iter().find(|p| p.name == map_name) else {
-						warn!("Map {} not found", map_name);
+						debug!("Map {} not found", map_name);
 						return false;
 					};
 
-					// Parse the map and get the value for the key
-					let Ok(map_value) = serde_json::from_str::<serde_json::Value>(&param.value)
+					let Ok(mut map_value) = serde_json::from_str::<serde_json::Value>(&param.value)
 					else {
-						warn!("Failed to parse map: {}", param.value);
+						debug!("Failed to parse map: {}", param.value);
 						return false;
 					};
+
+					// Unescape the keys in the map_value
+					if let serde_json::Value::Object(ref mut map) = map_value {
+						let unescaped_map: serde_json::Map<String, serde_json::Value> = map
+							.iter()
+							.map(|(k, v)| (k.trim_matches('"').to_string(), v.clone()))
+							.collect();
+						*map = unescaped_map;
+					}
 
 					let Some(key_value) = map_value.get(key) else {
-						warn!("Key {} not found in map", key);
+						debug!("Key {} not found in map", key);
 						return false;
 					};
 
-					self.compare_values(&param.kind, &key_value.to_string(), operator, value)
+					self.compare_values(
+						&get_kind_from_value(key_value),
+						&key_value.to_string(),
+						operator,
+						value,
+					)
 				} else {
 					// Regular parameter
 					let Some(param) = args.iter().find(|p| p.name == param_expr) else {
@@ -936,19 +995,7 @@ impl<T> StellarBlockFilter<T> {
 					// Handle primitive values
 					params.push(StellarMatchParamEntry {
 						name: index.to_string(),
-						kind: match arg {
-							Value::Number(n) if n.is_u64() => "U64".to_string(),
-							Value::Number(n) if n.is_i64() => "I64".to_string(),
-							Value::Bool(_) => "Bool".to_string(),
-							Value::String(s) => {
-								if is_address(s) {
-									"Address".to_string()
-								} else {
-									"String".to_string()
-								}
-							}
-							_ => "String".to_string(),
-						},
+						kind: get_kind_from_value(arg),
 						value: match arg {
 							Value::Number(n) => n.to_string(),
 							Value::Bool(b) => b.to_string(),
@@ -1556,7 +1603,6 @@ mod tests {
 		);
 
 		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
-		println!("matched_transactions ===> {:?}", matched_transactions);
 
 		assert_eq!(matched_transactions.len(), 1);
 		assert_eq!(matched_transactions[0].status, TransactionStatus::Success);
@@ -2964,17 +3010,69 @@ mod tests {
 	//////////////////////////////////////////////////////////////////////////////
 
 	#[test]
-	#[ignore]
-	fn test_compare_map_boolean_values() {
+	fn test_compare_map_json_vs_json() {
 		let filter = create_test_filter();
 
-		// Test boolean equality
-		assert!(filter.compare_map(r#"{"value": true}"#, "==", "true"));
-		assert!(filter.compare_map(r#"{"value": false}"#, "==", "false"));
+		// Test equality comparisons
+		assert!(filter.compare_map(r#"{"a": 1}"#, "==", r#"{"a": 1}"#));
+		assert!(!filter.compare_map(r#"{"a": 1}"#, "==", r#"{"a": 2}"#));
+		assert!(filter.compare_map(r#"{"a": 1}"#, "!=", r#"{"a": 2}"#));
 
-		// Test boolean inequality
-		assert!(filter.compare_map(r#"{"value": true}"#, "!=", "false"));
-		assert!(!filter.compare_map(r#"{"value": true}"#, "==", "false"));
+		// Test numeric comparisons
+		assert!(filter.compare_map("42", ">", "10"));
+		assert!(filter.compare_map("10", "<", "42"));
+		assert!(filter.compare_map("42", ">=", "42"));
+		assert!(filter.compare_map("42", "<=", "42"));
+		assert!(!filter.compare_map("10", ">", "42"));
+
+		// Test invalid numeric comparisons
+		assert!(!filter.compare_map(r#"{"a": "string"}"#, ">", r#"{"b": 42}"#));
+	}
+
+	#[test]
+	fn test_compare_map_string_vs_json() {
+		let filter = create_test_filter();
+
+		// This case should always return false
+		assert!(!filter.compare_map("plain string", "==", r#"{"any": "json"}"#));
+	}
+
+	#[test]
+	fn test_compare_map_string_vs_string() {
+		let filter = create_test_filter();
+
+		// Test basic string comparisons
+		assert!(filter.compare_map("hello", "==", "hello"));
+		assert!(filter.compare_map("hello", "!=", "world"));
+		assert!(!filter.compare_map("hello", "==", "world"));
+
+		// Test case sensitivity
+		assert!(!filter.compare_map("Hello", "==", "hello"));
+
+		// Test with spaces and special characters
+		assert!(filter.compare_map("hello world", "==", "hello world"));
+		assert!(filter.compare_map("special!@#$", "==", "special!@#$"));
+	}
+
+	#[test]
+	fn test_compare_map_edge_cases() {
+		let filter = create_test_filter();
+
+		// Test empty strings
+		assert!(filter.compare_map("", "==", ""));
+		assert!(!filter.compare_map("", "==", "non-empty"));
+
+		// Test invalid JSON
+		assert!(!filter.compare_map("{invalid json}", "==", "{}"));
+
+		// Test unsupported operators
+		assert!(!filter.compare_map(r#"{"a": 1}"#, "invalid_operator", r#"{"a": 1}"#));
+
+		// Test with whitespace
+		assert!(filter.compare_map(" hello ", "==", " hello "));
+
+		// Test with null JSON values
+		assert!(filter.compare_map(r#"{"a": null}"#, "==", r#"{"a": null}"#));
 	}
 
 	//////////////////////////////////////////////////////////////////////////////

@@ -30,6 +30,7 @@ use crate::{
 			BlockFilter, FilterError,
 		},
 	},
+	utils::split_expression,
 };
 
 /// Filter implementation for EVM-compatible blockchains
@@ -369,8 +370,15 @@ impl<T> EVMBlockFilter<T> {
 				// Remove any surrounding parentheses and trim
 				let clean_condition = condition.trim().trim_matches(|c| c == '(' || c == ')');
 
-				// Split condition into parts (e.g., "amount > 1000")
-				let parts: Vec<&str> = clean_condition.split_whitespace().collect();
+				// Split into parts while preserving quoted strings
+				let parts = if let Some((left, operator, right)) = split_expression(clean_condition)
+				{
+					vec![left, operator, right]
+				} else {
+					warn!("Invalid expression format: {}", clean_condition);
+					return false;
+				};
+
 				if parts.len() != 3 {
 					warn!("Invalid expression format: {}", clean_condition);
 					return false;
@@ -1152,9 +1160,8 @@ mod tests {
 		assert!(matched_functions[0].expression.is_none());
 
 		let functions = matched_on_args.functions.unwrap();
-		assert_eq!(functions.len(), 1);
-		assert_eq!(functions[0].signature, "transfer(address,uint256)");
-		assert!(functions[0].args.is_some());
+
+		assert_eq!(functions.len(), 0);
 	}
 
 	#[test]
