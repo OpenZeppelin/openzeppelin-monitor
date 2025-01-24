@@ -2,6 +2,7 @@
 name = "openzeppelin-monitor"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.84" #MSRV
 
 [profile.release]
 opt-level = 0
@@ -45,3 +46,10 @@ proptest = "1.6.0"
 rand = "0.8.5"
 tempfile = "3.2"
 cargo-llvm-cov = "0.5"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "openzeppelin-monitor"
