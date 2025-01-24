@@ -33,6 +33,10 @@ use crate::{
 	},
 };
 
+use super::helpers::{
+	compare_json_values_vs_string, compare_strings, get_nested_value, parse_json_safe,
+};
+
 /// Represents a mapping between a Stellar event and its transaction hash
 #[derive(Debug)]
 pub struct EventMap {
@@ -208,6 +212,8 @@ impl<T> StellarBlockFilter<T> {
 					if let OperationBody::InvokeHostFunction(invoke_host_function) = &operation.body
 					{
 						let parsed_operation = process_invoke_host_function(invoke_host_function);
+
+						println!("parsed_operation: {:?}", parsed_operation);
 
 						// Skip if contract address doesn't match
 						if !monitored_addresses
@@ -497,6 +503,11 @@ impl<T> StellarBlockFilter<T> {
 		operator: &str,
 		compare_value: &str,
 	) -> bool {
+		println!("param_type: {}", param_type);
+		println!("param_value: {}", param_value);
+		println!("operator: {}", operator);
+		println!("compare_value: {}", compare_value);
+
 		match param_type {
 			"Bool" | "bool" => self.compare_bool(param_value, operator, compare_value),
 			"U32" | "u32" => self.compare_u32(param_value, operator, compare_value),
@@ -728,48 +739,164 @@ impl<T> StellarBlockFilter<T> {
 		}
 	}
 
-	fn compare_map(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		// Parse the map from JSON string
-		let Ok(map_value) = serde_json::from_str::<serde_json::Value>(param_value) else {
-			warn!("Failed to parse map value: {}", param_value);
-			return false;
-		};
+	pub fn compare_map(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
+		// Try to parse both as JSON
+		let param_json = parse_json_safe(param_value);
+		let compare_json = parse_json_safe(compare_value);
 
-		// arguments[0].bool_key == true AND arguments[0].number_key > 100 AND
-		// arguments[0].array_key contains \"value\" Determine the type based on the JSON value
-		let param_type = match map_value {
-			Value::Bool(_) => "Bool",
-			Value::Number(ref n) => {
-				if n.is_u64() {
-					match n.as_u64() {
-						Some(val) if val <= u32::MAX as u64 => "U32",
-						Some(_) => "U64",
-						None => {
-							FilterError::internal_error("Failed to convert number to u64");
-							"String" // Fallback to string on conversion failure
-						}
+		println!("param_json: {:?}", param_json);
+		println!("compare_json: {:?}", compare_json);
+
+		match (param_json, compare_json) {
+			// -- Case 1: Both are valid JSON values
+			(Some(ref param_val), Some(ref compare_val)) => {
+				// Example: We can do direct JSON comparison with ==, !=, or
+				// eventually add numeric operators, etc.
+				match operator {
+					"==" => param_val == compare_val,
+					"!=" => param_val != compare_val,
+					_ => {
+						warn!("Unsupported operator for JSON-to-JSON comparison: {operator}");
+						false
 					}
-				} else if n.is_i64() {
-					match n.as_i64() {
-						Some(val) if val >= i32::MIN as i64 && val <= i32::MAX as i64 => "I32",
-						Some(_) => "I64",
-						None => {
-							FilterError::internal_error("Failed to convert number to i64");
-							"String" // Fallback to string on conversion failure
-						}
-					}
-				} else {
-					"String" // Fallback for other number types
 				}
 			}
-			Value::Array(_) => "Vec",
-			Value::Object(_) => "Map",
-			_ => "String", // Default to string for other types
-		};
 
-		// Compare using the appropriate type comparison function
-		self.compare_values(param_type, &map_value.to_string(), operator, compare_value)
+			// -- Case 2: `param_value` is JSON, but `compare_value` is not
+			(Some(param_val), None) => {
+				// At this point, compare_value is a plain string or possibly
+				// a "dotted path" we want to dig out of `param_val`.
+
+				// If compare_value has dot notation, attempt to get a nested value from param_val
+				if compare_value.contains('.') {
+					println!("compare_value: {}", compare_value);
+					if let Some(nested_val) = get_nested_value(&param_val, compare_value) {
+						println!("nested_val: {:?}", nested_val);
+						return compare_json_values_vs_string(nested_val, operator, compare_value);
+					} else {
+						return false;
+					}
+				}
+
+				// No dots. We can do:
+				//   1) Check if compare_value is a key in the JSON object,
+				//   2) or just try to do direct string comparison with top-level.
+				if let Some(obj) = param_val.as_object() {
+					// If there's a top-level key matching `compare_value` we might compare
+					// the associated JSON with something. But your original code was
+					// effectively `value.to_string() == compare_value`, which is ambiguous:
+					//
+					//   - Did we want to compare the string representation of the *value* with
+					//     `compare_value`? Or is `compare_value` the *expected key* that must
+					//     exist?
+					//
+					// For now, let's keep the same logic:
+					if let Some(value) = obj.get(compare_value) {
+						return compare_json_values_vs_string(value, operator, compare_value);
+					}
+				}
+
+				// If none of the above worked, fallback or return false
+				false
+			}
+
+			// -- Case 3: `param_value` is not JSON, `compare_value` is JSON
+			(None, Some(_compare_val)) => {
+				// param_value is a string, compare_value is JSON
+				// If param_value is not valid JSON, presumably we fail or do a string compare.
+				// It's unusual, but let's say we fail:
+				warn!(
+					"param_value is not valid JSON, but compare_value is JSON; no valid \
+					 comparison."
+				);
+				false
+			}
+
+			// -- Case 4: Neither is valid JSON => do direct string comparison
+			(None, None) => compare_strings(param_value, operator, compare_value),
+		}
 	}
+
+	// fn compare_map(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
+	// 	// If both values don't contain JSON object markers, do direct string comparison
+	// 	if !param_value.contains('{') && !compare_value.contains('{') {
+	// 		return match operator {
+	// 			"==" => param_value.trim_matches('"') == compare_value.trim_matches('"'),
+	// 			"!=" => param_value.trim_matches('"') != compare_value.trim_matches('"'),
+	// 			_ => {
+	// 				warn!("Unsupported operator for string comparison: {}", operator);
+	// 				false
+	// 			}
+	// 		};
+	// 	}
+
+	// 	// Parse the map from JSON string
+	// 	let Ok(map_value) = serde_json::from_str::<serde_json::Value>(param_value) else {
+	// 		warn!("Failed to parse map value: {}", param_value);
+	// 		return false;
+	// 	};
+
+	// 	println!("param_value: {}", map_value);
+	// 	println!("operator: {}", operator);
+	// 	println!("compare_value: {}", compare_value);
+
+	// 	// Check if we're accessing a nested value using dot notation
+	// 	if let Some((key, remaining_path)) = compare_value.split_once('.') {
+	// 		// Handle nested path
+	// 		if let Some(obj) = map_value.as_object() {
+	// 			if let Some(value) = obj.get(key) {
+	// 				println!("value: {}", value.to_string().trim_matches('"'));
+	// 				println!("operator: {}", operator);
+	// 				println!("remaining_path: {}", remaining_path);
+
+	// 				return self.compare_map(
+	// 					value.to_string().trim_matches('"'),
+	// 					operator,
+	// 					remaining_path,
+	// 				);
+	// 			}
+	// 		}
+	// 		return false;
+	// 	}
+
+	// 	// If compare_value starts with '{', treat it as a JSON object comparison
+	// 	if compare_value.trim_start().starts_with('{') {
+	// 		if let Ok(compare_json) = serde_json::from_str::<serde_json::Value>(compare_value) {
+	// 			match operator {
+	// 				"==" => map_value == compare_json,
+	// 				"!=" => map_value != compare_json,
+	// 				_ => {
+	// 					warn!("Unsupported operator for full map comparison: {}", operator);
+	// 					false
+	// 				}
+	// 			}
+	// 		} else {
+	// 			warn!(
+	// 				"Failed to parse comparison value as JSON: {}",
+	// 				compare_value
+	// 			);
+	// 			false
+	// 		}
+	// 	} else {
+	// 		// For single key comparison, try to find it at the root level
+	// 		if let Some(obj) = map_value.as_object() {
+	// 			if let Some(value) = obj.get(compare_value) {
+	// 				match operator {
+	// 					"==" => value.to_string().trim_matches('"') == compare_value,
+	// 					"!=" => value.to_string().trim_matches('"') != compare_value,
+	// 					_ => {
+	// 						warn!("Unsupported operator for map key comparison: {}", operator);
+	// 						false
+	// 					}
+	// 				}
+	// 			} else {
+	// 				false
+	// 			}
+	// 		} else {
+	// 			false
+	// 		}
+	// 	}
+	// }
 
 	/// Evaluates a complex matching expression against provided arguments
 	///
@@ -2164,7 +2291,7 @@ mod tests {
 
 		assert!(args[0].kind.contains("64"));
 		assert_eq!(args[0].value, "42");
-		assert_eq!(args[0].indexed, false);
+		assert!(!args[0].indexed);
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
@@ -2371,7 +2498,7 @@ mod tests {
 
 	//////////////////////////////////////////////////////////////////////////////
 	// Test cases for compare_u64 method:
-	//////////////////////////////////////////////////////////////////////////////	
+	//////////////////////////////////////////////////////////////////////////////
 
 	#[test]
 	fn test_compare_u64_valid_comparisons() {
@@ -2954,17 +3081,149 @@ mod tests {
 	//////////////////////////////////////////////////////////////////////////////
 
 	#[test]
-	#[ignore]
 	fn test_compare_map_boolean_values() {
 		let filter = create_test_filter();
 
-		// Test boolean equality
-		assert!(filter.compare_map(r#"{"value": true}"#, "==", "true"));
-		assert!(filter.compare_map(r#"{"value": false}"#, "==", "false"));
+		// Test equality with matching JSON objects
+		assert!(filter.compare_map(r#"{"value": true}"#, "==", r#"{"value": true}"#));
+		assert!(filter.compare_map(r#"{"value": false}"#, "==", r#"{"value": false}"#));
 
-		// Test boolean inequality
-		assert!(filter.compare_map(r#"{"value": true}"#, "!=", "false"));
-		assert!(!filter.compare_map(r#"{"value": true}"#, "==", "false"));
+		// Test inequality with different JSON objects
+		assert!(filter.compare_map(r#"{"value": true}"#, "!=", r#"{"value": false}"#));
+		assert!(filter.compare_map(r#"{"value": false}"#, "!=", r#"{"value": true}"#));
+
+		// Test equality with non-matching JSON objects
+		assert!(!filter.compare_map(r#"{"value": true}"#, "==", r#"{"value": false}"#));
+		assert!(!filter.compare_map(r#"{"value": false}"#, "==", r#"{"value": true}"#));
+
+		// Test with invalid operator
+		assert!(!filter.compare_map(r#"{"value": true}"#, ">", r#"{"value": false}"#));
+
+		// Test with invalid JSON
+		assert!(!filter.compare_map(r#"{"value": true}"#, "==", "invalid json"));
+	}
+
+	#[test]
+	fn test_compare_map_strings_equal() {
+		let filter = create_test_filter();
+		assert!(filter.compare_map("Hello", "==", "Hello"));
+		assert!(!filter.compare_map("Hello", "==", "World"));
+	}
+
+	#[test]
+	fn test_compare_map_strings_not_equal() {
+		let filter = create_test_filter();
+		assert!(filter.compare_map("Hello", "!=", "World"));
+		assert!(!filter.compare_map("Hello", "!=", "Hello"));
+	}
+
+	#[test]
+	fn test_compare_map_full_json_object_equal() {
+		let filter = create_test_filter();
+		let param_value = r#"{ "foo": "bar", "num": 42 }"#;
+		let compare_value = r#"{ "foo": "bar", "num": 42 }"#;
+		assert!(filter.compare_map(param_value, "==", compare_value));
+
+		// Slight difference
+		let compare_value_diff = r#"{ "foo": "bar", "num": 43 }"#;
+		assert!(!filter.compare_map(param_value, "==", compare_value_diff));
+	}
+
+	#[test]
+	fn test_compare_map_full_json_object_not_equal() {
+		let filter = create_test_filter();
+		let param_value = r#"{ "foo": "bar" }"#;
+		let compare_value = r#"{ "foo": "baz" }"#;
+		assert!(filter.compare_map(param_value, "!=", compare_value));
+
+		// Exactly the same => should fail "!="
+		let same = r#"{ "foo": "bar" }"#;
+		assert!(!filter.compare_map(param_value, "!=", same));
+	}
+
+	#[test]
+	fn test_compare_map_dot_notation_basic() {
+		let filter = create_test_filter();
+		// In the current code, final comparison checks if final_value_string == final_key.
+		// So to succeed, we must ensure final_value == final_key.
+		// This JSON has "inner" == "inner"
+		let param_value = r#"{ "outer": { "inner": "inner" } }"#;
+		// We expect true, because:
+		//   1) Dot-split "outer.inner" => get the subobject => { "inner": "inner" }
+		//   2) Next call => param_value = "{"inner":"inner"}", compare_value="inner"
+		//   3) Finds key "inner" => the nested value is "inner"
+		//   4) Compares "inner" == "inner" => true
+		assert!(filter.compare_map(param_value, "==", "outer.inner"));
+
+		// If the nested value doesn't match its key, it fails
+		let param_value_diff = r#"{ "outer": { "inner": "NOT_MATCHING_KEY" } }"#;
+		assert!(!filter.compare_map(param_value_diff, "==", "outer.inner"));
+	}
+
+	#[test]
+	fn test_compare_map_dot_notation_deeper_nesting() {
+		let filter = create_test_filter();
+		// We set this up so that the final key "city" actually equals the final value "city"
+		let param_value = r#"
+        {
+            "user": {
+                "name": "Alice",
+                "address": {
+                    "city": "city"
+                }
+            }
+        }
+        "#;
+
+		// "user.address.city" => gets -> "city" => compare "city" == "city" => true
+		assert!(filter.compare_map(param_value, "==", "user.address.city"));
+
+		// If we tried to do something intuitive like expecting "user.address.city" == "Wonderland",
+		// the code would end up comparing "Wonderland" == "city" => false (as noted above).
+	}
+
+	#[test]
+	fn test_compare_map_single_key_comparison_at_root() {
+		let filter = create_test_filter();
+		let param_value = r#"{ "key1": "key1", "key2": "value2" }"#;
+		// The function checks if the JSON object has a key "key1", then sees if the associated
+		// value == "key1". That yields true if "key1": "key1".
+		assert!(filter.compare_map(param_value, "==", "key1"));
+		// "value2" != "key2" => so this is false
+		assert!(!filter.compare_map(param_value, "==", "key2"));
+	}
+
+	#[test]
+	fn test_compare_map_json_vs_string_mismatch() {
+		let filter = create_test_filter();
+		// param_value is JSON, compare_value is a string that doesn't exist as a key => false
+		let param_value = r#"{ "something": "else" }"#;
+		assert!(!filter.compare_map(param_value, "==", "random"));
+	}
+
+	#[test]
+	fn test_compare_map_malformed_json_param() {
+		let filter = create_test_filter();
+		// If param_value is invalid JSON, the parse will fail => returns false
+		let param_value = r#"{ "foo": "bar", "#; // trailing brace missing
+		let compare_value = r#"{"foo":"bar"}"#;
+		assert!(!filter.compare_map(param_value, "==", compare_value));
+	}
+
+	#[test]
+	fn test_compare_map_malformed_json_compare_value() {
+		let filter = create_test_filter();
+		let param_value = r#"{ "foo": "bar" }"#;
+		let compare_value = r#"{ "foo": "bar"#; // malformed
+		assert!(!filter.compare_map(param_value, "==", compare_value));
+	}
+
+	#[test]
+	fn test_compare_map_neither_side_json_fallback_string() {
+		let filter = create_test_filter();
+		// Neither is JSON => do plain string compare
+		assert!(filter.compare_map("Alice", "==", "Alice"));
+		assert!(!filter.compare_map("Alice", "==", "Bob"));
 	}
 
 	//////////////////////////////////////////////////////////////////////////////

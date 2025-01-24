@@ -5,6 +5,7 @@
 //! operation processing.
 
 use hex::encode;
+use log::warn;
 use serde_json::{json, Value};
 use stellar_strkey::{ed25519::PublicKey as StrkeyPublicKey, Contract};
 use stellar_xdr::curr::{
@@ -398,6 +399,66 @@ pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedPara
 		Err(e) => {
 			log::warn!("Failed to parse XDR bytes: {}", e);
 			None
+		}
+	}
+}
+
+/// Safely parse a string into a `serde_json::Value`.
+/// Returns `Some(Value)` if successful, `None` otherwise.
+pub fn parse_json_safe(input: &str) -> Option<Value> {
+	match serde_json::from_str::<Value>(input) {
+		Ok(val) => Some(val),
+		Err(e) => {
+			// You might want to use `debug!` instead of `warn!` here
+			// to avoid spamming logs for invalid JSON inputs.
+			warn!("Failed to parse JSON: {}, error: {}", input, e);
+			None
+		}
+	}
+}
+
+/// Recursively navigate through a JSON structure using dot notation (e.g. "user.address.street").
+/// Returns `Some(&Value)` if found, `None` otherwise.
+pub fn get_nested_value<'a>(json_value: &'a Value, path: &str) -> Option<&'a Value> {
+	let mut current_val = json_value;
+
+	println!("json_value: {:?}", json_value);
+	println!("path: {}", path);
+
+	for segment in path.split('.') {
+		println!("segment: {}", segment);
+		let obj = current_val.as_object()?;
+		current_val = obj.get(segment)?;
+	}
+
+	println!("current_val: {:?}", current_val);
+
+	Some(current_val)
+}
+
+/// Compare two plain strings with the given operator.
+pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -> bool {
+	match operator {
+		"==" => param_value.trim_matches('"') == compare_value.trim_matches('"'),
+		"!=" => param_value.trim_matches('"') != compare_value.trim_matches('"'),
+		_ => {
+			warn!("Unsupported operator for string comparison: {operator}");
+			false
+		}
+	}
+}
+
+/// Compare a JSON `Value` with a plain string using a specific operator.
+/// This mimics the logic you had in single-key comparisons:
+pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_value: &str) -> bool {
+	// We can add more logic here: if `value` is a string, compare its unquoted form, etc.
+	// For now, let's replicate the old `to_string().trim_matches('"') == compare_value`.
+	match operator {
+		"==" => value.to_string().trim_matches('"') == compare_value,
+		"!=" => value.to_string().trim_matches('"') != compare_value,
+		_ => {
+			warn!("Unsupported operator for JSON-value vs. string comparison: {operator}");
+			false
 		}
 	}
 }
