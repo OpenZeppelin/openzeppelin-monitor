@@ -1,26 +1,26 @@
 # Base image
-FROM cgr.dev/chainguard/rust:latest-dev as base
-EXPOSE 8080 
+FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/rust:latest AS base
 
 WORKDIR /usr/app
-COPY . .
+
 USER root
 RUN apk update && apk add openssl-dev
+
+COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo install --root /usr/app --path . 
+    cargo install --root /usr/app --path . --locked
 
 # building the image
-FROM cgr.dev/chainguard/glibc-dynamic
+FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/glibc-dynamic:latest
 
 WORKDIR /app
-COPY --from=base /usr/lib/libssl.so.3 /usr/lib/libssl.so.3
-COPY --from=base /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so.3
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
 COPY --chown=nonroot:nonroot config /app/config
 COPY --chown=nonroot:nonroot data /app/data
 COPY --chown=nonroot:nonroot env_prod /app/.env
 
+EXPOSE 8080
+
 # starting up
 ENTRYPOINT ["/app/openzeppelin-monitor"]
-

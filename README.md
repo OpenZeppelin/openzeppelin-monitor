@@ -94,57 +94,57 @@ graph TD
 
 ### Local Setup
 
-1. Clone the repository:
+- Clone the repository:
 
-```bash
-git clone https://github.com/openzeppelin/openzeppelin-monitor
-cd openzeppelin-monitor
-```
+  ```sh
+  git clone https://github.com/openzeppelin/openzeppelin-monitor
+  cd openzeppelin-monitor
+  ```
 
-2. Install dependencies:
+- Install dependencies:
 
-```bash
-cargo build
-```
+  ```sh
+  cargo build
+  ```
 
 ## Configuration
 
-1. Configure your environment variables in `.env` file.
+- Configure your environment variables in `.env` file.
 
-```bash
-cp .env.example .env
-```
+  ```sh
+  cp .env.example .env
+  ```
 
-2. Copy example configuration files:
+- Copy example configuration files:
 
-```bash
-# EVM
-cp config/monitors/evm_transfer_usdc.json.example config/monitors/evm_transfer_usdc.json
-cp config/networks/ethereum_mainnet.json.example config/networks/ethereum_mainnet.json
-cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
-cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+  ```sh
+  # EVM
+  cp config/monitors/evm_transfer_usdc.json.example config/monitors/evm_transfer_usdc.json
+  cp config/networks/ethereum_mainnet.json.example config/networks/ethereum_mainnet.json
+  cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
+  cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
 
-# Stellar
-cp config/monitors/stellar_transfer_usdc.json.example config/monitors/stellar_transfer_usdc.json
-cp config/networks/stellar_mainnet.json.example config/networks/stellar_mainnet.json
-cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
-cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
-```
+  # Stellar
+  cp config/monitors/stellar_transfer_usdc.json.example config/monitors/stellar_transfer_usdc.json
+  cp config/networks/stellar_mainnet.json.example config/networks/stellar_mainnet.json
+  cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
+  cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+  ```
 
-3. Configure your networks in `config/networks/`:
+- Configure your networks in `config/networks/`:
 
-- EVM networks: See `evm_mainnet.json`
-- Stellar networks: See `stellar_mainnet.json`
+  - EVM networks: See `evm_mainnet.json`
+  - Stellar networks: See `stellar_mainnet.json`
 
-4. Configure your monitors in `config/monitors/`:
+- Configure your monitors in `config/monitors/`:
 
-- EVM monitors: See `evm_transfer_usdc.json`
-- Stellar monitors: See `stellar_transfer_usdc.json`
+  - EVM monitors: See `evm_transfer_usdc.json`
+  - Stellar monitors: See `stellar_transfer_usdc.json`
 
-5. Configure your triggers in `config/triggers/`:
+- Configure your triggers in `config/triggers/`:
 
-- Slack notifications: See `slack_notifications.json`
-- Email notifications: See `email_notifications.json`
+  - Slack notifications: See `slack_notifications.json`
+  - Email notifications: See `email_notifications.json`
 
 ### Monitor Argument Access
 
@@ -203,9 +203,9 @@ For Stellar:
 
 ### Run Locally
 
-```bash
-cargo run
-```
+  ```sh
+  cargo run
+  ```
 
 ### Run as a container
 
@@ -214,41 +214,59 @@ You have the option of running as a development container or as production one (
 To adjust the `.env` file, you can edit `env_dev` or `env_prod` at the root of the repository.
 
 Assuming your docker environment is installed and properly set up, you can build the image with:
-```bash
-docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
-```
+
+  ```sh
+  docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
+  ```
+
+  or with buildx:
+
+  ```sh
+  docker buildx build -f Dockerfile.<env> -t <name_of_image:tag> .
+  ```
 
 This will generate an image including the appropriate `.env` file and the configurations in the `./config` folder.
 
 Now we need to create the docker volume to keep the monitor internal data (if you want to keep it when you restart the container, otherwise just skip this step).
-```bash
-docker volume create <volume_tag>
-```
+
+  ```sh
+  docker volume create <volume_tag>
+  ```
 
 After the build is finished, you can run it with:
-```bash
-docker run --volume <volume_tag>:/app/data <your_image_tag>`
-```
+
+  ```sh
+  docker run --volume <volume_tag>:/app/data <your_image_tag>`
+  ```
 
 If you need to change the monitor configurations, there's no need to rebuild the image. Assuming you have the configuration files in `./config`, you can just bind the directory to the container:
-```bash
-docker run --mount type=bind,src=./config,dst=/app/config,ro --volume <volume_tag>:/app/data <your_image_tag>
-```
+
+  ```sh
+  docker run --mount type=bind,src=./config,dst=/app/config,ro --volume <volume_tag>:/app/data <your_image_tag>
+  ```
 
 ### Run Tests
 
-```bash
-cargo test
-cargo test properties
-cargo test integration
-```
+  ```bash
+  cargo test
+  cargo test properties
+  cargo test integration
+  ```
 
 ### Developer setup
 
-1. Run `chmod +x .githooks/*` to make the git hooks executable.
-2. Run `git config core.hooksPath .githooks` to setup git hooks for linting and formatting.
-3. Run `rustup toolchain install nightly` to install the nightly toolchain.
-4. Run `rustup component add rustfmt --toolchain nightly` to install rustfmt for the nightly toolchain.
+- Run the following commands to install pre-commit hooks:
+
+   ```bash
+    # Use <pipx install pre-commit> if you prefer to install it globally.
+    pip install pre-commit
+    pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+    ```
+
+  > Note: If you run into issues with pip install, you may need [pipx](https://pipx.pypa.io/stable/installation/) to install pre-commit globally.
+
+- Run `rustup toolchain install nightly` to install the nightly toolchain.
+- Run `rustup component add rustfmt --toolchain nightly` to install rustfmt for the nightly toolchain.
 
 ## Project Structure
 
@@ -298,7 +316,7 @@ For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 ## Contact
 
-For support or inquiries, contact defender-support@openzeppelin.com.
+For support or inquiries, contact <defender-support@openzeppelin.com>.
 
 ## Maintainers
 
