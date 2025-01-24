@@ -1075,7 +1075,7 @@ mod tests {
 		assert_eq!(matched.len(), 0);
 	}
 
-	//////////////////////////////////////////////////////////////////////////////	
+	//////////////////////////////////////////////////////////////////////////////
 	// Test cases for find_matching_functions_for_transaction method:
 	//////////////////////////////////////////////////////////////////////////////
 	#[test]
@@ -1102,6 +1102,7 @@ mod tests {
 		);
 
 		// Create a transaction with transfer function call
+		#[allow(deprecated)]
 		let function = Function {
 			name: "transfer".to_string(),
 			inputs: vec![
@@ -1179,6 +1180,7 @@ mod tests {
 			)], // addresses
 		);
 
+		#[allow(deprecated)]
 		let function = Function {
 			name: "transfer".to_string(),
 			inputs: vec![
@@ -1281,6 +1283,7 @@ mod tests {
 		);
 
 		// Create transaction with non-matching 'to' address
+		#[allow(deprecated)]
 		let function = Function {
 			name: "transfer".to_string(),
 			inputs: vec![
