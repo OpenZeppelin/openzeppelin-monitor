@@ -754,8 +754,7 @@ mod tests {
 			addresses,
 			name: "test".to_string(),
 			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			triggers: vec![],
+			..Default::default()
 		}
 	}
 
@@ -871,13 +870,6 @@ mod tests {
 				&value_hex,
 			)],
 			status: Some(1.into()),
-			transaction_hash: H256::zero(),
-			transaction_index: 0.into(),
-			block_hash: Some(H256::zero()),
-			block_number: Some(1.into()),
-			cumulative_gas_used: 0.into(),
-			gas_used: Some(0.into()),
-			contract_address: None,
 			..Default::default()
 		}
 	}
@@ -1256,24 +1248,18 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				functions: vec![FunctionCondition {
-					signature: "transfer(address,uint256)".to_string(),
-					expression: None,
-				}],
-				events: vec![],
-				transactions: vec![],
-			},
-			addresses: vec![AddressWithABI {
+		let monitor = create_test_monitor(
+			vec![],
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: None,
+			}],
+			vec![],
+			vec![AddressWithABI {
 				address: "0x0000000000000000000000000000000000003039".to_string(),
 				abi: Some(create_test_abi("function")),
 			}],
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			triggers: vec![],
-		};
+		);
 
 		// Create transaction with non-matching 'to' address
 		let function = Function {

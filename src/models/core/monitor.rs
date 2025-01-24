@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// - Contract addresses to watch
 /// - Conditions to match (functions, events, transactions)
 /// - Triggers to execute when conditions are met
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 pub struct Monitor {
 	/// Unique name identifying this monitor
 	pub name: String,
@@ -39,7 +39,7 @@ pub struct AddressWithABI {
 }
 
 /// Collection of conditions that can trigger a monitor
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 pub struct MatchConditions {
 	/// Function calls to match
 	pub functions: Vec<FunctionCondition>,
