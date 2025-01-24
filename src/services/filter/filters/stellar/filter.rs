@@ -2953,7 +2953,19 @@ mod tests {
 	// Test cases for compare_map method:
 	//////////////////////////////////////////////////////////////////////////////
 
-	// TODO: We should see if the compare_map method is working as expected because I was unable to
+	#[test]
+	#[ignore]
+	fn test_compare_map_boolean_values() {
+		let filter = create_test_filter();
+
+		// Test boolean equality
+		assert!(filter.compare_map(r#"{"value": true}"#, "==", "true"));
+		assert!(filter.compare_map(r#"{"value": false}"#, "==", "false"));
+
+		// Test boolean inequality
+		assert!(filter.compare_map(r#"{"value": true}"#, "!=", "false"));
+		assert!(!filter.compare_map(r#"{"value": true}"#, "==", "false"));
+	}
 
 	//////////////////////////////////////////////////////////////////////////////
 	// Test cases for evaluate_expression method:
