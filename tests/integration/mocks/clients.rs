@@ -17,7 +17,7 @@ use openzeppelin_monitor::{
 			BlockChainClient, BlockChainError, BlockFilterFactory, EvmClientTrait,
 			StellarClientTrait,
 		},
-		filter::StellarBlockFilter,
+		filter::{EVMBlockFilter, StellarBlockFilter},
 	},
 };
 
@@ -93,6 +93,15 @@ impl BlockFilterFactory<MockStellarClientTrait> for MockStellarClientTrait {
 	type Filter = StellarBlockFilter<MockStellarClientTrait>;
 	fn filter() -> Self::Filter {
 		StellarBlockFilter {
+			_client: PhantomData,
+		}
+	}
+}
+
+impl BlockFilterFactory<MockEvmClientTrait> for MockEvmClientTrait {
+	type Filter = EVMBlockFilter<MockEvmClientTrait>;
+	fn filter() -> Self::Filter {
+		EVMBlockFilter {
 			_client: PhantomData,
 		}
 	}

@@ -12,7 +12,7 @@ use serde_json::Value;
 ///
 /// This structure represents the response from the Stellar RPC endpoint
 /// and matches the format defined in the stellar-rpc repository.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct LedgerInfo {
 	/// Hash of the ledger
 	#[serde(rename = "hash")]
@@ -49,7 +49,7 @@ pub struct LedgerInfo {
 ///
 /// This type provides a convenient interface for working with Stellar ledger data
 /// while maintaining compatibility with the RPC response format.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Block(pub LedgerInfo);
 
 impl Block {
