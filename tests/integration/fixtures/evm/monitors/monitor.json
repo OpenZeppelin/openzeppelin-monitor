@@ -1413,7 +1413,7 @@
     "transactions": [
       {
         "status": "Success",
-        "expression": "value == 0"
+        "expression": "value >= 0"
       }
     ]
   },

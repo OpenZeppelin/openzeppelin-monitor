@@ -10,11 +10,13 @@
 //!
 //! # Module Structure
 //!
+//! - `bootstrap`: Bootstraps the application
 //! - `models`: Data structures for configuration and blockchain data
 //! - `repositories`: Configuration storage and management
 //! - `services`: Core business logic and blockchain interaction
 //! - `utils`: Common utilities and helper functions
 
+pub mod bootstrap;
 pub mod models;
 pub mod repositories;
 pub mod services;

@@ -25,7 +25,7 @@ use crate::{
 		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
 			stellar_helpers::{
-				are_same_signature, normalize_address, parse_xdr_value,
+				are_same_signature, is_address, normalize_address, parse_xdr_value,
 				process_invoke_host_function,
 			},
 			BlockFilter, FilterError,
@@ -65,6 +65,7 @@ impl<T> StellarBlockFilter<T> {
 			_ => TransactionStatus::Any,
 		};
 
+		#[derive(Debug)]
 		struct TxOperation {
 			_operation_type: String,
 			sender: String,
@@ -302,9 +303,11 @@ impl<T> StellarBlockFilter<T> {
 					signature: event.signature.clone(),
 					expression: None,
 				});
-				if let Some(events) = &mut matched_on_args.events {
-					events.push(event.clone());
-				}
+				// We do not want to populate matched_on_args.events if there are no
+				// expressions
+				// if let Some(events) = &mut matched_on_args.events {
+				// 	events.push(event.clone());
+				// }
 			} else {
 				// Find all matching conditions for this event
 				let matching_conditions =
@@ -937,6 +940,13 @@ impl<T> StellarBlockFilter<T> {
 							Value::Number(n) if n.is_u64() => "U64".to_string(),
 							Value::Number(n) if n.is_i64() => "I64".to_string(),
 							Value::Bool(_) => "Bool".to_string(),
+							Value::String(s) => {
+								if is_address(s) {
+									"Address".to_string()
+								} else {
+									"String".to_string()
+								}
+							}
 							_ => "String".to_string(),
 						},
 						value: match arg {

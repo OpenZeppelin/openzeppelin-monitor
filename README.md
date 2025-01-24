@@ -298,11 +298,14 @@ If you need to change the monitor configurations, there's no need to rebuild the
 
 ## Contributing
 
+Contributing to this repository involves a few main actions:
 1. Fork the repository
 2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
 5. Create a Pull Request
+
+You can find more details in our [Contributing](CONTRIBUTING.md) guide.
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and check the [Security Policy](SECURITY.md) for reporting vulnerabilities.
 
