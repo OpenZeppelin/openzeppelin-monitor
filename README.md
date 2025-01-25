@@ -205,9 +205,9 @@ For Stellar:
 
 ### Run Locally
 
-  ```sh
-  cargo run
-  ```
+```sh
+cargo run
+```
 
 ### Run as a container
 
@@ -217,57 +217,57 @@ To adjust the `.env` file, you can edit `env_dev` or `env_prod` at the root of t
 
 Assuming your docker environment is installed and properly set up, you can build the image with:
 
-  ```sh
-  docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
-  ```
+```sh
+docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
+```
 
-  or with buildx:
+or with buildx:
 
-  ```sh
-  docker buildx build -f Dockerfile.<env> -t <name_of_image:tag> .
-  ```
+```sh
+docker buildx build -f Dockerfile.<env> -t <name_of_image:tag> .
+```
 
 This will generate an image including the appropriate `.env` file and the configurations in the `./config` folder.
 
 Now we need to create the docker volume to keep the monitor internal data (if you want to keep it when you restart the container, otherwise just skip this step).
 
-  ```sh
-  docker volume create <volume_tag>
-  ```
+```sh
+docker volume create <volume_tag>
+```
 
 After the build is finished, you can run it with:
 
-  ```sh
-  docker run --volume <volume_tag>:/app/data <your_image_tag>`
-  ```
+```sh
+docker run --volume <volume_tag>:/app/data <your_image_tag>`
+```
 
 If you need to change the monitor configurations, there's no need to rebuild the image. Assuming you have the configuration files in `./config`, you can just bind the directory to the container:
 
-  ```sh
-  docker run --mount type=bind,src=./config,dst=/app/config,ro --volume <volume_tag>:/app/data <your_image_tag>
-  ```
+```sh
+docker run --mount type=bind,src=./config,dst=/app/config,ro --volume <volume_tag>:/app/data <your_image_tag>
+```
 
 ### Run Tests
 
-  ```bash
-  cargo test
-  cargo test properties
-  cargo test integration
-  ```
+```bash
+cargo test
+cargo test properties
+cargo test integration
+```
 
 ### Generate Test Coverage Report
 
-Run `cargo llvm-cov --html --open` (creates an interactive HTML coverage report) or `cargo llvm-cov` to view coverage in the terminal.
+Run `RUST_TEST_THREADS=1 cargo llvm-cov --html --open` (creates an interactive HTML coverage report) or `RUST_TEST_THREADS=1 cargo llvm-cov` to view coverage in the terminal.
 
 ### Developer setup
 
 - Run the following commands to install pre-commit hooks:
 
-   ```bash
-    # Use <pipx install pre-commit> if you prefer to install it globally.
-    pip install pre-commit
-    pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
-    ```
+  ```bash
+   # Use <pipx install pre-commit> if you prefer to install it globally.
+   pip install pre-commit
+   pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+  ```
 
   > Note: If you run into issues with pip install, you may need [pipx](https://pipx.pypa.io/stable/installation/) to install pre-commit globally.
 
@@ -305,6 +305,7 @@ Run `cargo llvm-cov --html --open` (creates an interactive HTML coverage report)
 ## Contributing
 
 Contributing to this repository involves a few main actions:
+
 1. Fork the repository
 2. Create your feature branch
 3. Commit your changes
