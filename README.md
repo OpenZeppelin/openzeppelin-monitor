@@ -1,5 +1,7 @@
 # OpenZeppelin Monitor
 
+[![codecov](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor/branch/integrate-codecov/graph/badge.svg?token=VWIY5XZNDB)](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor)
+
 A blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
 ## Architecture
@@ -252,6 +254,10 @@ If you need to change the monitor configurations, there's no need to rebuild the
   cargo test properties
   cargo test integration
   ```
+
+### Generate Test Coverage Report
+
+Run `cargo llvm-cov --html --open` (creates an interactive HTML coverage report) or `cargo llvm-cov` to view coverage in the terminal.
 
 ### Developer setup
 
