@@ -10,33 +10,38 @@ use crate::{
 	models::{ConfigLoader, Monitor, Network, Trigger},
 	repositories::{
 		error::RepositoryError,
-		network::{NetworkRepository, NetworkService},
-		trigger::{TriggerRepository, TriggerService},
+		network::{NetworkRepository, NetworkRepositoryTrait, NetworkService},
+		trigger::{TriggerRepository, TriggerRepositoryTrait, TriggerService},
 	},
 };
 
 /// Repository for storing and retrieving monitor configurations
+#[derive(Clone)]
 pub struct MonitorRepository {
 	/// Map of monitor names to their configurations
 	pub monitors: HashMap<String, Monitor>,
 }
 
 impl MonitorRepository {
+	/// Validate that all networks and triggers referenced by monitors exist
+	///
 	/// Create a new monitor repository from the given path
 	///
 	/// Loads all monitor configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
-	pub fn new(
+	pub fn new<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
 		path: Option<&Path>,
-		network_service: Option<&NetworkService<NetworkRepository>>,
-		trigger_service: Option<&TriggerService<TriggerRepository>>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
 	) -> Result<Self, RepositoryError> {
 		let monitors = Self::load_all(path, network_service, trigger_service)?;
 		Ok(MonitorRepository { monitors })
 	}
 
-	/// Validate that all networks and triggers referenced by monitors exist
-	///
+	pub fn new_with_monitors(monitors: HashMap<String, Monitor>) -> Self {
+		MonitorRepository { monitors }
+	}
+
 	/// Returns an error if any monitor references a non-existent network or trigger.
 	pub fn validate_monitor_references(
 		monitors: &HashMap<String, Monitor>,
@@ -82,16 +87,25 @@ impl MonitorRepository {
 ///
 /// This trait defines the standard operations that any monitor repository must support,
 /// allowing for different storage backends while maintaining a consistent interface.
-pub trait MonitorRepositoryTrait {
+pub trait MonitorRepositoryTrait: Clone {
+	/// Create a new monitor repository from the given path
+	fn new<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Self, RepositoryError>
+	where
+		Self: Sized;
+
 	/// Load all monitor configurations from the given path
 	///
 	/// If no path is provided, uses the default config directory.
 	/// Also validates references to networks and triggers.
 	/// This is a static method that doesn't require an instance.
-	fn load_all(
+	fn load_all<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
 		path: Option<&Path>,
-		network_service: Option<&NetworkService<NetworkRepository>>,
-		trigger_service: Option<&TriggerService<TriggerRepository>>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
 	) -> Result<HashMap<String, Monitor>, RepositoryError>;
 
 	/// Get a specific monitor by ID
@@ -106,10 +120,18 @@ pub trait MonitorRepositoryTrait {
 }
 
 impl MonitorRepositoryTrait for MonitorRepository {
-	fn load_all(
+	fn new<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
 		path: Option<&Path>,
-		network_service: Option<&NetworkService<NetworkRepository>>,
-		trigger_service: Option<&TriggerService<TriggerRepository>>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Self, RepositoryError> {
+		MonitorRepository::new(path, network_service, trigger_service)
+	}
+
+	fn load_all<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
 	) -> Result<HashMap<String, Monitor>, RepositoryError> {
 		let monitors =
 			Monitor::load_all(path).map_err(|e| RepositoryError::load_error(e.to_string()))?;
@@ -142,38 +164,40 @@ impl MonitorRepositoryTrait for MonitorRepository {
 /// This type provides a higher-level interface for working with monitor configurations,
 /// handling repository initialization and access through a trait-based interface.
 /// It also ensures that all monitor references to networks and triggers are valid.
-pub struct MonitorService<T: MonitorRepositoryTrait> {
-	repository: T,
+#[derive(Clone)]
+pub struct MonitorService<M: MonitorRepositoryTrait> {
+	repository: M,
 }
 
-impl<T: MonitorRepositoryTrait> MonitorService<T> {
+// Generic implementation for any repository type
+impl<M: MonitorRepositoryTrait> MonitorService<M> {
 	/// Create a new monitor service with the default repository implementation
 	///
 	/// Loads monitor configurations from the specified path (or default config directory)
 	/// and validates all network and trigger references.
-	pub fn new(
+	pub fn new<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
 		path: Option<&Path>,
-		network_service: Option<&NetworkService<NetworkRepository>>,
-		trigger_service: Option<&TriggerService<TriggerRepository>>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
 	) -> Result<MonitorService<MonitorRepository>, RepositoryError> {
 		let repository = MonitorRepository::new(path, network_service, trigger_service)?;
-		Ok(MonitorService { repository })
-	}
-
-	/// Create a new monitor service with a custom repository implementation
-	///
-	/// Allows for using alternative storage backends that implement the MonitorRepositoryTrait.
-	pub fn new_with_repository(repository: T) -> Result<Self, RepositoryError> {
 		Ok(MonitorService { repository })
 	}
 
 	/// Create a new monitor service with a specific configuration path
 	///
 	/// Similar to `new()` but makes the path parameter more explicit.
-	pub fn new_with_path(
+	pub fn new_with_path<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
 		path: Option<&Path>,
 	) -> Result<MonitorService<MonitorRepository>, RepositoryError> {
-		let repository = MonitorRepository::new(path, None, None)?;
+		let repository = MonitorRepository::new::<N, T>(path, None, None)?;
+		Ok(MonitorService { repository })
+	}
+
+	/// Create a new monitor service with a custom repository implementation
+	///
+	/// Allows for using alternative storage backends that implement the MonitorRepositoryTrait.
+	pub fn new_with_repository(repository: M) -> Result<Self, RepositoryError> {
 		Ok(MonitorService { repository })
 	}
 

@@ -28,7 +28,7 @@ proptest! {
 		)
 	) {
 		// Simulate saving and reloading from a repository
-		let repo = MonitorRepository { monitors: monitors.clone() };
+		let repo = MonitorRepository::new_with_monitors(monitors.clone());
 		let reloaded_monitors = repo.get_all();
 
 		prop_assert_eq!(monitors, reloaded_monitors); // Ensure roundtrip consistency
@@ -95,7 +95,7 @@ proptest! {
 			MIN_TEST_CASES..MAX_TEST_CASES
 		)
 	) {
-		let repo = MonitorRepository { monitors: monitors.clone() };
+		let repo = MonitorRepository::new_with_monitors(monitors.clone());
 
 		// Test get by ID
 		for (id, monitor) in &monitors {
@@ -123,7 +123,7 @@ proptest! {
 			MIN_TEST_CASES..MAX_TEST_CASES
 		)
 	) {
-		let empty_repo = MonitorRepository { monitors: std::collections::HashMap::new() };
+		let empty_repo = MonitorRepository::new_with_monitors(std::collections::HashMap::new());
 
 		// Test empty repository operations
 		prop_assert!(empty_repo.get_all().is_empty());
