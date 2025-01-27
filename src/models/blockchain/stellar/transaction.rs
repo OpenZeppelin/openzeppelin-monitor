@@ -246,7 +246,7 @@ mod tests {
 		assert_eq!(transaction.transaction_hash, "test_hash");
 		assert_eq!(transaction.status, "SUCCESS");
 		assert_eq!(transaction.application_order, 1);
-		assert_eq!(transaction.fee_bump, false);
+		assert!(!transaction.fee_bump);
 		assert_eq!(transaction.ledger, 123);
 		assert_eq!(transaction.ledger_close_time, 1234567890);
 	}
