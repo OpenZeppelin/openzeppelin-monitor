@@ -137,3 +137,170 @@ impl<S: BlockStorage> BlockTracker<S> {
 			.and_then(|history| history.back().copied())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use crate::models::{BlockChainType, BlockType, RpcUrl};
+
+	use super::*;
+	use mockall::mock;
+
+	// Create mock storage
+	mock! {
+		pub BlockStorage {}
+		#[async_trait::async_trait]
+		impl BlockStorage for BlockStorage {
+			async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
+			async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
+			async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, BlockWatcherError>;
+			async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), BlockWatcherError>;
+			async fn delete_blocks(&self, network_slug: &str) -> Result<(), BlockWatcherError>;
+		}
+
+		impl Clone for BlockStorage {
+			fn clone(&self) -> Self {
+				Self::new()
+			}
+		}
+	}
+	fn create_test_network(name: &str, slug: &str, store_blocks: bool) -> Network {
+		Network {
+			name: name.to_string(),
+			slug: slug.to_string(),
+			network_type: BlockChainType::EVM,
+			rpc_urls: vec![RpcUrl {
+				url: "http://localhost:8545".to_string(),
+				type_: "rpc".to_string(),
+				weight: 100,
+			}],
+			cron_schedule: "*/5 * * * * *".to_string(),
+			confirmation_blocks: 1,
+			store_blocks: Some(store_blocks),
+			chain_id: Some(1),
+			network_passphrase: None,
+			block_time_ms: 1000,
+			max_past_blocks: None,
+		}
+	}
+
+	#[tokio::test]
+	async fn test_normal_block_sequence() {
+		let mock_storage = MockBlockStorage::new();
+
+		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
+		let network = create_test_network("test-net", "test_net", true);
+
+		// Process blocks in sequence
+		tracker.record_block(&network, 1).await;
+		tracker.record_block(&network, 2).await;
+		tracker.record_block(&network, 3).await;
+
+		assert_eq!(tracker.get_last_block("test_net").await, Some(3));
+	}
+
+	#[tokio::test]
+	async fn test_history_size_limit() {
+		let mock_storage = MockBlockStorage::new();
+
+		let tracker = BlockTracker::new(3, Some(Arc::new(mock_storage)));
+		let network = create_test_network("test-net", "test_net", true);
+
+		// Process 5 blocks with a history limit of 3
+		for i in 1..=5 {
+			tracker.record_block(&network, i).await;
+		}
+
+		let history = tracker.block_history.lock().await;
+		let network_history = history
+			.get(&network.slug)
+			.expect("Network history should exist");
+
+		// Verify we only kept the last 3 blocks
+		assert_eq!(network_history.len(), 3);
+		assert_eq!(network_history.front(), Some(&3)); // Oldest block
+		assert_eq!(network_history.back(), Some(&5)); // Newest block
+	}
+
+	#[tokio::test]
+	async fn test_missed_blocks_with_storage() {
+		let mut mock_storage = MockBlockStorage::new();
+
+		// Expect block 2 to be recorded as missed
+		mock_storage
+			.expect_save_missed_block()
+			.with(
+				mockall::predicate::eq("test_net"),
+				mockall::predicate::eq(2),
+			)
+			.times(1)
+			.returning(|_, _| Ok(()));
+
+		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
+		let network = create_test_network("test-net", "test_net", true);
+
+		// Process block 1
+		tracker.record_block(&network, 1).await;
+		// Skip block 2 and process block 3
+		tracker.record_block(&network, 3).await;
+	}
+
+	#[tokio::test]
+	async fn test_out_of_order_blocks() {
+		let mock_storage = MockBlockStorage::new();
+
+		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
+		let network = create_test_network("test-net", "test_net", true);
+
+		// Process blocks out of order
+		tracker.record_block(&network, 2).await;
+		tracker.record_block(&network, 1).await;
+
+		assert_eq!(tracker.get_last_block("test_net").await, Some(1));
+	}
+
+	#[tokio::test]
+	async fn test_multiple_networks() {
+		let mock_storage = MockBlockStorage::new();
+
+		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
+		let network1 = create_test_network("net-1", "net_1", true);
+		let network2 = create_test_network("net-2", "net_2", true);
+
+		// Process blocks for both networks
+		tracker.record_block(&network1, 1).await;
+		tracker.record_block(&network2, 100).await;
+		tracker.record_block(&network1, 2).await;
+		tracker.record_block(&network2, 101).await;
+
+		assert_eq!(tracker.get_last_block("net_1").await, Some(2));
+		assert_eq!(tracker.get_last_block("net_2").await, Some(101));
+	}
+
+	#[tokio::test]
+	async fn test_get_last_block_empty_network() {
+		let tracker = BlockTracker::new(5, None::<Arc<MockBlockStorage>>);
+		assert_eq!(tracker.get_last_block("nonexistent").await, None);
+	}
+
+	#[tokio::test]
+	async fn test_save_missed_block_record() {
+		let mut mock_storage = MockBlockStorage::new();
+
+		mock_storage
+			.expect_save_missed_block()
+			.with(
+				mockall::predicate::eq("test_network"),
+				mockall::predicate::eq(2),
+			)
+			.times(1)
+			.returning(|_, _| Ok(()));
+
+		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
+		let network = create_test_network("test-network", "test_network", true);
+
+		// This should trigger save_last_processed_block
+		tracker.record_block(&network, 1).await;
+		// This should trigger save_missed_block for block 2
+		tracker.record_block(&network, 3).await;
+	}
+}
