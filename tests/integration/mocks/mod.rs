@@ -8,11 +8,14 @@
 //! The mocks are implemented using the `mockall` crate.
 
 mod clients;
+mod models;
 mod repositories;
 mod services;
 
 #[allow(unused_imports)]
 pub use clients::*;
+#[allow(unused_imports)]
+pub use models::*;
 #[allow(unused_imports)]
 pub use repositories::*;
 #[allow(unused_imports)]

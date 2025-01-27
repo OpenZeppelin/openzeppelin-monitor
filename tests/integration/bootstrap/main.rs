@@ -3,15 +3,14 @@ use crate::integration::{
 		setup_monitor_service, setup_network_service, setup_trigger_execution_service,
 		setup_trigger_service,
 	},
-	mocks::MockEvmClientTrait,
+	mocks::{create_test_block, create_test_network, MockEvmClientTrait},
 };
 use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
 	models::{
-		BlockChainType, BlockType, EVMBlock, EVMMonitorMatch, EVMTransaction, MatchConditions,
-		Monitor, MonitorMatch, Network, ProcessedBlock, RpcUrl, StellarBlock, StellarLedgerInfo,
-		StellarMonitorMatch, StellarTransaction, StellarTransactionInfo, Trigger, TriggerType,
-		TriggerTypeConfig,
+		BlockChainType, EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch,
+		ProcessedBlock, StellarBlock, StellarMonitorMatch, StellarTransaction,
+		StellarTransactionInfo, Trigger, TriggerType, TriggerTypeConfig,
 	},
 	services::filter::FilterService,
 };
@@ -54,26 +53,6 @@ fn create_test_stellar_transaction() -> StellarTransaction {
 	})
 }
 
-fn create_test_network(name: &str, slug: &str, network_type: BlockChainType) -> Network {
-	Network {
-		name: name.to_string(),
-		slug: slug.to_string(),
-		network_type,
-		rpc_urls: vec![RpcUrl {
-			url: "http://localhost:8545".to_string(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: Some(1),
-		network_passphrase: None,
-		block_time_ms: 1000,
-		max_past_blocks: None,
-	}
-}
-
 fn create_test_trigger(name: &str) -> Trigger {
 	Trigger {
 		name: name.to_string(),
@@ -85,22 +64,6 @@ fn create_test_trigger(name: &str) -> Trigger {
 			title: "Test Title".to_string(),
 			body: "Test Body".to_string(),
 		},
-	}
-}
-
-fn create_test_block(chain: BlockChainType, block_number: u64) -> BlockType {
-	match chain {
-		BlockChainType::EVM => BlockType::EVM(Box::new(EVMBlock::from(web3::types::Block {
-			number: Some(block_number.into()),
-			..Default::default()
-		}))),
-		BlockChainType::Stellar => {
-			BlockType::Stellar(Box::new(StellarBlock::from(StellarLedgerInfo {
-				sequence: block_number as u32,
-				..Default::default()
-			})))
-		}
-		_ => panic!("Unsupported chain"),
 	}
 }
 

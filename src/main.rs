@@ -33,7 +33,7 @@ use crate::{
 	repositories::{MonitorRepository, NetworkRepository, TriggerRepository},
 	services::{
 		blockchain::{EvmClient, StellarClient},
-		blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
+		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
 };
 

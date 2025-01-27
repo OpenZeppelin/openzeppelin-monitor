@@ -10,6 +10,7 @@
 //! recently processed blocks and can optionally persist information about missed
 //! blocks using a storage implementation.
 
+use async_trait::async_trait;
 use std::{
 	collections::{HashMap, VecDeque},
 	sync::Arc,
@@ -20,6 +21,17 @@ use crate::{
 	models::Network,
 	services::blockwatcher::{error::BlockWatcherError, storage::BlockStorage},
 };
+
+/// Trait for the BlockTracker
+///
+/// This trait defines the interface for the BlockTracker.
+#[async_trait]
+pub trait BlockTrackerTrait<S: BlockStorage> {
+	fn new(history_size: usize, storage: Option<Arc<S>>) -> Self;
+	async fn record_block(&self, network: &Network, block_number: u64);
+	async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
+}
+
 /// BlockTracker is responsible for monitoring the sequence of processed blocks
 /// across different networks and identifying any gaps or irregularities in block processing.
 ///
@@ -40,7 +52,8 @@ pub struct BlockTracker<S> {
 	storage: Option<Arc<S>>,
 }
 
-impl<S: BlockStorage> BlockTracker<S> {
+#[async_trait]
+impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 	/// Creates a new BlockTracker instance.
 	///
 	/// # Arguments
@@ -51,7 +64,7 @@ impl<S: BlockStorage> BlockTracker<S> {
 	/// # Returns
 	///
 	/// A new `BlockTracker` instance
-	pub fn new(history_size: usize, storage: Option<Arc<S>>) -> Self {
+	fn new(history_size: usize, storage: Option<Arc<S>>) -> Self {
 		Self {
 			block_history: Arc::new(Mutex::new(HashMap::new())),
 			history_size,
@@ -74,7 +87,7 @@ impl<S: BlockStorage> BlockTracker<S> {
 	/// # Warning
 	///
 	/// This method will log warnings for out-of-order blocks and errors for missed blocks.
-	pub async fn record_block(&self, network: &Network, block_number: u64) {
+	async fn record_block(&self, network: &Network, block_number: u64) {
 		let mut history = self.block_history.lock().await;
 		let network_history = history
 			.entry(network.slug.clone())
@@ -129,7 +142,7 @@ impl<S: BlockStorage> BlockTracker<S> {
 	///
 	/// Returns `Some(block_number)` if blocks have been processed for the network,
 	/// otherwise returns `None`.
-	pub async fn get_last_block(&self, network_slug: &str) -> Option<u64> {
+	async fn get_last_block(&self, network_slug: &str) -> Option<u64> {
 		self.block_history
 			.lock()
 			.await
