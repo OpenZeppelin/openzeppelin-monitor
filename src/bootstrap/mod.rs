@@ -37,12 +37,12 @@ type ServiceResult<T> = Result<(
 /// # Errors
 /// Returns an error if any service initialization fails
 pub fn initialize_services<M, N, T>(
-	monitor_service: Option<MonitorService<M>>,
+	monitor_service: Option<MonitorService<M, N, T>>,
 	network_service: Option<NetworkService<N>>,
 	trigger_service: Option<TriggerService<T>>,
 ) -> ServiceResult<T>
 where
-	M: MonitorRepositoryTrait,
+	M: MonitorRepositoryTrait<N, T>,
 	N: NetworkRepositoryTrait,
 	T: TriggerRepositoryTrait,
 {
@@ -73,7 +73,7 @@ where
 				Some(trigger_service.clone()),
 			)
 			.map_err(|_| RepositoryError::load_error("Unable to load monitors"))?;
-			MonitorService::<M>::new_with_repository(repository)?
+			MonitorService::<M, N, T>::new_with_repository(repository)?
 		}
 	};
 

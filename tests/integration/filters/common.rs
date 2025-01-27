@@ -47,7 +47,6 @@ pub fn setup_trigger_execution_service(
 	trigger_json: &str,
 ) -> MockTriggerExecutionService<MockTriggerRepository> {
 	let trigger_map: HashMap<String, Trigger> = read_and_parse_json(trigger_json);
-	let mut mock_trigger_repository = MockTriggerRepository::new(None).unwrap();
 
 	let triggers = trigger_map.clone();
 
@@ -55,6 +54,13 @@ pub fn setup_trigger_execution_service(
 	MockTriggerRepository::load_all_context()
 		.expect()
 		.return_once(move |_| Ok(triggers.clone()));
+
+	let ctx = MockTriggerRepository::new_context();
+	ctx.expect()
+		.withf(|_| true)
+		.returning(|_| Ok(MockTriggerRepository::default()));
+
+	let mut mock_trigger_repository = MockTriggerRepository::new(None).unwrap();
 
 	mock_trigger_repository
 		.expect_get()
@@ -126,9 +132,13 @@ pub fn setup_trigger_service(
 
 pub fn setup_monitor_service(
 	monitors: HashMap<String, Monitor>,
-) -> MonitorService<MockMonitorRepository> {
+) -> MonitorService<
+	MockMonitorRepository<MockNetworkRepository, MockTriggerRepository>,
+	MockNetworkRepository,
+	MockTriggerRepository,
+> {
 	let monitors_clone = monitors.clone();
-	MockMonitorRepository::load_all_context()
+	MockMonitorRepository::<MockNetworkRepository, MockTriggerRepository>::load_all_context()
 		.expect()
 		.return_once(move |_, _, _| Ok(monitors_clone));
 
@@ -146,5 +156,10 @@ pub fn setup_monitor_service(
 		cloned_repo.expect_get_all().return_once(|| monitors_clone);
 		cloned_repo
 	});
-	MonitorService::new_with_repository(mock_repo).unwrap()
+	MonitorService::<
+		MockMonitorRepository<MockNetworkRepository, MockTriggerRepository>,
+		MockNetworkRepository,
+		MockTriggerRepository,
+	>::new_with_repository(mock_repo)
+	.unwrap()
 }

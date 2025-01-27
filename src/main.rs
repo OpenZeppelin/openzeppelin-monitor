@@ -53,9 +53,11 @@ async fn main() -> Result<()> {
 	env_logger::init();
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
-		initialize_services::<MonitorRepository, NetworkRepository, TriggerRepository>(
-			None, None, None,
-		)?;
+		initialize_services::<
+			MonitorRepository<NetworkRepository, TriggerRepository>,
+			NetworkRepository,
+			TriggerRepository,
+		>(None, None, None)?;
 
 	let networks_with_monitors: Vec<Network> = networks
 		.values()

@@ -72,17 +72,19 @@ mock! {
 	///
 	/// Provides methods to simulate monitor configuration storage and retrieval
 	/// operations for testing purposes.
-	pub MonitorRepository {}
+	pub MonitorRepository<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static> {}
 
-	impl MonitorRepositoryTrait for MonitorRepository {
+	impl<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static>
+		MonitorRepositoryTrait<N, T> for MonitorRepository<N, T>
+	{
 		#[mockall::concretize]
-		fn new<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
+		fn new(
 			path: Option<&Path>,
 			network_service: Option<NetworkService<N>>,
 			trigger_service: Option<TriggerService<T>>,
 		) -> Result<Self, RepositoryError>;
 		#[mockall::concretize]
-		fn load_all<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>(
+		fn load_all(
 			path: Option<&Path>,
 			network_service: Option<NetworkService<N>>,
 			trigger_service: Option<TriggerService<T>>,
@@ -91,7 +93,9 @@ mock! {
 		fn get_all(&self) -> HashMap<String, Monitor>;
 	}
 
-	impl Clone for MonitorRepository {
+	impl<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static> Clone
+		for MonitorRepository<N, T>
+	{
 		fn clone(&self) -> Self {
 			Self {}
 		}
