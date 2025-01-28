@@ -290,7 +290,7 @@ Run `RUST_TEST_THREADS=1 cargo llvm-cov --html --open` (creates an interactive H
 ## Documentation
 
 - Pre-requisites:
-  - Install `antora` by running `npm install -g @antora/cli@3.1.0 @antora/site-generator-default@3.1.0`, if you already have you can skip this step.
+  - Install `antora` by running `npm install -g @antora/cli@3.1.0 @antora/site-generator@3.1.0 @antora/site-generator-default@3.1.0`, if you already have you can skip this step.
   - Verify the installation by running `antora --version`
 
 - To generate documentation locally, run the following command:
