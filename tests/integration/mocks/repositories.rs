@@ -12,8 +12,8 @@
 use openzeppelin_monitor::{
 	models::{Monitor, Network, Trigger},
 	repositories::{
-		MonitorRepositoryTrait, NetworkRepository, NetworkRepositoryTrait, NetworkService,
-		RepositoryError, TriggerRepository, TriggerRepositoryTrait, TriggerService,
+		MonitorRepositoryTrait, NetworkRepositoryTrait, NetworkService, RepositoryError,
+		TriggerRepositoryTrait, TriggerService,
 	},
 };
 
@@ -30,9 +30,17 @@ mock! {
 
 	impl TriggerRepositoryTrait for TriggerRepository {
 		#[mockall::concretize]
+		fn new(path: Option<&Path>) -> Result<Self, RepositoryError>;
+		#[mockall::concretize]
 		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
 		fn get(&self, trigger_id: &str) -> Option<Trigger>;
 		fn get_all(&self) -> HashMap<String, Trigger>;
+	}
+
+	impl Clone for TriggerRepository {
+		fn clone(&self) -> Self {
+			Self {}
+		}
 	}
 }
 
@@ -45,9 +53,17 @@ mock! {
 
 	impl NetworkRepositoryTrait for NetworkRepository {
 		#[mockall::concretize]
+		fn new(path: Option<&Path>) -> Result<Self, RepositoryError>;
+		#[mockall::concretize]
 		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
 		fn get(&self, network_id: &str) -> Option<Network>;
 		fn get_all(&self) -> HashMap<String, Network>;
+	}
+
+	impl Clone for NetworkRepository {
+		fn clone(&self) -> Self {
+			Self {}
+		}
 	}
 }
 
@@ -56,16 +72,32 @@ mock! {
 	///
 	/// Provides methods to simulate monitor configuration storage and retrieval
 	/// operations for testing purposes.
-	pub MonitorRepository {}
+	pub MonitorRepository<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static> {}
 
-	impl MonitorRepositoryTrait for MonitorRepository {
+	impl<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static>
+		MonitorRepositoryTrait<N, T> for MonitorRepository<N, T>
+	{
+		#[mockall::concretize]
+		fn new(
+			path: Option<&Path>,
+			network_service: Option<NetworkService<N>>,
+			trigger_service: Option<TriggerService<T>>,
+		) -> Result<Self, RepositoryError>;
 		#[mockall::concretize]
 		fn load_all(
 			path: Option<&Path>,
-			network_service: Option<&NetworkService<NetworkRepository>>,
-			trigger_service: Option<&TriggerService<TriggerRepository>>,
+			network_service: Option<NetworkService<N>>,
+			trigger_service: Option<TriggerService<T>>,
 		) -> Result<HashMap<String, Monitor>, RepositoryError>;
 		fn get(&self, monitor_id: &str) -> Option<Monitor>;
 		fn get_all(&self) -> HashMap<String, Monitor>;
+	}
+
+	impl<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static> Clone
+		for MonitorRepository<N, T>
+	{
+		fn clone(&self) -> Self {
+			Self {}
+		}
 	}
 }

@@ -30,6 +30,7 @@ use crate::{
 			BlockFilter, FilterError,
 		},
 	},
+	utils::split_expression,
 };
 
 /// Filter implementation for EVM-compatible blockchains
@@ -369,8 +370,15 @@ impl<T> EVMBlockFilter<T> {
 				// Remove any surrounding parentheses and trim
 				let clean_condition = condition.trim().trim_matches(|c| c == '(' || c == ')');
 
-				// Split condition into parts (e.g., "amount > 1000")
-				let parts: Vec<&str> = clean_condition.split_whitespace().collect();
+				// Split into parts while preserving quoted strings
+				let parts = if let Some((left, operator, right)) = split_expression(clean_condition)
+				{
+					vec![left, operator, right]
+				} else {
+					warn!("Invalid expression format: {}", clean_condition);
+					return false;
+				};
+
 				if parts.len() != 3 {
 					warn!("Invalid expression format: {}", clean_condition);
 					return false;
@@ -726,5 +734,1117 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		}
 
 		Ok(matching_results)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use ethabi::{Function, Param, ParamType};
+	use serde_json::json;
+	use web3::types::{H160, H256, U256};
+
+	fn create_test_filter() -> EVMBlockFilter<()> {
+		EVMBlockFilter::<()> {
+			_client: PhantomData,
+		}
+	}
+
+	fn create_test_transaction(
+		value: U256,
+		from: Option<H160>,
+		to: Option<H160>,
+		input_data: Vec<u8>,
+	) -> Transaction {
+		Transaction {
+			value,
+			from,
+			to,
+			input: web3::types::Bytes(input_data),
+			..Default::default()
+		}
+	}
+
+	/// Creates a test monitor with customizable parameters
+	fn create_test_monitor(
+		event_conditions: Vec<EventCondition>,
+		function_conditions: Vec<FunctionCondition>,
+		transaction_conditions: Vec<TransactionCondition>,
+		addresses: Vec<AddressWithABI>,
+	) -> Monitor {
+		Monitor {
+			match_conditions: MatchConditions {
+				events: event_conditions,
+				functions: function_conditions,
+				transactions: transaction_conditions,
+			},
+			addresses,
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			..Default::default()
+		}
+	}
+
+	fn create_test_abi(abi_type: &str) -> Value {
+		match abi_type {
+			"function" => json!([{
+				"type": "function",
+				"name": "transfer",
+				"inputs": [
+					{
+						"name": "recipient",
+						"type": "address",
+						"indexed": false,
+						"internalType": "address"
+					},
+					{
+						"name": "amount",
+						"type": "uint256",
+						"indexed": false,
+						"internalType": "uint256"
+					}
+				],
+				"outputs": [
+					{
+						"name": "",
+						"type": "bool",
+						"indexed": false,
+						"internalType": "bool"
+					}
+				],
+				"stateMutability": "nonpayable",
+				"payable": false,
+				"constant": false
+			}]),
+			"event" => json!([{
+				"type": "event",
+				"name": "Transfer",
+				"inputs": [
+					{
+						"name": "from",
+						"type": "address",
+						"indexed": true
+					},
+					{
+						"name": "to",
+						"type": "address",
+						"indexed": true
+					},
+					{
+						"name": "value",
+						"type": "uint256",
+						"indexed": false
+					}
+				],
+				"anonymous": false,
+			}]),
+			_ => json!([]),
+		}
+	}
+
+	/// Creates a test address with ABI
+	fn create_test_address(address: &str, abi: Option<Value>) -> AddressWithABI {
+		AddressWithABI {
+			address: address.to_string(),
+			abi,
+		}
+	}
+
+	fn create_test_log(
+		contract_address: H160,
+		event_signature: &str,
+		from_address: &str,
+		to_address: &str,
+		value_hex: &str,
+	) -> Log {
+		Log {
+			address: contract_address,
+			topics: vec![
+				H256::from_str(event_signature).unwrap(),
+				H256::from_str(from_address).unwrap(),
+				H256::from_str(to_address).unwrap(),
+			],
+			data: web3::types::Bytes(hex::decode(value_hex).unwrap()),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(0.into()),
+			transaction_log_index: Some(0.into()),
+			log_type: None,
+			removed: Some(false),
+		}
+	}
+
+	fn create_test_transfer_receipt(
+		contract_address: H160,
+		from_address: &str,
+		to_address: &str,
+		value: u64,
+	) -> TransactionReceipt {
+		// Standard Transfer event signature
+		let event_signature = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+		// Convert value to 32-byte hex string with leading zeros
+		let value_hex = format!("{:064x}", value);
+
+		TransactionReceipt {
+			logs: vec![create_test_log(
+				contract_address,
+				event_signature,
+				from_address,
+				to_address,
+				&value_hex,
+			)],
+			status: Some(1.into()),
+			..Default::default()
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for find_matching_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
+	#[test]
+	fn test_empty_conditions_matches_all() {
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![], vec![]);
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), None, None, vec![]),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].status, TransactionStatus::Any);
+		assert!(matched[0].expression.is_none());
+	}
+
+	#[test]
+	fn test_status_matching() {
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: None,
+			}], // transactions
+			vec![], // addresses
+		);
+
+		// Test successful transaction
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), None, None, vec![]),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].status, TransactionStatus::Success);
+
+		// Test failed transaction
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Failure,
+			&create_test_transaction(U256::zero(), None, None, vec![]),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_expression_matching() {
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Any,
+				expression: Some("value > 100".to_string()),
+			}], // transactions
+			vec![], // addresses
+		);
+
+		// Test transaction with value > 100
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::from(150), None, None, vec![]),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some("value > 100".to_string()));
+
+		// Test transaction with value < 100
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::from(50), None, None, vec![]),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_address_expression_matching() {
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let test_address = H160::from_low_u64_be(12345);
+
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Any,
+				expression: Some(format!("to == {}", h160_to_string(test_address))),
+			}], // transactions
+			vec![], // addresses
+		);
+
+		// Test matching 'to' address
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), None, Some(test_address), vec![]),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+
+		// Test non-matching 'to' address
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(
+				U256::zero(),
+				None,
+				Some(H160::from_low_u64_be(54321)),
+				vec![],
+			),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_from_address_expression_matching() {
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let test_address = H160::from_low_u64_be(12345);
+
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![], // functions
+			vec![TransactionCondition {
+				status: TransactionStatus::Any,
+				expression: Some(format!("from == {}", h160_to_string(test_address))),
+			}], // transactions
+			vec![], // addresses
+		);
+
+		// Test matching 'from' address
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(U256::zero(), Some(test_address), None, vec![]),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+
+		// Test non-matching 'from' address
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&create_test_transaction(
+				U256::zero(),
+				Some(H160::from_low_u64_be(54321)),
+				None,
+				vec![],
+			),
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for find_matching_functions_for_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
+	#[test]
+	fn test_find_matching_functions_basic_match() {
+		let filter = create_test_filter();
+		let mut matched_functions = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: None,
+			functions: Some(Vec::new()),
+		};
+
+		// Create a monitor with a simple function match condition
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: None,
+			}], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("function")),
+			)], // addresses
+		);
+
+		// Create a transaction with transfer function call
+		#[allow(deprecated)]
+		let function = Function {
+			name: "transfer".to_string(),
+			inputs: vec![
+				Param {
+					name: "recipient".to_string(),
+					kind: ParamType::Address,
+					internal_type: None,
+				},
+				Param {
+					name: "amount".to_string(),
+					kind: ParamType::Uint(256),
+					internal_type: None,
+				},
+			],
+			outputs: vec![Param {
+				name: "".to_string(),
+				kind: ParamType::Bool,
+				internal_type: None,
+			}],
+			constant: None,
+			state_mutability: ethabi::StateMutability::NonPayable,
+		};
+
+		let params = vec![
+			ethabi::Token::Address(H160::from_low_u64_be(54321)),
+			ethabi::Token::Uint(U256::from(1000)),
+		];
+
+		let encoded = function.encode_input(&params).unwrap();
+		let transaction = create_test_transaction(
+			U256::zero(),
+			Some(H160::from_low_u64_be(12345)), // from address
+			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()), /* to address matching monitor */
+			encoded,
+		);
+
+		// Test function matching
+		filter.find_matching_functions_for_transaction(
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_functions.len(), 1);
+		assert_eq!(matched_functions[0].signature, "transfer(address,uint256)");
+		assert!(matched_functions[0].expression.is_none());
+
+		let functions = matched_on_args.functions.unwrap();
+
+		assert_eq!(functions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_functions_with_expression() {
+		let filter = create_test_filter();
+		let mut matched_functions = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: None,
+			functions: Some(Vec::new()),
+		};
+
+		// Create a monitor with a function match condition including an expression
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: Some("amount > 500".to_string()),
+			}], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("function")),
+			)], // addresses
+		);
+
+		#[allow(deprecated)]
+		let function = Function {
+			name: "transfer".to_string(),
+			inputs: vec![
+				Param {
+					name: "recipient".to_string(),
+					kind: ParamType::Address,
+					internal_type: None,
+				},
+				Param {
+					name: "amount".to_string(),
+					kind: ParamType::Uint(256),
+					internal_type: None,
+				},
+			],
+			outputs: vec![Param {
+				name: "".to_string(),
+				kind: ParamType::Bool,
+				internal_type: None,
+			}],
+			constant: None,
+			state_mutability: ethabi::StateMutability::NonPayable,
+		};
+
+		// Test with amount > 500 (should match)
+		let params = vec![
+			ethabi::Token::Address(H160::from_low_u64_be(54321)),
+			ethabi::Token::Uint(U256::from(1000)),
+		];
+
+		let encoded = function.encode_input(&params).unwrap();
+		let transaction = create_test_transaction(
+			U256::zero(),
+			None,
+			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()),
+			encoded,
+		);
+
+		filter.find_matching_functions_for_transaction(
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_functions.len(), 1);
+		assert_eq!(
+			matched_functions[0].expression,
+			Some("amount > 500".to_string())
+		);
+
+		// Test with amount <= 500 (should not match)
+		matched_functions.clear();
+		if let Some(functions) = &mut matched_on_args.functions {
+			functions.clear();
+		}
+
+		let params = vec![
+			ethabi::Token::Address(H160::from_low_u64_be(54321)),
+			ethabi::Token::Uint(U256::from(500)),
+		];
+
+		let encoded = function.encode_input(&params).unwrap();
+		let transaction = create_test_transaction(
+			U256::zero(),
+			None,
+			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()),
+			encoded,
+		);
+
+		filter.find_matching_functions_for_transaction(
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_functions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_functions_non_matching_address() {
+		let filter = create_test_filter();
+		let mut matched_functions = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: None,
+			functions: Some(Vec::new()),
+		};
+
+		let monitor = create_test_monitor(
+			vec![],
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: None,
+			}],
+			vec![],
+			vec![AddressWithABI {
+				address: "0x0000000000000000000000000000000000003039".to_string(),
+				abi: Some(create_test_abi("function")),
+			}],
+		);
+
+		// Create transaction with non-matching 'to' address
+		#[allow(deprecated)]
+		let function = Function {
+			name: "transfer".to_string(),
+			inputs: vec![
+				Param {
+					name: "recipient".to_string(),
+					kind: ParamType::Address,
+					internal_type: None,
+				},
+				Param {
+					name: "amount".to_string(),
+					kind: ParamType::Uint(256),
+					internal_type: None,
+				},
+			],
+			outputs: vec![Param {
+				name: "".to_string(),
+				kind: ParamType::Bool,
+				internal_type: None,
+			}],
+			constant: None,
+			state_mutability: ethabi::StateMutability::NonPayable,
+		};
+
+		let params = vec![
+			ethabi::Token::Address(H160::from_low_u64_be(54321)),
+			ethabi::Token::Uint(U256::from(1000)),
+		];
+
+		let encoded = function.encode_input(&params).unwrap();
+		let transaction = create_test_transaction(
+			U256::zero(),
+			None,
+			Some(H160::from_str("0x0000000000000000000000000000000000001234").unwrap()), /* Different address in proper hex format */
+			encoded,
+		);
+
+		filter.find_matching_functions_for_transaction(
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_functions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_functions_invalid_input_data() {
+		let filter = create_test_filter();
+		let mut matched_functions = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: None,
+			functions: Some(Vec::new()),
+		};
+
+		let monitor = Monitor {
+			match_conditions: MatchConditions {
+				functions: vec![FunctionCondition {
+					signature: "transfer(address,uint256)".to_string(),
+					expression: None,
+				}],
+				events: vec![],
+				transactions: vec![],
+			},
+			addresses: vec![AddressWithABI {
+				address: "0x0000000000000000000000000000000000003039".to_string(),
+				abi: Some(create_test_abi("function")),
+			}],
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			paused: false,
+			triggers: vec![],
+		};
+
+		// Test with invalid input data (less than 4 bytes)
+		let transaction = create_test_transaction(
+			U256::zero(),
+			None,
+			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()),
+			vec![0x12, 0x34], // Invalid input data
+		);
+
+		filter.find_matching_functions_for_transaction(
+			&transaction,
+			&monitor,
+			&mut matched_functions,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_functions.len(), 0);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for find_matching_events_for_transaction method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_find_matching_events_basic_match() {
+		let filter = create_test_filter();
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+		let mut involved_addresses = Vec::new();
+
+		// Create a monitor with a simple event match condition
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,address,uint256)".to_string(),
+				expression: None,
+			}], // events
+			vec![], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("event")), // Changed to event ABI
+			)], // addresses
+		);
+
+		// Create a transaction receipt with a Transfer event
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let receipt = create_test_transfer_receipt(
+			contract_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			100,
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 1);
+		assert_eq!(
+			matched_events[0].signature,
+			"Transfer(address,address,uint256)"
+		);
+		assert!(matched_events[0].expression.is_none());
+		assert_eq!(involved_addresses.len(), 1);
+		assert_eq!(
+			involved_addresses[0],
+			"0x0000000000000000000000000000000000003039"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_find_matching_events_with_expression() {
+		let filter = create_test_filter();
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+		let mut involved_addresses = Vec::new();
+
+		// Create a monitor with an event match condition including an expression
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,address,uint256)".to_string(),
+				expression: Some("value > 500".to_string()),
+			}], // events
+			vec![], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("event")), // Changed to event ABI
+			)], // addresses
+		);
+
+		// Create a receipt with value > 500 (should match)
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let receipt = create_test_transfer_receipt(
+			contract_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			1000, // Changed to 1000 to be > 500
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 1);
+		assert_eq!(
+			matched_events[0].expression,
+			Some("value > 500".to_string())
+		);
+
+		// Test with value <= 500 (should not match)
+		matched_events.clear();
+		if let Some(events) = &mut matched_on_args.events {
+			events.clear();
+		}
+		involved_addresses.clear();
+
+		let receipt_no_match = create_test_transfer_receipt(
+			contract_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			50,
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt_no_match,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_find_matching_events_non_matching_address() {
+		let filter = create_test_filter();
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+		let mut involved_addresses = Vec::new();
+
+		let monitor = create_test_monitor(
+			vec![], // events
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: None,
+			}], // functions
+			vec![], // transactions
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000003039",
+				Some(create_test_abi("function")),
+			)], // addresses
+		);
+
+		// Create a receipt with non-matching contract address
+		let different_address =
+			H160::from_str("0x0000000000000000000000000000000000001234").unwrap();
+		let receipt = create_test_transfer_receipt(
+			different_address,
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			100,
+		);
+
+		filter
+			.find_matching_events_for_transaction(
+				&receipt,
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			)
+			.await;
+
+		assert_eq!(matched_events.len(), 0);
+		assert_eq!(involved_addresses.len(), 0);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for evaluate_expression method:
+	//////////////////////////////////////////////////////////////////////////////
+	fn create_test_param(name: &str, value: &str, kind: &str) -> EVMMatchParamEntry {
+		EVMMatchParamEntry {
+			name: name.to_string(),
+			value: value.to_string(),
+			kind: kind.to_string(),
+			indexed: false,
+		}
+	}
+
+	#[test]
+	fn test_evaluate_expression_simple_uint_comparisons() {
+		let filter = create_test_filter();
+		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
+
+		// Test all operators
+		assert!(filter.evaluate_expression("amount > 500", &args));
+		assert!(filter.evaluate_expression("amount >= 1000", &args));
+		assert!(filter.evaluate_expression("amount < 2000", &args));
+		assert!(filter.evaluate_expression("amount <= 1000", &args));
+		assert!(filter.evaluate_expression("amount == 1000", &args));
+		assert!(filter.evaluate_expression("amount != 999", &args));
+
+		// Test false conditions
+		assert!(!filter.evaluate_expression("amount > 1000", &args));
+		assert!(!filter.evaluate_expression("amount < 1000", &args));
+		assert!(!filter.evaluate_expression("amount == 999", &args));
+	}
+
+	#[test]
+	fn test_evaluate_expression_address_comparisons() {
+		let filter = create_test_filter();
+		let args = Some(vec![create_test_param(
+			"recipient",
+			"0x1234567890123456789012345678901234567890",
+			"address",
+		)]);
+
+		// Test equality
+		assert!(filter.evaluate_expression(
+			"recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(filter.evaluate_expression(
+			"recipient != 0x0000000000000000000000000000000000000000",
+			&args
+		));
+
+		// Test case-insensitive comparison
+		assert!(filter.evaluate_expression(
+			"recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+
+		// Test false conditions
+		assert!(!filter.evaluate_expression(
+			"recipient == 0x0000000000000000000000000000000000000000",
+			&args
+		));
+	}
+
+	#[test]
+	fn test_evaluate_expression_logical_combinations() {
+		let filter = create_test_filter();
+		let args = Some(vec![
+			create_test_param("amount", "1000", "uint256"),
+			create_test_param(
+				"recipient",
+				"0x1234567890123456789012345678901234567890",
+				"address",
+			),
+		]);
+
+		// Test AND combinations
+		assert!(filter.evaluate_expression(
+			"amount > 500 AND recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(!filter.evaluate_expression(
+			"amount > 2000 AND recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+
+		// Test OR combinations
+		assert!(filter.evaluate_expression(
+			"amount > 2000 OR recipient == 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(!filter.evaluate_expression(
+			"amount > 2000 OR recipient == 0x0000000000000000000000000000000000000000",
+			&args
+		));
+
+		// Test complex combinations
+		assert!(filter.evaluate_expression(
+			"(amount > 500 AND amount < 2000) OR recipient == \
+			 0x1234567890123456789012345678901234567890",
+			&args
+		));
+		assert!(!filter.evaluate_expression(
+			"(amount > 2000 AND amount < 3000) OR recipient == \
+			 0x0000000000000000000000000000000000000000",
+			&args
+		));
+	}
+
+	#[test]
+	fn test_evaluate_expression_error_cases() {
+		let filter = create_test_filter();
+
+		// Test with no args
+		assert!(!filter.evaluate_expression("amount > 1000", &None));
+
+		// Test with empty args
+		assert!(!filter.evaluate_expression("amount > 1000", &Some(vec![])));
+
+		// Test with invalid parameter name
+		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
+		assert!(!filter.evaluate_expression("invalid_param > 1000", &args));
+
+		// Test with invalid operator
+		assert!(!filter.evaluate_expression("amount >>> 1000", &args));
+
+		// Test with invalid value format
+		let args = Some(vec![create_test_param("amount", "not_a_number", "uint256")]);
+		assert!(!filter.evaluate_expression("amount > 1000", &args));
+
+		// Test with unsupported parameter type
+		let args = Some(vec![create_test_param("param", "value", "string")]);
+		assert!(!filter.evaluate_expression("param == value", &args));
+
+		// Test with invalid expression format
+		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
+		assert!(!filter.evaluate_expression("amount > ", &args));
+		assert!(!filter.evaluate_expression("amount", &args));
+		assert!(!filter.evaluate_expression("> 1000", &args));
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for decode_events method:
+	//////////////////////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_decode_events_successful_decode() {
+		let filter = create_test_filter();
+
+		// Create contract address and log
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let log = create_test_log(
+			contract_address,
+			// Transfer event signature
+			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+			// from address
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			// to address
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			// value (100 in hex)
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+
+		// Use the event ABI
+		let abi = create_test_abi("event");
+
+		let result = filter.decode_events(&abi, &log).await;
+
+		assert!(result.is_some());
+		let decoded = result.unwrap();
+
+		// Verify decoded event signature
+		assert_eq!(decoded.signature, "Transfer(address,address,uint256)");
+
+		// Verify decoded arguments
+		let args = decoded.args.unwrap();
+		assert_eq!(args.len(), 3); // Transfer event has 3 parameters
+
+		// Check each parameter
+		let from_param = args.iter().find(|p| p.name == "from").unwrap();
+		assert_eq!(from_param.kind, "address");
+		assert!(from_param.indexed);
+
+		let to_param = args.iter().find(|p| p.name == "to").unwrap();
+		assert_eq!(to_param.kind, "address");
+		assert!(to_param.indexed);
+
+		let value_param = args.iter().find(|p| p.name == "value").unwrap();
+		assert_eq!(value_param.kind, "uint256");
+		assert!(!value_param.indexed);
+		assert_eq!(value_param.value, "100"); // 0x64 in decimal
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_invalid_abi() {
+		let filter = create_test_filter();
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+		let log = create_test_log(
+			contract_address,
+			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+
+		// Use invalid ABI
+		let invalid_abi = json!([{
+			"type": "event",
+			"name": "InvalidEvent",
+			"inputs": [], // Empty inputs won't match our log
+			"anonymous": false,
+		}]);
+
+		let result = filter.decode_events(&invalid_abi, &log).await;
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_mismatched_signature() {
+		let filter = create_test_filter();
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+
+		// Create log with different event signature
+		let log = create_test_log(
+			contract_address,
+			// Different event signature
+			"0x0000000000000000000000000000000000000000000000000000000000000000",
+			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+
+		let abi = create_test_abi("event");
+		let result = filter.decode_events(&abi, &log).await;
+
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_malformed_log_data() {
+		let filter = create_test_filter();
+		let contract_address =
+			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+
+		// Create log with invalid data length
+		let log = Log {
+			address: contract_address,
+			topics: vec![
+				H256::from_str(
+					"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+				)
+				.unwrap(),
+				H256::from_str(
+					"0x0000000000000000000000000000000000000000000000000000000000001234",
+				)
+				.unwrap(),
+				H256::from_str(
+					"0x0000000000000000000000000000000000000000000000000000000000005678",
+				)
+				.unwrap(),
+			],
+			data: web3::types::Bytes(vec![0x00]), // Invalid data length
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(0.into()),
+			transaction_log_index: Some(0.into()),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let abi = create_test_abi("event");
+		let result = filter.decode_events(&abi, &log).await;
+
+		assert!(result.is_none());
 	}
 }

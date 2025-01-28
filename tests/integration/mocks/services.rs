@@ -7,6 +7,7 @@ use openzeppelin_monitor::{
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
 		blockchain::BlockFilterFactory,
+		blockwatcher::{BlockStorage, BlockTrackerTrait, BlockWatcherError},
 		filter::FilterError,
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionServiceTrait},
@@ -39,5 +40,34 @@ mock! {
 			block: &BlockType,
 			monitors: &[Monitor],
 		) -> Result<Vec<MonitorMatch>, FilterError>;
+	}
+}
+
+mock! {
+	pub BlockStorage {}
+	#[async_trait]
+	impl BlockStorage for BlockStorage {
+		async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
+		async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
+		async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, BlockWatcherError>;
+		async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), BlockWatcherError>;
+		async fn delete_blocks(&self, network_slug: &str) -> Result<(), BlockWatcherError>;
+	}
+
+	impl Clone for BlockStorage {
+		fn clone(&self) -> Self {
+			self.clone()
+		}
+	}
+}
+
+mock! {
+	pub BlockTracker<S: BlockStorage + 'static> {}
+
+	#[async_trait]
+	impl<S: BlockStorage + 'static> BlockTrackerTrait<S> for BlockTracker<S> {
+		 fn new(history_size: usize, storage: Option<std::sync::Arc<S> >) -> Self;
+		 async fn record_block(&self, network: &Network, block_number: u64);
+		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
 	}
 }

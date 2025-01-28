@@ -16,7 +16,11 @@ use crate::{
 	models::{BlockType, Network, ProcessedBlock},
 	services::{
 		blockchain::BlockChainClient,
-		blockwatcher::{error::BlockWatcherError, storage::BlockStorage, BlockTracker},
+		blockwatcher::{
+			error::BlockWatcherError,
+			storage::BlockStorage,
+			tracker::{BlockTracker, BlockTrackerTrait},
+		},
 	},
 };
 
@@ -234,23 +238,27 @@ where
 ///
 /// # Arguments
 /// * `network` - Network configuration
+/// * `rpc_client` - RPC client for the network
 /// * `block_storage` - Storage implementation for blocks
 /// * `block_handler` - Handler function for processed blocks
+/// * `trigger_handler` - Handler function for processed blocks
+/// * `block_tracker` - Tracker implementation for block processing
 ///
 /// # Returns
 /// * `Result<(), BlockWatcherError>` - Success or error
-async fn process_new_blocks<
+pub async fn process_new_blocks<
 	S: BlockStorage,
 	C: BlockChainClient + Send + Clone + 'static,
 	H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
 	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static,
+	TR: BlockTrackerTrait<S>,
 >(
 	network: &Network,
 	rpc_client: &C,
 	block_storage: Arc<S>,
 	block_handler: Arc<H>,
 	trigger_handler: Arc<T>,
-	block_tracker: Arc<BlockTracker<S>>,
+	block_tracker: Arc<TR>,
 ) -> Result<(), BlockWatcherError> {
 	let start_time = std::time::Instant::now();
 
@@ -275,7 +283,7 @@ async fn process_new_blocks<
 	// Calculate the start block number, using the default if max_past_blocks is not set
 	let start_block = std::cmp::max(
 		last_processed_block + 1,
-		latest_confirmed_block.saturating_sub(max_past_blocks.saturating_sub(1)),
+		latest_confirmed_block.saturating_sub(max_past_blocks),
 	);
 
 	info!(

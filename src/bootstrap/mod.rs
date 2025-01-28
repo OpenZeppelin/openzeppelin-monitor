@@ -6,8 +6,8 @@ use tokio::sync::watch;
 use crate::{
 	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
 	repositories::{
-		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
-		TriggerService,
+		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
+		RepositoryError, TriggerRepositoryTrait, TriggerService,
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, EvmClient, StellarClient},
@@ -18,9 +18,9 @@ use crate::{
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
-type ServiceResult = Result<(
+type ServiceResult<T> = Result<(
 	Arc<FilterService>,
-	Arc<TriggerExecutionService<TriggerRepository>>,
+	Arc<TriggerExecutionService<T>>,
 	Vec<Monitor>,
 	HashMap<String, Network>,
 )>;
@@ -36,19 +36,51 @@ type ServiceResult = Result<(
 ///
 /// # Errors
 /// Returns an error if any service initialization fails
-pub fn initialize_services() -> ServiceResult {
-	let network_service = NetworkService::<NetworkRepository>::new(None)?;
-	let trigger_service = TriggerService::<TriggerRepository>::new(None)?;
-	let monitor_service = Arc::new(MonitorService::<MonitorRepository>::new(
-		None,
-		Some(&network_service),
-		Some(&trigger_service),
-	)?);
+pub fn initialize_services<M, N, T>(
+	monitor_service: Option<MonitorService<M, N, T>>,
+	network_service: Option<NetworkService<N>>,
+	trigger_service: Option<TriggerService<T>>,
+) -> ServiceResult<T>
+where
+	M: MonitorRepositoryTrait<N, T>,
+	N: NetworkRepositoryTrait,
+	T: TriggerRepositoryTrait,
+{
+	let network_service = match network_service {
+		Some(service) => service,
+		None => {
+			let repository =
+				N::new(None).map_err(|_| RepositoryError::load_error("Unable to load networks"))?;
+			NetworkService::<N>::new_with_repository(repository)?
+		}
+	};
+
+	let trigger_service = match trigger_service {
+		Some(service) => service,
+		None => {
+			let repository =
+				T::new(None).map_err(|_| RepositoryError::load_error("Unable to load triggers"))?;
+			TriggerService::<T>::new_with_repository(repository)?
+		}
+	};
+
+	let monitor_service = match monitor_service {
+		Some(service) => service,
+		None => {
+			let repository = M::new(
+				None,
+				Some(network_service.clone()),
+				Some(trigger_service.clone()),
+			)
+			.map_err(|_| RepositoryError::load_error("Unable to load monitors"))?;
+			MonitorService::<M, N, T>::new_with_repository(repository)?
+		}
+	};
 
 	let notification_service = NotificationService::new();
 
 	let filter_service = Arc::new(FilterService::new());
-	let trigger_execution_service = Arc::new(TriggerExecutionService::<TriggerRepository>::new(
+	let trigger_execution_service = Arc::new(TriggerExecutionService::new(
 		trigger_service,
 		notification_service,
 	));

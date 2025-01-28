@@ -29,6 +29,10 @@ mod integration {
 		mod main;
 	}
 	mod mocks;
+
+	mod blockwatcher {
+		mod service;
+	}
 	mod filters {
 		pub mod common;
 		mod evm {

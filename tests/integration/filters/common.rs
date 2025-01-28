@@ -5,12 +5,15 @@
 
 use openzeppelin_monitor::{
 	models::{BlockType, Monitor, Network, Trigger},
-	repositories::TriggerService,
+	repositories::{MonitorService, NetworkService, TriggerRepositoryTrait, TriggerService},
 	services::notification::NotificationService,
 };
 use std::{collections::HashMap, fs};
 
-use crate::integration::mocks::{MockTriggerExecutionService, MockTriggerRepository};
+use crate::integration::mocks::{
+	MockMonitorRepository, MockNetworkRepository, MockTriggerExecutionService,
+	MockTriggerRepository,
+};
 
 pub const TEST_FIXTURES_BASE: &str = "tests/integration/fixtures";
 
@@ -44,7 +47,6 @@ pub fn setup_trigger_execution_service(
 	trigger_json: &str,
 ) -> MockTriggerExecutionService<MockTriggerRepository> {
 	let trigger_map: HashMap<String, Trigger> = read_and_parse_json(trigger_json);
-	let mut mock_trigger_repository = MockTriggerRepository::new();
 
 	let triggers = trigger_map.clone();
 
@@ -52,6 +54,13 @@ pub fn setup_trigger_execution_service(
 	MockTriggerRepository::load_all_context()
 		.expect()
 		.return_once(move |_| Ok(triggers.clone()));
+
+	let ctx = MockTriggerRepository::new_context();
+	ctx.expect()
+		.withf(|_| true)
+		.returning(|_| Ok(MockTriggerRepository::default()));
+
+	let mut mock_trigger_repository = MockTriggerRepository::new(None).unwrap();
 
 	mock_trigger_repository
 		.expect_get()
@@ -68,4 +77,89 @@ pub fn setup_trigger_execution_service(
 
 	// Then make the actual call that will match the expectation
 	MockTriggerExecutionService::new(trigger_service, notification_service)
+}
+
+pub fn setup_network_service(
+	networks: HashMap<String, Network>,
+) -> NetworkService<MockNetworkRepository> {
+	let networks_clone = networks.clone();
+	MockNetworkRepository::load_all_context()
+		.expect()
+		.return_once(move |_| Ok(networks_clone.clone()));
+
+	let mut mock_repo = MockNetworkRepository::default();
+
+	let networks_clone = networks.clone();
+
+	mock_repo
+		.expect_get_all()
+		.return_once(move || networks_clone.clone());
+
+	mock_repo.expect_clone().return_once(move || {
+		let mut cloned_repo = MockNetworkRepository::default();
+		let networks_clone = networks.clone();
+		cloned_repo.expect_get_all().return_once(|| networks_clone);
+		cloned_repo
+	});
+
+	NetworkService::new_with_repository(mock_repo).unwrap()
+}
+
+pub fn setup_trigger_service(
+	triggers: HashMap<String, Trigger>,
+) -> TriggerService<MockTriggerRepository> {
+	let triggers_clone = triggers.clone();
+	MockTriggerRepository::load_all_context()
+		.expect()
+		.return_once(move |_| Ok(triggers_clone));
+
+	let mut mock_repo = MockTriggerRepository::default();
+
+	let triggers_clone = triggers.clone();
+
+	mock_repo
+		.expect_get_all()
+		.return_once(move || triggers_clone.clone());
+
+	mock_repo.expect_clone().return_once(move || {
+		let mut cloned_repo = MockTriggerRepository::default();
+		let triggers_clone = triggers.clone();
+		cloned_repo.expect_get_all().return_once(|| triggers_clone);
+		cloned_repo
+	});
+	TriggerService::new_with_repository(mock_repo).unwrap()
+}
+
+pub fn setup_monitor_service(
+	monitors: HashMap<String, Monitor>,
+) -> MonitorService<
+	MockMonitorRepository<MockNetworkRepository, MockTriggerRepository>,
+	MockNetworkRepository,
+	MockTriggerRepository,
+> {
+	let monitors_clone = monitors.clone();
+	MockMonitorRepository::<MockNetworkRepository, MockTriggerRepository>::load_all_context()
+		.expect()
+		.return_once(move |_, _, _| Ok(monitors_clone));
+
+	let mut mock_repo = MockMonitorRepository::default();
+
+	let monitors_clone = monitors.clone();
+
+	mock_repo
+		.expect_get_all()
+		.return_once(move || monitors_clone.clone());
+
+	mock_repo.expect_clone().return_once(move || {
+		let mut cloned_repo = MockMonitorRepository::default();
+		let monitors_clone = monitors.clone();
+		cloned_repo.expect_get_all().return_once(|| monitors_clone);
+		cloned_repo
+	});
+	MonitorService::<
+		MockMonitorRepository<MockNetworkRepository, MockTriggerRepository>,
+		MockNetworkRepository,
+		MockTriggerRepository,
+	>::new_with_repository(mock_repo)
+	.unwrap()
 }

@@ -12,6 +12,7 @@ use crate::{
 };
 
 /// Repository for storing and retrieving trigger configurations
+#[derive(Clone)]
 pub struct TriggerRepository {
 	/// Map of trigger names to their configurations
 	pub triggers: HashMap<String, Trigger>,
@@ -32,7 +33,12 @@ impl TriggerRepository {
 ///
 /// This trait defines the standard operations that any trigger repository must support,
 /// allowing for different storage backends while maintaining a consistent interface.
-pub trait TriggerRepositoryTrait {
+pub trait TriggerRepositoryTrait: Clone {
+	/// Create a new trigger repository from the given path
+	fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
+	where
+		Self: Sized;
+
 	/// Load all trigger configurations from the given path
 	///
 	/// If no path is provided, uses the default config directory.
@@ -51,6 +57,11 @@ pub trait TriggerRepositoryTrait {
 }
 
 impl TriggerRepositoryTrait for TriggerRepository {
+	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
+		let triggers = Self::load_all(path)?;
+		Ok(TriggerRepository { triggers })
+	}
+
 	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
 		Trigger::load_all(path).map_err(|e| RepositoryError::load_error(format!("Failed: {}", e)))
 	}
@@ -68,6 +79,7 @@ impl TriggerRepositoryTrait for TriggerRepository {
 ///
 /// This type provides a higher-level interface for working with trigger configurations,
 /// handling repository initialization and access through a trait-based interface.
+#[derive(Clone)]
 pub struct TriggerService<T: TriggerRepositoryTrait> {
 	repository: T,
 }

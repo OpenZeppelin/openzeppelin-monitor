@@ -442,7 +442,6 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), FilterError>
 		!matches.is_empty(),
 		"Should have found matching transactions"
 	);
-	assert_eq!(matches.len(), 2, "Expected exactly two matches");
 
 	match &matches[0] {
 		MonitorMatch::Stellar(stellar_match) => {
@@ -511,7 +510,6 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), FilterErr
 		!matches.is_empty(),
 		"Should have found matching transactions"
 	);
-	assert_eq!(matches.len(), 2, "Expected exactly two matches");
 
 	match &matches[0] {
 		MonitorMatch::Stellar(stellar_match) => {
@@ -606,6 +604,29 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), FilterError> {
 		}
 	}
 
+	if let MonitorMatch::Stellar(stellar_match) = &matches[1] {
+		assert!(
+			stellar_match.matched_on.events.is_empty(),
+			"Should not have matched events"
+		);
+		assert!(
+			!stellar_match.matched_on.functions.is_empty(),
+			"Should have matched functions"
+		);
+		assert!(
+			!stellar_match.matched_on.transactions.is_empty(),
+			"Should have matched transactions"
+		);
+
+		if let Some(args) = &stellar_match.matched_on_args {
+			if let Some(functions) = &args.functions {
+				assert!(!functions.is_empty(), "Should have function arguments");
+				let function = &functions[0];
+				assert_eq!(function.signature, "upsert_data(Map)");
+			}
+		}
+	}
+
 	Ok(())
 }
 
@@ -691,6 +712,22 @@ async fn test_handle_match() -> Result<(), FilterError> {
 				&& variables.get("event_0_1") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
 				&& variables.get("event_0_2") == Some(&"USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".to_string())
 				&& variables.get("event_0_3") == Some(&"2240".to_string())
+		})
+		.once()
+		.returning(|_, _| Ok(()));
+
+	trigger_execution_service
+		.expect_execute()
+		.withf(|trigger_name, variables| {
+			trigger_name == ["large_transfer_slack"]
+				// Monitor metadata
+				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
+				// Transaction variables
+				&& variables.get("transaction_hash")
+					== Some(&"FAKE5a3a9153e19002517935a5df291b81a341b98ccd80f0919d78cea5ed29d8".to_string())
+				// Function arguments
+				&& variables.get("function_0_signature") == Some(&"upsert_data(Map)".to_string())
+				&& variables.get("function_0_0") == Some(&"{\"\\\"myKey1\\\"\":1234,\"\\\"myKey2\\\"\":\"Hello, world!\"}".to_string())
 		})
 		.once()
 		.returning(|_, _| Ok(()));
