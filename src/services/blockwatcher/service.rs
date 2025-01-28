@@ -283,7 +283,7 @@ pub async fn process_new_blocks<
 	// Calculate the start block number, using the default if max_past_blocks is not set
 	let start_block = std::cmp::max(
 		last_processed_block + 1,
-		latest_confirmed_block.saturating_sub(max_past_blocks.saturating_sub(1)),
+		latest_confirmed_block.saturating_sub(max_past_blocks),
 	);
 
 	info!(
