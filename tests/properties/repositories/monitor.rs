@@ -2,7 +2,9 @@ use crate::properties::strategies::{monitor_strategy, network_strategy, trigger_
 
 use openzeppelin_monitor::{
 	models::ConfigLoader,
-	repositories::{MonitorRepository, MonitorRepositoryTrait},
+	repositories::{
+		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, TriggerRepository,
+	},
 };
 use prop::strategy::ValueTree;
 use proptest::{prelude::*, test_runner::Config};
@@ -28,7 +30,7 @@ proptest! {
 		)
 	) {
 		// Simulate saving and reloading from a repository
-		let repo = MonitorRepository { monitors: monitors.clone() };
+		let repo = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(monitors.clone());
 		let reloaded_monitors = repo.get_all();
 
 		prop_assert_eq!(monitors, reloaded_monitors); // Ensure roundtrip consistency
@@ -61,7 +63,7 @@ proptest! {
 		.current();
 
 		// Test valid references
-		let result = MonitorRepository::validate_monitor_references(
+		let result = MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
 			&monitors,
 			&triggers,
 			&networks,
@@ -75,7 +77,7 @@ proptest! {
 			monitor.networks.push("non_existent_network".to_string());
 		}
 
-		let invalid_result = MonitorRepository::validate_monitor_references(
+		let invalid_result = MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
 			&invalid_monitors,
 			&triggers,
 			&networks,
@@ -95,7 +97,7 @@ proptest! {
 			MIN_TEST_CASES..MAX_TEST_CASES
 		)
 	) {
-		let repo = MonitorRepository { monitors: monitors.clone() };
+		let repo = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(monitors.clone());
 
 		// Test get by ID
 		for (id, monitor) in &monitors {
@@ -123,7 +125,7 @@ proptest! {
 			MIN_TEST_CASES..MAX_TEST_CASES
 		)
 	) {
-		let empty_repo = MonitorRepository { monitors: std::collections::HashMap::new() };
+		let empty_repo = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(std::collections::HashMap::new());
 
 		// Test empty repository operations
 		prop_assert!(empty_repo.get_all().is_empty());

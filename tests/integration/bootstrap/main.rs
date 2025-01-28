@@ -1,25 +1,35 @@
 use crate::integration::{
-	filters::common::setup_trigger_execution_service, mocks::MockEvmClientTrait,
+	filters::common::{
+		setup_monitor_service, setup_network_service, setup_trigger_execution_service,
+		setup_trigger_service,
+	},
+	mocks::{create_test_block, create_test_network, MockEvmClientTrait},
 };
 use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
 	models::{
-		BlockChainType, BlockType, EVMBlock, EVMMonitorMatch, EVMTransaction, MatchConditions,
-		Monitor, MonitorMatch, Network, ProcessedBlock, RpcUrl, StellarBlock, StellarLedgerInfo,
-		StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
+		BlockChainType, EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch,
+		ProcessedBlock, StellarBlock, StellarMonitorMatch, StellarTransaction,
+		StellarTransactionInfo, Trigger, TriggerType, TriggerTypeConfig,
 	},
 	services::filter::FilterService,
 };
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::watch;
 use web3::types::{H160, U256};
 
-fn create_test_monitor(name: &str, networks: Vec<&str>, paused: bool) -> Monitor {
+fn create_test_monitor(
+	name: &str,
+	networks: Vec<&str>,
+	paused: bool,
+	triggers: Vec<&str>,
+) -> Monitor {
 	Monitor {
 		name: name.to_string(),
 		networks: networks.into_iter().map(|s| s.to_string()).collect(),
 		paused,
+		triggers: triggers.into_iter().map(|s| s.to_string()).collect(),
 		..Default::default()
 	}
 }
@@ -43,53 +53,31 @@ fn create_test_stellar_transaction() -> StellarTransaction {
 	})
 }
 
-fn create_test_network(name: &str, slug: &str, network_type: BlockChainType) -> Network {
-	Network {
+fn create_test_trigger(name: &str) -> Trigger {
+	Trigger {
 		name: name.to_string(),
-		slug: slug.to_string(),
-		network_type,
-		rpc_urls: vec![RpcUrl {
-			url: "http://localhost:8545".to_string(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: Some(1),
-		network_passphrase: None,
-		block_time_ms: 1000,
-		max_past_blocks: None,
-	}
-}
-
-fn create_test_block(chain: BlockChainType, block_number: u64) -> BlockType {
-	match chain {
-		BlockChainType::EVM => BlockType::EVM(Box::new(EVMBlock::from(web3::types::Block {
-			number: Some(block_number.into()),
-			..Default::default()
-		}))),
-		BlockChainType::Stellar => {
-			BlockType::Stellar(Box::new(StellarBlock::from(StellarLedgerInfo {
-				sequence: block_number as u32,
-				..Default::default()
-			})))
-		}
-		_ => panic!("Unsupported chain"),
+		trigger_type: TriggerType::Slack,
+		config: TriggerTypeConfig::Slack {
+			webhook_url:
+				"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+					.to_string(),
+			title: "Test Title".to_string(),
+			body: "Test Body".to_string(),
+		},
 	}
 }
 
 fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 	match chain {
 		BlockChainType::EVM => MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: create_test_monitor("test", vec!["ethereum_mainnet"], false),
+			monitor: create_test_monitor("test", vec!["ethereum_mainnet"], false, vec![]),
 			transaction: create_test_evm_transaction(),
 			receipt: web3::types::TransactionReceipt::default(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		})),
 		BlockChainType::Stellar => MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
-			monitor: create_test_monitor("test", vec!["stellar_mainnet"], false),
+			monitor: create_test_monitor("test", vec!["stellar_mainnet"], false, vec![]),
 			transaction: create_test_stellar_transaction(),
 			ledger: StellarBlock::default(),
 			matched_on: MatchConditions::default(),
@@ -100,13 +88,42 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 }
 
 #[test]
-#[ignore]
-/// Skipping as this test for now as it's expected to fail for CI but pass locally
-/// We should mock the repositories called within initialize_services to avoid this
 fn test_initialize_services() {
+	let mut mocked_networks = HashMap::new();
+	mocked_networks.insert(
+		"ethereum_mainnet".to_string(),
+		create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM),
+	);
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_monitor(
+			"test",
+			vec!["ethereum_mainnet"],
+			false,
+			vec!["evm_large_transfer_usdc_slack"],
+		),
+	);
+
+	let mock_network_service = setup_network_service(mocked_networks);
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
 	// Initialize services
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
-		initialize_services().expect("Failed to initialize services");
+		initialize_services(
+			Some(mock_monitor_service),
+			Some(mock_network_service),
+			Some(mock_trigger_service),
+		)
+		.expect("Failed to initialize services");
 
 	assert!(
 		Arc::strong_count(&filter_service) == 1,
@@ -117,15 +134,23 @@ fn test_initialize_services() {
 		"TriggerExecutionService should be wrapped in Arc"
 	);
 
-	assert!(!active_monitors.is_empty());
-	assert!(!networks.is_empty());
+	assert!(active_monitors.iter().any(|m| m.name == "test"
+		&& m.networks.contains(&"ethereum_mainnet".to_string())
+		&& m.triggers
+			.contains(&"evm_large_transfer_usdc_slack".to_string())));
+	assert!(networks.contains_key("ethereum_mainnet"));
 }
 
 #[tokio::test]
 async fn test_create_block_handler() {
 	let (shutdown_tx, _) = watch::channel(false);
 	let filter_service = Arc::new(FilterService::new());
-	let monitors = vec![create_test_monitor("test", vec!["ethereum_mainnet"], false)];
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let block_handler = create_block_handler(shutdown_tx, filter_service, monitors);
@@ -171,7 +196,12 @@ async fn test_process_block() {
 	let mut mock_client = MockEvmClientTrait::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let block = create_test_block(BlockChainType::EVM, 100);
-	let monitors = vec![create_test_monitor("test", vec!["ethereum_mainnet"], false)];
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
 	let filter_service = FilterService::new();
 
 	// Keep the shutdown_tx variable to avoid unexpected shutdown signal changes
@@ -210,7 +240,12 @@ async fn test_process_block_with_shutdown() {
 	let mock_client = MockEvmClientTrait::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let block = create_test_block(BlockChainType::EVM, 100);
-	let monitors = vec![create_test_monitor("test", vec!["ethereum_mainnet"], false)];
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
 	let filter_service = FilterService::new();
 	let (shutdown_tx, shutdown_rx) = watch::channel(false);
 

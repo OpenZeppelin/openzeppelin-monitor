@@ -54,6 +54,12 @@ mock! {
 			to_block: u64,
 		) -> Result<Vec<web3::types::Log>, BlockChainError>;
 	}
+
+	impl Clone for EvmClientTrait {
+		fn clone(&self) -> Self {
+			self.clone()
+		}
+	}
 }
 
 mock! {
@@ -86,6 +92,12 @@ mock! {
 			start_sequence: u32,
 			end_sequence: Option<u32>,
 		) -> Result<Vec<StellarEvent>, BlockChainError>;
+	}
+
+	impl Clone for StellarClientTrait {
+		fn clone(&self) -> Self {
+			self.clone()
+		}
 	}
 }
 

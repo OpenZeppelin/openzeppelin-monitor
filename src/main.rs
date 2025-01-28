@@ -30,9 +30,10 @@ use crate::{
 		Result,
 	},
 	models::{BlockChainType, Network},
+	repositories::{MonitorRepository, NetworkRepository, TriggerRepository},
 	services::{
 		blockchain::{EvmClient, StellarClient},
-		blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
+		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
 };
 
@@ -52,7 +53,11 @@ async fn main() -> Result<()> {
 	env_logger::init();
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
-		initialize_services()?;
+		initialize_services::<
+			MonitorRepository<NetworkRepository, TriggerRepository>,
+			NetworkRepository,
+			TriggerRepository,
+		>(None, None, None)?;
 
 	let networks_with_monitors: Vec<Network> = networks
 		.values()

@@ -12,6 +12,7 @@ use crate::{
 };
 
 /// Repository for storing and retrieving network configurations
+#[derive(Clone)]
 pub struct NetworkRepository {
 	/// Map of network slugs to their configurations
 	pub networks: HashMap<String, Network>,
@@ -32,7 +33,12 @@ impl NetworkRepository {
 ///
 /// This trait defines the standard operations that any network repository must support,
 /// allowing for different storage backends while maintaining a consistent interface.
-pub trait NetworkRepositoryTrait {
+pub trait NetworkRepositoryTrait: Clone {
+	/// Create a new repository instance
+	fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
+	where
+		Self: Sized;
+
 	/// Load all network configurations from the given path
 	///
 	/// If no path is provided, uses the default config directory.
@@ -51,6 +57,10 @@ pub trait NetworkRepositoryTrait {
 }
 
 impl NetworkRepositoryTrait for NetworkRepository {
+	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
+		NetworkRepository::new(path)
+	}
+
 	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
 		Network::load_all(path)
 			.map_err(|e| RepositoryError::load_error(format!("Failed to load networks: {}", e)))
@@ -69,6 +79,8 @@ impl NetworkRepositoryTrait for NetworkRepository {
 ///
 /// This type provides a higher-level interface for working with network configurations,
 /// handling repository initialization and access through a trait-based interface.
+
+#[derive(Clone)]
 pub struct NetworkService<T: NetworkRepositoryTrait> {
 	repository: T,
 }
