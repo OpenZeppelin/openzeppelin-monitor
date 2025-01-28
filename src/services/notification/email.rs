@@ -179,3 +179,111 @@ impl Notifier for EmailNotifier {
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn create_test_notifier() -> EmailNotifier {
+		let smtp_config = SmtpConfig {
+			host: "dummy.smtp.com".to_string(),
+			port: 465,
+			username: "test".to_string(),
+			password: "test".to_string(),
+		};
+
+		let email_content = EmailContent {
+			subject: "Test Subject".to_string(),
+			body_template: "Hello ${name}, your balance is ${balance}".to_string(),
+			sender: "sender@test.com".parse().unwrap(),
+			recipients: vec!["recipient@test.com".parse().unwrap()],
+		};
+
+		EmailNotifier::new(smtp_config, email_content).unwrap()
+	}
+
+	fn create_test_email_config(port: Option<u16>) -> TriggerTypeConfig {
+		TriggerTypeConfig::Email {
+			host: "smtp.test.com".to_string(),
+			port,
+			username: "testuser".to_string(),
+			password: "testpass".to_string(),
+			subject: "Test Subject".to_string(),
+			body: "Hello ${name}".to_string(),
+			sender: "sender@test.com".parse().unwrap(),
+			recipients: vec!["recipient@test.com".parse().unwrap()],
+		}
+	}
+
+	////////////////////////////////////////////////////////////
+	// format_message tests
+	////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_format_message_basic_substitution() {
+		let notifier = create_test_notifier();
+		let mut variables = HashMap::new();
+		variables.insert("name".to_string(), "Alice".to_string());
+		variables.insert("balance".to_string(), "100".to_string());
+
+		let result = notifier.format_message(&variables);
+		assert_eq!(result, "Hello Alice, your balance is 100");
+	}
+
+	#[test]
+	fn test_format_message_missing_variable() {
+		let notifier = create_test_notifier();
+		let mut variables = HashMap::new();
+		variables.insert("name".to_string(), "Bob".to_string());
+
+		let result = notifier.format_message(&variables);
+		assert_eq!(result, "Hello Bob, your balance is ${balance}");
+	}
+
+	#[test]
+	fn test_format_message_empty_variables() {
+		let notifier = create_test_notifier();
+		let variables = HashMap::new();
+
+		let result = notifier.format_message(&variables);
+		assert_eq!(result, "Hello ${name}, your balance is ${balance}");
+	}
+
+	#[test]
+	fn test_format_message_with_empty_values() {
+		let notifier = create_test_notifier();
+		let mut variables = HashMap::new();
+		variables.insert("name".to_string(), "".to_string());
+		variables.insert("balance".to_string(), "".to_string());
+
+		let result = notifier.format_message(&variables);
+		assert_eq!(result, "Hello , your balance is ");
+	}
+
+	////////////////////////////////////////////////////////////
+	// from_config tests
+	////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_from_config_valid_email_config() {
+		let config = create_test_email_config(Some(587));
+
+		let notifier = EmailNotifier::from_config(&config);
+		assert!(notifier.is_some());
+
+		let notifier = notifier.unwrap();
+		assert_eq!(notifier.subject, "Test Subject");
+		assert_eq!(notifier.body_template, "Hello ${name}");
+		assert_eq!(notifier.sender.to_string(), "sender@test.com");
+		assert_eq!(notifier.recipients.len(), 1);
+		assert_eq!(notifier.recipients[0].to_string(), "recipient@test.com");
+	}
+
+	#[test]
+	fn test_from_config_default_port() {
+		let config = create_test_email_config(None);
+
+		let notifier = EmailNotifier::from_config(&config);
+		assert!(notifier.is_some());
+	}
+}

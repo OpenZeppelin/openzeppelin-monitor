@@ -12,6 +12,6 @@ mod storage;
 mod tracker;
 
 pub use error::BlockWatcherError;
-pub use service::BlockWatcherService;
+pub use service::{process_new_blocks, BlockWatcherService};
 pub use storage::{BlockStorage, FileBlockStorage};
-pub use tracker::BlockTracker;
+pub use tracker::{BlockTracker, BlockTrackerTrait};

@@ -1,3 +1,4 @@
+---
 coverage:
   range: 90..100
   round: down
@@ -13,4 +14,4 @@ coverage:
         threshold: 1%
 
 ignore:
-  - "tests/**/*"
+  - tests/**/*

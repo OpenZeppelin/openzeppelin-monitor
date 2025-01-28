@@ -115,3 +115,79 @@ impl Notifier for SlackNotifier {
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn create_test_notifier(body_template: &str) -> SlackNotifier {
+		SlackNotifier::new(
+			"https://example.com".to_string(),
+			"Alert".to_string(),
+			body_template.to_string(),
+		)
+		.unwrap()
+	}
+
+	fn create_test_slack_config() -> TriggerTypeConfig {
+		TriggerTypeConfig::Slack {
+			webhook_url: "https://slack.example.com".to_string(),
+			title: "Test Alert".to_string(),
+			body: "Test message ${value}".to_string(),
+		}
+	}
+
+	////////////////////////////////////////////////////////////
+	// format_message tests
+	////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_format_message() {
+		let notifier = create_test_notifier("Value is ${value} and status is ${status}");
+
+		let mut variables = HashMap::new();
+		variables.insert("value".to_string(), "100".to_string());
+		variables.insert("status".to_string(), "critical".to_string());
+
+		let result = notifier.format_message(&variables);
+		assert_eq!(result, "*Alert*\n\nValue is 100 and status is critical");
+	}
+
+	#[test]
+	fn test_format_message_with_missing_variables() {
+		let notifier = create_test_notifier("Value is ${value} and status is ${status}");
+
+		let mut variables = HashMap::new();
+		variables.insert("value".to_string(), "100".to_string());
+		// status variable is not provided
+
+		let result = notifier.format_message(&variables);
+		assert_eq!(result, "*Alert*\n\nValue is 100 and status is ${status}");
+	}
+
+	#[test]
+	fn test_format_message_with_empty_template() {
+		let notifier = create_test_notifier("");
+
+		let variables = HashMap::new();
+		let result = notifier.format_message(&variables);
+		assert_eq!(result, "*Alert*\n\n");
+	}
+
+	////////////////////////////////////////////////////////////
+	// from_config tests
+	////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_from_config_with_slack_config() {
+		let config = create_test_slack_config();
+
+		let notifier = SlackNotifier::from_config(&config);
+		assert!(notifier.is_some());
+
+		let notifier = notifier.unwrap();
+		assert_eq!(notifier.webhook_url, "https://slack.example.com");
+		assert_eq!(notifier.title, "Test Alert");
+		assert_eq!(notifier.body_template, "Test message ${value}");
+	}
+}

@@ -168,3 +168,86 @@ impl Deref for Transaction {
 		&self.0
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use base64::Engine;
+
+	#[test]
+	fn test_transaction_wrapper_methods() {
+		let tx_info = TransactionInfo {
+			transaction_hash: "test_hash".to_string(),
+			status: "SUCCESS".to_string(),
+			..Default::default()
+		};
+
+		let transaction = Transaction(tx_info);
+
+		assert_eq!(transaction.hash(), "test_hash");
+		assert!(transaction.decoded().is_none());
+	}
+
+	#[test]
+	fn test_decode_xdr() {
+		// Create a simple byte array and encode it to base64
+		let test_bytes = vec![1, 2, 3, 4];
+		let encoded = base64::engine::general_purpose::STANDARD.encode(&test_bytes);
+
+		// Test successful decoding
+		let decoded = Transaction::decode_xdr(&encoded);
+		assert!(decoded.is_some());
+		assert_eq!(decoded.unwrap(), test_bytes);
+
+		// Test invalid base64
+		let invalid_base64 = "invalid@@base64";
+		let result = Transaction::decode_xdr(invalid_base64);
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn test_transaction_from_info() {
+		let tx_info = TransactionInfo {
+			transaction_hash: "test_hash".to_string(),
+			status: "SUCCESS".to_string(),
+			envelope_xdr: Some("AAAA".to_string()),
+			result_xdr: Some("BBBB".to_string()),
+			result_meta_xdr: Some("CCCC".to_string()),
+			..Default::default()
+		};
+
+		let transaction = Transaction::from(tx_info);
+
+		// Verify the transaction was created
+		assert_eq!(transaction.hash(), "test_hash");
+		assert!(transaction.decoded().is_some());
+
+		let decoded = transaction.decoded().unwrap();
+		assert!(decoded.envelope.is_none());
+		assert!(decoded.result.is_none());
+		assert!(decoded.meta.is_none());
+	}
+
+	#[test]
+	fn test_transaction_deref() {
+		let tx_info = TransactionInfo {
+			transaction_hash: "test_hash".to_string(),
+			status: "SUCCESS".to_string(),
+			application_order: 1,
+			fee_bump: false,
+			ledger: 123,
+			ledger_close_time: 1234567890,
+			..Default::default()
+		};
+
+		let transaction = Transaction(tx_info);
+
+		// Test that we can access TransactionInfo fields through deref
+		assert_eq!(transaction.transaction_hash, "test_hash");
+		assert_eq!(transaction.status, "SUCCESS");
+		assert_eq!(transaction.application_order, 1);
+		assert!(!transaction.fee_bump);
+		assert_eq!(transaction.ledger, 123);
+		assert_eq!(transaction.ledger_close_time, 1234567890);
+	}
+}

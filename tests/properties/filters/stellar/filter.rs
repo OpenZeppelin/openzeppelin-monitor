@@ -524,9 +524,9 @@ proptest! {
 	#[test]
 	fn test_map_expression_evaluation(
 		key in "[a-zA-Z][a-zA-Z0-9_]*",
-		value in any::<i64>(),
+		value in any::<u64>(),
 		operator in prop_oneof![Just("=="), Just("!=")],
-		compare_to in any::<i64>(),
+		compare_to in any::<u64>(),
 	) {
 		let param_name = "0";
 		// Create JSON object with single key-value pair
@@ -540,7 +540,7 @@ proptest! {
 		let params = vec![StellarMatchParamEntry {
 			name: param_name.to_string(),
 			value: map_value.to_string(),
-			kind: "I64".to_string(),
+			kind: "U64".to_string(),
 			indexed: false,
 		}];
 

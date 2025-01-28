@@ -30,12 +30,14 @@ use crate::{
 		Result,
 	},
 	models::{BlockChainType, Network},
+	repositories::{MonitorRepository, NetworkRepository, TriggerRepository},
 	services::{
 		blockchain::{EvmClient, StellarClient},
-		blockwatcher::{BlockTracker, BlockWatcherService, FileBlockStorage},
+		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
 };
 
+use clap::Command;
 use dotenvy::dotenv;
 use log::{error, info};
 use std::sync::Arc;
@@ -47,12 +49,25 @@ use tokio::sync::watch;
 /// Returns an error if service initialization fails or if there's an error during shutdown.
 #[tokio::main]
 async fn main() -> Result<()> {
+	// Initialize command-line interface
+	let _ = Command::new("openzeppelin-monitor")
+		.version(env!("CARGO_PKG_VERSION"))
+		.about(
+			"A blockchain monitoring service that watches for specific on-chain activities and \
+			 triggers notifications based on configurable conditions.",
+		)
+		.get_matches();
+
 	// Load environment variables from .env file
 	dotenv().ok();
 	env_logger::init();
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
-		initialize_services()?;
+		initialize_services::<
+			MonitorRepository<NetworkRepository, TriggerRepository>,
+			NetworkRepository,
+			TriggerRepository,
+		>(None, None, None)?;
 
 	let networks_with_monitors: Vec<Network> = networks
 		.values()
