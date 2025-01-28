@@ -1,6 +1,6 @@
 # OpenZeppelin Monitor
 
-[![codecov](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor/graph/badge.svg)](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor)
+[![codecov](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor/branch/main/graph/badge.svg?token=VWIY5XZNDB)](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor)
 
 A blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
