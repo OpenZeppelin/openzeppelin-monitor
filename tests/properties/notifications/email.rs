@@ -45,7 +45,7 @@ proptest! {
 				body_template: template.clone(),
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
-			}
+			},
 		).unwrap();
 
 		let first_pass = notifier.format_message(&vars);
@@ -77,7 +77,7 @@ proptest! {
 				body_template: template.clone(),
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
-			}
+			},
 		).unwrap();
 
 		let formatted = notifier.format_message(&vars);
@@ -108,7 +108,7 @@ proptest! {
 				body_template: template.clone(),
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
-			}
+			},
 		).unwrap();
 
 		let empty_vars = HashMap::new();

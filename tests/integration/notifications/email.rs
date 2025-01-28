@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use mockall::mock;
 
 use email_address::EmailAddress;
-use lettre::Message;
+use lettre::{address::Envelope, Message, Transport};
 use mockall::predicate::*;
 use std::collections::HashMap;
 
@@ -22,22 +22,25 @@ mock! {
 	}
 }
 
-// SmtpTransport mock to match the actual trait implementation
 mock! {
-	pub SmtpTransport {
-		fn send(&self, email: &Message) -> Result<(), lettre::transport::smtp::Error>;
+	pub SmtpTransport {}
+
+	impl Transport for SmtpTransport {
+		type Ok = String;
+		type Error = String;
+
+		fn send_raw(&self, envelope: &Envelope, email: &[u8]) -> Result<String, String> {
+			Ok("250 OK".to_string())
+		}
+
+		fn send(&self, message: &Message) -> Result<String, String> {
+			Ok("250 OK".to_string())
+		}
 	}
 }
 
 #[tokio::test]
 async fn test_email_notification_success() {
-	let smtp_config = SmtpConfig {
-		host: "smtp.test.com".to_string(),
-		port: 587,
-		username: "test".to_string(),
-		password: "test".to_string(),
-	};
-
 	let email_content = EmailContent {
 		subject: "Test".to_string(),
 		body_template: "Test message".to_string(),
@@ -45,16 +48,14 @@ async fn test_email_notification_success() {
 		recipients: vec![EmailAddress::new_unchecked("recipient@test.com")],
 	};
 
-	// let mut mock_transport = SmtpTransport::unencrypted_localhost();
-	// mock_transport.expect_send().times(1).returning(|_| Ok(()));
+	let mut mock_transport = MockSmtpTransport::new();
 
-	// mock_transport
-	// 	.expect_test_connection()
-	// 	.times(1)
-	// 	.returning(|| Ok(()));
+	mock_transport
+		.expect_send()
+		.times(1)
+		.returning(|_| Ok("250 OK".to_string()));
 
-	// Create EmailNotifier with the mock transport
-	let notifier = EmailNotifier::new(smtp_config, email_content).unwrap();
+	let notifier = EmailNotifier::with_transport(email_content, mock_transport);
 
 	let result = notifier.notify("Test message").await;
 	assert!(result.is_ok());

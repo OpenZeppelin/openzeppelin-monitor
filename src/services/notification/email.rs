@@ -21,13 +21,13 @@ use crate::{
 };
 
 /// Implementation of email notifications via SMTP
-pub struct EmailNotifier {
+pub struct EmailNotifier<T: Transport + Send + Sync> {
 	/// Email subject
 	subject: String,
 	/// Message template with variable placeholders
 	body_template: String,
 	/// SMTP client for email delivery
-	client: SmtpTransport,
+	client: T,
 	/// Email sender
 	sender: EmailAddress,
 	/// Email recipients
@@ -52,21 +52,44 @@ pub struct EmailContent {
 	pub recipients: Vec<EmailAddress>,
 }
 
-impl EmailNotifier {
+impl<T: Transport + Send + Sync> EmailNotifier<T>
+where
+	T::Error: std::fmt::Display,
+{
+	/// Creates a new email notifier instance with a custom transport
+	///
+	/// # Arguments
+	/// * `email_content` - Email content configuration
+	/// * `transport` - SMTP transport
+	///
+	/// # Returns
+	/// * `Self` - Email notifier instance
+	pub fn with_transport(email_content: EmailContent, transport: T) -> Self {
+		Self {
+			subject: email_content.subject,
+			body_template: email_content.body_template,
+			sender: email_content.sender,
+			recipients: email_content.recipients,
+			client: transport,
+		}
+	}
+}
+
+impl EmailNotifier<SmtpTransport> {
 	/// Creates a new email notifier instance
 	///
 	/// # Arguments
 	/// * `smtp_config` - SMTP server configuration
 	/// * `email_content` - Email content configuration
+	///
+	/// # Returns
+	/// * `Result<Self, NotificationError>` - Email notifier instance or error
 	pub fn new(
 		smtp_config: SmtpConfig,
 		email_content: EmailContent,
 	) -> Result<Self, NotificationError> {
-		let relay = SmtpTransport::relay(&smtp_config.host).map_err(|e| {
-			NotificationError::internal_error(format!("Failed to build client: {}", e))
-		})?;
-
-		let client = relay
+		let client = SmtpTransport::relay(&smtp_config.host)
+			.unwrap()
 			.port(smtp_config.port)
 			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
 			.build();
@@ -136,7 +159,10 @@ impl EmailNotifier {
 }
 
 #[async_trait]
-impl Notifier for EmailNotifier {
+impl<T: Transport + Send + Sync> Notifier for EmailNotifier<T>
+where
+	T::Error: std::fmt::Display,
+{
 	/// Sends a formatted message to email
 	///
 	/// # Arguments
@@ -184,7 +210,7 @@ impl Notifier for EmailNotifier {
 mod tests {
 	use super::*;
 
-	fn create_test_notifier() -> EmailNotifier {
+	fn create_test_notifier() -> EmailNotifier<SmtpTransport> {
 		let smtp_config = SmtpConfig {
 			host: "dummy.smtp.com".to_string(),
 			port: 465,
@@ -285,5 +311,17 @@ mod tests {
 
 		let notifier = EmailNotifier::from_config(&config);
 		assert!(notifier.is_some());
+	}
+
+	////////////////////////////////////////////////////////////
+	// notify tests
+	////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_notify_failure() {
+		let notifier = create_test_notifier();
+		let result = notifier.notify("Test message").await;
+		// Expected to fail since we're using a dummy SMTP server
+		assert!(result.is_err());
 	}
 }

@@ -7,9 +7,8 @@
 //!
 //! Supports variable substitution in message templates.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 mod email;
 mod error;
