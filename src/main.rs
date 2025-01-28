@@ -37,6 +37,7 @@ use crate::{
 	},
 };
 
+use clap::Command;
 use dotenvy::dotenv;
 use log::{error, info};
 use std::sync::Arc;
@@ -48,6 +49,15 @@ use tokio::sync::watch;
 /// Returns an error if service initialization fails or if there's an error during shutdown.
 #[tokio::main]
 async fn main() -> Result<()> {
+	// Initialize command-line interface
+	let _ = Command::new("openzeppelin-monitor")
+		.version(env!("CARGO_PKG_VERSION"))
+		.about(
+			"A blockchain monitoring service that watches for specific on-chain activities and \
+			 triggers notifications based on configurable conditions.",
+		)
+		.get_matches();
+
 	// Load environment variables from .env file
 	dotenv().ok();
 	env_logger::init();
