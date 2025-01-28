@@ -708,21 +708,3 @@ async fn test_confirmation_blocks() -> Result<(), BlockWatcherError> {
 
 	Ok(())
 }
-
-#[tokio::test]
-async fn test_rpc_client_errors() {
-	// Test RPC client failure scenarios
-	// Verify proper error handling
-}
-
-#[tokio::test]
-async fn test_storage_errors() {
-	// Test storage operation failures
-	// Verify proper error handling
-}
-
-#[tokio::test]
-async fn test_processing_error_handling() {
-	// Test error scenarios during block processing
-	// Verify proper error propagation
-}
