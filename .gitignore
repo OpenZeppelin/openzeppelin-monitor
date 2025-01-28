@@ -37,3 +37,11 @@ tests/**/*.proptest-regressions
 coverage-*.profraw
 coverage-data/
 coverage/
+lcov.info*
+
+# docs
+docs/build/
+rust_docs
+
+# Ignore node_modules
+node_modules

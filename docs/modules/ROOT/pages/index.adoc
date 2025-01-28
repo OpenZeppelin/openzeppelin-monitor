@@ -1,0 +1,11 @@
+:monitor: https://github.com/OpenZeppelin/openzeppelin-monitor
+
+= OpenZeppelin Monitor
+
+* A blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
+
+== Features
+
+* **Multi-chain support**: Monitor multiple chains with a single service.
+* **Configurable monitoring schedules**: Set up monitoring schedules for specific chains.
+* **Flexible trigger conditions**: Define trigger conditions for monitoring activities.

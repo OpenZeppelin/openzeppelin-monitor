@@ -274,6 +274,7 @@ Run `cargo llvm-cov --html --open` (creates an interactive HTML coverage report)
 - Run `rustup toolchain install nightly` to install the nightly toolchain.
 - Run `rustup component add rustfmt --toolchain nightly` to install rustfmt for the nightly toolchain.
 
+
 ## Project Structure
 
 - `src/`: Source code
@@ -284,6 +285,24 @@ Run `cargo llvm-cov --html --open` (creates an interactive HTML coverage report)
 - `config/`: Configuration files
 - `tests/`: Integration tests
 - `data/`: Runtime data storage
+- `docs/`: Documentation
+- `scripts/`: Utility scripts
+
+## Documentation
+
+- Pre-requisites:
+  - Install `antora` by running `npm install -g @antora/cli@3.0 @antora/site-generator-default@3.0` , if you already have you can skip this step.
+  - Verify the installation by running `antora --version`
+
+- To generate documentation locally, run the following command.
+
+  ```sh
+  cargo make rust-antora
+  ```
+
+- Site will be generated in `docs/build/site/OpenZeppelin_Monitor/<version>/` directory.
+
+- To view the documentation, open the `docs/build/site/OpenZeppelin_Monitor/<version>/index.html` in your browser.
 
 ## Caveats
 

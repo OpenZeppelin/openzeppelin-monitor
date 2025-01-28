@@ -1,0 +1,13 @@
+{
+  "name": "docs",
+  "version": "0.1.0",
+  "scripts": {
+    "docs": "oz-docs",
+    "docs-watch": "oz-docs --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "devDependencies": {
+    "@openzeppelin/docs-utils": "^0.1.2"
+  }
+}
