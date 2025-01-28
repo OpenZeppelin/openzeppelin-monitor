@@ -44,5 +44,6 @@ mod integration {
 	}
 	mod notifications {
 		mod email;
+		mod slack;
 	}
 }

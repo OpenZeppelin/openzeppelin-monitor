@@ -60,3 +60,25 @@ async fn test_email_notification_success() {
 	let result = notifier.notify("Test message").await;
 	assert!(result.is_ok());
 }
+
+#[tokio::test]
+async fn test_email_notification_failure() {
+	let email_content = EmailContent {
+		subject: "Test".to_string(),
+		body_template: "Test message".to_string(),
+		sender: EmailAddress::new_unchecked("sender@test.com"),
+		recipients: vec![EmailAddress::new_unchecked("recipient@test.com")],
+	};
+
+	let mut mock_transport = MockSmtpTransport::new();
+
+	mock_transport
+		.expect_send()
+		.times(1)
+		.returning(|_| Err("500 Internal Server Error".to_string()));
+
+	let notifier = EmailNotifier::with_transport(email_content, mock_transport);
+
+	let result = notifier.notify("Test message").await;
+	assert!(result.is_err());
+}
