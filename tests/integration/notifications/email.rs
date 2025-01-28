@@ -2,13 +2,12 @@ use async_trait::async_trait;
 use mockall::mock;
 
 use email_address::EmailAddress;
-use lettre::{transport::stub::StubTransport, Message, SmtpTransport};
+use lettre::Message;
 use mockall::predicate::*;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::services::notification::{
-	email::{EmailContent, SmtpConfig},
-	EmailNotifier, NotificationError, Notifier,
+	EmailContent, EmailNotifier, NotificationError, Notifier, SmtpConfig,
 };
 
 mock! {
@@ -17,6 +16,7 @@ mock! {
 		pub fn format_message(&self, variables: &HashMap<String, String>) -> String;
 	}
 
+	#[async_trait]
 	impl Notifier for EmailNotifier {
 		async fn notify(&self, message: &str) -> Result<(), NotificationError>;
 	}
@@ -45,7 +45,7 @@ async fn test_email_notification_success() {
 		recipients: vec![EmailAddress::new_unchecked("recipient@test.com")],
 	};
 
-	let mut mock_transport = SmtpTransport::unencrypted_localhost();
+	// let mut mock_transport = SmtpTransport::unencrypted_localhost();
 	// mock_transport.expect_send().times(1).returning(|_| Ok(()));
 
 	// mock_transport
