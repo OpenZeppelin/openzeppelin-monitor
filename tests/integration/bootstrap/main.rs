@@ -134,7 +134,6 @@ fn test_initialize_services() {
 		"TriggerExecutionService should be wrapped in Arc"
 	);
 
-	println!("{:?}", active_monitors);
 	assert!(active_monitors.iter().any(|m| m.name == "test"
 		&& m.networks.contains(&"ethereum_mainnet".to_string())
 		&& m.triggers
