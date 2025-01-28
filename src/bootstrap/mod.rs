@@ -31,8 +31,8 @@ type ServiceResult<T> = Result<(
 /// Returns a tuple containing:
 /// - FilterService: Handles filtering of blockchain data
 /// - TriggerExecutionService: Manages trigger execution
-/// - Vec<Monitor>: List of active monitors
-/// - HashMap<String, Network>: Available networks indexed by slug
+/// - `Vec<Monitor>`: List of active monitors
+/// - `HashMap<String, Network>`: Available networks indexed by slug
 ///
 /// # Errors
 /// Returns an error if any service initialization fails
