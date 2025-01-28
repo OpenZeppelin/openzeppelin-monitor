@@ -105,12 +105,20 @@ impl Notifier for SlackNotifier {
 			text: message.to_string(),
 		};
 
-		self.client
+		let response = self
+			.client
 			.post(&self.webhook_url)
 			.json(&payload)
 			.send()
 			.await
 			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+
+		if !response.status().is_success() {
+			return Err(NotificationError::network_error(format!(
+				"Slack webhook returned error status: {}",
+				response.status()
+			)));
+		}
 
 		Ok(())
 	}
@@ -122,7 +130,7 @@ mod tests {
 
 	fn create_test_notifier(body_template: &str) -> SlackNotifier {
 		SlackNotifier::new(
-			"https://example.com".to_string(),
+			"https://non-existent-url-slack-webhook.com".to_string(),
 			"Alert".to_string(),
 			body_template.to_string(),
 		)
@@ -189,5 +197,16 @@ mod tests {
 		assert_eq!(notifier.webhook_url, "https://slack.example.com");
 		assert_eq!(notifier.title, "Test Alert");
 		assert_eq!(notifier.body_template, "Test message ${value}");
+	}
+
+	////////////////////////////////////////////////////////////
+	// notify tests
+	////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_notify_failure() {
+		let notifier = create_test_notifier("Test message");
+		let result = notifier.notify("Test message").await;
+		assert!(result.is_err());
 	}
 }

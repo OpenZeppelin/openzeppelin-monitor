@@ -195,3 +195,142 @@ impl ConfigLoader for Network {
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::RpcUrl;
+
+	fn create_valid_network() -> Network {
+		Network {
+			name: "Test Network".to_string(),
+			slug: "test_network".to_string(),
+			network_type: BlockChainType::EVM,
+			chain_id: Some(1),
+			network_passphrase: None,
+			store_blocks: Some(true),
+			rpc_urls: vec![RpcUrl {
+				type_: "rpc".to_string(),
+				url: "https://test.network".to_string(),
+				weight: 100,
+			}],
+			block_time_ms: 1000,
+			confirmation_blocks: 1,
+			cron_schedule: "0 */5 * * * *".to_string(),
+			max_past_blocks: Some(10),
+		}
+	}
+
+	#[test]
+	fn test_get_recommended_past_blocks() {
+		let mut network = create_valid_network();
+		network.block_time_ms = 1000; // 1 second
+		network.confirmation_blocks = 2;
+		network.cron_schedule = "0 */5 * * * *".to_string(); // every 5 minutes
+
+		let cron_interval_ms = get_cron_interval_ms(&network.cron_schedule).unwrap() as u64; // 300.000 (5 minutes in ms)
+		let blocks_per_cron = cron_interval_ms / network.block_time_ms; // 300.000 / 1000 = 300
+		let recommended_past_blocks = blocks_per_cron + network.confirmation_blocks + 1; // 300 + 2 + 1 = 303
+
+		assert_eq!(
+			network.get_recommended_past_blocks(),
+			recommended_past_blocks
+		);
+	}
+
+	#[test]
+	fn test_validate_valid_network() {
+		let network = create_valid_network();
+		assert!(network.validate().is_ok());
+	}
+
+	#[test]
+	fn test_validate_empty_name() {
+		let mut network = create_valid_network();
+		network.name = "".to_string();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_invalid_slug() {
+		let mut network = create_valid_network();
+		network.slug = "Invalid-Slug".to_string();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_invalid_rpc_url_type() {
+		let mut network = create_valid_network();
+		network.rpc_urls[0].type_ = "invalid".to_string();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_invalid_rpc_url_format() {
+		let mut network = create_valid_network();
+		network.rpc_urls[0].url = "invalid-url".to_string();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_invalid_rpc_weight() {
+		let mut network = create_valid_network();
+		network.rpc_urls[0].weight = 101;
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_invalid_block_time() {
+		let mut network = create_valid_network();
+		network.block_time_ms = 50;
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_zero_confirmation_blocks() {
+		let mut network = create_valid_network();
+		network.confirmation_blocks = 0;
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_invalid_cron_schedule() {
+		let mut network = create_valid_network();
+		network.cron_schedule = "invalid cron".to_string();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_zero_max_past_blocks() {
+		let mut network = create_valid_network();
+		network.max_past_blocks = Some(0);
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+}

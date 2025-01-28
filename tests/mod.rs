@@ -42,4 +42,8 @@ mod integration {
 			mod filter;
 		}
 	}
+	mod notifications {
+		mod email;
+		mod slack;
+	}
 }

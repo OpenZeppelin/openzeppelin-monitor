@@ -88,3 +88,195 @@ impl ConfigLoader for Monitor {
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::core::{
+		AddressWithABI, EventCondition, FunctionCondition, MatchConditions, TransactionCondition,
+		TransactionStatus,
+	};
+	use std::collections::HashMap;
+	use tempfile::TempDir;
+
+	#[test]
+	fn test_load_valid_monitor() {
+		let temp_dir = TempDir::new().unwrap();
+		let file_path = temp_dir.path().join("valid_monitor.json");
+
+		let valid_config = r#"{
+            "name": "TestMonitor",
+			"networks": ["ethereum_mainnet"],
+			"paused": false,
+			"addresses": [
+				{
+					"address": "0x0000000000000000000000000000000000000000",
+					"abi": null
+				}
+			],
+            "description": "Test monitor configuration",
+            "match_conditions": {
+                "functions": [
+                    {"signature": "transfer(address,uint256)"}
+                ],
+                "events": [
+                    {"signature": "Transfer(address,address,uint256)"}
+                ],
+                "transactions": [
+					{
+						"signature": "Transfer(address,address,uint256)",
+						"status": "Success"
+					}
+                ]
+            },
+			"triggers": ["trigger1", "trigger2"]
+        }"#;
+
+		fs::write(&file_path, valid_config).unwrap();
+
+		let result = Monitor::load_from_path(&file_path);
+		assert!(result.is_ok());
+
+		let monitor = result.unwrap();
+		assert_eq!(monitor.name, "TestMonitor");
+	}
+
+	#[test]
+	fn test_load_invalid_monitor() {
+		let temp_dir = TempDir::new().unwrap();
+		let file_path = temp_dir.path().join("invalid_monitor.json");
+
+		let invalid_config = r#"{
+            "name": "",
+            "description": "Invalid monitor configuration",
+            "match_conditions": {
+                "functions": [
+                    {"signature": "invalid_signature"}
+                ],
+                "events": []
+            }
+        }"#;
+
+		fs::write(&file_path, invalid_config).unwrap();
+
+		let result = Monitor::load_from_path(&file_path);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_load_all_monitors() {
+		let temp_dir = TempDir::new().unwrap();
+
+		let valid_config_1 = r#"{
+            "name": "TestMonitor1",
+			"networks": ["ethereum_mainnet"],
+			"paused": false,
+			"addresses": [
+				{
+					"address": "0x0000000000000000000000000000000000000000",
+					"abi": null
+				}
+			],
+            "description": "Test monitor configuration",
+            "match_conditions": {
+                "functions": [
+                    {"signature": "transfer(address,uint256)"}
+                ],
+                "events": [
+                    {"signature": "Transfer(address,address,uint256)"}
+                ],
+                "transactions": [
+					{
+						"signature": "Transfer(address,address,uint256)",
+						"status": "Success"
+					}
+                ]
+            },
+			"triggers": ["trigger1", "trigger2"]
+        }"#;
+
+		let valid_config_2 = r#"{
+            "name": "TestMonitor2",
+			"networks": ["ethereum_mainnet"],
+			"paused": false,
+			"addresses": [
+				{
+					"address": "0x0000000000000000000000000000000000000000",
+					"abi": null
+				}
+			],
+            "description": "Test monitor configuration",
+            "match_conditions": {
+                "functions": [
+                    {"signature": "transfer(address,uint256)"}
+                ],
+                "events": [
+                    {"signature": "Transfer(address,address,uint256)"}
+                ],
+                "transactions": [
+					{
+						"signature": "Transfer(address,address,uint256)",
+						"status": "Success"
+					}
+                ]
+            },
+			"triggers": ["trigger1", "trigger2"]
+        }"#;
+
+		fs::write(temp_dir.path().join("monitor1.json"), valid_config_1).unwrap();
+		fs::write(temp_dir.path().join("monitor2.json"), valid_config_2).unwrap();
+
+		let result: Result<HashMap<String, Monitor>, _> = Monitor::load_all(Some(temp_dir.path()));
+		assert!(result.is_ok());
+
+		let monitors = result.unwrap();
+		assert_eq!(monitors.len(), 2);
+		assert!(monitors.contains_key("monitor1"));
+		assert!(monitors.contains_key("monitor2"));
+	}
+
+	#[test]
+	fn test_validate_monitor() {
+		let valid_monitor = Monitor {
+			name: "TestMonitor".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			addresses: vec![AddressWithABI {
+				address: "0x0000000000000000000000000000000000000000".to_string(),
+				abi: None,
+			}],
+			match_conditions: MatchConditions {
+				functions: vec![FunctionCondition {
+					signature: "transfer(address,uint256)".to_string(),
+					expression: None,
+				}],
+				events: vec![EventCondition {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					expression: None,
+				}],
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Success,
+					expression: None,
+				}],
+			},
+			triggers: vec!["trigger1".to_string()],
+		};
+
+		assert!(valid_monitor.validate().is_ok());
+
+		let invalid_monitor = Monitor {
+			name: "".to_string(),
+			networks: vec![],
+			paused: false,
+			addresses: vec![],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			triggers: vec![],
+		};
+
+		assert!(invalid_monitor.validate().is_err());
+	}
+}

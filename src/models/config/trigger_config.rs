@@ -220,3 +220,168 @@ impl ConfigLoader for Trigger {
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::core::{Trigger, TriggerType};
+
+	#[test]
+	fn test_slack_trigger_validation() {
+		let valid_trigger = Trigger {
+			name: "test_slack".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				webhook_url: "https://hooks.slack.com/services/xxx".to_string(),
+				title: "Alert".to_string(),
+				body: "Test message".to_string(),
+			},
+		};
+		assert!(valid_trigger.validate().is_ok());
+
+		// Test invalid webhook URL
+		let invalid_webhook = Trigger {
+			name: "test_slack".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				webhook_url: "https://invalid-url.com".to_string(),
+				title: "Alert".to_string(),
+				body: "Test message".to_string(),
+			},
+		};
+		assert!(invalid_webhook.validate().is_err());
+
+		// Test empty title
+		let empty_title = Trigger {
+			name: "test_slack".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				webhook_url: "https://hooks.slack.com/services/xxx".to_string(),
+				title: "".to_string(),
+				body: "Test message".to_string(),
+			},
+		};
+		assert!(empty_title.validate().is_err());
+	}
+
+	#[test]
+	fn test_email_trigger_validation() {
+		let valid_trigger = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				subject: "Test Subject".to_string(),
+				body: "Test Body".to_string(),
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(valid_trigger.validate().is_ok());
+
+		// Test invalid host
+		let invalid_host = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "invalid@host".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				subject: "Test Subject".to_string(),
+				body: "Test Body".to_string(),
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_host.validate().is_err());
+
+		// Test invalid email address
+		let invalid_email = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				subject: "Test Subject".to_string(),
+				body: "Test Body".to_string(),
+				sender: EmailAddress::new_unchecked("invalid-email"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_email.validate().is_err());
+	}
+
+	#[test]
+	fn test_webhook_trigger_validation() {
+		let valid_trigger = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: "https://api.example.com/webhook".to_string(),
+				method: "POST".to_string(),
+				headers: None,
+			},
+		};
+		assert!(valid_trigger.validate().is_ok());
+
+		// Test invalid URL
+		let invalid_url = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: "invalid-url".to_string(),
+				method: "POST".to_string(),
+				headers: None,
+			},
+		};
+		assert!(invalid_url.validate().is_err());
+
+		// Test invalid method
+		let invalid_method = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: "https://api.example.com/webhook".to_string(),
+				method: "INVALID".to_string(),
+				headers: None,
+			},
+		};
+		assert!(invalid_method.validate().is_err());
+	}
+
+	#[test]
+	fn test_script_trigger_validation() {
+		let temp_dir = std::env::temp_dir();
+		let script_path = temp_dir.join("test_script.sh");
+		std::fs::write(&script_path, "#!/bin/bash\necho 'test'").unwrap();
+
+		let valid_trigger = Trigger {
+			name: "test_script".to_string(),
+			trigger_type: TriggerType::Script,
+			config: TriggerTypeConfig::Script {
+				path: script_path.to_str().unwrap().to_string(),
+				args: vec!["arg1".to_string(), "arg2".to_string()],
+			},
+		};
+		assert!(valid_trigger.validate().is_ok());
+
+		// Test non-existent script
+		let invalid_path = Trigger {
+			name: "test_script".to_string(),
+			trigger_type: TriggerType::Script,
+			config: TriggerTypeConfig::Script {
+				path: "/non/existent/path".to_string(),
+				args: vec!["arg1".to_string(), "arg2".to_string()],
+			},
+		};
+		assert!(invalid_path.validate().is_err());
+
+		std::fs::remove_file(script_path).unwrap();
+	}
+}
