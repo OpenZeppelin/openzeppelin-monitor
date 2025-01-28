@@ -226,12 +226,16 @@ mod tests {
 		let mut network = create_valid_network();
 		network.block_time_ms = 1000; // 1 second
 		network.confirmation_blocks = 2;
-		network.cron_schedule = "0 */5 * * * *".to_string(); // 5 minutes, with seconds field
+		network.cron_schedule = "0 */5 * * * *".to_string(); // every 5 minutes
 
-		// Add debug prints for intermediate values
-		let blocks = network.get_recommended_past_blocks();
+		let cron_interval_ms = get_cron_interval_ms(&network.cron_schedule).unwrap() as u64; // 300.000 (5 minutes in ms)
+		let blocks_per_cron = cron_interval_ms / network.block_time_ms; // 300.000 / 1000 = 300
+		let recommended_past_blocks = blocks_per_cron + network.confirmation_blocks + 1; // 300 + 2 + 1 = 303
 
-		assert_eq!(network.get_recommended_past_blocks(), 303);
+		assert_eq!(
+			network.get_recommended_past_blocks(),
+			recommended_past_blocks
+		);
 	}
 
 	#[test]
