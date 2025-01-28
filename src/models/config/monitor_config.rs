@@ -89,8 +89,6 @@ impl ConfigLoader for Monitor {
 	}
 }
 
-// ... existing code ...
-
 #[cfg(test)]
 mod tests {
 	use super::*;
