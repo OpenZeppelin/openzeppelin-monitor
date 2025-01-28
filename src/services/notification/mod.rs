@@ -11,9 +11,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 
-mod email;
+pub mod email;
 mod error;
-mod slack;
+pub mod slack;
 
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
 pub use error::NotificationError;
