@@ -1,4 +1,4 @@
 [build]
 base = "/"
-command = "cargo make rust-antora"
+command = "cargo install cargo-make --locked && cargo make rust-antora"
 publish = "docs/build/site"
