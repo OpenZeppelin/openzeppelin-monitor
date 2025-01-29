@@ -103,8 +103,8 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), FilterError> {
 
 			let matched_on_args = evm_match.matched_on_args.as_ref().unwrap();
 			assert!(
-				matched_on_args.events.as_ref().unwrap().is_empty(),
-				"Expected no events arguments to be matched"
+				!matched_on_args.events.as_ref().unwrap().is_empty(),
+				"Expected events arguments to be matched"
 			);
 		}
 		_ => {
@@ -215,8 +215,8 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), FilterError>
 
 			let matched_on_args = evm_match.matched_on_args.as_ref().unwrap();
 			assert!(
-				matched_on_args.functions.as_ref().unwrap().is_empty(),
-				"Expected no functions arguments to be matched"
+				!matched_on_args.functions.as_ref().unwrap().is_empty(),
+				"Expected functions arguments to be matched"
 			);
 		}
 		_ => {

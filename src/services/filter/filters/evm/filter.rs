@@ -223,19 +223,17 @@ impl<T> EVMBlockFilter<T> {
 												signature: function_signature_with_params.clone(),
 												expression: None,
 											});
-											// We do not want to populate matched_on_args.functions
-											// if there are no expressions
-											// if let Some(functions) = &mut
-											// matched_on_args.functions {
-											// 	functions.push(EVMMatchParamsMap {
-											// 		signature: function_signature_with_params
-											// 			.clone(),
-											// 		args: Some(params.clone()),
-											// 		hex_signature: Some(hex::encode(
-											// 			function.short_signature(),
-											// 		)),
-											// 	});
-											// }
+											if let Some(functions) = &mut matched_on_args.functions
+											{
+												functions.push(EVMMatchParamsMap {
+													signature: function_signature_with_params
+														.clone(),
+													args: Some(params.clone()),
+													hex_signature: Some(hex::encode(
+														function.short_signature(),
+													)),
+												});
+											}
 											break;
 										}
 									}
@@ -293,11 +291,9 @@ impl<T> EVMBlockFilter<T> {
 							signature: event_condition.signature.clone(),
 							expression: None,
 						});
-						// We do not want to populate matched_on_args.events if there are no
-						// expressions
-						// if let Some(events) = &mut matched_on_args.events {
-						// 	events.push(event_condition);
-						// }
+						if let Some(events) = &mut matched_on_args.events {
+							events.push(event_condition);
+						}
 					} else {
 						// Check if this event matches any of the conditions
 						for condition in &monitor.match_conditions.events {
@@ -311,11 +307,9 @@ impl<T> EVMBlockFilter<T> {
 										signature: event_condition.signature.clone(),
 										expression: None,
 									});
-									// We do not want to populate matched_on_args.events if there
-									// are no expressions
-									// if let Some(events) = &mut matched_on_args.events {
-									// 	events.push(event_condition);
-									// }
+									if let Some(events) = &mut matched_on_args.events {
+										events.push(event_condition);
+									}
 									break;
 								} else {
 									// Evaluate the expression condition
@@ -1161,7 +1155,7 @@ mod tests {
 
 		let functions = matched_on_args.functions.unwrap();
 
-		assert_eq!(functions.len(), 0);
+		assert_eq!(functions.len(), 1);
 	}
 
 	#[test]
