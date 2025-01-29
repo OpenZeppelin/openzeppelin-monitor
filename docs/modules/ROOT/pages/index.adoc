@@ -1,11 +1,743 @@
 :monitor: https://github.com/OpenZeppelin/openzeppelin-monitor
 
 = OpenZeppelin Monitor
+:description: User guide for setting up and configuring OpenZeppelin Monitor
 
-* A blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
+A blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
-== Features
+== Overview
 
-* **Multi-chain support**: Monitor multiple chains with a single service.
-* **Configurable monitoring schedules**: Set up monitoring schedules for specific chains.
-* **Flexible trigger conditions**: Define trigger conditions for monitoring activities.
+[mermaid,width=100%]
+....
+%%{init: {
+    'theme': 'base',
+    'themeVariables': {
+        'background': '#ffffff',
+        'mainBkg': '#ffffff',
+        'primaryBorderColor': '#cccccc'
+    }
+}}%%
+graph TD
+    subgraph Blockchain Networks
+        ETH[Ethereum RPC]
+        POL[Polygon RPC]
+        BSC[BSC RPC]
+    end
+
+    subgraph Block Processing
+        BW[BlockWatcherService]
+        BS[(BlockStorage)]
+        JS[JobScheduler]
+    end
+
+    subgraph Client Layer
+        BC[BlockchainClient]
+        EVM[EVMClient]
+        STL[StellarClient]
+    end
+
+    subgraph Processing Pipeline
+        FS[FilterService]
+        TS[TriggerService]
+        NS[NotificationService]
+    end
+
+    subgraph Notifications
+        Slack
+        Email
+    end
+
+    %% Block Processing Flow
+    JS -->|Schedule Block Fetch| BW
+    BW -->|Store Last Block| BS
+    BW -->|Read Last Block| BS
+    BW -->|Get New Blocks| BC
+
+    %% Client Connections
+    BC --> EVM
+    BC --> STL
+    EVM -->|RPC Calls| ETH
+    EVM -->|RPC Calls| POL
+    EVM -->|RPC Calls| BSC
+
+    %% Processing Flow
+    BW -->|New Block| FS
+    FS -->|Matches| TS
+    TS -->|Execute| NS
+    NS --> Slack
+    NS --> Email
+
+    style STL fill:#f0f0f0
+
+    classDef rpc fill:#e1f5fe,stroke:#01579b
+    classDef storage fill:#fff3e0,stroke:#ef6c00
+    classDef service fill:#e8f5e9,stroke:#2e7d32
+    classDef notification fill:#f3e5f5,stroke:#7b1fa2
+
+    class ETH,POL,BSC rpc
+    class BS storage
+    class BW,FS,TS,NS service
+    class Slack,Email notification
+....
+
+OpenZeppelin Monitor provides:
+
+* Multi-chain support for monitoring
+* Configurable monitoring schedules per chain
+* Flexible trigger conditions for monitoring activities
+* Built-in support for both EVM and Stellar networks
+* Notification triggers via Slack and email
+
+== Getting Started
+
+=== Prerequisites
+
+* Rust 2021 edition
+* Docker (optional, for containerized deployment)
+
+=== Installation
+
+==== Local Setup
+
+1. Clone the repository:
+
+[source,bash]
+----
+git clone https://github.com/openzeppelin/openzeppelin-monitor
+cd openzeppelin-monitor
+----
+
+2. Install dependencies:
+
+[source,bash]
+----
+cargo build
+----
+
+=== Configuration Guidelines
+
+==== Recommended File Naming Conventions
+
+* Network configurations: `<network_type>_<network_name>.json`
+** Example: `ethereum_mainnet.json`, `stellar_testnet.json`
+** Should match the `slug` property inside the file
+
+* Monitor configurations: `<asset>_<action>_monitor.json`
+** Example: `usdc_transfer_monitor.json`, `dai_liquidation_monitor.json`
+** Referenced by monitors using their `name` property
+
+* Trigger configurations: `<type>_<purpose>.json`
+** Example: `slack_notifications.json`, `email_alerts.json`
+** Individual triggers referenced by their configuration key
+
+==== Configuration References
+
+* Monitor's `networks` array must contain valid network `slug` values from network configuration files
+* Monitor's `triggers` array must contain valid trigger configuration keys
+* Example valid references:
++
+[source,json]
+----
+// networks/ethereum_mainnet.json
+{
+  "slug": "ethereum_mainnet",
+  ...
+}
+
+// triggers/slack_notifications.json
+{
+  "large_transfer_slack": {
+    ...
+  }
+}
+
+// monitors/usdc_transfer_monitor.json
+{
+  "networks": ["ethereum_mainnet"],
+  "triggers": ["large_transfer_slack"],
+  ...
+}
+
+
+----
+
+[IMPORTANT]
+====
+Ensure all referenced slugs and trigger keys exist in their respective configuration files. The monitor will fail to start if it cannot resolve these references.
+====
+
+==== Basic Configuration
+
+* Set up environment variables:
+
+[source,bash]
+----
+cp .env.example .env
+----
+
+* Change the `RUST_LOG=info` environment variable to your preferred verbosity level.
+* Copy and configure example files:
+
+[source,bash]
+----
+# EVM Configuration
+cp config/monitors/evm_transfer_usdc.json.example config/monitors/evm_transfer_usdc.json
+cp config/networks/ethereum_mainnet.json.example config/networks/ethereum_mainnet.json
+
+# Stellar Configuration
+cp config/monitors/stellar_transfer_usdc.json.example config/monitors/stellar_transfer_usdc.json
+cp config/networks/stellar_mainnet.json.example config/networks/stellar_mainnet.json
+
+# Notification Configuration
+cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
+cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+----
+
+== Data Storage Configuration
+
+The monitor uses file-based storage by default, with an extensible interface (`BlockStorage`) for custom storage implementations.
+
+=== File Storage
+
+When `store_blocks` is enabled in the network configuration, the monitor stores:
+
+* Processed blocks: `./data/<network_slug>_blocks_<timestamp>.json`
+* Missed blocks: `./data/<network_slug>_missed_blocks.txt` (used to store missed blocks)
+
+The content of the `missed_blocks.txt` file may help to determine the right `max_past_blocks` value based on the network's block time and the monitor's cron schedule.
+
+Additionally, the monitor will always store:
+
+* Last processed block: `./data/<network_slug>_last_block.txt` (enables resuming from last checkpoint)
+
+== Configuration Files
+
+=== Network Configuration
+
+A Network configuration defines connection details and operational parameters for a specific blockchain network, supporting both EVM and Stellar-based chains.
+
+.Example Network Configuration
+[source,json]
+----
+{
+  "network_type": "Stellar",
+  "slug": "stellar_mainnet",
+  "name": "Stellar Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": "https://soroban.stellar.org",
+      "weight": 100
+    }
+  ],
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "block_time_ms": 5000,
+  "confirmation_blocks": 2,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 20,
+  "store_blocks": true
+}
+----
+
+==== Available Fields
+
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|network_type
+|String
+|Type of blockchain ("EVM" or "Stellar")
+
+|slug
+|String
+|Unique identifier for the network
+
+|name
+|String
+|Human-readable network name
+
+|rpc_urls
+|Array[Object]
+|List of RPC endpoints with weights for load balancing
+
+|chain_id
+|Number
+|Network chain ID (EVM only)
+
+|network_passphrase
+|String
+|Network identifier (Stellar only)
+
+|block_time_ms
+|Number
+|Average block time in milliseconds
+
+|confirmation_blocks
+|Number
+|Number of blocks to wait for confirmation
+
+|cron_schedule
+|String
+|Monitor scheduling in cron format
+
+|max_past_blocks
+|Number
+|Maximum number of past blocks to process
+
+|store_blocks
+|Boolean
+|Whether to store processed blocks (defaults output to `./data/` directory)
+|===
+
+=== Trigger Configuration
+
+A Trigger defines actions to take when monitored conditions are met. Triggers can send notifications, make HTTP requests, or execute scripts.
+
+.Example Trigger Configuration
+[source,json]
+----
+{
+  "evm_large_transfer_usdc_slack": {
+    "name": "Large Transfer Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "webhook_url": "https://hooks.slack.com/services/A/B/C",
+      "title": "large_transfer_slack triggered",
+      "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+    }
+  },
+  "stellar_large_transfer_usdc_slack": {
+    "name": "Large Transfer Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "webhook_url": "https://hooks.slack.com/services/A/B/C",
+      "title": "large_transfer_usdc_slack triggered",
+      "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+    }
+  }
+}
+----
+
+==== Trigger Types
+
+===== Slack Notifications
+[source,json]
+----
+{
+  "webhook_url": "https://hooks.slack.com/...",
+  "title": "Alert Title",
+  "body": "Alert message for ${transaction_hash}"
+}
+----
+
+===== Email Notifications
+[source,json]
+----
+{
+  "host": "smtp.gmail.com",
+  "port": 465,
+  "username": "sender@example.com",
+  "password": "smtp_password",
+  "subject": "Alert Subject",
+  "body": "Alert message for ${transaction_hash}",
+  "sender": "sender@example.com",
+  "recipients": ["recipient@example.com"]
+}
+----
+
+==== Available Fields
+
+===== Slack Notification Fields
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|name
+|String
+|Human-readable name for the notification
+
+|trigger_type
+|String
+|Must be "slack" for Slack notifications
+
+|config.webhook_url
+|String
+|Slack webhook URL for sending notifications
+
+|config.title
+|String
+|Title that appears in the Slack message
+
+|config.body
+|String
+|Message template with variable substitution
+|===
+
+===== Email Notification Fields
+[cols="1,2,3"]
+|===
+|Field |Type |Description
+
+|name
+|String
+|Human-readable name for the notification
+
+|trigger_type
+|String
+|Must be "email" for email notifications
+
+|config.host
+|String
+|SMTP server hostname
+
+|config.port
+|Number
+|SMTP port (defaults to 465)
+
+|config.username
+|String
+|SMTP authentication username
+
+|config.password
+|String
+|SMTP authentication password
+
+|config.subject
+|String
+|Email subject line
+
+|config.body
+|String
+|Email body template with variable substitution
+
+|config.sender
+|String
+|Sender email address
+
+|config.recipients
+|Array[String]
+|List of recipient email addresses
+|===
+
+
+==== Available Template Variables
+
+===== Common Variables
+[cols="1,2"]
+|===
+|Variable |Description
+
+|monitor_name
+|Name of the triggered monitor
+
+|transaction_hash
+|Hash of the transaction
+
+|function_[index]_signature
+|Function signature
+
+|event_[index]_signature
+|Event signature
+|===
+
+===== Network-Specific Variables
+
+====== EVM Variables
+[cols="1,2"]
+|===
+|Variable |Description
+
+|transaction_from
+|Sender address
+
+|transaction_to
+|Recipient address
+
+|transaction_value
+|Transaction value
+
+|event_[index]_[param]
+|Event parameters by name
+
+|function_[index]_[param]
+|Function parameters by name
+|===
+
+====== Stellar Variables
+[cols="1,2"]
+|===
+|Variable |Description
+
+|event_[index]_[position]
+|Event parameters by position
+
+|function_[index]_[position]
+|Function parameters by position
+|===
+
+[NOTE]
+====
+Transaction-related variables (`transaction_from`, `transaction_to`, `transaction_value`) are not available for Stellar networks.
+====
+
+==== Important Considerations
+
+* Email notification port defaults to 465 if not specified
+* Template variables are context-dependent:
+** Event-triggered notifications only populate event variables
+** Function-triggered notifications only populate function variables
+** Mixing contexts results in empty values
+* Credentials in configuration files should be properly secured
+* Consider using environment variables for sensitive information
+
+=== Monitor Configuration
+
+A Monitor defines what blockchain activity to watch and what actions to take when conditions are met. Each monitor combines:
+
+* Network targets (which chains to monitor)
+* Contract addresses to watch
+* Conditions to match (functions, events, transactions)
+* Triggers to execute when conditions are met
+
+.Example Monitor Configuration
+[source,json]
+----
+{
+  "name": "Large USDC Transfers",
+  "networks": ["ethereum_mainnet"],
+  "paused": false,
+  "addresses": [
+    {
+      "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "abi": [ ... ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "transfer(address,uint256)",
+        "expression": "value > 1000000"
+      }
+    ],
+    "events": [
+      {
+        "signature": "Transfer(address,address,uint256)",
+        "expression": "amount > 1000000"
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": "value > 1500000000000000000"
+      }
+    ]
+  },
+  "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
+}
+----
+
+==== Match Conditions
+
+Monitors support three types of match conditions that can be combined:
+
+===== Function Conditions
+Match specific function calls to monitored contracts:
+
+[source,json]
+----
+{
+  "functions": [
+    {
+      "signature": "transfer(address,uint256)",
+      "expression": "value > 1000"
+    }
+  ]
+}
+----
+
+===== Event Conditions
+Match events emitted by monitored contracts:
+
+[source,json]
+----
+{
+  "events": [
+    {
+      "signature": "Transfer(address,address,uint256)",
+      "expression": "amount > 1000000"
+    }
+  ]
+}
+----
+
+===== Transaction Conditions
+Match transaction properties:
+
+[source,json]
+----
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "value > 1500000000000000000"
+    }
+  ]
+}
+----
+
+==== Available Fields
+
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|name
+|String
+|Unique identifier for this monitor
+
+|networks
+|Array[String]
+|List of network slugs this monitor should watch
+
+|paused
+|Boolean
+|Whether this monitor is currently paused
+
+|addresses
+|Array[Object]
+|Contract addresses to monitor with optional ABIs
+
+|match_conditions
+|Object
+|Collection of conditions that can trigger the monitor
+
+|triggers
+|Array[String]
+|IDs of triggers to execute when conditions match
+|===
+
+==== Matching Rules
+
+* If no conditions are specified, all transactions match
+* For multiple condition types:
+** Transaction conditions are checked first
+** Then either function OR event conditions must match
+** Both transaction AND (function OR event) must match if both specified
+
+==== Expressions
+
+[cols="1,2", options="header"]
+|===
+|Network Type |Access Method
+
+|Stellar
+|Arguments accessed by numeric index (e.g., [0, 1, 2])
+
+|EVM
+|Arguments accessed by parameter names from ABI
+|===
+
+===== Examples
+
+For Stellar function `transfer(Address,Address,I128)`:
+[source,json]
+----
+{
+  "expression": "2 > 1000"
+}
+----
+
+For EVM event `Transfer(address from, address to, uint256 value)`:
+[source,json]
+----
+{
+  "expression": "value > 10000000000"
+}
+----
+
+==== Important Notes
+
+* Network slugs in the monitor must match valid network configurations
+* Trigger IDs must match configured triggers
+* Expression syntax and available variables differ between EVM and Stellar networks
+* ABIs are only relevant for EVM networks
+* The monitoring frequency is controlled by the network's `cron_schedule`
+* Each monitor can watch multiple networks and addresses simultaneously
+* Monitors can be paused without removing their configuration
+
+== Running the Monitor
+
+=== Local Execution
+
+[source,bash]
+----
+cargo run
+----
+
+=== Docker Deployment
+
+1. Build the image:
+
+[source,bash]
+----
+docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
+----
+
+2. Create a volume (optional):
+
+[source,bash]
+----
+docker volume create <volume_tag>
+----
+
+3. Run the container:
+
+[source,bash]
+----
+docker run --volume <volume_tag>:/app/data <your_image_tag>
+----
+
+== Important Considerations
+
+CAUTION: This software is in alpha stage. Use in production environments at your own risk.
+
+=== Performance Considerations
+
+* Monitor performance depends on network congestion and RPC endpoint reliability
+* The `max_past_blocks` configuration is critical:
+** Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified)
+** Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`
+** Too low settings may result in missed blocks
+
+=== Notification Considerations
+
+* Email notification port defaults to 465 if not specified
+* Template variables are context-dependent:
+** Event-triggered notifications only populate event variables
+** Function-triggered notifications only populate function variables
+** Mixing contexts results in empty values
+
+== Testing
+
+=== Running Tests
+
+[source,bash]
+----
+cargo test
+cargo test properties
+cargo test integration
+----
+
+=== Coverage Reports
+
+Generate an HTML coverage report:
+
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo llvm-cov --html --open
+----
+
+== Support
+
+For support or inquiries, contact defender-support@openzeppelin.com
