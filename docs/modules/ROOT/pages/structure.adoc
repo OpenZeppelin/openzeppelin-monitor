@@ -1,0 +1,120 @@
+= Project Structure
+:description: Detailed information about the OpenZeppelin Monitor project structure
+
+This document provides detailed information about each directory in the OpenZeppelin Monitor project.
+
+== Source Code Organization
+
+=== `src/` Directory
+The main source code directory contains the core implementation files organized into several modules:
+
+* `bootstrap/`: Application initialization and setup for `main.rs`
+** Handles service initialization and dependency injection
+
+* `models/`: Core data structures and types
+** `blockchain/`: Platform-specific implementations
+*** `evm/`: Ethereum Virtual Machine specific types
+*** `stellar/`: Stellar blockchain specific types
+** `config/`: Configuration loading and validation
+** `core/`: Core domain models
+
+* `repositories/`: Configuration storage
+** Handles loading and validating configuration files
+** Provides storage interfaces for monitors, networks, and triggers
+** Implements validation of configuration references
+
+* `services/`: Core business logic
+** `blockchain/`: Blockchain client interfaces
+** `blockwatcher/`: Block monitoring and processing
+** `filter/`: Transaction and event filtering
+** `notification/`: Alert handling
+** `trigger/`: Trigger evaluation and execution
+
+* `utils/`: Helper functions
+** `cron_utils/`: Cron schedule utilities
+** `expression/`: Expression evaluation
+** `retry/`: Async operation retry mechanisms
+
+== Configuration and Data
+
+=== `config/` Directory
+Contains JSON configuration files for:
+
+* Network configurations (`networks/`)
+** Connection details for blockchain networks
+** RPC endpoints and network parameters
+
+* Monitor configurations (`monitors/`)
+** Monitoring rules and conditions
+** Network and trigger references
+
+* Trigger configurations (`triggers/`)
+** Notification settings
+** Action definitions
+
+=== `data/` Directory
+Runtime data storage:
+
+* Block processing state
+* Operational data
+* Temporary files
+
+[NOTE]
+====
+The `data/` and `config/` directories are gitignored except for example files. This directory is typically mounted as a Docker volume in production.
+====
+
+== Testing and Documentation
+
+=== `tests/` Directory
+Contains comprehensive test suites:
+
+* Integration tests
+* Property-based tests
+* Mock implementations
+* Test utilities and helpers
+
+=== `docs/` Directory
+Project documentation:
+
+* User guides
+* API documentation
+* Configuration examples
+* Architecture diagrams
+
+=== `scripts/` Directory
+Utility scripts for:
+
+* Development workflows
+* Documentation generation
+* Build processes
+* Deployment helpers
+
+== Development Tools
+
+=== Pre-commit Hooks
+Located in the project root:
+
+* Code formatting checks
+* Linting rules
+* Commit message validation
+
+=== Build Configuration
+Core build files:
+
+* `Cargo.toml`: Project dependencies and metadata
+* `rustfmt.toml`: Code formatting rules
+* `rust-toolchain.toml`: Rust version and components
+
+== Docker Support
+
+The project includes Docker configurations for different environments:
+
+* `Dockerfile.development`: Development container setup
+* `Dockerfile.production`: Production-ready container
+* Environment-specific configurations (`env_dev`, `env_prod`)
+
+[TIP]
+====
+For detailed information about running the monitor in containers, see the Docker deployment section in the main documentation.
+====
