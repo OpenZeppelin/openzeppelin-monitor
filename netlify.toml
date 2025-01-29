@@ -1,4 +1,4 @@
 [build]
-base = "docs/"
-command = "npm run docs"
-publish = "build/site"
+base = "/"
+command = "cargo install cargo-make --locked --force && cargo make rust-antora"
+publish = "docs/build/site"
