@@ -1,6 +1,6 @@
 {
   "name": "Large Transfer of USDC Token",
-  "paused": true,
+  "paused": false,
   "networks": ["ethereum_mainnet"],
   "addresses": [
     {
