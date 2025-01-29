@@ -34,6 +34,7 @@ use crate::{
 	},
 };
 
+/// Type alias for handling ServiceResult
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type ServiceResult<T> = Result<(
 	Arc<FilterService>,
