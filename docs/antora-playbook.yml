@@ -1,7 +1,7 @@
 ---
 site:
   title: OpenZeppelin Monitor
-  start_page: OpenZeppelin_Monitor:ROOT:index.adoc
+  start_page: openzeppelin_monitor:ROOT:index.adoc
 
 content:
   sources:
@@ -16,7 +16,6 @@ ui:
     url: https://github.com/stephengold/antora-ui-bundle/releases/download/v-sgold250101a/ui-bundle.zip
     snapshot: true
 urls:
-  html_extension_style: drop
   redirect_facility: netlify
 output:
   dir: build/site
