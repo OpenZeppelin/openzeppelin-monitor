@@ -41,6 +41,10 @@ pub trait BlockChainClient: Send + Sync {
 	) -> Result<Vec<BlockType>, BlockChainError>;
 }
 
+/// Defines the factory interface for creating block filters
+///
+/// This trait must be implemented by all blockchain-specific clients to provide
+/// a way to create block filters.
 pub trait BlockFilterFactory<T> {
 	type Filter: BlockFilter<Client = T>;
 	fn filter() -> Self::Filter;

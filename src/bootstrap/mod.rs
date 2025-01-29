@@ -1,3 +1,20 @@
+//! Bootstrap module for initializing services and creating handlers.
+//!
+//! This module provides functions to initialize the necessary services and create handlers for
+//! processing blocks and triggers. It also includes helper functions for filtering and processing
+//! monitors and networks.
+//!
+//! # Services
+//! - `FilterService`: Handles filtering of blockchain data
+//! - `TriggerExecutionService`: Manages trigger execution
+//! - `NotificationService`: Handles notifications
+//!
+//! # Handlers
+//! - `create_block_handler`: Creates a block handler function that processes new blocks from the
+//!   blockchain
+//! - `create_trigger_handler`: Creates a trigger handler function that processes trigger events
+//!   from the block processing pipeline
+
 use futures::future::BoxFuture;
 use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};

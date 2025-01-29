@@ -12,6 +12,10 @@ use crate::{
 	services::{notification::NotificationService, trigger::error::TriggerError},
 };
 
+/// Trait for executing triggers
+///
+/// This trait must be implemented by all trigger execution services to provide
+/// a way to execute triggers.
 #[async_trait]
 pub trait TriggerExecutionServiceTrait {
 	async fn execute(

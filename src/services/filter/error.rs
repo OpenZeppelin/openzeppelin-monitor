@@ -6,6 +6,7 @@
 use log::error;
 use std::{error::Error, fmt};
 
+/// Represents errors that can occur during filter operations
 #[derive(Debug)]
 pub enum FilterError {
 	/// Error when block type doesn't match expected chain

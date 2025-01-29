@@ -25,6 +25,10 @@ use crate::{
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
 
+/// Trait for filtering blockchain data
+///
+/// This trait must be implemented by all blockchain-specific clients to provide
+/// a way to filter blockchain data.
 #[async_trait]
 pub trait BlockFilter {
 	type Client;
@@ -37,6 +41,9 @@ pub trait BlockFilter {
 	) -> Result<Vec<MonitorMatch>, FilterError>;
 }
 
+/// Service for filtering blockchain data
+///
+/// This service provides a way to filter blockchain data based on a set of monitors.
 pub struct FilterService {}
 
 impl FilterService {
