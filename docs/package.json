@@ -12,8 +12,5 @@
     "@antora/site-generator": "3.1.10",
     "@openzeppelin/docs-utils": "^0.1.2",
     "@sntke/antora-mermaid-extension": "^0.0.6"
-  },
-  "main": "index.js",
-  "license": "ISC",
-  "description": ""
+  }
 }
