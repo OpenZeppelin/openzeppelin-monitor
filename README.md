@@ -313,7 +313,7 @@ Run `RUST_TEST_THREADS=1 cargo llvm-cov --html --open` (creates an interactive H
 - Pre-requisites:
 
   - Install `antora` locally, you can follow the steps mentioned [here](https://docs.antora.org/antora/latest/install/install-antora/#install-dir), if you already have you can skip this step.
-    > Note: If you want to install globally, you can run `npm install -g @antora/cli@3.1 @antora/site-generator@3.1`.
+    > Note: If you want to install globally, you can run: <br/>`npm install -g @antora/cli@3.1 @antora/site-generator@3.1`
   - Verify the installation by running `antora --version` or by running `npx antora --version` if you installed it locally.
 
 - To generate documentation locally, run the following command:
