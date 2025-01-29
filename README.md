@@ -133,20 +133,34 @@ graph TD
   cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
   ```
 
-- Configure your networks in `config/networks/`:
+### Configuration Files
 
-  - EVM networks: See `evm_mainnet.json`
-  - Stellar networks: See `stellar_mainnet.json`
+#### Network Configuration (`config/networks/`)
 
-- Configure your monitors in `config/monitors/`:
+Configure your blockchain network connections:
 
-  - EVM monitors: See `evm_transfer_usdc.json`
-  - Stellar monitors: See `stellar_transfer_usdc.json`
+- For EVM networks: Use `ethereum_mainnet.json` as template
+- For Stellar networks: Use `stellar_mainnet.json` as template
 
-- Configure your triggers in `config/triggers/`:
+> **Important**: We strongly recommend using private RPC providers for improved reliability.
 
-  - Slack notifications: See `slack_notifications.json`
-  - Email notifications: See `email_notifications.json`
+#### Monitor Configuration (`config/monitors/`)
+
+Set up your blockchain monitoring rules:
+
+- For EVM networks: Use `evm_transfer_usdc.json` as template
+- For Stellar networks: Use `stellar_transfer_usdc.json` as template
+
+> **Note**: For EVM monitors, you must include the contract ABI when monitoring events or functions. Update all addresses to match your monitoring targets.
+
+#### Trigger Configuration (`config/triggers/`)
+
+Configure notification settings:
+
+- For Slack: Use `slack_notifications.json` as template
+  - Required: Update `webhook_url` with your Slack webhook URL
+- For Email: Use `email_notifications.json` as template
+  - Required: Update all SMTP settings with your email server configuration
 
 ### Monitor Argument Access
 
@@ -290,8 +304,9 @@ Run `RUST_TEST_THREADS=1 cargo llvm-cov --html --open` (creates an interactive H
 ## Documentation
 
 - Pre-requisites:
+
   - Install `antora` locally, you can follow the steps mentioned [here](https://docs.antora.org/antora/latest/install/install-antora/#install-dir), if you already have you can skip this step.
-  > Note: If you want to install globally, you can run `npm install -g @antora/cli@3.1 @antora/site-generator@3.1`.
+    > Note: If you want to install globally, you can run `npm install -g @antora/cli@3.1 @antora/site-generator@3.1`.
   - Verify the installation by running `antora --version` or by running `npx antora --version` if you installed it locally.
 
 - To generate documentation locally, run the following command:
