@@ -4,6 +4,23 @@
 
 A blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
+## Features
+
+- Multi-chain support
+- Configurable monitoring schedules
+- Flexible trigger conditions
+- Extensible architecture for adding new chains
+
+## Supported Networks
+
+- EVM
+- Stellar
+
+## Supported Triggers
+
+- Slack notifications
+- Email notifications
+
 ## Architecture
 
 ```mermaid
@@ -77,16 +94,6 @@ graph TD
     class BW,FS,TS,NS service
     class Slack,Email notification
 ```
-
-## Supported Networks
-
-- EVM
-- Stellar
-
-## Supported Triggers
-
-- Slack notifications
-- Email notifications
 
 ## Prerequisites
 
