@@ -126,7 +126,7 @@ For detailed information about each directory and its contents, see xref:structu
 
 ==== Local Setup
 
-1. Clone the repository:
+. Clone the repository:
 
 [source,bash]
 ----
@@ -134,7 +134,7 @@ git clone https://github.com/openzeppelin/openzeppelin-monitor
 cd openzeppelin-monitor
 ----
 
-2. Install dependencies:
+. Install dependencies:
 
 [source,bash]
 ----
