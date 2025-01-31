@@ -797,6 +797,13 @@ Generate an HTML coverage report:
 RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
 ----
 
+Generate coverage report in the terminal:
+
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo +stable llvm-cov
+----
+
 == Support
 
 For support or inquiries, contact defender-support@openzeppelin.com
