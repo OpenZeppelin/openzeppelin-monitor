@@ -667,19 +667,19 @@ Match transaction properties:
 
 ===== Examples
 
-For Stellar function `transfer(Address,Address,I128)`:
-[source,json]
-----
-{
-  "expression": "2 > 1000"
-}
-----
-
 For EVM event `Transfer(address from, address to, uint256 value)`:
 [source,json]
 ----
 {
   "expression": "value > 10000000000"
+}
+----
+
+For Stellar function `transfer(Address,Address,I128)`:
+[source,json]
+----
+{
+  "expression": "2 > 1000"
 }
 ----
 
@@ -783,9 +783,9 @@ CAUTION: This software is in alpha stage. Use in production environments at your
 
 [source,bash]
 ----
-cargo test
-cargo test properties
-cargo test integration
+RUST_TEST_THREADS=1 cargo test
+RUST_TEST_THREADS=1 cargo test properties
+RUST_TEST_THREADS=1 cargo test integration
 ----
 
 === Coverage Reports

@@ -56,6 +56,7 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
 ## Development Workflow
 
 1. **Set Up Development Environment**:
+
    - Install dependencies:
 
      ```sh
@@ -69,31 +70,38 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
      ```
 
 2. **Run Tests**:
-   - Unit tests:
+
+   - All tests:
 
      ```sh
-     cargo test
+     RUST_TEST_THREADS=1 cargo test
      ```
 
    - Integration tests:
 
      ```sh
-     cargo test integration
+     RUST_TEST_THREADS=1 cargo test integration
+     ```
+
+   - Property-based tests:
+
+     ```sh
+     RUST_TEST_THREADS=1 cargo test properties
      ```
 
 3. **Configure Pre commit Hooks**:
 
    - Install & Configure Pre-Commit hooks
 
-    ```sh
+   ```sh
 
-      # Use <pipx install pre-commit> if you prefer to install it globally
+     # Use <pipx install pre-commit> if you prefer to install it globally
 
-      pip install pre-commit
-      pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
-    ```
+     pip install pre-commit
+     pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+   ```
 
-    > Note: If you run into issues with pip install, you may need [pipx](https://github.com/pypa/pipx?tab=readme-ov-file#install-pipx) to install pre-commit globally.
+   > Note: If you run into issues with pip install, you may need [pipx](https://github.com/pypa/pipx?tab=readme-ov-file#install-pipx) to install pre-commit globally.
 
 ## GitHub workflow
 
@@ -228,14 +236,14 @@ repository rather than inside your fork.
 ### Get a code review
 
 Once your pull request has been opened it will be assigned to one or more
-reviewers.  Those reviewers will do a thorough code review, looking for
+reviewers. Those reviewers will do a thorough code review, looking for
 correctness, bugs, opportunities for improvement, documentation and comments,
 and style.
 
 Commit changes made in response to review comments to the same branch on your
 fork.
 
-Very small PRs are easy to review.  Very large PRs are very difficult to review.
+Very small PRs are easy to review. Very large PRs are very difficult to review.
 
 ### Squash commits
 

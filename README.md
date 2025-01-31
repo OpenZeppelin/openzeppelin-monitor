@@ -171,17 +171,17 @@ Configure notification settings:
 
 ### Monitor Argument Access
 
-- **Stellar**: Arguments are accessed by numeric index:
-
-  - For function `transfer(Address,Address,I128)`
-    - Access via [0, 1, 2]
-    - For example: `"expression": "2 > 1000"`
-
 - **EVM**: Arguments are accessed by parameter names defined in the ABI:
 
   - For event `Transfer(address from, address to, uint256 value)`
     - Access via ["from", "to", "value"]
     - For example: `"expression": "value > 10000000000"`
+
+- **Stellar**: Arguments are accessed by numeric index:
+
+  - For function `transfer(Address,Address,I128)`
+    - Access via [0, 1, 2]
+    - For example: `"expression": "2 > 1000"`
 
 ### Condition Evaluation Rules
 
@@ -271,9 +271,9 @@ docker run --mount type=bind,src=./config,dst=/app/config,ro --volume <volume_ta
 ### Run Tests
 
 ```bash
-cargo test
-cargo test properties
-cargo test integration
+RUST_TEST_THREADS=1 cargo test
+RUST_TEST_THREADS=1 cargo test properties
+RUST_TEST_THREADS=1 cargo test integration
 ```
 
 ### Generate Test Coverage Report
