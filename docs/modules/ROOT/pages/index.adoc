@@ -794,7 +794,7 @@ Generate an HTML coverage report:
 
 [source,bash]
 ----
-RUST_TEST_THREADS=1 cargo llvm-cov --html --open
+RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
 ----
 
 == Support

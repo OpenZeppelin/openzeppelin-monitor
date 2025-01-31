@@ -278,7 +278,17 @@ RUST_TEST_THREADS=1 cargo test integration
 
 ### Generate Test Coverage Report
 
-Run `RUST_TEST_THREADS=1 cargo llvm-cov --html --open` (creates an interactive HTML coverage report) or `RUST_TEST_THREADS=1 cargo llvm-cov` to view coverage in the terminal.
+_Interactive HTML Report_
+
+```sh
+RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
+```
+
+_Terminal Report_
+
+```sh
+RUST_TEST_THREADS=1 cargo +stable llvm-cov
+```
 
 ### Developer setup
 
