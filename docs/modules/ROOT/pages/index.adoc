@@ -5,7 +5,30 @@
 
 A blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
-== Overview
+
+**Features**
+
+- Multi-chain support
+- Configurable monitoring schedules
+- Flexible trigger conditions
+- Extensible architecture for adding new chains
+
+**Supported Networks (OOTB)**
+
+- EVM
+- Stellar
+
+**Supported Triggers (OOTB)**
+
+- Slack notifications
+- Email notifications
+
+[NOTE]
+====
+To get started immediately, see xref:quickstart.adoc[Quickstart].
+====
+
+== Technical Overview
 
 [mermaid,width=100%]
 ....
@@ -79,14 +102,6 @@ graph TD
     class BW,FS,TS,NS service
     class Slack,Email notification
 ....
-
-OpenZeppelin Monitor provides:
-
-* Multi-chain support for monitoring
-* Configurable monitoring schedules per chain
-* Flexible trigger conditions for monitoring activities
-* Built-in support for both EVM and Stellar networks
-* Notification triggers via Slack and email
 
 == Project Structure
 
@@ -797,7 +812,7 @@ Generate an HTML coverage report:
 RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
 ----
 
-Generate coverage report in the terminal:
+Generate a coverage report in the terminal:
 
 [source,bash]
 ----

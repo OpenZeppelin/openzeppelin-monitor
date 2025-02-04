@@ -1,0 +1,229 @@
+= Quick Start Guide
+:description: Get started monitoring USDC transfers on Ethereum mainnet
+
+This guide will walk you through setting up OpenZeppelin Monitor to track large USDC transfers on Ethereum mainnet.
+
+== Prerequisites
+
+* Rust 2021 edition
+
+== Installation
+
+. Clone the repository:
++
+[source,bash]
+----
+git clone https://github.com/openzeppelin/openzeppelin-monitor
+cd openzeppelin-monitor
+----
+
+. Install dependencies:
++
+[source,bash]
+----
+cargo build
+----
+
+== Configuration
+
+=== 1. Environment Setup
+
+Copy the example environment file:
+
+[source,bash]
+----
+cp .env.example .env
+----
+
+Modify the `.env` file with your preferred verbosity level.
+
+1. Error
+2. Warn
+3. Info
+4. Debug
+5. Trace
+
+[source,bash]
+----
+RUST_LOG=info
+----
+
+=== 2. Network Configuration
+
+Create the Ethereum mainnet network configuration:
+
+[source,bash]
+----
+cp config/networks/ethereum_mainnet.json.example config/networks/ethereum_mainnet.json
+----
+
+The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/networks/ethereum_mainnet.json.example[default configuration^] should work, but you may want to update the RPC URL to your preferred provider:
+
+[source,json]
+----
+{
+  "network_type": "EVM",
+  "slug": "ethereum_mainnet",
+  "name": "Ethereum Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": "YOUR_RPC_URL_HERE",
+      "weight": 100
+    }
+  ],
+  "chain_id": 1,
+  "block_time_ms": 12000,
+  "confirmation_blocks": 12,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 18,
+  "store_blocks": false
+}
+----
+
+=== 3. Monitor Configuration
+
+Create the USDC transfer monitor configuration:
+
+[source,bash]
+----
+cp config/monitors/evm_transfer_usdc.json.example config/monitors/evm_transfer_usdc.json
+----
+
+This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/monitors/evm_transfer_usdc.json.example[configuration^] monitors USDC transfers over 10,000 USDC (10 million base units, accounting for 6 decimals). You can customize the notification channels by modifying the `triggers` array at the bottom of the configuration, or keep the default Slack and email notifications that we'll set up in the next section.
+
+[source,json]
+----
+{
+  "name": "Large Transfer of USDC Token",
+  "paused": false,
+  "networks": ["ethereum_mainnet"],
+  "addresses": [
+    {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "abi": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+            }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Transfer(address,address,uint256)",
+        "expression": "value > 10000000000"
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
+}
+----
+
+=== 4. Notification Configuration
+
+==== For Slack Notifications:
+
+[source,bash]
+----
+cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+----
+
+Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/triggers/slack_notifications.json.example[configuration^]:
+
+[source,json]
+----
+{
+    "evm_large_transfer_usdc_slack": {
+        "name": "Large Transfer Slack Notification",
+        "trigger_type": "slack",
+        "config": {
+            "webhook_url": "https://hooks.slack.com/services/A/B/C",
+            "title": "large_transfer_slack triggered",
+            "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+        }
+    }
+}
+----
+
+==== For Email Notifications:
+
+[source,bash]
+----
+cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
+----
+
+Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/triggers/email_notifications.json.example[configuration^]:
+
+[source,json]
+----
+{
+    "evm_large_transfer_usdc_email": {
+        "name": "Large Transfer Email Notification",
+        "trigger_type": "email",
+        "config": {
+            "host": "smtp.gmail.com",
+            "port": 465,
+            "username": "your_email@gmail.com",
+            "password": "your_password",
+            "subject": "large_transfer_usdc_email triggered",
+            "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog",
+            "sender": "your_email@gmail.com",
+            "recipients": [
+                "recipient1@example.com",
+                "recipient2@example.com"
+            ]
+        }
+    }
+}
+----
+
+== Running the Monitor
+
+Start the monitor:
+
+[source,bash]
+----
+cargo run
+----
+
+The monitor will now:
+
+1. Check for new Ethereum blocks every minute
+2. Watch for USDC transfers over 10,000 USDC
+3. Send notifications via Slack and email when large transfers occur
+
+== Next Steps
+
+* Adjust the transfer threshold by modifying the `expression` value
+* Monitor additional ERC20 tokens by creating new monitor configurations
+* Explore
