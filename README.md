@@ -215,7 +215,14 @@ For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 ## Get Help
 
-For support or inquiries, contact <defender-support@openzeppelin.com>. We encourage you to reach out with any questions or feedback.
+If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://openzeppelin-monitor.netlify.app/openzeppelin_monitor/0.1.0/).
+
+If the answer is not there:
+
+- Join the [Telegram](https://t.me/zeppelinos) to get help, or
+- Open an issue with [the bug](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml)
+
+We encourage you to reach out with any questions or feedback.
 
 ## Maintainers
 
