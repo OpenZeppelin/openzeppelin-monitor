@@ -4,6 +4,8 @@ Thank you for your interest in contributing to the OpenZeppelin Monitor project!
 
 There are many ways to contribute, regardless of your experience level. Whether you're new to Rust or a seasoned expert, your help is invaluable. Every contribution matters, no matter how small, and all efforts are greatly appreciated. This document is here to guide you through the process. Don’t feel overwhelmed—it’s meant to support and simplify your contribution journey.
 
+If you are looking for a good place to start, find a good first issue [here](https://github.com/openzeppelin/openzeppelin-monitor/issues?q=is%3Aissue%20is%3Aopen%20label%3Agood-first-issue).
+
 - [Contributing](#contributing)
   - [Communication](#communication)
   - [Development Workflow](#development-workflow)
