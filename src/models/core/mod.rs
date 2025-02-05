@@ -10,8 +10,8 @@ mod network;
 mod trigger;
 
 pub use monitor::{
-	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor,
-	TransactionCondition, TransactionStatus,
+	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, ScriptLanguage,
+	TransactionCondition, TransactionStatus, TriggerConditions,
 };
 pub use network::{Network, RpcUrl};
 pub use trigger::{NotificationMessage, Trigger, TriggerType, TriggerTypeConfig};
