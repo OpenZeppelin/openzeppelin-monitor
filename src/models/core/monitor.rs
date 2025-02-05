@@ -26,6 +26,9 @@ pub struct Monitor {
 
 	/// IDs of triggers to execute when conditions match
 	pub triggers: Vec<String>,
+
+	/// Conditions that should trigger the triggers
+	pub trigger_conditions: Option<TriggerConditions>,
 }
 
 /// Contract address with optional ABI for decoding transactions and events
@@ -90,4 +93,21 @@ pub enum TransactionStatus {
 	Success,
 	/// Match only failed transactions
 	Failure,
+}
+
+/// Conditions that should trigger the triggers
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct TriggerConditions {
+	pub execution_order: u32,
+	pub script_path: String,
+	pub arguments: String,
+	pub language: Language,
+	pub timeout_ms: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub enum Language {
+	JavaScript,
+	Python,
+	Bash,
 }

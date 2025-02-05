@@ -80,6 +80,28 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 					));
 				}
 			}
+
+			// Validate custom trigger conditions
+			if let Some(trigger_conditions) = &monitor.trigger_conditions {
+				if trigger_conditions.execution_order == 0 {
+					validation_errors.push(format!(
+						"Monitor '{}' should have a custom filter execution_order greater than 0",
+						monitor_name
+					));
+				}
+				if !Path::new(&trigger_conditions.script_path).exists() {
+					validation_errors.push(format!(
+						"Monitor '{}' has a custom filter script that does not exist",
+						monitor_name
+					));
+				}
+				if trigger_conditions.timeout_ms == 0 {
+					validation_errors.push(format!(
+						"Monitor '{}' should have a custom filter timeout_ms greater than 0",
+						monitor_name
+					));
+				}
+			}
 		}
 
 		if !validation_errors.is_empty() {
