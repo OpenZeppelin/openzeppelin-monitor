@@ -27,7 +27,7 @@ pub struct Monitor {
 	/// IDs of triggers to execute when conditions match
 	pub triggers: Vec<String>,
 
-	/// Conditions that should trigger the triggers
+	/// Conditions that should be met prior to triggering notifications
 	pub trigger_conditions: Option<TriggerConditions>,
 }
 
@@ -98,15 +98,17 @@ pub enum TransactionStatus {
 /// Conditions that should trigger the triggers
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TriggerConditions {
+	#[serde(default)]
 	pub execution_order: u32,
 	pub script_path: String,
+	#[serde(default)]
 	pub arguments: String,
-	pub language: Language,
+	pub language: ScriptLanguage,
 	pub timeout_ms: u32,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub enum Language {
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq)]
+pub enum ScriptLanguage {
 	JavaScript,
 	Python,
 	Bash,
