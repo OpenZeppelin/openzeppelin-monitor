@@ -85,6 +85,21 @@ impl ConfigLoader for Monitor {
 			}
 		}
 
+		// Validate trigger conditions (focus on script path and timeout)
+		if let Some(trigger_conditions) = &self.trigger_conditions {
+			if !Path::new(&trigger_conditions.script_path).exists() {
+				return Err(ConfigError::validation_error(format!(
+					"Script file not found: {}",
+					trigger_conditions.script_path
+				)));
+			}
+			if trigger_conditions.timeout_ms == 0 {
+				return Err(ConfigError::validation_error(
+					"Timeout must be greater than 0",
+				));
+			}
+		}
+
 		Ok(())
 	}
 }
