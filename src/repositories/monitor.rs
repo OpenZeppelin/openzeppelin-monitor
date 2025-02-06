@@ -4,16 +4,25 @@
 //! validation of references to networks and triggers. The repository loads monitor
 //! configurations from JSON files and ensures all referenced components exist.
 
-use std::{collections::HashMap, marker::PhantomData, path::Path};
+use std::{collections::HashMap, marker::PhantomData, path::Path, sync::LazyLock};
 
 use crate::{
-	models::{ConfigLoader, Monitor, Network, Trigger},
+	models::{ConfigLoader, Monitor, Network, ScriptLanguage, Trigger},
 	repositories::{
 		error::RepositoryError,
 		network::{NetworkRepository, NetworkRepositoryTrait, NetworkService},
 		trigger::{TriggerRepository, TriggerRepositoryTrait, TriggerService},
 	},
 };
+
+/// Static mapping of script languages to their file extensions
+static LANGUAGE_EXTENSIONS: LazyLock<HashMap<ScriptLanguage, &'static str>> = LazyLock::new(|| {
+	HashMap::from([
+		(ScriptLanguage::Python, "py"),
+		(ScriptLanguage::JavaScript, "js"),
+		(ScriptLanguage::Bash, "sh"),
+	])
+});
 
 /// Repository for storing and retrieving monitor configurations
 #[derive(Clone)]
@@ -83,18 +92,32 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 
 			// Validate custom trigger conditions
 			if let Some(trigger_conditions) = &monitor.trigger_conditions {
-				if trigger_conditions.execution_order == 0 {
-					validation_errors.push(format!(
-						"Monitor '{}' should have a custom filter execution_order greater than 0",
-						monitor_name
-					));
-				}
-				if !Path::new(&trigger_conditions.script_path).exists() {
+				let script_path = Path::new(&trigger_conditions.script_path);
+				if !script_path.exists() {
 					validation_errors.push(format!(
 						"Monitor '{}' has a custom filter script that does not exist",
 						monitor_name
 					));
 				}
+
+				// Validate file extension matches the specified language
+				match LANGUAGE_EXTENSIONS.get(&trigger_conditions.language) {
+					Some(expected_extension) => {
+						match script_path.extension().and_then(|ext| ext.to_str()) {
+							Some(ext) if ext == *expected_extension => (), // Valid extension
+							_ => validation_errors.push(format!(
+								"Monitor '{}' has a custom filter script with invalid extension - \
+								 must be .{} for {:?} language",
+								monitor_name, expected_extension, trigger_conditions.language
+							)),
+						}
+					}
+					None => validation_errors.push(format!(
+						"Monitor '{}' has an unsupported script language '{:?}'",
+						monitor_name, trigger_conditions.language
+					)),
+				}
+
 				if trigger_conditions.timeout_ms == 0 {
 					validation_errors.push(format!(
 						"Monitor '{}' should have a custom filter timeout_ms greater than 0",
