@@ -1,8 +1,8 @@
 use email_address::EmailAddress;
 use openzeppelin_monitor::models::{
-	AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions, Monitor,
-	Network, RpcUrl, TransactionCondition, TransactionStatus, Trigger, TriggerType,
-	TriggerTypeConfig,
+	AddressWithABI, BlockChainType, EventCondition, FunctionCondition, Language, MatchConditions,
+	Monitor, Network, RpcUrl, TransactionCondition, TransactionStatus, Trigger, TriggerConditions,
+	TriggerType, TriggerTypeConfig,
 };
 use proptest::{option, prelude::*};
 
@@ -31,15 +31,25 @@ pub fn monitor_strategy(
 			MIN_COLLECTION_SIZE..MAX_ADDRESSES,
 		),
 		match_conditions_strategy(),
+		trigger_conditions_strategy(),
 	)
 		.prop_map(
-			|(triggers, networks, name, paused, addresses, match_conditions)| Monitor {
+			|(
 				triggers,
 				networks,
 				name,
 				paused,
 				addresses,
 				match_conditions,
+				trigger_conditions,
+			)| Monitor {
+				triggers,
+				networks,
+				name,
+				paused,
+				addresses,
+				match_conditions,
+				trigger_conditions,
 			},
 		)
 }
@@ -248,4 +258,31 @@ pub fn match_conditions_strategy() -> impl Strategy<Value = MatchConditions> {
 			events,
 			transactions,
 		})
+}
+
+pub fn trigger_conditions_strategy() -> impl Strategy<Value = Option<TriggerConditions>> {
+	let script_paths = prop::sample::select(vec![
+		"tests/scripts/test1.py".to_string(),
+		"tests/scripts/test2.py".to_string(),
+		"tests/scripts/test3.py".to_string(),
+	]);
+
+	(
+		1u32..=100u32,
+		script_paths, // Use predefined paths instead of random generation
+		"[a-zA-Z0-9_]+".prop_map(|s| s.to_string()),
+		Just(Language::Python),
+		Just(1000u32),
+	)
+		.prop_map(
+			|(execution_order, script_path, arguments, language, timeout_ms)| {
+				Some(TriggerConditions {
+					execution_order,
+					script_path,
+					arguments,
+					language,
+					timeout_ms,
+				})
+			},
+		)
 }
