@@ -1,8 +1,8 @@
 use email_address::EmailAddress;
 use openzeppelin_monitor::models::{
-	AddressWithABI, BlockChainType, EventCondition, FunctionCondition, Language, MatchConditions,
-	Monitor, Network, RpcUrl, TransactionCondition, TransactionStatus, Trigger, TriggerConditions,
-	TriggerType, TriggerTypeConfig,
+	AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions, Monitor,
+	Network, RpcUrl, ScriptLanguage, TransactionCondition, TransactionStatus, Trigger,
+	TriggerConditions, TriggerType, TriggerTypeConfig,
 };
 use proptest::{option, prelude::*};
 
@@ -271,7 +271,7 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Option<TriggerCond
 		1u32..=100u32,
 		script_paths, // Use predefined paths instead of random generation
 		"[a-zA-Z0-9_]+".prop_map(|s| s.to_string()),
-		Just(Language::Python),
+		Just(ScriptLanguage::Python),
 		Just(1000u32),
 	)
 		.prop_map(
