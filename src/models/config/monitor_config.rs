@@ -129,6 +129,7 @@ mod tests {
 					}
                 ]
             },
+			"trigger_conditions": null,
 			"triggers": ["trigger1", "trigger2"]
         }"#;
 
@@ -259,6 +260,7 @@ mod tests {
 					expression: None,
 				}],
 			},
+			trigger_conditions: None,
 			triggers: vec!["trigger1".to_string()],
 		};
 
@@ -274,6 +276,7 @@ mod tests {
 				events: vec![],
 				transactions: vec![],
 			},
+			trigger_conditions: None,
 			triggers: vec![],
 		};
 
