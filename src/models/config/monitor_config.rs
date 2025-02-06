@@ -108,8 +108,8 @@ impl ConfigLoader for Monitor {
 mod tests {
 	use super::*;
 	use crate::models::core::{
-		AddressWithABI, EventCondition, FunctionCondition, MatchConditions, TransactionCondition,
-		TransactionStatus,
+		AddressWithABI, EventCondition, FunctionCondition, MatchConditions, ScriptLanguage,
+		TransactionCondition, TransactionStatus, TriggerConditions,
 	};
 	use std::collections::HashMap;
 	use tempfile::TempDir;
@@ -296,5 +296,115 @@ mod tests {
 		};
 
 		assert!(invalid_monitor.validate().is_err());
+	}
+
+	#[test]
+	fn test_validate_monitor_with_trigger_conditions() {
+		// Create a temporary directory and script file
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("test_script.py");
+		fs::write(&script_path, "print('test')").unwrap();
+
+		// Set current directory to temp directory to make relative paths work
+		let original_dir = std::env::current_dir().unwrap();
+		std::env::set_current_dir(temp_dir.path()).unwrap();
+
+		// Test with valid script path
+		let valid_monitor = Monitor {
+			name: "TestMonitor".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			addresses: vec![AddressWithABI {
+				address: "0x0000000000000000000000000000000000000000".to_string(),
+				abi: None,
+			}],
+			match_conditions: MatchConditions {
+				functions: vec![FunctionCondition {
+					signature: "transfer(address,uint256)".to_string(),
+					expression: None,
+				}],
+				events: vec![EventCondition {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					expression: None,
+				}],
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Success,
+					expression: None,
+				}],
+			},
+			trigger_conditions: Some(TriggerConditions {
+				execution_order: 1,
+				script_path: "test_script.py".to_string(),
+				timeout_ms: 1000,
+				arguments: "".to_string(),
+				language: ScriptLanguage::Python,
+			}),
+			triggers: vec![],
+		};
+
+		assert!(valid_monitor.validate().is_ok());
+
+		// Restore original directory
+		std::env::set_current_dir(original_dir).unwrap();
+	}
+
+	#[test]
+	fn test_validate_monitor_with_invalid_script_path() {
+		let invalid_monitor = Monitor {
+			name: "TestMonitor".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			trigger_conditions: Some(TriggerConditions {
+				execution_order: 1,
+				script_path: "non_existent_script.py".to_string(),
+				timeout_ms: 1000,
+				arguments: "".to_string(),
+				language: ScriptLanguage::Python,
+			}),
+			triggers: vec![],
+		};
+		assert!(invalid_monitor.validate().is_err());
+	}
+
+	#[test]
+	fn test_validate_monitor_with_timeout_zero() {
+		// Create a temporary directory and script file
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("test_script.py");
+		fs::write(&script_path, "print('test')").unwrap();
+
+		// Set current directory to temp directory to make relative paths work
+		let original_dir = std::env::current_dir().unwrap();
+		std::env::set_current_dir(temp_dir.path()).unwrap();
+
+		let invalid_monitor = Monitor {
+			name: "TestMonitor".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			trigger_conditions: Some(TriggerConditions {
+				execution_order: 1,
+				script_path: "test_script.py".to_string(),
+				timeout_ms: 0,
+				arguments: "".to_string(),
+				language: ScriptLanguage::Python,
+			}),
+			triggers: vec![],
+		};
+		assert!(invalid_monitor.validate().is_err());
+
+		// Restore original directory
+		std::env::set_current_dir(original_dir).unwrap();
 	}
 }
