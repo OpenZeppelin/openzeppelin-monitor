@@ -31,5 +31,11 @@
       }
     ]
   },
-  "triggers": ["stellar_large_transfer_usdc_slack"]
+  "triggers": ["stellar_large_transfer_usdc_slack"],
+  "trigger_conditions": {
+    "execution_order": 1,
+    "script_path": "./config/stellar/filters/custom_condition_filter.py",
+    "language": "Python",
+    "timeout_ms": 10000
+  }
 }
