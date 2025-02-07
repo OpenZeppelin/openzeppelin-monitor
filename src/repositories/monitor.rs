@@ -292,3 +292,116 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 		self.repository.get_all()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::{MatchConditions, Monitor, ScriptLanguage};
+	use std::fs;
+	use tempfile::TempDir;
+
+	#[test]
+	fn test_validate_custom_trigger_conditions() {
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("test_script.py");
+		fs::write(&script_path, "print('test')").unwrap();
+
+		let mut monitors = HashMap::new();
+		let triggers = HashMap::new();
+		let networks = HashMap::new();
+
+		// Test valid configuration
+		let monitor = Monitor {
+			name: "test_monitor".to_string(),
+			match_conditions: MatchConditions::default(),
+			trigger_conditions: Some(crate::models::TriggerConditions {
+				execution_order: 1,
+				script_path: script_path.to_str().unwrap().to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: "".to_string(),
+			}),
+			..Default::default()
+		};
+		monitors.insert("test_monitor".to_string(), monitor);
+
+		assert!(
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks
+			)
+			.is_ok()
+		);
+
+		// Test non-existent script
+		let monitor_bad_path = Monitor {
+			name: "test_monitor_bad_path".to_string(),
+			trigger_conditions: Some(crate::models::TriggerConditions {
+				execution_order: 1,
+				script_path: "non_existent_script.py".to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: "".to_string(),
+			}),
+			..Default::default()
+		};
+		monitors.insert("test_monitor_bad_path".to_string(), monitor_bad_path);
+
+		let err =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			)
+			.unwrap_err();
+		assert!(err.to_string().contains("does not exist"));
+
+		// Test wrong extension
+		let wrong_ext_path = temp_dir.path().join("test_script.js");
+		fs::write(&wrong_ext_path, "print('test')").unwrap();
+
+		let monitor_wrong_ext = Monitor {
+			name: "test_monitor_wrong_ext".to_string(),
+			trigger_conditions: Some(crate::models::TriggerConditions {
+				execution_order: 1,
+				script_path: wrong_ext_path.to_str().unwrap().to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: "".to_string(),
+			}),
+			..Default::default()
+		};
+		monitors.clear();
+		monitors.insert("test_monitor_wrong_ext".to_string(), monitor_wrong_ext);
+
+		let err =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			)
+			.unwrap_err();
+		assert!(err.to_string().contains("invalid extension"));
+
+		// Test zero timeout
+		let monitor_zero_timeout = Monitor {
+			name: "test_monitor_zero_timeout".to_string(),
+			match_conditions: MatchConditions::default(),
+			trigger_conditions: Some(crate::models::TriggerConditions {
+				execution_order: 1,
+				script_path: script_path.to_str().unwrap().to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 0,
+				arguments: "".to_string(),
+			}),
+			..Default::default()
+		};
+		monitors.clear();
+		monitors.insert(
+			"test_monitor_zero_timeout".to_string(),
+			monitor_zero_timeout,
+		);
+
+		let err =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			)
+			.unwrap_err();
+		assert!(err.to_string().contains("timeout_ms greater than 0"));
+	}
+}
