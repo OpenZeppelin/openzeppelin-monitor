@@ -1,7 +1,7 @@
 use crate::properties::strategies::{monitor_strategy, network_strategy, trigger_strategy};
 
 use openzeppelin_monitor::{
-	models::ConfigLoader,
+	models::{ConfigLoader, ScriptLanguage},
 	repositories::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, TriggerRepository,
 	},
@@ -171,6 +171,15 @@ proptest! {
 			invalid_monitor = monitor.clone();
 			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
 				conditions.script_path = "invalid_path".to_string();
+				prop_assert!(invalid_monitor.validate().is_err());
+			}
+
+			// Test invalid script extension
+			invalid_monitor = monitor.clone();
+			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
+				// Test Python script with wrong extension
+				conditions.language = ScriptLanguage::Python;
+				conditions.script_path = "test_script.js".to_string();
 				prop_assert!(invalid_monitor.validate().is_err());
 			}
 
