@@ -64,5 +64,11 @@
       }
     ]
   },
-  "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
+  "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"],
+  "trigger_conditions": {
+    "execution_order": 1,
+    "script_path": "./config/evm/filters/custom_condition_filter.py",
+    "language": "Python",
+    "timeout_ms": 10000
+  }
 }
