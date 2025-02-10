@@ -102,22 +102,15 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 				let expected_extension = LANGUAGE_EXTENSIONS
 					.iter()
 					.find(|(lang, _)| *lang == &trigger_conditions.language)
-					.map(|(_, ext)| *ext);
+					.map(|(_, ext)| *ext)
+					.expect("All script languages should have an extension");
 
-				match expected_extension {
-					Some(expected_extension) => {
-						match script_path.extension().and_then(|ext| ext.to_str()) {
-							Some(ext) if ext == expected_extension => (), // Valid extension
-							_ => validation_errors.push(format!(
-								"Monitor '{}' has a custom filter script with invalid extension - \
-								 must be .{} for {:?} language",
-								monitor_name, expected_extension, trigger_conditions.language
-							)),
-						}
-					}
-					None => validation_errors.push(format!(
-						"Monitor '{}' has an unsupported script language '{:?}'",
-						monitor_name, trigger_conditions.language
+				match script_path.extension().and_then(|ext| ext.to_str()) {
+					Some(ext) if ext == expected_extension => (), // Valid extension
+					_ => validation_errors.push(format!(
+						"Monitor '{}' has a custom filter script with invalid extension - must be \
+						 .{} for {:?} language",
+						monitor_name, expected_extension, trigger_conditions.language
 					)),
 				}
 
