@@ -4,7 +4,7 @@
 //! validation of references to networks and triggers. The repository loads monitor
 //! configurations from JSON files and ensures all referenced components exist.
 
-use std::{collections::HashMap, marker::PhantomData, path::Path, sync::LazyLock};
+use std::{collections::HashMap, marker::PhantomData, path::Path};
 
 use crate::{
 	models::{ConfigLoader, Monitor, Network, ScriptLanguage, Trigger},
@@ -16,13 +16,11 @@ use crate::{
 };
 
 /// Static mapping of script languages to their file extensions
-static LANGUAGE_EXTENSIONS: LazyLock<HashMap<ScriptLanguage, &'static str>> = LazyLock::new(|| {
-	HashMap::from([
-		(ScriptLanguage::Python, "py"),
-		(ScriptLanguage::JavaScript, "js"),
-		(ScriptLanguage::Bash, "sh"),
-	])
-});
+const LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
+	(&ScriptLanguage::Python, "py"),
+	(&ScriptLanguage::JavaScript, "js"),
+	(&ScriptLanguage::Bash, "sh"),
+];
 
 /// Repository for storing and retrieving monitor configurations
 #[derive(Clone)]
@@ -101,10 +99,15 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 				}
 
 				// Validate file extension matches the specified language
-				match LANGUAGE_EXTENSIONS.get(&trigger_conditions.language) {
+				let expected_extension = LANGUAGE_EXTENSIONS
+					.iter()
+					.find(|(lang, _)| *lang == &trigger_conditions.language)
+					.map(|(_, ext)| *ext);
+
+				match expected_extension {
 					Some(expected_extension) => {
 						match script_path.extension().and_then(|ext| ext.to_str()) {
-							Some(ext) if ext == *expected_extension => (), // Valid extension
+							Some(ext) if ext == expected_extension => (), // Valid extension
 							_ => validation_errors.push(format!(
 								"Monitor '{}' has a custom filter script with invalid extension - \
 								 must be .{} for {:?} language",
@@ -315,11 +318,11 @@ mod tests {
 			name: "test_monitor".to_string(),
 			match_conditions: MatchConditions::default(),
 			trigger_conditions: Some(crate::models::TriggerConditions {
-				execution_order: 1,
+				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
-				arguments: "".to_string(),
+				arguments: None,
 			}),
 			..Default::default()
 		};
@@ -336,11 +339,11 @@ mod tests {
 		let monitor_bad_path = Monitor {
 			name: "test_monitor_bad_path".to_string(),
 			trigger_conditions: Some(crate::models::TriggerConditions {
-				execution_order: 1,
+				execution_order: Some(1),
 				script_path: "non_existent_script.py".to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
-				arguments: "".to_string(),
+				arguments: None,
 			}),
 			..Default::default()
 		};
@@ -360,11 +363,11 @@ mod tests {
 		let monitor_wrong_ext = Monitor {
 			name: "test_monitor_wrong_ext".to_string(),
 			trigger_conditions: Some(crate::models::TriggerConditions {
-				execution_order: 1,
+				execution_order: Some(1),
 				script_path: wrong_ext_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
-				arguments: "".to_string(),
+				arguments: None,
 			}),
 			..Default::default()
 		};
@@ -383,11 +386,11 @@ mod tests {
 			name: "test_monitor_zero_timeout".to_string(),
 			match_conditions: MatchConditions::default(),
 			trigger_conditions: Some(crate::models::TriggerConditions {
-				execution_order: 1,
+				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 0,
-				arguments: "".to_string(),
+				arguments: None,
 			}),
 			..Default::default()
 		};

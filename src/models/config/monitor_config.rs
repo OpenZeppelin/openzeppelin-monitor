@@ -5,7 +5,7 @@
 
 use std::{fs, path::Path};
 
-use crate::models::{config::error::ConfigError, ConfigLoader, Monitor};
+use crate::models::{config::error::ConfigError, ConfigLoader, Monitor, ScriptLanguage};
 
 impl ConfigLoader for Monitor {
 	/// Load all monitor configurations from a directory
@@ -85,14 +85,38 @@ impl ConfigLoader for Monitor {
 			}
 		}
 
-		// Validate trigger conditions (focus on script path and timeout)
+		// Validate trigger conditions (focus on script path, timeout, and language)
 		if let Some(trigger_conditions) = &self.trigger_conditions {
-			if !Path::new(&trigger_conditions.script_path).exists() {
+			let script_path = Path::new(&trigger_conditions.script_path);
+
+			// Validate script exists
+			if !script_path.exists() {
 				return Err(ConfigError::validation_error(format!(
 					"Script file not found: {}",
 					trigger_conditions.script_path
 				)));
 			}
+
+			// Validate file extension matches language
+			let extension = script_path
+				.extension()
+				.and_then(|ext| ext.to_str())
+				.unwrap_or("");
+
+			let valid_extension = match trigger_conditions.language {
+				ScriptLanguage::Python => extension == "py",
+				ScriptLanguage::JavaScript => extension == "js",
+				ScriptLanguage::Bash => extension == "sh",
+			};
+
+			if !valid_extension {
+				return Err(ConfigError::validation_error(format!(
+					"Script file extension does not match specified language {:?}: {}",
+					trigger_conditions.language, trigger_conditions.script_path
+				)));
+			}
+
+			// Validate timeout
 			if trigger_conditions.timeout_ms == 0 {
 				return Err(ConfigError::validation_error(
 					"Timeout must be greater than 0",
@@ -333,10 +357,10 @@ mod tests {
 				}],
 			},
 			trigger_conditions: Some(TriggerConditions {
-				execution_order: 1,
+				execution_order: Some(1),
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 1000,
-				arguments: "".to_string(),
+				arguments: None,
 				language: ScriptLanguage::Python,
 			}),
 			triggers: vec![],
@@ -361,10 +385,10 @@ mod tests {
 				transactions: vec![],
 			},
 			trigger_conditions: Some(TriggerConditions {
-				execution_order: 1,
+				execution_order: Some(1),
 				script_path: "non_existent_script.py".to_string(),
 				timeout_ms: 1000,
-				arguments: "".to_string(),
+				arguments: None,
 				language: ScriptLanguage::Python,
 			}),
 			triggers: vec![],
@@ -394,10 +418,10 @@ mod tests {
 				transactions: vec![],
 			},
 			trigger_conditions: Some(TriggerConditions {
-				execution_order: 1,
+				execution_order: Some(1),
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 0,
-				arguments: "".to_string(),
+				arguments: None,
 				language: ScriptLanguage::Python,
 			}),
 			triggers: vec![],
