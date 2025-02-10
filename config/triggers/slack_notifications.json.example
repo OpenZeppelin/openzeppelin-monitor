@@ -8,13 +8,13 @@
       "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
     }
   },
-  "stellar_large_transfer_usdc_slack": {
-    "name": "Large Transfer Slack Notification",
+  "stellar_large_swap_by_dex_slack": {
+    "name": "Large Swap By Dex Slack Notification",
     "trigger_type": "slack",
     "config": {
       "webhook_url": "https://hooks.slack.com/services/A/B/C",
-      "title": "large_transfer_usdc_slack triggered",
-      "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      "title": "large_swap_by_dex_slack triggered",
+      "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
     }
-  }
+  },
 }

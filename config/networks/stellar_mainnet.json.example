@@ -5,7 +5,7 @@
   "rpc_urls": [
      {
       "type_": "rpc",
-      "url": "https://soroban.stellar.org",
+      "url": "https://mainnet.sorobanrpc.com",
       "weight": 100
     }
   ],
