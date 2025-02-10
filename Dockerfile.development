@@ -13,8 +13,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo install --root /usr/app --path . --debug --locked
 
-# building the image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/glibc-dynamic:latest-dev
+# Wolfi image 
+FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base
+
+ARG version=3.12
+
+RUN apk add bash python-${version} py${version}-pip
 
 WORKDIR /app
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
