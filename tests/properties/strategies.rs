@@ -269,9 +269,9 @@ pub fn match_conditions_strategy() -> impl Strategy<Value = MatchConditions> {
 
 pub fn trigger_conditions_strategy() -> impl Strategy<Value = Option<TriggerConditions>> {
 	let script_paths = prop::sample::select(vec![
-		"tests/integration/fixtures/scripts/test1.py".to_string(),
-		"tests/integration/fixtures/scripts/test2.py".to_string(),
-		"tests/integration/fixtures/scripts/test3.py".to_string(),
+		"tests/integration/fixtures/filters/test1.py".to_string(),
+		"tests/integration/fixtures/filters/test2.py".to_string(),
+		"tests/integration/fixtures/filters/test3.py".to_string(),
 	]);
 
 	(
