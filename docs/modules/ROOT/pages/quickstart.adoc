@@ -6,8 +6,42 @@ This guide provides step-by-step instructions for setting up OpenZeppelin Monito
 == Prerequisites
 
 * Rust 2021 edition
+* Docker (optional, for containerized deployment)
+
+== Environment Configuration
+
+=== Configuration Instructions
+
+Modify the configuration files with your preferred verbosity level:
+
+1. Error
+2. Warn
+3. Info
+4. Debug
+5. Trace
+
+[source,bash]
+----
+RUST_LOG=info
+----
+
+=== Local Configuration
+
+Copy the example environment file:
+
+[source,bash]
+----
+cp .env.example .env
+----
+
+=== Docker Configuration
+
+Modify the `env_dev` and `env_prod` files.
 
 == Installation
+
+=== Local Installation
+
 . Clone the repository:
 +
 [source,bash]
@@ -23,31 +57,20 @@ cd openzeppelin-monitor
 cargo build
 ----
 
-== Environment Configuration
-
-Copy the example environment file:
+=== Docker Installation
 
 [source,bash]
 ----
-cp .env.example .env
-----
+# Build the Docker image
+docker build --tag openzeppelin-monitor -f Dockerfile.development .
 
-Modify the `.env` file with your preferred verbosity level.
-
-1. Error
-2. Warn
-3. Info
-4. Debug
-5. Trace
-
-[source,bash]
-----
-RUST_LOG=info
+# Create a Docker volume to persist monitor data between container restarts (optional)
+docker volume create openzeppelin-monitor-data
 ----
 
 == Examples
 
-=== Monitoring USDC transfers
+=== Monitoring USDC transfers (EVM)
 
 ==== 1. Network Configuration
 
@@ -210,10 +233,23 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
 
 ==== 4. Run the Monitor
 
+**Local Deployment**
+
 [source,bash]
 ----
 cargo run
 ----
+
+**Docker Deployment**
+
+[source,bash]
+----
+docker run \
+  --mount type=bind,src=./config,dst=/app/config,ro \
+  --volume openzeppelin-monitor-data:/app/data \
+  openzeppelin-monitor
+----
+
 
 The monitor will now:
 
@@ -225,4 +261,143 @@ The monitor will now:
 
 * Adjust the transfer threshold by modifying the `expression` value.
 * Monitor additional ERC20 tokens by creating new monitor configurations.
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/config/monitors[`config/monitors` directory].
+
+
+=== Monitoring Dex Swaps (Stellar)
+
+==== 1. Network Configuration
+
+Create the Stellar mainnet network configuration:
+
+[source,bash]
+----
+cp config/networks/stellar_mainnet.json.example config/networks/stellar_mainnet.json
+----
+
+The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/networks/stellar_mainnet.json.example[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
+
+[source,json]
+----
+{
+  "network_type": "Stellar",
+  "slug": "stellar_mainnet",
+  "name": "Stellar Mainnet",
+  "rpc_urls": [
+     {
+      "type_": "rpc",
+      "url": "YOUR_RPC_URL_HERE",
+      "weight": 100
+    }
+  ],
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "block_time_ms": 5000,
+  "confirmation_blocks": 2,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 20,
+  "store_blocks": true
+}
+----
+
+==== 2. Monitor Configuration
+
+Create the large swap monitor configuration:
+
+[source,bash]
+----
+cp config/monitors/stellar_swap_dex.json.example config/monitors/stellar_swap_dex.json
+----
+
+This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/monitors/stellar_swap_dex.json.example[configuration^] monitors large swaps of over 1,000,000,000 tokens. You can customize the notification channels by modifying the `triggers` array.
+
+[source,json]
+----
+{
+  "name": "Large Swap By Dex",
+  "paused": false,
+  "networks": [
+    "stellar_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE"
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "swap(Address,U32,U32,U128,U128)",
+        "expression": "4 > 1000000000"
+      }
+    ],
+    "events": [],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "stellar_large_swap_by_dex_slack"
+  ]
+}
+----
+
+==== 3. Notification Configuration
+
+===== For Slack Notifications:
+
+[source,bash]
+----
+cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+----
+
+Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/triggers/slack_notifications.json.example[configuration^].
+
+[source,json]
+----
+{
+  "stellar_large_swap_by_dex_slack": {
+    "name": "Large Swap By Dex Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "webhook_url": "https://hooks.slack.com/services/A/B/C",
+      "title": "large_swap_by_dex_slack triggered",
+      "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
+    }
+  },
+}
+----
+
+==== 4. Run the Monitor
+
+**Local Deployment**
+
+[source,bash]
+----
+cargo run
+----
+
+**Docker Deployment**
+
+[source,bash]
+----
+docker run \
+  --mount type=bind,src=./config,dst=/app/config,ro \
+  --volume openzeppelin-monitor-data:/app/data \
+  openzeppelin-monitor
+----
+
+
+The monitor will now:
+
+1. Check for new Stellar blocks every minute.
+2. Watch for large dex swaps.
+3. Send notifications via Slack when large swaps occur.
+
+==== 5. Next Steps
+
+* Adjust the swap threshold by modifying the `expression` value.
+* Monitor additional dex swaps by creating new monitor configurations.
 * Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/config/monitors[`config/monitors` directory].

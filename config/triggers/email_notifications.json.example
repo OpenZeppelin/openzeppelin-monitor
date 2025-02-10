@@ -15,22 +15,5 @@
                 "recipient2@example.com"
             ]
         }
-    },
-    "stellar_large_transfer_usdc_email": {
-        "name": "Large Transfer Email Notification",
-        "trigger_type": "email",
-        "config": {
-            "host": "smtp.gmail.com",
-            "port": 465,
-            "username": "your_email@gmail.com",
-            "password": "your_password",
-            "subject": "large_transfer_usdc_email triggered",
-            "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}",
-            "sender": "your_email@gmail.com",
-            "recipients": [
-                "recipient1@example.com",
-                "recipient2@example.com"
-            ]
-        }
     }
 }

@@ -1,0 +1,30 @@
+{
+  "name": "Large Swap By Dex",
+  "paused": false,
+  "networks": [
+    "stellar_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE"
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "swap(Address,U32,U32,U128,U128)",
+        "expression": "4 > 1000000000"
+      }
+    ],
+    "events": [],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "stellar_large_swap_by_dex_slack"
+  ]
+}

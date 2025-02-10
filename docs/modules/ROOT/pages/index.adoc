@@ -738,7 +738,7 @@ You can build using either standard Docker build or buildx:
 [source,bash]
 ----
 # Standard build
-docker build --tag <your_image_tag> -f Dockerfile.<development | production> --squash-all
+docker build --tag <your_image_tag> -f Dockerfile.<development | production> .
 
 # Or using buildx
 docker buildx build -f Dockerfile.<development | production> -t <name_of_image:tag> .
