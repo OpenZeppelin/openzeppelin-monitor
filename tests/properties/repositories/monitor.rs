@@ -183,6 +183,13 @@ proptest! {
 				prop_assert!(invalid_monitor.validate().is_err());
 			}
 
+			// // Test invalid language
+			invalid_monitor = monitor.clone();
+			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
+				conditions.language = ScriptLanguage::Bash;
+				prop_assert!(invalid_monitor.validate().is_err());
+			}
+
 			invalid_monitor = monitor.clone();
 			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
 				conditions.timeout_ms = 0;

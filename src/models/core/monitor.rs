@@ -26,11 +26,11 @@ pub struct Monitor {
 	/// Conditions that should trigger this monitor
 	pub match_conditions: MatchConditions,
 
-	/// IDs of triggers to execute when conditions match
-	pub triggers: Vec<String>,
-
 	/// Conditions that should be met prior to triggering notifications
 	pub trigger_conditions: Option<TriggerConditions>,
+
+	/// IDs of triggers to execute when conditions match
+	pub triggers: Vec<String>,
 }
 
 /// Contract address with optional ABI for decoding transactions and events
@@ -97,19 +97,19 @@ pub enum TransactionStatus {
 	Failure,
 }
 
-/// Conditions that should trigger the triggers
+/// Conditions that should be met prior to triggering notifications
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TriggerConditions {
 	/// The order of the execution of the script
 	#[serde(default)]
-	pub execution_order: u32,
+	pub execution_order: Option<u32>,
 
 	/// The path to the script
 	pub script_path: String,
 
 	/// The arguments of the script
 	#[serde(default)]
-	pub arguments: String,
+	pub arguments: Option<String>,
 
 	/// The language of the script
 	pub language: ScriptLanguage,
