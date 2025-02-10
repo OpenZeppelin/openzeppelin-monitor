@@ -379,7 +379,10 @@ mod tests {
 				&monitors, &triggers, &networks,
 			)
 			.unwrap_err();
-		assert!(err.to_string().contains("invalid extension"));
+		assert!(err.to_string().contains(
+			"Monitor 'test_monitor_wrong_ext' has a custom filter script with invalid extension - \
+			 must be .py for Python language"
+		));
 
 		// Test zero timeout
 		let monitor_zero_timeout = Monitor {
