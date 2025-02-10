@@ -430,5 +430,68 @@ mod tests {
 
 		// Restore original directory
 		std::env::set_current_dir(original_dir).unwrap();
+		// Clean up temp directory
+		temp_dir.close().unwrap();
+	}
+
+	#[test]
+	fn test_validate_monitor_with_different_script_languages() {
+		// Create a temporary directory and script files
+		let temp_dir = TempDir::new().unwrap();
+		let python_script = temp_dir.path().join("test_script.py");
+		let js_script = temp_dir.path().join("test_script.js");
+		let bash_script = temp_dir.path().join("test_script.sh");
+
+		fs::write(&python_script, "print('test')").unwrap();
+		fs::write(&js_script, "console.log('test')").unwrap();
+		fs::write(&bash_script, "echo 'test'").unwrap();
+
+		// Set current directory to temp directory
+		let original_dir = std::env::current_dir().unwrap();
+		std::env::set_current_dir(temp_dir.path()).unwrap();
+
+		// Test each script language
+		let test_cases = vec![
+			(ScriptLanguage::Python, "test_script.py"),
+			(ScriptLanguage::JavaScript, "test_script.js"),
+			(ScriptLanguage::Bash, "test_script.sh"),
+		];
+
+		for (language, script_path) in test_cases {
+			let monitor = Monitor {
+				name: "TestMonitor".to_string(),
+				networks: vec!["ethereum_mainnet".to_string()],
+				paused: false,
+				addresses: vec![],
+				match_conditions: MatchConditions {
+					functions: vec![],
+					events: vec![],
+					transactions: vec![],
+				},
+				trigger_conditions: Some(TriggerConditions {
+					execution_order: Some(1),
+					script_path: script_path.to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+					language: language.clone(),
+				}),
+				triggers: vec![],
+			};
+			assert!(monitor.validate().is_ok());
+
+			// Test with mismatched extension
+			let monitor_wrong_ext = Monitor {
+				trigger_conditions: Some(TriggerConditions {
+					script_path: "test_script.wrong".to_string(),
+					language,
+					..monitor.trigger_conditions.unwrap()
+				}),
+				..monitor
+			};
+			assert!(monitor_wrong_ext.validate().is_err());
+		}
+
+		// Restore original directory
+		std::env::set_current_dir(original_dir).unwrap();
 	}
 }
