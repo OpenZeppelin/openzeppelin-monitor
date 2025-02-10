@@ -20,9 +20,6 @@ ARG version=3.12
 
 RUN apk add bash python-${version} py${version}-pip
 
-# building the image
-#FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/glibc-dynamic:latest-dev
-
 WORKDIR /app
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
 COPY --chown=nonroot:nonroot config /app/config
