@@ -86,14 +86,14 @@ impl ConfigLoader for Monitor {
 		}
 
 		// Validate trigger conditions (focus on script path, timeout, and language)
-		if let Some(trigger_conditions) = &self.trigger_conditions {
-			let script_path = Path::new(&trigger_conditions.script_path);
+		for trigger_condition in &self.trigger_conditions {
+			let script_path = Path::new(&trigger_condition.script_path);
 
 			// Validate script exists
 			if !script_path.exists() {
 				return Err(ConfigError::validation_error(format!(
 					"Script file not found: {}",
-					trigger_conditions.script_path
+					trigger_condition.script_path
 				)));
 			}
 
@@ -103,7 +103,7 @@ impl ConfigLoader for Monitor {
 				.and_then(|ext| ext.to_str())
 				.unwrap_or("");
 
-			let valid_extension = match trigger_conditions.language {
+			let valid_extension = match trigger_condition.language {
 				ScriptLanguage::Python => extension == "py",
 				ScriptLanguage::JavaScript => extension == "js",
 				ScriptLanguage::Bash => extension == "sh",
@@ -112,12 +112,12 @@ impl ConfigLoader for Monitor {
 			if !valid_extension {
 				return Err(ConfigError::validation_error(format!(
 					"Script file extension does not match specified language {:?}: {}",
-					trigger_conditions.language, trigger_conditions.script_path
+					trigger_condition.language, trigger_condition.script_path
 				)));
 			}
 
 			// Validate timeout
-			if trigger_conditions.timeout_ms == 0 {
+			if trigger_condition.timeout_ms == 0 {
 				return Err(ConfigError::validation_error(
 					"Timeout must be greater than 0",
 				));
@@ -168,7 +168,7 @@ mod tests {
 					}
                 ]
             },
-			"trigger_conditions": null,
+			"trigger_conditions": [],
 			"triggers": ["trigger1", "trigger2"]
         }"#;
 
@@ -232,6 +232,7 @@ mod tests {
 					}
                 ]
             },
+			"trigger_conditions": [],
 			"triggers": ["trigger1", "trigger2"]
         }"#;
 
@@ -260,6 +261,7 @@ mod tests {
 					}
                 ]
             },
+			"trigger_conditions": [],
 			"triggers": ["trigger1", "trigger2"]
         }"#;
 
@@ -299,7 +301,7 @@ mod tests {
 					expression: None,
 				}],
 			},
-			trigger_conditions: None,
+			trigger_conditions: vec![],
 			triggers: vec!["trigger1".to_string()],
 		};
 
@@ -315,7 +317,7 @@ mod tests {
 				events: vec![],
 				transactions: vec![],
 			},
-			trigger_conditions: None,
+			trigger_conditions: vec![],
 			triggers: vec![],
 		};
 
@@ -356,13 +358,13 @@ mod tests {
 					expression: None,
 				}],
 			},
-			trigger_conditions: Some(TriggerConditions {
+			trigger_conditions: vec![TriggerConditions {
 				execution_order: Some(1),
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 1000,
 				arguments: None,
 				language: ScriptLanguage::Python,
-			}),
+			}],
 			triggers: vec![],
 		};
 
@@ -384,13 +386,13 @@ mod tests {
 				events: vec![],
 				transactions: vec![],
 			},
-			trigger_conditions: Some(TriggerConditions {
+			trigger_conditions: vec![TriggerConditions {
 				execution_order: Some(1),
 				script_path: "non_existent_script.py".to_string(),
 				timeout_ms: 1000,
 				arguments: None,
 				language: ScriptLanguage::Python,
-			}),
+			}],
 			triggers: vec![],
 		};
 		assert!(invalid_monitor.validate().is_err());
@@ -417,13 +419,13 @@ mod tests {
 				events: vec![],
 				transactions: vec![],
 			},
-			trigger_conditions: Some(TriggerConditions {
+			trigger_conditions: vec![TriggerConditions {
 				execution_order: Some(1),
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 0,
 				arguments: None,
 				language: ScriptLanguage::Python,
-			}),
+			}],
 			triggers: vec![],
 		};
 		assert!(invalid_monitor.validate().is_err());
@@ -468,24 +470,26 @@ mod tests {
 					events: vec![],
 					transactions: vec![],
 				},
-				trigger_conditions: Some(TriggerConditions {
+				trigger_conditions: vec![TriggerConditions {
 					execution_order: Some(1),
 					script_path: script_path.to_string(),
 					timeout_ms: 1000,
 					arguments: None,
 					language: language.clone(),
-				}),
+				}],
 				triggers: vec![],
 			};
 			assert!(monitor.validate().is_ok());
 
 			// Test with mismatched extension
 			let monitor_wrong_ext = Monitor {
-				trigger_conditions: Some(TriggerConditions {
+				trigger_conditions: vec![TriggerConditions {
 					script_path: "test_script.wrong".to_string(),
 					language,
-					..monitor.trigger_conditions.unwrap()
-				}),
+					execution_order: monitor.trigger_conditions[0].execution_order,
+					timeout_ms: monitor.trigger_conditions[0].timeout_ms,
+					arguments: monitor.trigger_conditions[0].arguments.clone(),
+				}],
 				..monitor
 			};
 			assert!(monitor_wrong_ext.validate().is_err());
