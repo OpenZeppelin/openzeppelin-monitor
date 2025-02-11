@@ -1,17 +1,33 @@
 use crate::models::MonitorMatch;
 use async_trait::async_trait;
 
+/// A trait that defines the interface for executing custom scripts in different languages.
+/// Implementors must be both Send and Sync to ensure thread safety.
 #[async_trait]
 pub trait ScriptExecutor: Send + Sync {
+	/// Executes the script with the given MonitorMatch input.
+	///
+	/// # Arguments
+	/// * `input` - A MonitorMatch instance containing the data to be processed by the script
+	///
+	/// # Returns
+	/// * `Result<bool, CustomScriptError>` - Returns true/false based on script execution or an
+	///   error
 	async fn execute(&self, input: MonitorMatch) -> Result<bool, CustomScriptError>;
 }
 
+/// Represents various error cases that can occur during script execution.
 #[derive(Debug)]
 pub enum CustomScriptError {
+	/// Represents standard IO errors
 	IoError(std::io::Error),
+	/// Represents errors from script process execution
 	ProcessError { code: Option<i32>, stderr: String },
+	/// Represents JSON serialization/deserialization errors
 	SerdeJsonError(serde_json::Error),
+	/// Represents general script execution errors
 	ExecutionError(String),
+	/// Represents errors in parsing script output
 	ParseError(String),
 }
 
@@ -57,7 +73,9 @@ impl CustomScriptError {
 	}
 }
 
+/// Executes Python scripts using the python3 interpreter.
 pub struct PythonScriptExecutor {
+	/// Path to the Python script file to be executed
 	pub script_path: String,
 }
 
@@ -76,7 +94,9 @@ impl ScriptExecutor for PythonScriptExecutor {
 	}
 }
 
+/// Executes JavaScript scripts using the Node.js runtime.
 pub struct JavaScriptScriptExecutor {
+	/// Path to the JavaScript script file to be executed
 	pub script_path: String,
 }
 
@@ -95,7 +115,9 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 	}
 }
 
+/// Executes Bash shell scripts.
 pub struct BashScriptExecutor {
+	/// Path to the Bash script file to be executed
 	pub script_path: String,
 }
 
@@ -114,6 +136,18 @@ impl ScriptExecutor for BashScriptExecutor {
 	}
 }
 
+/// Processes the output from script execution.
+///
+/// # Arguments
+/// * `output` - The process output containing stdout, stderr, and status
+///
+/// # Returns
+/// * `Result<bool, CustomScriptError>` - Returns parsed boolean result or error
+///
+/// # Errors
+/// Returns an error if:
+/// * The script execution was not successful (non-zero exit code)
+/// * The output cannot be parsed as a boolean
 fn process_script_output(output: std::process::Output) -> Result<bool, CustomScriptError> {
 	if !output.status.success() {
 		return Err(CustomScriptError::ExecutionError(

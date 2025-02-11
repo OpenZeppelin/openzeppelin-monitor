@@ -5,9 +5,21 @@ use crate::{
 	},
 };
 
+/// Factory for creating script executors based on the script language.
 pub struct ScriptExecutorFactory;
 
 impl ScriptExecutorFactory {
+	/// Creates a new script executor for the specified language and script path.
+	///
+	/// # Arguments
+	///
+	/// * `language` - The programming language of the script
+	/// * `script_path` - The file path to the script
+	///
+	/// # Returns
+	///
+	/// Returns a boxed (Rust will allocate on the heap) trait object implementing the
+	/// `ScriptExecutor` trait
 	pub fn create(language: &ScriptLanguage, script_path: &str) -> Box<dyn ScriptExecutor> {
 		match language {
 			ScriptLanguage::Python => Box::new(PythonScriptExecutor {
