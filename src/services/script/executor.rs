@@ -11,6 +11,50 @@ pub enum CustomScriptError {
 	IoError(std::io::Error),
 	ProcessError { code: Option<i32>, stderr: String },
 	SerdeJsonError(serde_json::Error),
+	ExecutionError(String),
+	ParseError(String),
+}
+
+impl From<std::io::Error> for CustomScriptError {
+	fn from(error: std::io::Error) -> Self {
+		CustomScriptError::IoError(error)
+	}
+}
+
+impl From<serde_json::Error> for CustomScriptError {
+	fn from(error: serde_json::Error) -> Self {
+		CustomScriptError::SerdeJsonError(error)
+	}
+}
+
+impl std::fmt::Display for CustomScriptError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			CustomScriptError::IoError(e) => write!(f, "IO error: {}", e),
+			CustomScriptError::ProcessError { code, stderr } => {
+				write!(f, "Process error (code: {:?}): {}", code, stderr)
+			}
+			CustomScriptError::SerdeJsonError(e) => write!(f, "JSON serialization error: {}", e),
+			CustomScriptError::ExecutionError(e) => write!(f, "Execution error: {}", e),
+			CustomScriptError::ParseError(e) => write!(f, "Parse error: {}", e),
+		}
+	}
+}
+
+impl std::error::Error for CustomScriptError {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			CustomScriptError::IoError(e) => Some(e),
+			CustomScriptError::SerdeJsonError(e) => Some(e),
+			_ => None,
+		}
+	}
+}
+
+impl CustomScriptError {
+	pub fn process_error(code: Option<i32>, stderr: String) -> Self {
+		CustomScriptError::ProcessError { code, stderr }
+	}
 }
 
 pub struct PythonScriptExecutor {
