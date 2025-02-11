@@ -7,8 +7,10 @@
             "port": 465,
             "username": "your_email@gmail.com",
             "password": "your_password",
-            "subject": "large_transfer_usdc_email triggered",
-            "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog",
+            "message": {
+                "title": "large_transfer_usdc_email triggered",
+                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+            },
             "sender": "your_email@gmail.com",
             "recipients": [
                 "recipient1@example.com",

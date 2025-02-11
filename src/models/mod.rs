@@ -26,8 +26,9 @@ pub use blockchain::stellar::{
 
 // Re-export core types
 pub use core::{
-	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, Network, RpcUrl,
-	TransactionCondition, TransactionStatus, Trigger, TriggerType, TriggerTypeConfig,
+	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, Network,
+	NotificationMessage, RpcUrl, TransactionCondition, TransactionStatus, Trigger, TriggerType,
+	TriggerTypeConfig,
 };
 
 // Re-export config types

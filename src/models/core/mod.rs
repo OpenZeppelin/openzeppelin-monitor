@@ -14,4 +14,4 @@ pub use monitor::{
 	TransactionCondition, TransactionStatus,
 };
 pub use network::{Network, RpcUrl};
-pub use trigger::{Trigger, TriggerType, TriggerTypeConfig};
+pub use trigger::{NotificationMessage, Trigger, TriggerType, TriggerTypeConfig};

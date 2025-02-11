@@ -1,6 +1,6 @@
-//! Slack notification implementation.
+//! Discord notification implementation.
 //!
-//! Provides functionality to send formatted messages to Slack channels
+//! Provides functionality to send formatted messages to Discord channels
 //! via incoming webhooks, supporting message templates with variable substitution.
 
 use async_trait::async_trait;
@@ -13,9 +13,9 @@ use crate::{
 	services::notification::{NotificationError, Notifier},
 };
 
-/// Implementation of Slack notifications via webhooks
-pub struct SlackNotifier {
-	/// Slack webhook URL for message delivery
+/// Implementation of Discord notifications via webhooks
+pub struct DiscordNotifier {
+	/// Discord webhook URL for message delivery
 	url: String,
 	/// Title to display in the message
 	title: String,
@@ -25,18 +25,62 @@ pub struct SlackNotifier {
 	client: Client,
 }
 
-/// Represents a formatted Slack message
+/// Represents a field in a Discord embed message
 #[derive(Serialize)]
-struct SlackMessage {
-	/// The formatted text to send to Slack
-	text: String,
+struct DiscordField {
+	/// The name of the field (max 256 characters)
+	name: String,
+	/// The value of the field (max 1024 characters)
+	value: String,
+	/// Indicates whether the field should be displayed inline with other fields (optional)
+	inline: Option<bool>,
 }
 
-impl SlackNotifier {
-	/// Creates a new Slack notifier instance
+/// Represents an embed message in Discord
+#[derive(Serialize)]
+struct DiscordEmbed {
+	/// The title of the embed (max 256 characters)
+	title: String,
+	/// The description of the embed (max 4096 characters)
+	description: Option<String>,
+	/// A URL that the title links to (optional)
+	url: Option<String>,
+	/// The color of the embed represented as a hexadecimal integer (optional)
+	color: Option<u32>,
+	/// A list of fields included in the embed (max 25 fields, optional)
+	fields: Option<Vec<DiscordField>>,
+	/// Indicates whether text-to-speech is enabled for the embed (optional)
+	tts: Option<bool>,
+	/// A thumbnail image for the embed (optional)
+	thumbnail: Option<String>,
+	/// An image for the embed (optional)
+	image: Option<String>,
+	/// Footer information for the embed (max 2048 characters, optional)
+	footer: Option<String>,
+	/// Author information for the embed (max 256 characters, optional)
+	author: Option<String>,
+	/// A timestamp for the embed (optional)
+	timestamp: Option<String>,
+}
+
+/// Represents a formatted Discord message
+#[derive(Serialize)]
+struct DiscordMessage {
+	/// The content of the message
+	content: String,
+	/// The username to display as the sender of the message (optional)
+	username: Option<String>,
+	/// The avatar URL to display for the sender (optional)
+	avatar_url: Option<String>,
+	/// A list of embeds included in the message (max 10 embeds, optional)
+	embeds: Option<Vec<DiscordEmbed>>,
+}
+
+impl DiscordNotifier {
+	/// Creates a new Discord notifier instance
 	///
 	/// # Arguments
-	/// * `url` - Slack webhook URL
+	/// * `url` - Discord webhook URL
 	/// * `title` - Message title
 	/// * `body_template` - Message template with variables
 	pub fn new(
@@ -67,17 +111,20 @@ impl SlackNotifier {
 		format!("*{}*\n\n{}", self.title, message)
 	}
 
-	/// Creates a Slack notifier from a trigger configuration
+	/// Creates a Discord notifier from a trigger configuration
 	///
 	/// # Arguments
-	/// * `config` - Trigger configuration containing Slack parameters
+	/// * `config` - Trigger configuration containing Discord parameters
 	///
 	/// # Returns
-	/// * `Option<Self>` - Notifier instance if config is Slack type
+	/// * `Option<Self>` - Notifier instance if config is Discord type
 	pub fn from_config(config: &TriggerTypeConfig) -> Option<Self> {
 		match config {
-			TriggerTypeConfig::Slack { slack_url, message } => Some(Self {
-				url: slack_url.clone(),
+			TriggerTypeConfig::Discord {
+				discord_url,
+				message,
+			} => Some(Self {
+				url: discord_url.clone(),
 				title: message.title.clone(),
 				body_template: message.body.clone(),
 				client: Client::new(),
@@ -88,8 +135,8 @@ impl SlackNotifier {
 }
 
 #[async_trait]
-impl Notifier for SlackNotifier {
-	/// Sends a formatted message to Slack
+impl Notifier for DiscordNotifier {
+	/// Sends a formatted message to Discord
 	///
 	/// # Arguments
 	/// * `message` - The formatted message to send
@@ -97,13 +144,17 @@ impl Notifier for SlackNotifier {
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
-		let payload = SlackMessage {
-			text: message.to_string(),
+		let payload = DiscordMessage {
+			content: message.to_string(),
+			username: None,
+			avatar_url: None,
+			embeds: None,
 		};
 
 		let response = self
 			.client
 			.post(&self.url)
+			.header("Content-Type", "application/json")
 			.json(&payload)
 			.send()
 			.await
@@ -111,7 +162,7 @@ impl Notifier for SlackNotifier {
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(format!(
-				"Slack webhook returned error status: {}",
+				"Discord webhook returned error status: {}",
 				response.status()
 			)));
 		}
@@ -126,18 +177,18 @@ mod tests {
 
 	use super::*;
 
-	fn create_test_notifier(body_template: &str) -> SlackNotifier {
-		SlackNotifier::new(
-			"https://non-existent-url-slack-webhook.com".to_string(),
+	fn create_test_notifier(body_template: &str) -> DiscordNotifier {
+		DiscordNotifier::new(
+			"https://non-existent-url-discord-webhook.com".to_string(),
 			"Alert".to_string(),
 			body_template.to_string(),
 		)
 		.unwrap()
 	}
 
-	fn create_test_slack_config() -> TriggerTypeConfig {
-		TriggerTypeConfig::Slack {
-			slack_url: "https://slack.example.com".to_string(),
+	fn create_test_discord_config() -> TriggerTypeConfig {
+		TriggerTypeConfig::Discord {
+			discord_url: "https://discord.example.com".to_string(),
 			message: NotificationMessage {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
@@ -187,14 +238,14 @@ mod tests {
 	////////////////////////////////////////////////////////////
 
 	#[test]
-	fn test_from_config_with_slack_config() {
-		let config = create_test_slack_config();
+	fn test_from_config_with_discord_config() {
+		let config = create_test_discord_config();
 
-		let notifier = SlackNotifier::from_config(&config);
+		let notifier = DiscordNotifier::from_config(&config);
 		assert!(notifier.is_some());
 
 		let notifier = notifier.unwrap();
-		assert_eq!(notifier.url, "https://slack.example.com");
+		assert_eq!(notifier.url, "https://discord.example.com");
 		assert_eq!(notifier.title, "Test Alert");
 		assert_eq!(notifier.body_template, "Test message ${value}");
 	}

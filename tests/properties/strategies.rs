@@ -1,8 +1,8 @@
 use email_address::EmailAddress;
 use openzeppelin_monitor::models::{
 	AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions, Monitor,
-	Network, RpcUrl, TransactionCondition, TransactionStatus, Trigger, TriggerType,
-	TriggerTypeConfig,
+	Network, NotificationMessage, RpcUrl, TransactionCondition, TransactionStatus, Trigger,
+	TriggerType, TriggerTypeConfig,
 };
 use proptest::{option, prelude::*};
 
@@ -44,6 +44,14 @@ pub fn monitor_strategy(
 		)
 }
 
+pub fn notification_message_strategy() -> impl Strategy<Value = NotificationMessage> {
+	(
+		"[a-zA-Z0-9_]{1,50}".prop_map(|s| s.to_string()),
+		"[a-zA-Z0-9_]{1,100}".prop_map(|s| s.to_string()),
+	)
+		.prop_map(|(title, body)| NotificationMessage { title, body })
+}
+
 pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 	prop_oneof![
 		// Slack strategy
@@ -52,14 +60,9 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 			Just(TriggerType::Slack),
 			(
 				"https://hooks\\.slack\\.com/[a-zA-Z0-9/]+".prop_map(|s| s.to_string()),
-				"[a-zA-Z0-9]{1,20}".prop_map(|s| s.to_string()),
-				"[a-zA-Z0-9]{1,50}".prop_map(|s| s.to_string()),
+				notification_message_strategy(),
 			)
-				.prop_map(|(webhook_url, title, body)| TriggerTypeConfig::Slack {
-					webhook_url,
-					title,
-					body,
-				})
+				.prop_map(|(slack_url, message)| TriggerTypeConfig::Slack { slack_url, message })
 		)
 			.prop_map(|(name, trigger_type, config)| Trigger {
 				name,
@@ -75,8 +78,7 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 				option::of(1..65535u16),
 				"[a-zA-Z0-9]+".prop_map(|s| s.to_string()),
 				"[a-zA-Z0-9]+".prop_map(|s| s.to_string()),
-				"[a-zA-Z0-9]{1,20}".prop_map(|s| s.to_string()),
-				"[a-zA-Z0-9]{1,50}".prop_map(|s| s.to_string()),
+				notification_message_strategy(),
 				"[a-zA-Z0-9]+@[a-z0-9]+\\.com".prop_map(|s| EmailAddress::new_unchecked(&s)),
 				proptest::collection::vec(
 					"[a-zA-Z0-9]+@[a-z0-9]+\\.com".prop_map(|s| EmailAddress::new_unchecked(&s)),
@@ -84,14 +86,13 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 				),
 			)
 				.prop_map(
-					|(host, port, username, password, subject, body, sender, recipients)| {
+					|(host, port, username, password, message, sender, recipients)| {
 						TriggerTypeConfig::Email {
 							host,
 							port,
 							username,
 							password,
-							subject,
-							body,
+							message,
 							sender,
 							recipients,
 						}
@@ -109,17 +110,23 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 			Just(TriggerType::Webhook),
 			(
 				"https://[a-z0-9]+\\.com/webhook".prop_map(|s| s.to_string()),
-				prop_oneof!["GET", "POST", "PUT", "DELETE"].prop_map(|s| s.to_string()),
+				option::of(prop_oneof!["GET", "POST", "PUT", "DELETE"].prop_map(|s| s.to_string())),
 				option::of(proptest::collection::hash_map(
 					"[a-zA-Z-]{1,10}".prop_map(|s| s.to_string()),
 					"[a-zA-Z0-9]{1,10}".prop_map(|s| s.to_string()),
 					0..5,
 				)),
+				option::of("[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string())),
+				notification_message_strategy(),
 			)
-				.prop_map(|(url, method, headers)| TriggerTypeConfig::Webhook {
-					url,
-					method,
-					headers,
+				.prop_map(|(url, method, headers, secret, message)| {
+					TriggerTypeConfig::Webhook {
+						url,
+						method,
+						headers,
+						secret,
+						message,
+					}
 				})
 		)
 			.prop_map(|(name, trigger_type, config)| Trigger {

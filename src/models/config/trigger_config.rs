@@ -7,7 +7,9 @@ use email_address::EmailAddress;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
 
-use crate::models::{config::error::ConfigError, ConfigLoader, Trigger, TriggerTypeConfig};
+use crate::models::{
+	config::error::ConfigError, ConfigLoader, Trigger, TriggerType, TriggerTypeConfig,
+};
 
 /// File structure for trigger configuration files
 #[derive(Debug, Deserialize)]
@@ -79,141 +81,212 @@ impl ConfigLoader for Trigger {
 			return Err(ConfigError::validation_error("Trigger cannot be empty"));
 		}
 
-		match &self.config {
-			TriggerTypeConfig::Slack {
-				webhook_url,
-				title,
-				body,
-			} => {
-				// Validate webhook URL
-				if !webhook_url.starts_with("https://hooks.slack.com/") {
-					return Err(ConfigError::validation_error(
-						"Invalid Slack webhook URL format",
-					));
-				}
-				// Validate channel format
-				if title.trim().is_empty() {
-					return Err(ConfigError::validation_error("Title cannot be empty"));
-				}
-				// Validate template is not empty
-				if body.trim().is_empty() {
-					return Err(ConfigError::validation_error("Body cannot be empty"));
-				}
-			}
-			TriggerTypeConfig::Email {
-				host,
-				port: _,
-				username,
-				password,
-				subject,
-				body,
-				sender,
-				recipients,
-			} => {
-				// Validate host
-				if host.trim().is_empty() {
-					return Err(ConfigError::validation_error("Host cannot be empty"));
-				}
-				// Validate host format
-				if !host.contains('.')
-					|| !host
-						.chars()
-						.all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
-				{
-					return Err(ConfigError::validation_error("Invalid SMTP host format"));
-				}
-
-				// Basic username validation
-				if username.is_empty() {
-					return Err(ConfigError::validation_error(
-						"SMTP username cannot be empty",
-					));
-				}
-				if username.chars().any(|c| c.is_control()) {
-					return Err(ConfigError::validation_error(
-						"SMTP username contains invalid control characters",
-					));
-				}
-				// Validate password
-				if password.trim().is_empty() {
-					return Err(ConfigError::validation_error("Password cannot be empty"));
-				}
-				// Validate subject
-				if subject.trim().is_empty() {
-					return Err(ConfigError::validation_error("Subject cannot be empty"));
-				}
-				// Validate subject according to RFC 5322
-				// Max length of 998 characters, no control chars except whitespace
-				if subject.len() > 998 {
-					return Err(ConfigError::validation_error(
-						"Subject exceeds maximum length of 998 characters",
-					));
-				}
-				if subject
-					.chars()
-					.any(|c| c.is_control() && !c.is_whitespace())
-				{
-					return Err(ConfigError::validation_error(
-						"Subject contains invalid control characters",
-					));
-				}
-				// Add minimum length check after trim
-				if subject.trim().is_empty() {
-					return Err(ConfigError::validation_error(
-						"Subject must contain at least 1 character",
-					));
-				}
-
-				// Validate email body according to RFC 5322
-				// Check for control characters (except CR, LF, and whitespace)
-				if body
-					.chars()
-					.any(|c| c.is_control() && !matches!(c, '\r' | '\n' | '\t' | ' '))
-				{
-					return Err(ConfigError::validation_error(
-						"Body contains invalid control characters",
-					));
-				}
-
-				// Validate sender
-				if !EmailAddress::is_valid(sender.as_str()) {
-					return Err(ConfigError::validation_error(format!(
-						"Invalid sender email address: {}",
-						sender
-					)));
-				}
-
-				// Validate recipients
-				if recipients.is_empty() {
-					return Err(ConfigError::validation_error("Recipients cannot be empty"));
-				}
-				for recipient in recipients {
-					if !EmailAddress::is_valid(recipient.as_str()) {
-						return Err(ConfigError::validation_error(format!(
-							"Invalid recipient email address: {}",
-							recipient
-						)));
+		match &self.trigger_type {
+			TriggerType::Slack => {
+				if let TriggerTypeConfig::Slack { slack_url, message } = &self.config {
+					// Validate webhook URL
+					if !slack_url.starts_with("https://hooks.slack.com/") {
+						return Err(ConfigError::validation_error(
+							"Invalid Slack webhook URL format",
+						));
+					}
+					// Validate message
+					if message.title.trim().is_empty() {
+						return Err(ConfigError::validation_error("Title cannot be empty"));
+					}
+					// Validate template is not empty
+					if message.body.trim().is_empty() {
+						return Err(ConfigError::validation_error("Body cannot be empty"));
 					}
 				}
 			}
-			TriggerTypeConfig::Webhook { url, method, .. } => {
-				// Validate URL format
-				if !url.starts_with("http://") && !url.starts_with("https://") {
-					return Err(ConfigError::validation_error("Invalid webhook URL format"));
-				}
-				// Validate HTTP method
-				match method.to_uppercase().as_str() {
-					"GET" | "POST" | "PUT" | "DELETE" => {}
-					_ => return Err(ConfigError::validation_error("Invalid HTTP method")),
+			TriggerType::Email => {
+				if let TriggerTypeConfig::Email {
+					host,
+					port: _,
+					username,
+					password,
+					message,
+					sender,
+					recipients,
+				} = &self.config
+				{
+					// Validate host
+					if host.trim().is_empty() {
+						return Err(ConfigError::validation_error("Host cannot be empty"));
+					}
+					// Validate host format
+					if !host.contains('.')
+						|| !host
+							.chars()
+							.all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+					{
+						return Err(ConfigError::validation_error("Invalid SMTP host format"));
+					}
+
+					// Basic username validation
+					if username.is_empty() {
+						return Err(ConfigError::validation_error(
+							"SMTP username cannot be empty",
+						));
+					}
+					if username.chars().any(|c| c.is_control()) {
+						return Err(ConfigError::validation_error(
+							"SMTP username contains invalid control characters",
+						));
+					}
+					// Validate password
+					if password.trim().is_empty() {
+						return Err(ConfigError::validation_error("Password cannot be empty"));
+					}
+					// Validate message
+					if message.title.trim().is_empty() {
+						return Err(ConfigError::validation_error("Title cannot be empty"));
+					}
+					if message.body.trim().is_empty() {
+						return Err(ConfigError::validation_error("Body cannot be empty"));
+					}
+					// Validate subject according to RFC 5322
+					// Max length of 998 characters, no control chars except whitespace
+					if message.title.len() > 998 {
+						return Err(ConfigError::validation_error(
+							"Subject exceeds maximum length of 998 characters",
+						));
+					}
+					if message
+						.title
+						.chars()
+						.any(|c| c.is_control() && !c.is_whitespace())
+					{
+						return Err(ConfigError::validation_error(
+							"Subject contains invalid control characters",
+						));
+					}
+					// Add minimum length check after trim
+					if message.title.trim().is_empty() {
+						return Err(ConfigError::validation_error(
+							"Subject must contain at least 1 character",
+						));
+					}
+
+					// Validate email body according to RFC 5322
+					// Check for control characters (except CR, LF, and whitespace)
+					if message
+						.body
+						.chars()
+						.any(|c| c.is_control() && !matches!(c, '\r' | '\n' | '\t' | ' '))
+					{
+						return Err(ConfigError::validation_error(
+							"Body contains invalid control characters",
+						));
+					}
+
+					// Validate sender
+					if !EmailAddress::is_valid(sender.as_str()) {
+						return Err(ConfigError::validation_error(format!(
+							"Invalid sender email address: {}",
+							sender
+						)));
+					}
+
+					// Validate recipients
+					if recipients.is_empty() {
+						return Err(ConfigError::validation_error("Recipients cannot be empty"));
+					}
+					for recipient in recipients {
+						if !EmailAddress::is_valid(recipient.as_str()) {
+							return Err(ConfigError::validation_error(format!(
+								"Invalid recipient email address: {}",
+								recipient
+							)));
+						}
+					}
 				}
 			}
-			TriggerTypeConfig::Script { path, .. } => {
-				// Validate script path exists
-				if !Path::new(path).exists() {
-					return Err(ConfigError::validation_error(format!(
-						"Script path does not exist: {}",
-						path
-					)));
+			TriggerType::Webhook => {
+				if let TriggerTypeConfig::Webhook {
+					url,
+					method,
+					message,
+					..
+				} = &self.config
+				{
+					// Validate URL format
+					if !url.starts_with("http://") && !url.starts_with("https://") {
+						return Err(ConfigError::validation_error("Invalid webhook URL format"));
+					}
+					// Validate HTTP method
+					if let Some(method) = method {
+						match method.to_uppercase().as_str() {
+							"GET" | "POST" | "PUT" | "DELETE" => {}
+							_ => return Err(ConfigError::validation_error("Invalid HTTP method")),
+						}
+					}
+					// Validate message
+					if message.title.trim().is_empty() {
+						return Err(ConfigError::validation_error("Title cannot be empty"));
+					}
+					if message.body.trim().is_empty() {
+						return Err(ConfigError::validation_error("Body cannot be empty"));
+					}
+				}
+			}
+			TriggerType::Telegram => {
+				if let TriggerTypeConfig::Telegram {
+					token,
+					chat_id,
+					message,
+					..
+				} = &self.config
+				{
+					// Validate token
+					if token.trim().is_empty() {
+						return Err(ConfigError::validation_error("Token cannot be empty"));
+					}
+					// Validate chat ID
+					if chat_id.trim().is_empty() {
+						return Err(ConfigError::validation_error("Chat ID cannot be empty"));
+					}
+					// Validate message
+					if message.title.trim().is_empty() {
+						return Err(ConfigError::validation_error("Title cannot be empty"));
+					}
+					if message.body.trim().is_empty() {
+						return Err(ConfigError::validation_error("Body cannot be empty"));
+					}
+				}
+			}
+			TriggerType::Discord => {
+				if let TriggerTypeConfig::Discord {
+					discord_url,
+					message,
+					..
+				} = &self.config
+				{
+					// Validate webhook URL
+					if !discord_url.starts_with("https://discord.com/api/webhooks/") {
+						return Err(ConfigError::validation_error(
+							"Invalid Discord webhook URL format",
+						));
+					}
+					// Validate message
+					if message.title.trim().is_empty() {
+						return Err(ConfigError::validation_error("Title cannot be empty"));
+					}
+					if message.body.trim().is_empty() {
+						return Err(ConfigError::validation_error("Body cannot be empty"));
+					}
+				}
+			}
+			TriggerType::Script => {
+				if let TriggerTypeConfig::Script { path, .. } = &self.config {
+					// Validate script path exists
+					if !Path::new(path).exists() {
+						return Err(ConfigError::validation_error(format!(
+							"Script path does not exist: {}",
+							path
+						)));
+					}
 				}
 			}
 		}
@@ -224,7 +297,10 @@ impl ConfigLoader for Trigger {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::core::{Trigger, TriggerType};
+	use crate::models::{
+		core::{Trigger, TriggerType},
+		NotificationMessage,
+	};
 
 	#[test]
 	fn test_slack_trigger_validation() {
@@ -232,9 +308,11 @@ mod tests {
 			name: "test_slack".to_string(),
 			trigger_type: TriggerType::Slack,
 			config: TriggerTypeConfig::Slack {
-				webhook_url: "https://hooks.slack.com/services/xxx".to_string(),
-				title: "Alert".to_string(),
-				body: "Test message".to_string(),
+				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
 			},
 		};
 		assert!(valid_trigger.validate().is_ok());
@@ -244,9 +322,11 @@ mod tests {
 			name: "test_slack".to_string(),
 			trigger_type: TriggerType::Slack,
 			config: TriggerTypeConfig::Slack {
-				webhook_url: "https://invalid-url.com".to_string(),
-				title: "Alert".to_string(),
-				body: "Test message".to_string(),
+				slack_url: "https://invalid-url.com".to_string(),
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
 			},
 		};
 		assert!(invalid_webhook.validate().is_err());
@@ -256,9 +336,11 @@ mod tests {
 			name: "test_slack".to_string(),
 			trigger_type: TriggerType::Slack,
 			config: TriggerTypeConfig::Slack {
-				webhook_url: "https://hooks.slack.com/services/xxx".to_string(),
-				title: "".to_string(),
-				body: "Test message".to_string(),
+				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
+				message: NotificationMessage {
+					title: "".to_string(),
+					body: "Test message".to_string(),
+				},
 			},
 		};
 		assert!(empty_title.validate().is_err());
@@ -274,8 +356,10 @@ mod tests {
 				port: Some(587),
 				username: "user".to_string(),
 				password: "pass".to_string(),
-				subject: "Test Subject".to_string(),
-				body: "Test Body".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
 				sender: EmailAddress::new_unchecked("sender@example.com"),
 				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
 			},
@@ -291,8 +375,10 @@ mod tests {
 				port: Some(587),
 				username: "user".to_string(),
 				password: "pass".to_string(),
-				subject: "Test Subject".to_string(),
-				body: "Test Body".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
 				sender: EmailAddress::new_unchecked("sender@example.com"),
 				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
 			},
@@ -308,8 +394,10 @@ mod tests {
 				port: Some(587),
 				username: "user".to_string(),
 				password: "pass".to_string(),
-				subject: "Test Subject".to_string(),
-				body: "Test Body".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
 				sender: EmailAddress::new_unchecked("invalid-email"),
 				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
 			},
@@ -324,8 +412,13 @@ mod tests {
 			trigger_type: TriggerType::Webhook,
 			config: TriggerTypeConfig::Webhook {
 				url: "https://api.example.com/webhook".to_string(),
-				method: "POST".to_string(),
+				secret: None,
+				method: Some("POST".to_string()),
 				headers: None,
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
 			},
 		};
 		assert!(valid_trigger.validate().is_ok());
@@ -336,8 +429,13 @@ mod tests {
 			trigger_type: TriggerType::Webhook,
 			config: TriggerTypeConfig::Webhook {
 				url: "invalid-url".to_string(),
-				method: "POST".to_string(),
+				method: Some("POST".to_string()),
 				headers: None,
+				secret: None,
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
 			},
 		};
 		assert!(invalid_url.validate().is_err());
@@ -348,11 +446,46 @@ mod tests {
 			trigger_type: TriggerType::Webhook,
 			config: TriggerTypeConfig::Webhook {
 				url: "https://api.example.com/webhook".to_string(),
-				method: "INVALID".to_string(),
+				method: Some("INVALID".to_string()),
 				headers: None,
+				secret: None,
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
 			},
 		};
 		assert!(invalid_method.validate().is_err());
+	}
+
+	#[test]
+	fn test_discord_trigger_validation() {
+		let valid_trigger = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: "https://discord.com/api/webhooks/xxx".to_string(),
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
+			},
+		};
+		assert!(valid_trigger.validate().is_ok());
+
+		// Test invalid webhook URL
+		let invalid_webhook = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: "https://invalid-url.com".to_string(),
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
+			},
+		};
+		assert!(invalid_webhook.validate().is_err());
 	}
 
 	#[test]

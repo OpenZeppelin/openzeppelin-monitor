@@ -349,18 +349,22 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
     "name": "Large Transfer Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/A/B/C",
-      "title": "large_transfer_slack triggered",
-      "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+      "slack_url": "https://hooks.slack.com/services/A/B/C",
+      "message": {
+        "title": "large_transfer_slack triggered",
+        "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+      }
     }
   },
   "stellar_large_transfer_usdc_slack": {
     "name": "Large Transfer Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/A/B/C",
-      "title": "large_transfer_usdc_slack triggered",
-      "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      "slack_url": "https://hooks.slack.com/services/A/B/C",
+      "message": {
+        "title": "large_transfer_usdc_slack triggered",
+        "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      }
     }
   }
 }
@@ -372,9 +376,11 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 [source,json]
 ----
 {
-  "webhook_url": "https://hooks.slack.com/...",
-  "title": "Alert Title",
-  "body": "Alert message for ${transaction_hash}"
+  "slack_url": "https://hooks.slack.com/...",
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction_hash}"
+  }
 }
 ----
 
@@ -386,8 +392,10 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   "port": 465,
   "username": "sender@example.com",
   "password": "smtp_password",
-  "subject": "Alert Subject",
-  "body": "Alert message for ${transaction_hash}",
+  "message": {
+    "title": "Alert Subject",
+    "body": "Alert message for ${transaction_hash}",
+  },
   "sender": "sender@example.com",
   "recipients": ["recipient@example.com"]
 }
@@ -408,7 +416,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |String
 |Must be "slack" for Slack notifications
 
-|config.webhook_url
+|config.slack_url
 |String
 |Slack webhook URL for sending notifications
 
