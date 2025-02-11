@@ -1219,7 +1219,7 @@ mod tests {
 			name: "test".to_string(),
 			networks: vec!["evm_mainnet".to_string()],
 			paused: false,
-			trigger_conditions: None,
+			trigger_conditions: vec![],
 			triggers: vec![],
 		}
 	}

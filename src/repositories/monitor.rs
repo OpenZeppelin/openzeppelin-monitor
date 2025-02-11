@@ -89,19 +89,19 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 			}
 
 			// Validate custom trigger conditions
-			if let Some(trigger_conditions) = &monitor.trigger_conditions {
-				let script_path = Path::new(&trigger_conditions.script_path);
+			for condition in &monitor.trigger_conditions {
+				let script_path = Path::new(&condition.script_path);
 				if !script_path.exists() {
 					validation_errors.push(format!(
-						"Monitor '{}' has a custom filter script that does not exist",
-						monitor_name
+						"Monitor '{}' has a custom filter script that does not exist: {}",
+						monitor_name, condition.script_path
 					));
 				}
 
 				// Validate file extension matches the specified language
 				let expected_extension = LANGUAGE_EXTENSIONS
 					.iter()
-					.find(|(lang, _)| *lang == &trigger_conditions.language)
+					.find(|(lang, _)| *lang == &condition.language)
 					.map(|(_, ext)| *ext)
 					.expect("All script languages should have an extension");
 
@@ -109,12 +109,12 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 					Some(ext) if ext == expected_extension => (), // Valid extension
 					_ => validation_errors.push(format!(
 						"Monitor '{}' has a custom filter script with invalid extension - must be \
-						 .{} for {:?} language",
-						monitor_name, expected_extension, trigger_conditions.language
+						 .{} for {:?} language: {}",
+						monitor_name, expected_extension, condition.language, condition.script_path
 					)),
 				}
 
-				if trigger_conditions.timeout_ms == 0 {
+				if condition.timeout_ms == 0 {
 					validation_errors.push(format!(
 						"Monitor '{}' should have a custom filter timeout_ms greater than 0",
 						monitor_name
@@ -310,13 +310,13 @@ mod tests {
 		let monitor = Monitor {
 			name: "test_monitor".to_string(),
 			match_conditions: MatchConditions::default(),
-			trigger_conditions: Some(crate::models::TriggerConditions {
+			trigger_conditions: vec![crate::models::TriggerConditions {
 				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
 				arguments: None,
-			}),
+			}],
 			..Default::default()
 		};
 		monitors.insert("test_monitor".to_string(), monitor);
@@ -331,13 +331,13 @@ mod tests {
 		// Test non-existent script
 		let monitor_bad_path = Monitor {
 			name: "test_monitor_bad_path".to_string(),
-			trigger_conditions: Some(crate::models::TriggerConditions {
+			trigger_conditions: vec![crate::models::TriggerConditions {
 				execution_order: Some(1),
 				script_path: "non_existent_script.py".to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
 				arguments: None,
-			}),
+			}],
 			..Default::default()
 		};
 		monitors.insert("test_monitor_bad_path".to_string(), monitor_bad_path);
@@ -355,13 +355,13 @@ mod tests {
 
 		let monitor_wrong_ext = Monitor {
 			name: "test_monitor_wrong_ext".to_string(),
-			trigger_conditions: Some(crate::models::TriggerConditions {
+			trigger_conditions: vec![crate::models::TriggerConditions {
 				execution_order: Some(1),
 				script_path: wrong_ext_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
 				arguments: None,
-			}),
+			}],
 			..Default::default()
 		};
 		monitors.clear();
@@ -381,13 +381,13 @@ mod tests {
 		let monitor_zero_timeout = Monitor {
 			name: "test_monitor_zero_timeout".to_string(),
 			match_conditions: MatchConditions::default(),
-			trigger_conditions: Some(crate::models::TriggerConditions {
+			trigger_conditions: vec![crate::models::TriggerConditions {
 				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 0,
 				arguments: None,
-			}),
+			}],
 			..Default::default()
 		};
 		monitors.clear();
