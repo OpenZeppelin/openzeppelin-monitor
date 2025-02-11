@@ -260,7 +260,7 @@ pub fn match_conditions_strategy() -> impl Strategy<Value = MatchConditions> {
 		})
 }
 
-pub fn trigger_conditions_strategy() -> impl Strategy<Value = Option<TriggerConditions>> {
+pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditions>> {
 	let script_paths = prop::sample::select(vec![
 		"tests/integration/fixtures/filters/test1.py".to_string(),
 		"tests/integration/fixtures/filters/test2.py".to_string(),
@@ -276,13 +276,13 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Option<TriggerCond
 	)
 		.prop_map(
 			|(execution_order, script_path, arguments, language, timeout_ms)| {
-				Some(TriggerConditions {
+				vec![TriggerConditions {
 					execution_order: Some(execution_order),
 					script_path,
 					arguments: Some(arguments),
 					language,
 					timeout_ms,
-				})
+				}]
 			},
 		)
 }

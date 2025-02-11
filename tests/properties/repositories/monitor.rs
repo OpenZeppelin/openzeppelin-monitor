@@ -169,30 +169,30 @@ proptest! {
 
 			// Test invalid script path
 			invalid_monitor = monitor.clone();
-			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
-				conditions.script_path = "invalid_path".to_string();
+			if let Some(condition) = invalid_monitor.trigger_conditions.first_mut() {
+				condition.script_path = "invalid_path".to_string();
 				prop_assert!(invalid_monitor.validate().is_err());
 			}
 
 			// Test invalid script extension
 			invalid_monitor = monitor.clone();
-			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
+			if let Some(condition) = invalid_monitor.trigger_conditions.first_mut() {
 				// Test Python script with wrong extension
-				conditions.language = ScriptLanguage::Python;
-				conditions.script_path = "test_script.js".to_string();
+				condition.language = ScriptLanguage::Python;
+				condition.script_path = "test_script.js".to_string();
 				prop_assert!(invalid_monitor.validate().is_err());
 			}
 
 			// // Test invalid language
 			invalid_monitor = monitor.clone();
-			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
-				conditions.language = ScriptLanguage::Bash;
+			if let Some(condition) = invalid_monitor.trigger_conditions.first_mut() {
+				condition.language = ScriptLanguage::Bash;
 				prop_assert!(invalid_monitor.validate().is_err());
 			}
 
 			invalid_monitor = monitor.clone();
-			if let Some(conditions) = &mut invalid_monitor.trigger_conditions {
-				conditions.timeout_ms = 0;
+			if let Some(condition) = invalid_monitor.trigger_conditions.first_mut() {
+				condition.timeout_ms = 0;
 				prop_assert!(invalid_monitor.validate().is_err());
 			}
 		}

@@ -27,7 +27,7 @@ pub struct Monitor {
 	pub match_conditions: MatchConditions,
 
 	/// Conditions that should be met prior to triggering notifications
-	pub trigger_conditions: Option<TriggerConditions>,
+	pub trigger_conditions: Vec<TriggerConditions>,
 
 	/// IDs of triggers to execute when conditions match
 	pub triggers: Vec<String>,
