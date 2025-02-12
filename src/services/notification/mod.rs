@@ -14,6 +14,7 @@ mod discord;
 mod email;
 mod error;
 mod slack;
+mod telegram;
 mod webhook;
 
 use crate::models::{Trigger, TriggerType};
@@ -22,6 +23,7 @@ pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
 pub use error::NotificationError;
 pub use slack::SlackNotifier;
+pub use telegram::TelegramNotifier;
 pub use webhook::WebhookNotifier;
 
 /// Interface for notification implementations
@@ -117,7 +119,17 @@ impl NotificationService {
 				}
 			}
 			TriggerType::Telegram => {
-				println!("Telegram notification");
+				let notifier = TelegramNotifier::from_config(&trigger.config);
+				if let Some(notifier) = notifier {
+					notifier
+						.notify(&notifier.format_message(&variables))
+						.await
+						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+				} else {
+					return Err(NotificationError::config_error(
+						"Invalid telegram configuration",
+					));
+				}
 			}
 			TriggerType::Script => {
 				println!("Script notification");
