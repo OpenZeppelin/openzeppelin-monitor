@@ -1,4 +1,4 @@
-use crate::models::MonitorMatch;
+use crate::models::ProcessedBlock;
 use async_trait::async_trait;
 
 /// A trait that defines the interface for executing custom scripts in different languages.
@@ -13,7 +13,7 @@ pub trait ScriptExecutor: Send + Sync {
 	/// # Returns
 	/// * `Result<bool, CustomScriptError>` - Returns true/false based on script execution or an
 	///   error
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, CustomScriptError>;
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError>;
 }
 
 /// Represents various error cases that can occur during script execution.
@@ -81,7 +81,7 @@ pub struct PythonScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, CustomScriptError> {
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError> {
 		let input_json = serde_json::to_string(&input)?;
 
 		let output = tokio::process::Command::new("python3")
@@ -102,7 +102,7 @@ pub struct JavaScriptScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for JavaScriptScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, CustomScriptError> {
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError> {
 		let input_json = serde_json::to_string(&input)?;
 
 		let output = tokio::process::Command::new("node")
@@ -123,7 +123,7 @@ pub struct BashScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for BashScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, CustomScriptError> {
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError> {
 		let input_json = serde_json::to_string(&input)?;
 
 		let output = tokio::process::Command::new("bash")
@@ -159,4 +159,94 @@ fn process_script_output(output: std::process::Output) -> Result<bool, CustomScr
 		.trim()
 		.parse::<bool>()
 		.map_err(|e| CustomScriptError::ParseError(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::{
+		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
+		MatchConditions, Monitor, MonitorMatch, ProcessedBlock, TransactionCondition,
+	};
+	use std::io::Write;
+	use tempfile::NamedTempFile;
+	use web3::types::{TransactionReceipt, H160, U256};
+
+	// Helper function to create a temporary script file
+	fn create_temp_script(content: &str) -> NamedTempFile {
+		let mut file = NamedTempFile::new().unwrap();
+		file.write_all(content.as_bytes()).unwrap();
+		file
+	}
+	/// Creates a test monitor with customizable parameters
+	fn create_test_monitor(
+		event_conditions: Vec<EventCondition>,
+		function_conditions: Vec<FunctionCondition>,
+		transaction_conditions: Vec<TransactionCondition>,
+		addresses: Vec<AddressWithABI>,
+	) -> Monitor {
+		Monitor {
+			match_conditions: MatchConditions {
+				events: event_conditions,
+				functions: function_conditions,
+				transactions: transaction_conditions,
+			},
+			addresses,
+			name: "test".to_string(),
+			networks: vec!["evm_mainnet".to_string()],
+			..Default::default()
+		}
+	}
+
+	fn create_test_evm_transaction() -> EVMTransaction {
+		EVMTransaction::from({
+			web3::types::Transaction {
+				from: Some(H160::default()),
+				to: Some(H160::default()),
+				value: U256::default(),
+				..Default::default()
+			}
+		})
+	}
+
+	fn create_mock_monitor_match() -> MonitorMatch {
+		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}))
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_success() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("true")
+"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = PythonScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = ProcessedBlock {
+			block_number: 1_u64,
+			network_slug: "test".to_string(),
+			processing_results: vec![create_mock_monitor_match()],
+		};
+
+		let result = executor.execute(input).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
 }
