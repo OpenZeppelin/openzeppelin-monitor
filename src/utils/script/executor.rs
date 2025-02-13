@@ -1,4 +1,7 @@
-use crate::models::{MonitorMatch, ProcessedBlock};
+use crate::{
+	models::{MonitorMatch, ProcessedBlock},
+	utils::script::error::ScriptError,
+};
 use async_trait::async_trait;
 
 /// A trait that defines the interface for executing custom scripts in different languages.
@@ -11,66 +14,8 @@ pub trait ScriptExecutor: Send + Sync {
 	/// * `input` - A MonitorMatch instance containing the data to be processed by the script
 	///
 	/// # Returns
-	/// * `Result<bool, CustomScriptError>` - Returns true/false based on script execution or an
-	///   error
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError>;
-}
-
-/// Represents various error cases that can occur during script execution.
-#[derive(Debug)]
-pub enum CustomScriptError {
-	/// Represents standard IO errors
-	IoError(std::io::Error),
-	/// Represents errors from script process execution
-	ProcessError { code: Option<i32>, stderr: String },
-	/// Represents JSON serialization/deserialization errors
-	SerdeJsonError(serde_json::Error),
-	/// Represents general script execution errors
-	ExecutionError(String),
-	/// Represents errors in parsing script output
-	ParseError(String),
-}
-
-impl From<std::io::Error> for CustomScriptError {
-	fn from(error: std::io::Error) -> Self {
-		CustomScriptError::IoError(error)
-	}
-}
-
-impl From<serde_json::Error> for CustomScriptError {
-	fn from(error: serde_json::Error) -> Self {
-		CustomScriptError::SerdeJsonError(error)
-	}
-}
-
-impl std::fmt::Display for CustomScriptError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			CustomScriptError::IoError(e) => write!(f, "IO error: {}", e),
-			CustomScriptError::ProcessError { code, stderr } => {
-				write!(f, "Process error (code: {:?}): {}", code, stderr)
-			}
-			CustomScriptError::SerdeJsonError(e) => write!(f, "JSON serialization error: {}", e),
-			CustomScriptError::ExecutionError(e) => write!(f, "Execution error: {}", e),
-			CustomScriptError::ParseError(e) => write!(f, "Parse error: {}", e),
-		}
-	}
-}
-
-impl std::error::Error for CustomScriptError {
-	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-		match self {
-			CustomScriptError::IoError(e) => Some(e),
-			CustomScriptError::SerdeJsonError(e) => Some(e),
-			_ => None,
-		}
-	}
-}
-
-impl CustomScriptError {
-	pub fn process_error(code: Option<i32>, stderr: String) -> Self {
-		CustomScriptError::ProcessError { code, stderr }
-	}
+	/// * `Result<bool, ScriptError>` - Returns true/false based on script execution or an error
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
@@ -81,14 +26,16 @@ pub struct PythonScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError> {
-		let input_json = serde_json::to_string(&input)?;
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError> {
+		let input_json =
+			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
 		let output = tokio::process::Command::new("python3")
 			.arg(&self.script_path)
 			.arg(input_json)
 			.output()
-			.await?;
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		process_script_output(output)
 	}
@@ -102,14 +49,16 @@ pub struct JavaScriptScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for JavaScriptScriptExecutor {
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError> {
-		let input_json = serde_json::to_string(&input)?;
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError> {
+		let input_json =
+			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
 		let output = tokio::process::Command::new("node")
 			.arg(&self.script_path)
 			.arg(input_json)
 			.output()
-			.await?;
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		process_script_output(output)
 	}
@@ -123,14 +72,16 @@ pub struct BashScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for BashScriptExecutor {
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, CustomScriptError> {
-		let input_json = serde_json::to_string(&input)?;
+	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError> {
+		let input_json =
+			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
 		let output = tokio::process::Command::new("bash")
 			.arg(&self.script_path)
 			.arg(input_json)
 			.output()
-			.await?;
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		process_script_output(output)
 	}
@@ -142,15 +93,15 @@ impl ScriptExecutor for BashScriptExecutor {
 /// * `output` - The process output containing stdout, stderr, and status
 ///
 /// # Returns
-/// * `Result<bool, CustomScriptError>` - Returns parsed boolean result or error
+/// * `Result<bool, ScriptError>` - Returns parsed boolean result or error
 ///
 /// # Errors
 /// Returns an error if:
 /// * The script execution was not successful (non-zero exit code)
 /// * The output cannot be parsed as a boolean
-fn process_script_output(output: std::process::Output) -> Result<bool, CustomScriptError> {
+fn process_script_output(output: std::process::Output) -> Result<bool, ScriptError> {
 	if !output.status.success() {
-		return Err(CustomScriptError::ExecutionError(
+		return Err(ScriptError::execution_error(
 			String::from_utf8_lossy(&output.stderr).to_string(),
 		));
 	}
@@ -158,7 +109,7 @@ fn process_script_output(output: std::process::Output) -> Result<bool, CustomScr
 	String::from_utf8_lossy(&output.stdout)
 		.trim()
 		.parse::<bool>()
-		.map_err(|e| CustomScriptError::ParseError(e.to_string()))
+		.map_err(|e| ScriptError::execution_error(e.to_string()))
 }
 
 #[cfg(test)]
