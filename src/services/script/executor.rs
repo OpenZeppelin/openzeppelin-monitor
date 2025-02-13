@@ -249,4 +249,102 @@ print("true")
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
+
+	#[tokio::test]
+	async fn test_javascript_script_executor_success() {
+		let script_content = r#"
+const input = JSON.parse(process.argv[2]);
+// Do something with input and return true/false
+console.log('true');
+"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = JavaScriptScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = ProcessedBlock {
+			block_number: 1_u64,
+			network_slug: "test".to_string(),
+			processing_results: vec![create_mock_monitor_match()],
+		};
+
+		let result = executor.execute(input).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_bash_script_executor_success() {
+		let script_content = r#"#!/bin/bash
+input_json="$1"
+# Do something with input_json and return true/false
+echo "true"
+"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = BashScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = ProcessedBlock {
+			block_number: 1_u64,
+			network_slug: "test".to_string(),
+			processing_results: vec![create_mock_monitor_match()],
+		};
+
+		let result = executor.execute(input).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_script_execution_error() {
+		let script_content = "invalid_command"; // This will cause an error
+		let temp_file = create_temp_script(script_content);
+
+		let executor = BashScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = ProcessedBlock {
+			block_number: 1_u64,
+			network_slug: "test".to_string(),
+			processing_results: vec![create_mock_monitor_match()],
+		};
+
+		let result = executor.execute(input).await;
+		assert!(matches!(result, Err(CustomScriptError::ExecutionError(_))));
+	}
+
+	#[tokio::test]
+	async fn test_script_invalid_output() {
+		let script_content = "echo 'not a boolean'";
+		let temp_file = create_temp_script(script_content);
+
+		let executor = BashScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = ProcessedBlock {
+			block_number: 1_u64,
+			network_slug: "test".to_string(),
+			processing_results: vec![create_mock_monitor_match()],
+		};
+
+		let result = executor.execute(input).await;
+		assert!(matches!(result, Err(CustomScriptError::ParseError(_))));
+	}
+
+	#[test]
+	fn test_custom_script_error_display() {
+		let io_error = CustomScriptError::IoError(std::io::Error::new(
+			std::io::ErrorKind::Other,
+			"test error",
+		));
+		assert!(format!("{}", io_error).contains("IO error"));
+
+		let process_error = CustomScriptError::process_error(Some(1), "command failed".to_string());
+		assert!(format!("{}", process_error).contains("Process error"));
+	}
 }
