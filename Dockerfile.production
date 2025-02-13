@@ -1,5 +1,5 @@
 # Base image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/rust:latest AS base
+FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/rust:latest-dev AS base
 
 WORKDIR /usr/app
 
@@ -11,8 +11,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo install --root /usr/app --path . --locked
 
-# building the image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/glibc-dynamic:latest
+# Wolfi image
+FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base
+
+ARG version=3.12
+
+RUN apk add bash python-${version} py${version}-pip
+
+# removes apk and uneeded wolfi-base tools.
+RUN apk del wolfi-base apk-tools
 
 WORKDIR /app
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
