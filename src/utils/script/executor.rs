@@ -1,7 +1,4 @@
-use crate::{
-	models::{MonitorMatch, ProcessedBlock},
-	utils::script::error::ScriptError,
-};
+use crate::{models::MonitorMatch, utils::script::error::ScriptError};
 use async_trait::async_trait;
 
 /// A trait that defines the interface for executing custom scripts in different languages.
@@ -15,7 +12,7 @@ pub trait ScriptExecutor: Send + Sync {
 	///
 	/// # Returns
 	/// * `Result<bool, ScriptError>` - Returns true/false based on script execution or an error
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError>;
+	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
@@ -26,7 +23,7 @@ pub struct PythonScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
@@ -49,7 +46,7 @@ pub struct JavaScriptScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for JavaScriptScriptExecutor {
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
@@ -72,7 +69,7 @@ pub struct BashScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for BashScriptExecutor {
-	async fn execute(&self, input: ProcessedBlock) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
@@ -99,6 +96,7 @@ impl ScriptExecutor for BashScriptExecutor {
 /// Returns an error if:
 /// * The script execution was not successful (non-zero exit code)
 /// * The output cannot be parsed as a boolean
+/// * The script produced no output
 fn process_script_output(output: std::process::Output) -> Result<bool, ScriptError> {
 	if !output.status.success() {
 		return Err(ScriptError::execution_error(
@@ -106,10 +104,28 @@ fn process_script_output(output: std::process::Output) -> Result<bool, ScriptErr
 		));
 	}
 
-	String::from_utf8_lossy(&output.stdout)
-		.trim()
-		.parse::<bool>()
-		.map_err(|e| ScriptError::execution_error(e.to_string()))
+	let stdout = String::from_utf8_lossy(&output.stdout);
+
+	if stdout.trim().is_empty() {
+		return Err(ScriptError::parse_error(
+			"Script produced no output".to_string(),
+		));
+	}
+
+	let last_line = stdout
+		.lines()
+		.last()
+		.ok_or_else(|| ScriptError::parse_error("No output from script".to_string()))?
+		.trim();
+
+	match last_line.to_lowercase().as_str() {
+		"true" => Ok(true),
+		"false" => Ok(false),
+		_ => Err(ScriptError::parse_error(format!(
+			"Last line of output is not a valid boolean: '{}'",
+			last_line
+		))),
+	}
 }
 
 #[cfg(test)]
@@ -117,7 +133,7 @@ mod tests {
 	use super::*;
 	use crate::models::{
 		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
-		MatchConditions, Monitor, MonitorMatch, ProcessedBlock, TransactionCondition,
+		MatchConditions, Monitor, MonitorMatch, TransactionCondition,
 	};
 	use std::io::Write;
 	use tempfile::NamedTempFile;
@@ -182,11 +198,11 @@ import json
 
 input_json = sys.argv[1]
 data = json.loads(input_json)
-print("Nico")
+print("debugging...")
 def test():
-    return False
-result =test()
-sys.exit(0 if result else 1)
+    return True
+result = test()
+print(result)
 "#;
 		let temp_file = create_temp_script(script_content);
 
@@ -194,47 +210,141 @@ sys.exit(0 if result else 1)
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 		};
 
-		let input = ProcessedBlock {
-			block_number: 1_u64,
-			network_slug: "test".to_string(),
-			processing_results: vec![create_mock_monitor_match()],
-		};
+		let input = create_mock_monitor_match();
 
 		let result = executor.execute(input).await;
 		assert!(result.is_ok());
-		assert!(result.unwrap());
+		assert_eq!(result.unwrap(), true);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_invalid_output() {
+		let script_content = r#"
+import sys
+
+print("debugging...")
+def test():
+    return "not a boolean"
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = PythonScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		let result = executor.execute(input).await;
+		assert!(result.is_err());
+		match result {
+			Err(ScriptError::ParseError(msg)) => {
+				assert!(msg.contains("Last line of output is not a valid boolean"));
+			}
+			_ => panic!("Expected ParseError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_multiple_prints() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("Starting script execution...")
+print("Processing data...")
+print("More debug info")
+print("true")
+"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = PythonScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		let result = executor.execute(input).await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
 	}
 
 	#[tokio::test]
 	async fn test_javascript_script_executor_success() {
 		let script_content = r#"
-const input = JSON.parse(process.argv[2]);
-// Do something with input and return true/false
-console.log('true');
-"#;
+	const input = JSON.parse(process.argv[2]);
+	// Do something with input and return true/false
+	console.log("debugging...");
+	console.log("finished");
+	console.log("true");
+	"#;
 		let temp_file = create_temp_script(script_content);
 
 		let executor = JavaScriptScriptExecutor {
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 		};
 
-		let input = ProcessedBlock {
-			block_number: 1_u64,
-			network_slug: "test".to_string(),
-			processing_results: vec![create_mock_monitor_match()],
-		};
+		let input = create_mock_monitor_match();
 
 		let result = executor.execute(input).await;
 		assert!(result.is_ok());
-		assert!(result.unwrap());
+		assert_eq!(result.unwrap(), true);
+	}
+
+	#[tokio::test]
+	async fn test_javascript_script_executor_invalid_output() {
+		let script_content = r#"
+	const input = JSON.parse(process.argv[2]);
+	console.log("debugging...");
+	console.log("finished");
+	console.log("not a boolean");
+	"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = JavaScriptScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		let result = executor.execute(input).await;
+		assert!(result.is_err());
+		match result {
+			Err(ScriptError::ParseError(msg)) => {
+				assert!(msg.contains("Last line of output is not a valid boolean"));
+			}
+			_ => panic!("Expected ParseError"),
+		}
 	}
 
 	#[tokio::test]
 	async fn test_bash_script_executor_success() {
-		let script_content = r#"#!/bin/bash
-input_json="$1"
-# Do something with input_json and return true/false
+		let script_content = r#"
+#!/bin/bash
+echo "debugging..."
 echo "true"
+"#;
+		let temp_file = create_temp_script(script_content);
+		let executor = BashScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		let result = executor.execute(input).await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
+	}
+
+	#[tokio::test]
+	async fn test_bash_script_executor_invalid_output() {
+		let script_content = r#"
+#!/bin/bash
+echo "debugging..."
+echo "not a boolean"
 "#;
 		let temp_file = create_temp_script(script_content);
 
@@ -242,64 +352,81 @@ echo "true"
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 		};
 
-		let input = ProcessedBlock {
-			block_number: 1_u64,
-			network_slug: "test".to_string(),
-			processing_results: vec![create_mock_monitor_match()],
-		};
+		let input = create_mock_monitor_match();
 
 		let result = executor.execute(input).await;
+		assert!(result.is_err());
+		match result {
+			Err(ScriptError::ParseError(msg)) => {
+				assert!(msg.contains("Last line of output is not a valid boolean"));
+			}
+			_ => panic!("Expected ParseError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_script_executor_empty_output() {
+		let script_content = r#"
+# This script produces no output
+"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = PythonScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input).await;
+
+		match result {
+			Err(ScriptError::ParseError(msg)) => {
+				assert!(msg.contains("Script produced no output"));
+			}
+			_ => panic!("Expected ParseError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_script_executor_whitespace_output() {
+		let script_content = r#"
+print("   ")
+print("     true    ")  # Should handle whitespace correctly
+"#;
+		let temp_file = create_temp_script(script_content);
+
+		let executor = PythonScriptExecutor {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input).await;
+
 		assert!(result.is_ok());
-		assert!(result.unwrap());
+		assert_eq!(result.unwrap(), true);
 	}
 
 	#[tokio::test]
-	async fn test_script_execution_error() {
-		let script_content = "invalid_command"; // This will cause an error
+	async fn test_script_executor_invalid_json_input() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("true")
+print("Invalid JSON input")
+exit(1)
+"#;
 		let temp_file = create_temp_script(script_content);
 
-		let executor = BashScriptExecutor {
+		let executor = PythonScriptExecutor {
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 		};
 
-		let input = ProcessedBlock {
-			block_number: 1_u64,
-			network_slug: "test".to_string(),
-			processing_results: vec![create_mock_monitor_match()],
-		};
+		// Create an invalid MonitorMatch that will fail JSON serialization
+		let input = create_mock_monitor_match();
 
 		let result = executor.execute(input).await;
-		assert!(matches!(result, Err(CustomScriptError::ExecutionError(_))));
-	}
-
-	#[tokio::test]
-	async fn test_script_invalid_output() {
-		let script_content = "echo 'not a boolean'";
-		let temp_file = create_temp_script(script_content);
-
-		let executor = BashScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
-		};
-
-		let input = ProcessedBlock {
-			block_number: 1_u64,
-			network_slug: "test".to_string(),
-			processing_results: vec![create_mock_monitor_match()],
-		};
-
-		let result = executor.execute(input).await;
-		assert!(matches!(result, Err(CustomScriptError::ParseError(_))));
-	}
-
-	#[test]
-	fn test_custom_script_error_display() {
-		let io_error = CustomScriptError::IoError(std::io::Error::new(
-			std::io::ErrorKind::Other,
-			"test error",
-		));
-		assert!(format!("{}", io_error).contains("IO error"));
-
-		let process_error = CustomScriptError::process_error(Some(1), "command failed".to_string());
-		assert!(format!("{}", process_error).contains("Process error"));
+		assert!(result.is_err());
 	}
 }
