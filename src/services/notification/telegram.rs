@@ -72,26 +72,6 @@ impl TelegramNotifier {
 		format!("*{}* \n\n{}", self.title, message)
 	}
 
-	/// Escapes special characters in a message to make it safe for Telegram
-	///
-	/// # Arguments
-	/// * `message` - The message to escape
-	///
-	/// # Returns
-	/// * `String` - The escaped message
-	#[allow(dead_code)]
-	fn escape_message(&self, message: &str) -> String {
-		let escape_characters = ['_', '*', '`', '['];
-		let mut escaped_text = message.to_string();
-		for &escape_character in &escape_characters {
-			escaped_text = escaped_text.replace(
-				&format!("{}", escape_character),
-				&format!("\\{}", escape_character),
-			);
-		}
-		escaped_text
-	}
-
 	/// Creates a Telegram notifier from a trigger configuration
 	///
 	/// # Arguments
@@ -222,6 +202,17 @@ mod tests {
 		let variables = HashMap::new();
 		let result = notifier.format_message(&variables);
 		assert_eq!(result, "*Alert* \n\n");
+	}
+
+	////////////////////////////////////////////////////////////
+	// construct_url tests
+	////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_construct_url() {
+		let notifier = create_test_notifier("Test message");
+		let url = notifier.construct_url("Test message");
+		assert_eq!(url, "https://api.telegram.org/bottest-token/sendMessage?text=Test%20message&chat_id=test-chat-id&parse_mode=markdown&disable_web_page_preview=true");
 	}
 
 	////////////////////////////////////////////////////////////

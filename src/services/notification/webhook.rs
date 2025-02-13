@@ -72,8 +72,8 @@ impl WebhookNotifier {
 			body_template,
 			client: Client::new(),
 			method: Some(method.unwrap_or("POST".to_string())),
-			secret: Some(secret.unwrap_or_default()),
-			headers: Some(headers.unwrap_or_default()),
+			secret: secret.map(|s| s.to_string()),
+			headers,
 		})
 	}
 
@@ -211,15 +211,21 @@ mod tests {
 	use crate::models::NotificationMessage;
 
 	use super::*;
+	use mockito::{Matcher, Mock};
 
-	fn create_test_notifier(body_template: &str) -> WebhookNotifier {
+	fn create_test_notifier(
+		url: &str,
+		body_template: &str,
+		secret: Option<&str>,
+		headers: Option<HashMap<String, String>>,
+	) -> WebhookNotifier {
 		WebhookNotifier::new(
-			"https://non-existent-url-webhook.com".to_string(),
+			url.to_string(),
 			"Alert".to_string(),
 			body_template.to_string(),
 			Some("POST".to_string()),
-			None,
-			None,
+			secret.map(|s| s.to_string()),
+			headers,
 		)
 		.unwrap()
 	}
@@ -243,7 +249,12 @@ mod tests {
 
 	#[test]
 	fn test_format_message() {
-		let notifier = create_test_notifier("Value is ${value} and status is ${status}");
+		let notifier = create_test_notifier(
+			"https://webhook.example.com",
+			"Value is ${value} and status is ${status}",
+			None,
+			None,
+		);
 
 		let mut variables = HashMap::new();
 		variables.insert("value".to_string(), "100".to_string());
@@ -255,7 +266,12 @@ mod tests {
 
 	#[test]
 	fn test_format_message_with_missing_variables() {
-		let notifier = create_test_notifier("Value is ${value} and status is ${status}");
+		let notifier = create_test_notifier(
+			"https://webhook.example.com",
+			"Value is ${value} and status is ${status}",
+			None,
+			None,
+		);
 
 		let mut variables = HashMap::new();
 		variables.insert("value".to_string(), "100".to_string());
@@ -267,11 +283,36 @@ mod tests {
 
 	#[test]
 	fn test_format_message_with_empty_template() {
-		let notifier = create_test_notifier("");
+		let notifier = create_test_notifier("https://webhook.example.com", "", None, None);
 
 		let variables = HashMap::new();
 		let result = notifier.format_message(&variables);
 		assert_eq!(result, "");
+	}
+
+	////////////////////////////////////////////////////////////
+	// sign_request tests
+	////////////////////////////////////////////////////////////
+
+	#[test]
+	fn test_sign_request() {
+		let notifier = create_test_notifier(
+			"https://webhook.example.com",
+			"Test message",
+			Some("test-secret"),
+			None,
+		);
+		let payload = WebhookMessage {
+			title: "Test Title".to_string(),
+			body: "Test message".to_string(),
+		};
+		let secret = "test-secret";
+
+		let result = notifier.sign_request(secret, &payload).unwrap();
+		let (signature, timestamp) = result;
+
+		assert!(!signature.is_empty());
+		assert!(!timestamp.is_empty());
 	}
 
 	////////////////////////////////////////////////////////////
@@ -297,8 +338,38 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_notify_failure() {
-		let notifier = create_test_notifier("Test message");
+		let notifier =
+			create_test_notifier("https://webhook.example.com", "Test message", None, None);
 		let result = notifier.notify("Test message").await;
 		assert!(result.is_err());
+	}
+
+	#[tokio::test]
+	async fn test_notify_includes_signature_and_timestamp() {
+		let mut server = mockito::Server::new_async().await;
+		let mock: Mock = server
+			.mock("POST", "/")
+			.match_header("X-Signature", Matcher::Regex("^[0-9a-f]{64}$".to_string()))
+			.match_header("X-Timestamp", Matcher::Regex("^[0-9]+$".to_string()))
+			.match_header("Content-Type", "text/plain")
+			.with_status(200)
+			.create_async()
+			.await;
+
+		let notifier = create_test_notifier(
+			server.url().as_str(),
+			"Test message",
+			Some("top-secret"),
+			Some(HashMap::from([(
+				"Content-Type".to_string(),
+				"text/plain".to_string(),
+			)])),
+		);
+
+		let response = notifier.notify("Test message").await;
+
+		assert!(response.is_ok());
+
+		mock.assert();
 	}
 }
