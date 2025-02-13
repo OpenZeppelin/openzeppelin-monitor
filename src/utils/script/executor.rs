@@ -1,4 +1,4 @@
-use crate::models::ProcessedBlock;
+use crate::models::{MonitorMatch, ProcessedBlock};
 use async_trait::async_trait;
 
 /// A trait that defines the interface for executing custom scripts in different languages.
@@ -231,7 +231,11 @@ import json
 
 input_json = sys.argv[1]
 data = json.loads(input_json)
-print("true")
+print("Nico")
+def test():
+    return False
+result =test()
+sys.exit(0 if result else 1)
 "#;
 		let temp_file = create_temp_script(script_content);
 
