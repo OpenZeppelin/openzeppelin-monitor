@@ -420,11 +420,11 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |String
 |Slack webhook URL for sending notifications
 
-|config.title
+|config.message.title
 |String
 |Title that appears in the Slack message
 
-|config.body
+|config.message.body
 |String
 |Message template with variable substitution
 |===
@@ -458,11 +458,11 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |String
 |SMTP authentication password
 
-|config.subject
+|config.message.title
 |String
 |Email subject line
 
-|config.body
+|config.message.body
 |String
 |Email body template with variable substitution
 
