@@ -97,7 +97,7 @@ impl ScriptExecutor for BashScriptExecutor {
 /// * The script execution was not successful (non-zero exit code)
 /// * The output cannot be parsed as a boolean
 /// * The script produced no output
-fn process_script_output(output: std::process::Output) -> Result<bool, ScriptError> {
+pub fn process_script_output(output: std::process::Output) -> Result<bool, ScriptError> {
 	if !output.status.success() {
 		return Err(ScriptError::execution_error(
 			String::from_utf8_lossy(&output.stderr).to_string(),
