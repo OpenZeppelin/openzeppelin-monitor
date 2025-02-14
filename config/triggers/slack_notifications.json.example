@@ -20,5 +20,5 @@
         "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
       }
     }
-  },
+  }
 }

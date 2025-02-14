@@ -18,7 +18,7 @@ ARG version=3.12
 
 RUN apk add bash python-${version} py${version}-pip
 
-# removes apk and uneeded wolfi-base tools.
+# removes apk and unneeded wolfi-base tools.
 RUN apk del wolfi-base apk-tools
 
 WORKDIR /app
