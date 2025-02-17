@@ -614,7 +614,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(),
+				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
 				chat_id: "1730223038".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
@@ -646,7 +646,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(),
+				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
 				chat_id: "".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
@@ -662,7 +662,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(),
+				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(), // noboost
 				chat_id: "1730223038".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
@@ -677,7 +677,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(),
+				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(), // noboost
 				chat_id: "1730223038".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
