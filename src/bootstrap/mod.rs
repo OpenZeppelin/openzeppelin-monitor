@@ -393,23 +393,87 @@ async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<Mo
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::models::{
+		EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
+	};
+	use std::io::Write;
+	use tempfile::NamedTempFile;
+	use web3::types::{TransactionReceipt, H160, U256};
 
-	fn create_test_monitor(name: &str, networks: Vec<&str>, paused: bool) -> Monitor {
+	// Helper function to create a temporary script file
+	fn create_temp_script(content: &str) -> NamedTempFile {
+		let mut file = NamedTempFile::new().unwrap();
+		file.write_all(content.as_bytes()).unwrap();
+		file
+	}
+	fn create_test_monitor(
+		name: &str,
+		networks: Vec<&str>,
+		paused: bool,
+		script_path: Option<&str>,
+	) -> Monitor {
 		Monitor {
 			name: name.to_string(),
 			networks: networks.into_iter().map(|s| s.to_string()).collect(),
 			paused,
+			trigger_conditions: vec![TriggerConditions {
+				language: ScriptLanguage::Python,
+				script_path: script_path.unwrap_or("test.py").to_string(),
+				execution_order: Some(0),
+				timeout_ms: 1000,
+				arguments: None,
+			}],
 			..Default::default()
+		}
+	}
+
+	fn create_test_evm_transaction() -> EVMTransaction {
+		EVMTransaction::from({
+			web3::types::Transaction {
+				from: Some(H160::default()),
+				to: Some(H160::default()),
+				value: U256::default(),
+				..Default::default()
+			}
+		})
+	}
+
+	fn create_mock_monitor_match(script_path: Option<&str>) -> MonitorMatch {
+		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: create_test_monitor("test", vec![], false, script_path),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}))
+	}
+
+	fn matches_equal(a: &MonitorMatch, b: &MonitorMatch) -> bool {
+		match (a, b) {
+			(MonitorMatch::EVM(a), MonitorMatch::EVM(b)) => a.monitor.name == b.monitor.name,
+			(MonitorMatch::Stellar(a), MonitorMatch::Stellar(b)) => {
+				a.monitor.name == b.monitor.name
+			}
+			_ => false,
 		}
 	}
 
 	#[test]
 	fn test_has_active_monitors() {
 		let monitors = vec![
-			create_test_monitor("1", vec!["ethereum_mainnet"], false),
-			create_test_monitor("2", vec!["ethereum_sepolia"], false),
-			create_test_monitor("3", vec!["ethereum_mainnet", "ethereum_sepolia"], false),
-			create_test_monitor("4", vec!["stellar_mainnet"], true),
+			create_test_monitor("1", vec!["ethereum_mainnet"], false, None),
+			create_test_monitor("2", vec!["ethereum_sepolia"], false, None),
+			create_test_monitor(
+				"3",
+				vec!["ethereum_mainnet", "ethereum_sepolia"],
+				false,
+				None,
+			),
+			create_test_monitor("4", vec!["stellar_mainnet"], true, None),
 		];
 
 		assert!(has_active_monitors(
@@ -435,15 +499,15 @@ mod tests {
 		let mut monitors = HashMap::new();
 		monitors.insert(
 			"1".to_string(),
-			create_test_monitor("1", vec!["ethereum_mainnet"], false),
+			create_test_monitor("1", vec!["ethereum_mainnet"], false, None),
 		);
 		monitors.insert(
 			"2".to_string(),
-			create_test_monitor("2", vec!["stellar_mainnet"], true),
+			create_test_monitor("2", vec!["stellar_mainnet"], true, None),
 		);
 		monitors.insert(
 			"3".to_string(),
-			create_test_monitor("3", vec!["ethereum_mainnet"], false),
+			create_test_monitor("3", vec!["ethereum_mainnet"], false, None),
 		);
 
 		let active_monitors = filter_active_monitors(monitors);
@@ -454,9 +518,14 @@ mod tests {
 	#[test]
 	fn test_filter_network_monitors() {
 		let monitors = vec![
-			create_test_monitor("1", vec!["ethereum_mainnet"], false),
-			create_test_monitor("2", vec!["stellar_mainnet"], true),
-			create_test_monitor("3", vec!["ethereum_mainnet", "stellar_mainnet"], false),
+			create_test_monitor("1", vec!["ethereum_mainnet"], false, None),
+			create_test_monitor("2", vec!["stellar_mainnet"], true, None),
+			create_test_monitor(
+				"3",
+				vec!["ethereum_mainnet", "stellar_mainnet"],
+				false,
+				None,
+			),
 		];
 
 		let eth_monitors = filter_network_monitors(&monitors, &"ethereum_mainnet".to_string());
@@ -473,5 +542,57 @@ mod tests {
 
 		let sol_monitors = filter_network_monitors(&monitors, &"solana_mainnet".to_string());
 		assert!(sol_monitors.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_empty_matches() {
+		let matches: Vec<MonitorMatch> = vec![];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet").await;
+		assert!(filtered.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_true_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("debugging...")
+def test():
+    return True
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet").await;
+		assert_eq!(filtered.len(), 1);
+		assert!(matches_equal(&filtered[0], &match_item));
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_false_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("debugging...")
+def test():
+    return False
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet").await;
+		assert_eq!(filtered.len(), 0);
 	}
 }
