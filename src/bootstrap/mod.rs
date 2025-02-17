@@ -351,7 +351,10 @@ async fn execute_trigger_condition(
 
 async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<MonitorMatch> {
 	let mut filtered_matches = vec![];
+	// We are running this function for every block, so we need to limit the number of concurrent
+	// open files to avoid running out of file descriptors
 	const MAX_CONCURRENT_OPEN_FILES: usize = 100;
+	// Create a semaphore to limit concurrent script executions
 	static PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_OPEN_FILES);
 
 	for monitor_match in matches {
@@ -363,7 +366,7 @@ async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<Mo
 		};
 
 		for trigger_condition in trigger_conditions {
-			// Acquire semaphore permit
+			// Acquire semaphore permit, this will block if the semaphore is full
 			let _permit = match PERMITS.acquire().await {
 				Ok(permit) => permit,
 				Err(e) => {
