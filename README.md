@@ -24,6 +24,9 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 - Slack notifications
 - Email notifications
+- Discord notifications
+- Telegram notifications
+- Webhook notifications
 
 ## For Users
 
@@ -78,6 +81,9 @@ graph TD
     subgraph Notifications
         Slack
         Email
+        Discord
+        Telegram
+        Webhook
     end
 
     %% Block Processing Flow
@@ -99,6 +105,9 @@ graph TD
     TS -->|Execute| NS
     NS --> Slack
     NS --> Email
+    NS --> Discord
+    NS --> Telegram
+    NS --> Webhook
 
     style STL fill:#f0f0f0
 
@@ -110,7 +119,7 @@ graph TD
     class ETH,POL,BSC rpc
     class BS storage
     class BW,FS,TS,NS service
-    class Slack,Email notification
+    class Slack,Email,Discord,Telegram,Webhook notification
 ```
 
 ### Project Structure

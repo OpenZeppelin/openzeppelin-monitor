@@ -1,0 +1,34 @@
+{
+  "evm_large_transfer_usdc_webhook": {
+    "name": "Large Transfer Webhook Notification",
+    "trigger_type": "webhook",
+    "config": {
+      "url": "https://webhook.site/123-456-789",
+      "method": "POST",
+      "secret": "some-secret",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "message": {
+        "title": "large_transfer_webhook triggered",
+        "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+      }
+    }
+  },
+  "stellar_large_swap_by_dex_webhook": {
+    "name": "Large Swap By Dex Webhook Notification",
+    "trigger_type": "webhook",
+    "config": {
+      "url": "https://webhook.site/123-456-789",
+      "method": "POST",
+      "secret": "some-secret",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "message": {
+        "title": "large_swap_by_dex_webhook triggered",
+        "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
+      }
+    }
+  }
+}
