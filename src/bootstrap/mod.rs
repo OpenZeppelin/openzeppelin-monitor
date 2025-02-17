@@ -359,13 +359,15 @@ async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<Mo
 
 	for monitor_match in matches {
 		let mut is_filtered = false;
-
 		let trigger_conditions = match monitor_match {
 			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
 			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
 		};
 
-		for trigger_condition in trigger_conditions {
+		let mut sorted_conditions = trigger_conditions.clone();
+		sorted_conditions.sort_by_key(|condition| condition.execution_order);
+
+		for trigger_condition in sorted_conditions {
 			// Acquire semaphore permit, this will block if the semaphore is full
 			let _permit = match PERMITS.acquire().await {
 				Ok(permit) => permit,
@@ -375,7 +377,7 @@ async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<Mo
 				}
 			};
 
-			if execute_trigger_condition(trigger_condition, monitor_match).await {
+			if execute_trigger_condition(&trigger_condition, monitor_match).await {
 				is_filtered = true;
 				break;
 			}
