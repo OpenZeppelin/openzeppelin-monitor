@@ -16,9 +16,12 @@
 //!   from the block processing pipeline
 
 use futures::future::BoxFuture;
-use log::{error, info};
+use log::{error, info, warn};
 use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::sync::watch;
+use tokio::{
+	sync::{watch, Semaphore},
+	time::Duration,
+};
 
 use crate::{
 	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
@@ -32,6 +35,7 @@ use crate::{
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
+	utils::script::ScriptExecutorFactory,
 };
 
 /// Type alias for handling ServiceResult
@@ -249,7 +253,8 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 		tokio::spawn(async move {
 			tokio::select! {
 				_ = async {
-					for monitor_match in &block.processing_results {
+					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug).await;
+					for monitor_match in &filtered_matches {
 						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
 							error!("Error handling trigger: {}", e);
 						}
@@ -305,6 +310,76 @@ fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<M
 		.filter(|m| m.networks.contains(network_slug))
 		.cloned()
 		.collect()
+}
+
+async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<MonitorMatch> {
+	let mut filtered_matches = vec![];
+	// We are running this function for every block, so we need to limit the number of concurrent
+	// open files to avoid running out of file descriptors
+	const MAX_CONCURRENT_OPEN_FILES: usize = 100;
+	// Create a semaphore to limit concurrent script executions
+	static PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_OPEN_FILES);
+
+	for monitor_match in matches {
+		let mut is_filtered = false;
+
+		match monitor_match {
+			MonitorMatch::EVM(evm_match) => {
+				for trigger_condition in &evm_match.monitor.trigger_conditions {
+					// Acquire semaphore permit
+					let _permit = match PERMITS.acquire().await {
+						Ok(permit) => permit,
+						Err(e) => {
+							error!("Failed to acquire semaphore: {}", e);
+							continue;
+						}
+					};
+
+					let executor = ScriptExecutorFactory::create(
+						&trigger_condition.language,
+						&trigger_condition.script_path,
+					);
+
+					match tokio::time::timeout(
+						Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
+						executor.execute(monitor_match.clone()),
+					)
+					.await
+					{
+						Ok(Ok(false)) => {
+							is_filtered = true;
+							break;
+						}
+						Err(e) => {
+							warn!(
+								"Script execution timed out for {}: {}",
+								trigger_condition.script_path.to_string(),
+								e
+							);
+						}
+						Ok(Err(e)) => {
+							warn!(
+								"Script execution failed for {}: {}",
+								trigger_condition.script_path.to_string(),
+								e
+							);
+						}
+						_ => {}
+					}
+					// Permit is automatically dropped here, releasing the semaphore
+				}
+			}
+			MonitorMatch::Stellar(_stellar_match) => {
+				// Access Stellar-specific trigger conditions
+				// Use stellar_match.trigger_conditions or similar
+			}
+		}
+
+		if !is_filtered {
+			filtered_matches.push(monitor_match.clone());
+		}
+	}
+	filtered_matches
 }
 
 #[cfg(test)]

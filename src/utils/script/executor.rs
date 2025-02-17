@@ -30,6 +30,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 		let output = tokio::process::Command::new("python3")
 			.arg(&self.script_path)
 			.arg(input_json)
+			.kill_on_drop(true)
 			.output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
@@ -53,6 +54,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		let output = tokio::process::Command::new("node")
 			.arg(&self.script_path)
 			.arg(input_json)
+			.kill_on_drop(true)
 			.output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
@@ -76,6 +78,7 @@ impl ScriptExecutor for BashScriptExecutor {
 		let output = tokio::process::Command::new("bash")
 			.arg(&self.script_path)
 			.arg(input_json)
+			.kill_on_drop(true)
 			.output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;

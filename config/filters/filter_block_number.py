@@ -1,17 +1,45 @@
-def filter_block_number(monitor_match: dict) -> bool:
-    """
-    Filter function that returns True if the block number is even.
-    
-    Args:
-        monitor_match (dict): A dictionary containing monitor match data with the following fields:
-            monitor: Monitor,  # The monitor configuration
-            transaction: EVMTransaction,  # The transaction data
-            receipt: TransactionReceipt,  # The transaction receipt
-            matched_on: MatchConditions,  # The conditions that were matched
-            matched_on_args: MatchArguments,  # The arguments that were matched
-        
-    Returns:
-        bool: True if the block number is even, False otherwise
-    """
-    block_number = monitor_match.get('transaction', {}).get('block_number', 0)
-    return block_number % 2 == 0
+#!/usr/bin/env python3
+import sys
+import json
+import logging
+
+def main():
+    try:
+        # Validate we have the input argument
+        if len(sys.argv) < 2:
+            print("No input JSON provided", flush=True)
+            return False
+
+        # Parse input JSON
+        try:
+            data = json.loads(sys.argv[1])
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON input: {e}", flush=True)
+            return False
+
+        # Extract block_number
+        block_number = None
+        if "EVM" in data:
+            hex_block = data['EVM']['transaction'].get('blockNumber')
+            if hex_block:
+                # Convert hex string to integer
+                block_number = int(hex_block, 16)
+                print(f"BLOCK NUMBER INTEGER ==>: {block_number}")
+
+        if block_number is None:
+            print("Block number is None")
+            return False
+
+        result = block_number % 2 == 0
+        print(f"Block number {block_number} is {'even' if result else 'odd'}", flush=True)
+        logging.info(f"Block number {block_number} is {'even' if result else 'odd'}")
+        return result
+
+    except Exception as e:
+        print(f"Error processing input: {e}", flush=True)
+        return False
+
+if __name__ == "__main__":
+    result = main()
+    # Print the final boolean result
+    print(str(result).lower(), flush=True)
