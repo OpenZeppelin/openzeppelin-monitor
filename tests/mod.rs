@@ -43,7 +43,9 @@ mod integration {
 		}
 	}
 	mod notifications {
+		mod discord;
 		mod email;
 		mod slack;
+		mod webhook;
 	}
 }

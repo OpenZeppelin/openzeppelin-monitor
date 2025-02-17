@@ -473,7 +473,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	trigger_execution_service
 		.expect_execute()
 		.withf(|trigger_name, variables| {
-			trigger_name == ["large_transfer_slack"]
+			trigger_name == ["example_trigger_slack"]
 				// Event variables
 				&& variables.get("event_0_signature") == Some(&"Transfer(address,address,uint256)".to_string())
 				&& variables.get("event_0_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())

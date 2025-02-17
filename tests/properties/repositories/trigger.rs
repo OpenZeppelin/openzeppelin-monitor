@@ -103,6 +103,16 @@ proptest! {
 						if let TriggerTypeConfig::Slack { message: m, .. } = &mut invalid_trigger.config {
 							*m = NotificationMessage {
 								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Slack { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
 								body: "".to_string(),
 							};
 						}
@@ -151,16 +161,93 @@ proptest! {
 							*u = "not-a-url".to_string();
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty title
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Webhook { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Webhook { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 					}
 				}
 				TriggerType::Discord => {
 					if let TriggerTypeConfig::Discord { discord_url: _, message: _ } = &trigger.config {
-						todo!("Implement discord validation")
+						// Test invalid URL
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Discord { discord_url: u, .. } = &mut invalid_trigger.config {
+							*u = "not-a-url".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty title
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Discord { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Discord { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 					}
 				}
 				TriggerType::Telegram => {
 					if let TriggerTypeConfig::Telegram { token: _, chat_id: _, disable_web_preview: _, message: _ } = &trigger.config {
-						todo!("Implement telegram validation")
+						// Test invalid token
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { token: t, .. } = &mut invalid_trigger.config {
+							*t = "INVALID_TOKEN".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test invalid chat id
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { chat_id: c, .. } = &mut invalid_trigger.config {
+							*c = "   ".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty title
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 					}
 				}
 				TriggerType::Script => {

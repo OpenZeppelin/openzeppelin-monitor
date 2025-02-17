@@ -695,7 +695,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	trigger_execution_service
 		.expect_execute()
 		.withf(|trigger_name, variables| {
-			trigger_name == ["large_transfer_slack"]
+			trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
 				// Transaction variables
@@ -719,7 +719,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	trigger_execution_service
 		.expect_execute()
 		.withf(|trigger_name, variables| {
-			trigger_name == ["large_transfer_slack"]
+			trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
 				// Transaction variables
