@@ -407,6 +407,25 @@ mod tests {
 		};
 		assert!(invalid_host.validate().is_err());
 
+		// Test empty host
+		let empty_host = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(empty_host.validate().is_err());
+
 		// Test invalid email address
 		let invalid_email = Trigger {
 			name: "test_email".to_string(),
@@ -425,6 +444,42 @@ mod tests {
 			},
 		};
 		assert!(invalid_email.validate().is_err());
+
+		let invalid_trigger = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "".to_string(), // Invalid password
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_trigger.validate().is_err());
+
+		let invalid_trigger = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "A".repeat(999).to_string(), // Exceeds max length
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_trigger.validate().is_err());
 
 		// Test empty title
 		let empty_title = Trigger {
