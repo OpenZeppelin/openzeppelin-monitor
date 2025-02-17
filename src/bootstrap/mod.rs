@@ -24,7 +24,10 @@ use tokio::{
 };
 
 use crate::{
-	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
+	models::{
+		BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock,
+		TriggerConditions,
+	},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
 		RepositoryError, TriggerRepositoryTrait, TriggerService,
@@ -312,66 +315,66 @@ fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<M
 		.collect()
 }
 
+async fn execute_trigger_condition(
+	trigger_condition: &TriggerConditions,
+	monitor_match: &MonitorMatch,
+) -> bool {
+	let executor =
+		ScriptExecutorFactory::create(&trigger_condition.language, &trigger_condition.script_path);
+
+	match tokio::time::timeout(
+		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
+		executor.execute(monitor_match.clone()),
+	)
+	.await
+	{
+		Ok(Ok(false)) => true,
+		Err(e) => {
+			warn!(
+				"Script execution timed out for {}: {}",
+				trigger_condition.script_path.to_string(),
+				e
+			);
+			false
+		}
+		Ok(Err(e)) => {
+			warn!(
+				"Script execution failed for {}: {}",
+				trigger_condition.script_path.to_string(),
+				e
+			);
+			false
+		}
+		_ => false,
+	}
+}
+
 async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<MonitorMatch> {
 	let mut filtered_matches = vec![];
-	// We are running this function for every block, so we need to limit the number of concurrent
-	// open files to avoid running out of file descriptors
 	const MAX_CONCURRENT_OPEN_FILES: usize = 100;
-	// Create a semaphore to limit concurrent script executions
 	static PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_OPEN_FILES);
 
 	for monitor_match in matches {
 		let mut is_filtered = false;
 
-		match monitor_match {
-			MonitorMatch::EVM(evm_match) => {
-				for trigger_condition in &evm_match.monitor.trigger_conditions {
-					// Acquire semaphore permit
-					let _permit = match PERMITS.acquire().await {
-						Ok(permit) => permit,
-						Err(e) => {
-							error!("Failed to acquire semaphore: {}", e);
-							continue;
-						}
-					};
+		let trigger_conditions = match monitor_match {
+			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
+			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
+		};
 
-					let executor = ScriptExecutorFactory::create(
-						&trigger_condition.language,
-						&trigger_condition.script_path,
-					);
-
-					match tokio::time::timeout(
-						Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
-						executor.execute(monitor_match.clone()),
-					)
-					.await
-					{
-						Ok(Ok(false)) => {
-							is_filtered = true;
-							break;
-						}
-						Err(e) => {
-							warn!(
-								"Script execution timed out for {}: {}",
-								trigger_condition.script_path.to_string(),
-								e
-							);
-						}
-						Ok(Err(e)) => {
-							warn!(
-								"Script execution failed for {}: {}",
-								trigger_condition.script_path.to_string(),
-								e
-							);
-						}
-						_ => {}
-					}
-					// Permit is automatically dropped here, releasing the semaphore
+		for trigger_condition in trigger_conditions {
+			// Acquire semaphore permit
+			let _permit = match PERMITS.acquire().await {
+				Ok(permit) => permit,
+				Err(e) => {
+					error!("Failed to acquire semaphore: {}", e);
+					continue;
 				}
-			}
-			MonitorMatch::Stellar(_stellar_match) => {
-				// Access Stellar-specific trigger conditions
-				// Use stellar_match.trigger_conditions or similar
+			};
+
+			if execute_trigger_condition(trigger_condition, monitor_match).await {
+				is_filtered = true;
+				break;
 			}
 		}
 
