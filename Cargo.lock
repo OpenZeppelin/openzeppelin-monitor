@@ -2570,6 +2570,7 @@ dependencies = [
  "mockito",
  "proptest",
  "rand 0.9.0",
+ "regex",
  "reqwest 0.12.4",
  "serde",
  "serde_json",

@@ -240,9 +240,17 @@ impl ConfigLoader for Trigger {
 				} = &self.config
 				{
 					// Validate token
+					// /^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$/ regex
 					if token.trim().is_empty() {
 						return Err(ConfigError::validation_error("Token cannot be empty"));
 					}
+					if !regex::Regex::new(r"^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$")
+						.unwrap()
+						.is_match(token)
+					{
+						return Err(ConfigError::validation_error("Invalid token format"));
+					}
+
 					// Validate chat ID
 					if chat_id.trim().is_empty() {
 						return Err(ConfigError::validation_error("Chat ID cannot be empty"));
@@ -344,6 +352,20 @@ mod tests {
 			},
 		};
 		assert!(empty_title.validate().is_err());
+
+		// Test empty body
+		let empty_body = Trigger {
+			name: "test_slack".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "".to_string(),
+				},
+			},
+		};
+		assert!(empty_body.validate().is_err());
 	}
 
 	#[test]
@@ -403,6 +425,44 @@ mod tests {
 			},
 		};
 		assert!(invalid_email.validate().is_err());
+
+		// Test empty title
+		let empty_title = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(empty_title.validate().is_err());
+
+		// Test empty body
+		let empty_body = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(empty_body.validate().is_err());
 	}
 
 	#[test]
@@ -456,6 +516,39 @@ mod tests {
 			},
 		};
 		assert!(invalid_method.validate().is_err());
+
+		// Test invalid message
+		let invalid_title_message = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: "https://api.example.com/webhook".to_string(),
+				method: Some("POST".to_string()),
+				headers: None,
+				secret: None,
+				message: NotificationMessage {
+					title: "".to_string(),
+					body: "Test message".to_string(),
+				},
+			},
+		};
+		assert!(invalid_title_message.validate().is_err());
+
+		let invalid_body_message = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: "https://api.example.com/webhook".to_string(),
+				method: Some("POST".to_string()),
+				headers: None,
+				secret: None,
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "".to_string(),
+				},
+			},
+		};
+		assert!(invalid_body_message.validate().is_err());
 	}
 
 	#[test]
@@ -486,6 +579,114 @@ mod tests {
 			},
 		};
 		assert!(invalid_webhook.validate().is_err());
+
+		// Test invalid message
+		let invalid_title_message = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: "https://discord.com/api/webhooks/123".to_string(),
+				message: NotificationMessage {
+					title: "".to_string(),
+					body: "test".to_string(),
+				},
+			},
+		};
+		assert!(invalid_title_message.validate().is_err());
+
+		let invalid_body_message = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: "https://discord.com/api/webhooks/123".to_string(),
+				message: NotificationMessage {
+					title: "test".to_string(),
+					body: "".to_string(),
+				},
+			},
+		};
+		assert!(invalid_body_message.validate().is_err());
+	}
+
+	#[test]
+	fn test_telegram_trigger_validation() {
+		let valid_trigger = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(),
+				chat_id: "1730223038".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		};
+		assert!(valid_trigger.validate().is_ok());
+
+		// Test invalid token
+		let invalid_token = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: "invalid-token".to_string(),
+				chat_id: "1730223038".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		};
+		assert!(invalid_token.validate().is_err());
+
+		// Test invalid chat ID
+		let invalid_chat_id = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(),
+				chat_id: "".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		};
+		assert!(invalid_chat_id.validate().is_err());
+
+		// Test invalid message
+		let invalid_title_message = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(),
+				chat_id: "1730223038".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "".to_string(),
+					body: "test".to_string(),
+				},
+			},
+		};
+		assert!(invalid_title_message.validate().is_err());
+
+		let invalid_body_message = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(),
+				chat_id: "1730223038".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "test".to_string(),
+					body: "".to_string(),
+				},
+			},
+		};
+		assert!(invalid_body_message.validate().is_err());
 	}
 
 	#[test]
