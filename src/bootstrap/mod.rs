@@ -329,11 +329,11 @@ async fn execute_trigger_condition(
 	.await
 	{
 		Ok(Ok(false)) => true,
-		Err(e) => {
+		Ok(Err(e)) => {
 			ScriptError::execution_error(e.to_string());
 			false
 		}
-		Ok(Err(e)) => {
+		Err(e) => {
 			ScriptError::execution_error(e.to_string());
 			false
 		}
@@ -586,5 +586,85 @@ print(result)
 
 		let filtered = run_trigger_filters(&matches, "ethereum_mainnet").await;
 		assert_eq!(filtered.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_execute_trigger_condition() {
+		// Test case 1: Script returns false (should return true)
+		let script_content = r#"
+import sys
+import json
+print(False)  # Script returns false
+"#;
+		let temp_file = create_temp_script(script_content);
+		let trigger_condition = TriggerConditions {
+			language: ScriptLanguage::Python,
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			execution_order: Some(0),
+			timeout_ms: 1000,
+			arguments: None,
+		};
+		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+
+		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
+		assert!(result);
+
+		// Test case 2: Script returns true (should return false)
+		let script_content = r#"
+import sys
+import json
+print(True)  # Script returns true
+"#;
+		let temp_file = create_temp_script(script_content);
+		let trigger_condition = TriggerConditions {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			..trigger_condition
+		};
+
+		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
+		assert!(!result);
+
+		// Test case 3: Script timeout
+		let script_content = r#"
+import sys
+import json
+import time
+time.sleep(2)  # Sleep for 2 seconds
+print(False)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let trigger_condition = TriggerConditions {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			timeout_ms: 100, // Set timeout to 100ms
+			..trigger_condition
+		};
+
+		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
+		assert!(!result);
+
+		// Test case 4: Script execution error
+		let script_content = r#"
+import sys
+import json
+raise Exception("Test error")  # Raise an error
+"#;
+		let temp_file = create_temp_script(script_content);
+		let trigger_condition = TriggerConditions {
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			timeout_ms: 1000,
+			..trigger_condition
+		};
+
+		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
+		assert!(!result);
+
+		// Test case 5: Invalid script path
+		let trigger_condition = TriggerConditions {
+			script_path: "non_existent_script.py".to_string(),
+			..trigger_condition
+		};
+
+		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
+		assert!(!result);
 	}
 }
