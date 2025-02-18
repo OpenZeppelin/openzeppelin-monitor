@@ -11,17 +11,10 @@ main() {
     # Parse input JSON and extract block number
     # Using jq to safely parse JSON and extract the blockNumber
     block_number_hex=$(echo "$1" | jq -r '.EVM.transaction.blockNumber // empty')
-    
-    if [ -z "$block_number_hex" ]; then
-        echo "Block number is None"
-        echo "false"
-        exit 0
-    fi
 
     # Convert hex to decimal
     # Remove '0x' prefix if present and convert using printf
     block_number=$(printf "%d" $((16#${block_number_hex#0x})))
-    echo "BLOCK NUMBER INTEGER ==>: $block_number"
 
     # Check if even or odd using modulo
     is_even=$((block_number % 2))

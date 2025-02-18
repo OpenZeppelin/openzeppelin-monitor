@@ -23,7 +23,6 @@ def main():
             ledger = data['Stellar']['transaction'].get('ledger')
             if ledger:
                 ledger_number = int(ledger, 16)
-                print(f"LEDGER NUMBER INTEGER ==>: {ledger_number}")  
 
         if ledger_number is None:
             print("Ledger number is None")

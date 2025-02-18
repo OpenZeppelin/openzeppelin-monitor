@@ -24,7 +24,6 @@ def main():
             if hex_block:
                 # Convert hex string to integer
                 block_number = int(hex_block, 16)
-                print(f"BLOCK NUMBER INTEGER ==>: {block_number}")
 
         if block_number is None:
             print("Block number is None")

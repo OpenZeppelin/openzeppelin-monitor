@@ -38,7 +38,7 @@ use crate::{
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
-	utils::script::ScriptExecutorFactory,
+	utils::script::{ScriptError, ScriptExecutorFactory},
 };
 
 /// Type alias for handling ServiceResult
@@ -330,19 +330,11 @@ async fn execute_trigger_condition(
 	{
 		Ok(Ok(false)) => true,
 		Err(e) => {
-			warn!(
-				"Script execution timed out for {}: {}",
-				trigger_condition.script_path.to_string(),
-				e
-			);
+			ScriptError::execution_error(e.to_string());
 			false
 		}
 		Ok(Err(e)) => {
-			warn!(
-				"Script execution failed for {}: {}",
-				trigger_condition.script_path.to_string(),
-				e
-			);
+			ScriptError::execution_error(e.to_string());
 			false
 		}
 		_ => false,
@@ -372,7 +364,7 @@ async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<Mo
 			let _permit = match PERMITS.acquire().await {
 				Ok(permit) => permit,
 				Err(e) => {
-					error!("Failed to acquire semaphore: {}", e);
+					ScriptError::system_error(e.to_string());
 					continue;
 				}
 			};
