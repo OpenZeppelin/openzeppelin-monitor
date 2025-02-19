@@ -19,7 +19,7 @@ pub struct TelegramNotifier {
 	/// Telegram chat ID
 	chat_id: String,
 	/// Disable web preview
-	disable_web_preview: Option<bool>,
+	disable_web_preview: bool,
 	/// Title to display in the message
 	title: String,
 	/// Message template with variable placeholders
@@ -47,7 +47,7 @@ impl TelegramNotifier {
 		Ok(Self {
 			token,
 			chat_id,
-			disable_web_preview,
+			disable_web_preview: disable_web_preview.unwrap_or(false),
 			title,
 			body_template,
 			client: Client::new(),
@@ -89,7 +89,7 @@ impl TelegramNotifier {
 			} => Some(Self {
 				token: token.clone(),
 				chat_id: chat_id.clone(),
-				disable_web_preview: *disable_web_preview,
+				disable_web_preview: disable_web_preview.unwrap_or(false),
 				title: message.title.clone(),
 				body_template: message.body.clone(),
 				client: Client::new(),
@@ -104,7 +104,7 @@ impl TelegramNotifier {
 			self.token,
 			urlencoding::encode(message),
 			self.chat_id,
-			self.disable_web_preview.unwrap_or(false)
+			self.disable_web_preview
 		)
 	}
 }
@@ -229,7 +229,7 @@ mod tests {
 		let notifier = notifier.unwrap();
 		assert_eq!(notifier.token, "test-token");
 		assert_eq!(notifier.chat_id, "test-chat-id");
-		assert_eq!(notifier.disable_web_preview, Some(true));
+		assert!(notifier.disable_web_preview);
 		assert_eq!(notifier.body_template, "Test message ${value}");
 	}
 
