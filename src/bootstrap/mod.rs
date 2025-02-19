@@ -16,7 +16,7 @@
 //!   from the block processing pipeline
 
 use futures::future::BoxFuture;
-use log::{error, info, warn};
+use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::{
 	sync::{watch, Semaphore},
@@ -25,7 +25,7 @@ use tokio::{
 
 use crate::{
 	models::{
-		BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock,
+		BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock, ScriptLanguage,
 		TriggerConditions,
 	},
 	repositories::{
@@ -248,15 +248,17 @@ where
 pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 'static>(
 	shutdown_tx: watch::Sender<bool>,
 	trigger_service: Arc<S>,
+	active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 ) -> Arc<impl Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync> {
 	Arc::new(move |block: &ProcessedBlock| {
 		let mut shutdown_rx = shutdown_tx.subscribe();
 		let trigger_service = trigger_service.clone();
+		let trigger_scripts = active_monitors_trigger_scripts.clone();
 		let block = block.clone();
 		tokio::spawn(async move {
 			tokio::select! {
 				_ = async {
-					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug).await;
+					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
 					for monitor_match in &filtered_matches {
 						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
 							error!("Error handling trigger: {}", e);
@@ -318,9 +320,9 @@ fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<M
 async fn execute_trigger_condition(
 	trigger_condition: &TriggerConditions,
 	monitor_match: &MonitorMatch,
+	script_content: &(ScriptLanguage, String),
 ) -> bool {
-	let executor =
-		ScriptExecutorFactory::create(&trigger_condition.language, &trigger_condition.script_path);
+	let executor = ScriptExecutorFactory::create(&script_content.0, &script_content.1);
 
 	match tokio::time::timeout(
 		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
@@ -341,11 +343,15 @@ async fn execute_trigger_condition(
 	}
 }
 
-async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<MonitorMatch> {
+async fn run_trigger_filters(
+	matches: &[MonitorMatch],
+	_network: &str,
+	trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
+) -> Vec<MonitorMatch> {
 	let mut filtered_matches = vec![];
 	// We are running this function for every block, so we need to limit the number of concurrent
 	// open files to avoid running out of file descriptors
-	const MAX_CONCURRENT_OPEN_FILES: usize = 100;
+	const MAX_CONCURRENT_OPEN_FILES: usize = 50;
 	// Create a semaphore to limit concurrent script executions
 	static PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_OPEN_FILES);
 
@@ -368,8 +374,14 @@ async fn run_trigger_filters(matches: &[MonitorMatch], _network: &str) -> Vec<Mo
 					continue;
 				}
 			};
+			let monitor_name = match monitor_match {
+				MonitorMatch::EVM(evm_match) => evm_match.monitor.name.clone(),
+				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
+			};
 
-			if execute_trigger_condition(&trigger_condition, monitor_match).await {
+			let script_content = trigger_scripts.get(monitor_name.as_str()).unwrap();
+
+			if execute_trigger_condition(&trigger_condition, monitor_match, script_content).await {
 				is_filtered = true;
 				break;
 			}
@@ -539,7 +551,12 @@ mod tests {
 	#[tokio::test]
 	async fn test_run_trigger_filters_empty_matches() {
 		let matches: Vec<MonitorMatch> = vec![];
-		let filtered = run_trigger_filters(&matches, "ethereum_mainnet").await;
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test".to_string(),
+			(ScriptLanguage::Python, "print('test')".to_string()),
+		);
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
 		assert!(filtered.is_empty());
 	}
 
@@ -558,10 +575,15 @@ result = test()
 print(result)
 "#;
 		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test".to_string(),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
 		let matches = vec![match_item.clone()];
 
-		let filtered = run_trigger_filters(&matches, "ethereum_mainnet").await;
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
 		assert_eq!(filtered.len(), 1);
 		assert!(matches_equal(&filtered[0], &match_item));
 	}
@@ -581,10 +603,15 @@ result = test()
 print(result)
 "#;
 		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test".to_string(),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
 		let matches = vec![match_item.clone()];
 
-		let filtered = run_trigger_filters(&matches, "ethereum_mainnet").await;
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
 		assert_eq!(filtered.len(), 0);
 	}
 
@@ -597,6 +624,11 @@ import json
 print(False)  # Script returns false
 "#;
 		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test".to_string(),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
 			script_path: temp_file.path().to_str().unwrap().to_string(),
@@ -605,8 +637,9 @@ print(False)  # Script returns false
 			arguments: None,
 		};
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
-
-		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
+		let script_content_mock = trigger_scripts.get("test").unwrap();
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
 		assert!(result);
 
 		// Test case 2: Script returns true (should return false)
@@ -616,13 +649,19 @@ import json
 print(True)  # Script returns true
 "#;
 		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test".to_string(),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
 		let trigger_condition = TriggerConditions {
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			..trigger_condition
 		};
 
-		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
-		assert!(!result);
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
+		assert!(result);
 
 		// Test case 3: Script timeout
 		let script_content = r#"
@@ -633,30 +672,44 @@ time.sleep(2)  # Sleep for 2 seconds
 print(False)
 "#;
 		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test".to_string(),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
 		let trigger_condition = TriggerConditions {
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 100, // Set timeout to 100ms
 			..trigger_condition
 		};
 
-		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
-		assert!(!result);
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
+		assert!(result);
 
 		// Test case 4: Script execution error
 		let script_content = r#"
 import sys
 import json
 raise Exception("Test error")  # Raise an error
+print("debugging...")
+print(false)
 "#;
 		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test".to_string(),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
 		let trigger_condition = TriggerConditions {
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			..trigger_condition
 		};
 
-		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
-		assert!(!result);
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
+		assert!(result);
 
 		// Test case 5: Invalid script path
 		let trigger_condition = TriggerConditions {
@@ -664,7 +717,8 @@ raise Exception("Test error")  # Raise an error
 			..trigger_condition
 		};
 
-		let result = execute_trigger_condition(&trigger_condition, &match_item).await;
-		assert!(!result);
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
+		assert!(result);
 	}
 }

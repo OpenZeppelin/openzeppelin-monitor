@@ -40,6 +40,7 @@ use crate::{
 use clap::Command;
 use dotenvy::dotenv;
 use log::{error, info};
+use services::trigger::TriggerExecutionServiceTrait;
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -81,9 +82,15 @@ async fn main() -> Result<()> {
 	}
 
 	let (shutdown_tx, _) = watch::channel(false);
-
+	let active_monitors_trigger_scripts = trigger_execution_service
+		.load_scripts(&active_monitors)
+		.await?;
 	let block_handler = create_block_handler(shutdown_tx.clone(), filter_service, active_monitors);
-	let trigger_handler = create_trigger_handler(shutdown_tx.clone(), trigger_execution_service);
+	let trigger_handler = create_trigger_handler(
+		shutdown_tx.clone(),
+		trigger_execution_service,
+		active_monitors_trigger_scripts,
+	);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
 	let block_watcher = BlockWatcherService::new(
