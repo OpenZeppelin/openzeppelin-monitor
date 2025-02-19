@@ -132,8 +132,7 @@ impl EmailNotifier<SmtpTransport> {
 				port,
 				username,
 				password,
-				subject,
-				body,
+				message,
 				sender,
 				recipients,
 			} => {
@@ -145,8 +144,8 @@ impl EmailNotifier<SmtpTransport> {
 				};
 
 				let email_content = EmailContent {
-					subject: subject.clone(),
-					body_template: body.clone(),
+					subject: message.title.clone(),
+					body_template: message.body.clone(),
 					sender: sender.clone(),
 					recipients: recipients.clone(),
 				};
@@ -208,6 +207,8 @@ where
 
 #[cfg(test)]
 mod tests {
+	use crate::models::NotificationMessage;
+
 	use super::*;
 
 	fn create_test_notifier() -> EmailNotifier<SmtpTransport> {
@@ -234,8 +235,10 @@ mod tests {
 			port,
 			username: "testuser".to_string(),
 			password: "testpass".to_string(),
-			subject: "Test Subject".to_string(),
-			body: "Hello ${name}".to_string(),
+			message: NotificationMessage {
+				title: "Test Subject".to_string(),
+				body: "Hello ${name}".to_string(),
+			},
 			sender: "sender@test.com".parse().unwrap(),
 			recipients: vec!["recipient@test.com".parse().unwrap()],
 		}

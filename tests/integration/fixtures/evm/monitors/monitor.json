@@ -1419,6 +1419,6 @@
   },
   "trigger_conditions": [],
   "triggers": [
-    "large_transfer_slack"
+    "example_trigger_slack"
   ]
 }

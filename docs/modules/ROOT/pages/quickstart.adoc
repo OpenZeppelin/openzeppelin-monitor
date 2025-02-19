@@ -200,9 +200,11 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
         "name": "Large Transfer Slack Notification",
         "trigger_type": "slack",
         "config": {
-            "webhook_url": "https://hooks.slack.com/services/A/B/C",
-            "title": "large_transfer_slack triggered",
-            "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+            "slack_url": "https://hooks.slack.com/services/A/B/C",
+            "message": {
+                "title": "large_transfer_slack triggered",
+                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+            }
         }
     }
 }
@@ -228,8 +230,10 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
             "port": 465,
             "username": "your_email@gmail.com",
             "password": "your_password",
-            "subject": "large_transfer_usdc_email triggered",
-            "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog",
+            "message": {
+                "title": "large_transfer_usdc_email triggered",
+                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+            },
             "sender": "your_email@gmail.com",
             "recipients": [
                 "recipient1@example.com",
@@ -380,9 +384,11 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
     "name": "Large Swap By Dex Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/A/B/C",
-      "title": "large_swap_by_dex_slack triggered",
-      "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
+      "slack_url": "https://hooks.slack.com/services/A/B/C",
+      "message": {
+        "title": "large_swap_by_dex_slack triggered",
+        "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
+      }
     }
   },
 }

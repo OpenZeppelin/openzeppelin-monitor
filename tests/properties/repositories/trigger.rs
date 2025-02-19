@@ -1,7 +1,7 @@
 use crate::properties::strategies::trigger_strategy;
 
 use openzeppelin_monitor::{
-	models::{ConfigLoader, TriggerTypeConfig},
+	models::{ConfigLoader, NotificationMessage, TriggerType, TriggerTypeConfig},
 	repositories::{TriggerRepository, TriggerRepositoryTrait},
 };
 use proptest::{prelude::*, test_runner::Config};
@@ -88,72 +88,184 @@ proptest! {
 			prop_assert!(invalid_trigger.validate().is_err());
 
 			// Test invalid cases
-			match &trigger.config {
-				TriggerTypeConfig::Slack { webhook_url: _, title: _, body: _ } => {
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Slack { webhook_url: url, .. } = &mut invalid_trigger.config {
-						*url = "not-a-url".to_string(); // Invalid URL format
-					}
-					prop_assert!(invalid_trigger.validate().is_err());
+			match &trigger.trigger_type {
+				TriggerType::Slack => {
+					if let TriggerTypeConfig::Slack { slack_url: _, message: _ } = &trigger.config {
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Slack { slack_url, .. } = &mut invalid_trigger.config {
+							*slack_url = "not-a-url".to_string(); // Invalid URL format
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 
-					// Test empty title
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Slack { title: t, .. } = &mut invalid_trigger.config {
-						*t = "".to_string();
-					}
-					prop_assert!(invalid_trigger.validate().is_err());
-				},
-				TriggerTypeConfig::Email { host: _, port: _, username: _, password: _, subject: _, body: _, sender: _, recipients: _ } => {
-					// Test empty recipients
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Email { recipients: r, .. } = &mut invalid_trigger.config {
-						r.clear();
-					}
-					prop_assert!(invalid_trigger.validate().is_err());
 
-					// Test invalid host
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Email { host: h, .. } = &mut invalid_trigger.config {
-						*h = "not-a-host".to_string();
-					}
-					prop_assert!(invalid_trigger.validate().is_err());
+						// Test empty title
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Slack { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 
-					// Test whitespace-only subject
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Email { subject: s, .. } = &mut invalid_trigger.config {
-						*s = "   ".to_string();
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Slack { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 					}
-					prop_assert!(invalid_trigger.validate().is_err());
-				},
-				TriggerTypeConfig::Webhook { url: _, method: _, headers: _ } => {
-					// Test invalid method
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Webhook { method: m, .. } = &mut invalid_trigger.config {
-						*m = "INVALID_METHOD".to_string();
-					}
-					prop_assert!(invalid_trigger.validate().is_err());
+				}
+				TriggerType::Email => {
+					if let TriggerTypeConfig::Email { host: _, port: _, username: _, password: _, message: _, sender: _, recipients: _ } = &trigger.config {
+						// Test empty recipients
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Email { recipients: r, .. } = &mut invalid_trigger.config {
+							r.clear();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 
-					// Test invalid URL
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Webhook { url: u, .. } = &mut invalid_trigger.config {
-						*u = "not-a-url".to_string();
-					}
-					prop_assert!(invalid_trigger.validate().is_err());
-				},
-				TriggerTypeConfig::Script { path: _, args: _     } => {
-					// Test invalid path
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
-						*p = "invalid/path/no-extension".to_string();
-					}
-					prop_assert!(invalid_trigger.validate().is_err());
+						// Test invalid host
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Email { host: h, .. } = &mut invalid_trigger.config {
+							*h = "not-a-host".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 
-					// Test empty path
-					invalid_trigger = trigger.clone();
-					if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
-						*p = "".to_string();
+						// Test whitespace-only subject
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Email { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "   ".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
 					}
-					prop_assert!(invalid_trigger.validate().is_err());
+				}
+				TriggerType::Webhook => {
+					if let TriggerTypeConfig::Webhook { url: _, method: _, headers: _, secret: _, message: _ } = &trigger.config {
+						// Test invalid method
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Webhook { method: m, .. } = &mut invalid_trigger.config {
+							*m = Some("INVALID_METHOD".to_string());
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test invalid URL
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Webhook { url: u, .. } = &mut invalid_trigger.config {
+							*u = "not-a-url".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty title
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Webhook { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Webhook { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+					}
+				}
+				TriggerType::Discord => {
+					if let TriggerTypeConfig::Discord { discord_url: _, message: _ } = &trigger.config {
+						// Test invalid URL
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Discord { discord_url: u, .. } = &mut invalid_trigger.config {
+							*u = "not-a-url".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty title
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Discord { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Discord { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+					}
+				}
+				TriggerType::Telegram => {
+					if let TriggerTypeConfig::Telegram { token: _, chat_id: _, disable_web_preview: _, message: _ } = &trigger.config {
+						// Test invalid token
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { token: t, .. } = &mut invalid_trigger.config {
+							*t = "INVALID_TOKEN".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test invalid chat id
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { chat_id: c, .. } = &mut invalid_trigger.config {
+							*c = "   ".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty title
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "test".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty body
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Telegram { message: m, .. } = &mut invalid_trigger.config {
+							*m = NotificationMessage {
+								title: "Alert".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+					}
+				}
+				TriggerType::Script => {
+					if let TriggerTypeConfig::Script { path: _, args: _ } = &trigger.config {
+						// Test invalid path
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
+							*p = "invalid/path/no-extension".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty path
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
+							*p = "".to_string();
+						}
+						prop_assert!(invalid_trigger.validate().is_err());
+					}
 				}
 			}
 		}

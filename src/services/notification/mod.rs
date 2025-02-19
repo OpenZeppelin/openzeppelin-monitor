@@ -10,15 +10,21 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 
+mod discord;
 mod email;
 mod error;
 mod slack;
+mod telegram;
+mod webhook;
 
+use crate::models::{Trigger, TriggerType};
+
+pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
 pub use error::NotificationError;
 pub use slack::SlackNotifier;
-
-use crate::models::TriggerTypeConfig;
+pub use telegram::TelegramNotifier;
+pub use webhook::WebhookNotifier;
 
 /// Interface for notification implementations
 ///
@@ -48,67 +54,85 @@ impl NotificationService {
 	/// Executes a notification based on the trigger configuration
 	///
 	/// # Arguments
-	/// * `config` - Configuration specifying the notification type and parameters
+	/// * `trigger` - Trigger containing the notification type and parameters
 	/// * `variables` - Variables to substitute in message templates
 	///
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
 	pub async fn execute(
 		&self,
-		config: &TriggerTypeConfig,
+		trigger: &Trigger,
 		variables: HashMap<String, String>,
 	) -> Result<(), NotificationError> {
-		match config {
-			TriggerTypeConfig::Slack {
-				webhook_url,
-				title,
-				body,
-			} => {
-				let notifier = SlackNotifier::new(webhook_url.clone(), title.clone(), body.clone())
-					.map_err(|e| NotificationError::config_error(e.to_string()))?;
-				notifier
-					.notify(&notifier.format_message(&variables))
-					.await
-					.map_err(|e| NotificationError::config_error(e.to_string()))?;
+		match &trigger.trigger_type {
+			TriggerType::Slack => {
+				let notifier = SlackNotifier::from_config(&trigger.config);
+				if let Some(notifier) = notifier {
+					notifier
+						.notify(&notifier.format_message(&variables))
+						.await
+						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+				} else {
+					return Err(NotificationError::config_error(
+						"Invalid slack configuration",
+					));
+				}
 			}
-			TriggerTypeConfig::Email {
-				host,
-				port,
-				username,
-				password,
-				subject,
-				body,
-				sender,
-				recipients,
-			} => {
-				let smtp_config = SmtpConfig {
-					host: host.clone(),
-					port: port.unwrap_or(465),
-					username: username.clone(),
-					password: password.clone(),
-				};
-				let email_content = EmailContent {
-					subject: subject.clone(),
-					body_template: body.clone(),
-					sender: sender.clone(),
-					recipients: recipients.clone(),
-				};
+			TriggerType::Email => {
+				let notifier = EmailNotifier::from_config(&trigger.config);
+				if let Some(notifier) = notifier {
+					notifier
+						.notify(&notifier.format_message(&variables))
+						.await
+						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+				} else {
+					return Err(NotificationError::config_error(
+						"Invalid email configuration",
+					));
+				}
+			}
+			TriggerType::Webhook => {
+				let notifier = WebhookNotifier::from_config(&trigger.config);
+				if let Some(notifier) = notifier {
+					notifier
+						.notify(&notifier.format_message(&variables))
+						.await
+						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+				} else {
+					return Err(NotificationError::config_error(
+						"Invalid webhook configuration",
+					));
+				}
+			}
+			TriggerType::Discord => {
+				let notifier = DiscordNotifier::from_config(&trigger.config);
 
-				let notifier = EmailNotifier::new(smtp_config, email_content)
-					.map_err(|e| NotificationError::config_error(e.to_string()))?;
-
-				notifier
-					.notify(&notifier.format_message(&variables))
-					.await
-					.map_err(|e| NotificationError::config_error(e.to_string()))?;
+				if let Some(notifier) = notifier {
+					notifier
+						.notify(&notifier.format_message(&variables))
+						.await
+						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+				} else {
+					return Err(NotificationError::config_error(
+						"Invalid discord configuration",
+					));
+				}
 			}
-			TriggerTypeConfig::Webhook { .. } => {
-				// TODO: Implement webhook notifier
-				todo!("Implement webhook notification")
+			TriggerType::Telegram => {
+				let notifier = TelegramNotifier::from_config(&trigger.config);
+				if let Some(notifier) = notifier {
+					notifier
+						.notify(&notifier.format_message(&variables))
+						.await
+						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+				} else {
+					return Err(NotificationError::config_error(
+						"Invalid telegram configuration",
+					));
+				}
 			}
-			TriggerTypeConfig::Script { .. } => {
-				// TODO: Implement script notifier
-				todo!("Implement script execution")
+			TriggerType::Script => {
+				println!("Script notification");
 			}
 		}
 		Ok(())

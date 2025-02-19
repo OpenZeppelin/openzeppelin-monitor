@@ -23,6 +23,9 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 - Slack notifications
 - Email notifications
+- Discord notifications
+- Telegram notifications
+- Webhook notifications
 
 [NOTE]
 ====
@@ -69,6 +72,9 @@ graph TD
     subgraph Notifications
         Slack
         Email
+        Discord
+        Telegram
+        Webhook
     end
 
     %% Block Processing Flow
@@ -90,6 +96,9 @@ graph TD
     TS -->|Execute| NS
     NS --> Slack
     NS --> Email
+    NS --> Discord
+    NS --> Telegram
+    NS --> Webhook
 
     style STL fill:#f0f0f0
 
@@ -101,7 +110,7 @@ graph TD
     class ETH,POL,BSC rpc
     class BS storage
     class BW,FS,TS,NS service
-    class Slack,Email notification
+    class Slack,Email,Discord,Telegram,Webhook notification
 ....
 
 == Project Structure
@@ -234,6 +243,9 @@ cp config/networks/stellar_mainnet.json.example config/networks/stellar_mainnet.
 # Notification Configuration
 cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
 cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+cp config/triggers/discord_notifications.json.example config/triggers/discord_notifications.json
+cp config/triggers/telegram_notifications.json.example config/triggers/telegram_notifications.json
+cp config/triggers/webhook_notifications.json.example config/triggers/webhook_notifications.json
 ----
 
 == Data Storage Configuration
@@ -349,18 +361,22 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
     "name": "Large Transfer Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/A/B/C",
-      "title": "large_transfer_slack triggered",
-      "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+      "slack_url": "https://hooks.slack.com/services/A/B/C",
+      "message": {
+        "title": "large_transfer_slack triggered",
+        "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+      }
     }
   },
   "stellar_large_transfer_usdc_slack": {
     "name": "Large Transfer Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/A/B/C",
-      "title": "large_transfer_usdc_slack triggered",
-      "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      "slack_url": "https://hooks.slack.com/services/A/B/C",
+      "message": {
+        "title": "large_transfer_usdc_slack triggered",
+        "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      }
     }
   }
 }
@@ -372,28 +388,13 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 [source,json]
 ----
 {
-  "webhook_url": "https://hooks.slack.com/...",
-  "title": "Alert Title",
-  "body": "Alert message for ${transaction_hash}"
+  "slack_url": "https://hooks.slack.com/...",
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction_hash}"
+  }
 }
 ----
-
-===== Email Notifications
-[source,json]
-----
-{
-  "host": "smtp.gmail.com",
-  "port": 465,
-  "username": "sender@example.com",
-  "password": "smtp_password",
-  "subject": "Alert Subject",
-  "body": "Alert message for ${transaction_hash}",
-  "sender": "sender@example.com",
-  "recipients": ["recipient@example.com"]
-}
-----
-
-==== Available Fields
 
 ===== Slack Notification Fields
 [cols="1,1,2"]
@@ -408,18 +409,35 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |String
 |Must be "slack" for Slack notifications
 
-|config.webhook_url
+|config.slack_url
 |String
 |Slack webhook URL for sending notifications
 
-|config.title
+|config.message.title
 |String
 |Title that appears in the Slack message
 
-|config.body
+|config.message.body
 |String
 |Message template with variable substitution
 |===
+
+===== Email Notifications
+[source,json]
+----
+{
+  "host": "smtp.gmail.com",
+  "port": 465,
+  "username": "sender@example.com",
+  "password": "smtp_password",
+  "message": {
+    "title": "Alert Subject",
+    "body": "Alert message for ${transaction_hash}",
+  },
+  "sender": "sender@example.com",
+  "recipients": ["recipient@example.com"]
+}
+----
 
 ===== Email Notification Fields
 [cols="1,2,3"]
@@ -450,11 +468,11 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |String
 |SMTP authentication password
 
-|config.subject
+|config.message.title
 |String
 |Email subject line
 
-|config.body
+|config.message.body
 |String
 |Email body template with variable substitution
 
@@ -467,6 +485,145 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |List of recipient email addresses
 |===
 
+===== Webhook Notifications
+[source,json]
+----
+{
+  "url": "https://webhook.site/123-456-789",
+  "method": "POST",
+  "secret": "some-secret",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction_hash}"
+  }
+}
+----
+
+===== Webhook Notification Fields
+[cols="1,2,3"]
+|===
+|Field |Type |Description
+
+|name
+|String
+|Human-readable name for the notification
+
+|trigger_type
+|String
+|Must be "webhook" for webhook notifications
+
+|config.url
+|String
+|Webhook URL
+
+|config.method
+|String
+|HTTP method (POST, GET, etc.) defaults to POST
+
+|config.secret
+|String
+|Optional secret for HMAC authentication
+
+|config.headers
+|Object
+|Headers to include in the webhook request
+
+|config.message.title
+|String
+|Title that appears in the webhook message
+
+|config.message.body
+|String
+|Message template with variable substitution
+|===
+
+===== Discord Notifications
+[source,json]
+----
+{
+  "discord_url": "https://discord.com/api/webhooks/123-456-789",
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction_hash}"
+  }
+}
+----
+
+===== Discord Notification Fields
+[cols="1,2,3"]
+|===
+|Field |Type |Description
+
+|name
+|String
+|Human-readable name for the notification
+
+|trigger_type
+|String
+|Must be "discord" for Discord notifications
+
+|config.discord_url
+|String
+|Discord webhook URL must start with https://discord.com/api/webhooks/
+
+|config.message.title
+|String
+|Title that appears in the Discord message
+
+|config.message.body
+|String
+|Message template with variable substitution
+|===
+
+===== Telegram Notifications
+[source,json]
+----
+{
+  "token": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  "chat_id": "9876543210",
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction_hash}"
+  }
+}
+----
+
+===== Telegram Notification Fields
+[cols="1,2,3"]
+|===
+|Field |Type |Description
+
+|name
+|String
+|Human-readable name for the notification
+
+|trigger_type
+|String
+|Must be "telegram" for Telegram notifications
+
+|config.token
+|String
+|Telegram bot token
+
+|config.chat_id
+|String
+|Telegram chat ID
+
+|config.disable_web_preview
+|Boolean
+|Whether to disable web preview in Telegram messages (defaults to false)
+
+|config.message.title
+|String
+|Title that appears in the Telegram message
+
+|config.message.body
+|String
+|Message template with variable substitution
+|===
 
 ==== Available Template Variables
 

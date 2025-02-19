@@ -9,8 +9,9 @@ use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
 	models::{
 		BlockChainType, EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch,
-		ProcessedBlock, ScriptLanguage, StellarBlock, StellarMonitorMatch, StellarTransaction,
-		StellarTransactionInfo, Trigger, TriggerConditions, TriggerType, TriggerTypeConfig,
+		NotificationMessage, ProcessedBlock, ScriptLanguage, StellarBlock, StellarMonitorMatch,
+		StellarTransaction, StellarTransactionInfo, Trigger, TriggerConditions, TriggerType,
+		TriggerTypeConfig,
 	},
 	services::filter::FilterService,
 };
@@ -58,11 +59,13 @@ fn create_test_trigger(name: &str) -> Trigger {
 		name: name.to_string(),
 		trigger_type: TriggerType::Slack,
 		config: TriggerTypeConfig::Slack {
-			webhook_url:
+			slack_url:
 				"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
 					.to_string(),
-			title: "Test Title".to_string(),
-			body: "Test Body".to_string(),
+			message: NotificationMessage {
+				title: "Test Title".to_string(),
+				body: "Test Body".to_string(),
+			},
 		},
 	}
 }

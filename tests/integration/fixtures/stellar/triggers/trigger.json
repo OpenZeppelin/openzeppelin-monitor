@@ -1,11 +1,53 @@
 {
-  "large_transfer_slack": {
-    "name": "Large Transfer Slack Notification",
+  "example_trigger_slack": {
+    "name": "Example Trigger Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "webhook_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
-      "title": "transfers-monitor",
-      "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      "slack_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
+      "message": {
+        "title": "example_trigger_slack triggered",
+        "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      }
+    }
+  },
+  "example_trigger_webhook": {
+    "name": "Example Trigger Webhook Notification",
+    "trigger_type": "webhook",
+    "config": {
+      "url": "https://webhook.site/123",
+      "method": "POST",
+      "secret": "some-secret",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "message": {
+        "title": "example_trigger_webhook triggered",
+        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_0} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      }
+    }
+  },
+  "example_trigger_discord": {
+    "name": "Example Trigger Discord Notification",
+    "trigger_type": "discord",
+    "config": {
+      "discord_url": "https://discord.com/api/webhooks/123/123",
+      "message": {
+        "title": "example_trigger_discord triggered",
+        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_0} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      }
+    }
+  },
+  "example_trigger_telegram": {
+    "name": "Example Trigger Telegram Notification",
+    "trigger_type": "telegram",
+    "config": {
+      "token": "123",
+      "chat_id": "123",
+      "disable_web_preview": true,
+      "message": {
+        "title": "example_trigger_telegram triggered",
+        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_0} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+      }
     }
   }
 }
