@@ -3,20 +3,30 @@
 //! This module provides a client implementation for interacting with Stellar's Horizon API,
 //! supporting connection management and raw JSON-RPC requests.
 
-use crate::{models::Network, services::blockchain::BlockChainError};
+use crate::{
+	models::Network,
+	services::blockchain::{
+		transports::{EndpointManager, RotatingTransport},
+		BlockChainError,
+	},
+};
 
-use serde_json::{json, Value};
+use async_trait::async_trait;
+use serde_json::Value;
+use std::sync::Arc;
 use stellar_horizon::{
 	api::root,
 	client::{HorizonClient as HorizonClientTrait, HorizonHttpClient},
 };
+use tokio::sync::RwLock;
 
 /// A client for interacting with Stellar's Horizon API endpoints
+#[derive(Clone)]
 pub struct HorizonTransportClient {
 	/// The underlying HTTP client for Horizon API requests
-	pub client: HorizonHttpClient,
-	/// The base URL of the Horizon API endpoint
-	pub url: String,
+	pub client: Arc<RwLock<HorizonHttpClient>>,
+	/// Manages RPC endpoint rotation and request handling
+	endpoint_manager: EndpointManager,
 }
 
 impl HorizonTransportClient {
@@ -28,7 +38,6 @@ impl HorizonTransportClient {
 	/// # Returns
 	/// * `Result<Self, BlockChainError>` - A new client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
-		// Filter horizon URLs with weight > 0 and sort by weight descending
 		let mut horizon_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
@@ -37,19 +46,24 @@ impl HorizonTransportClient {
 
 		horizon_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
-		for rpc_url in horizon_urls {
+		for rpc_url in horizon_urls.iter() {
 			match HorizonHttpClient::new_from_str(&rpc_url.url) {
 				Ok(client) => {
 					let request = root::root();
-					// Test connection by fetching root info
-					match client.request(request).await {
-						Ok(_) => {
-							return Ok(Self {
-								client,
-								url: rpc_url.url.clone(),
-							})
-						}
-						Err(_) => continue,
+					if client.request(request).await.is_ok() {
+						let fallback_urls: Vec<String> = horizon_urls
+							.iter()
+							.filter(|url| url.url != rpc_url.url)
+							.map(|url| url.url.clone())
+							.collect();
+
+						return Ok(Self {
+							client: Arc::new(RwLock::new(client)),
+							endpoint_manager: EndpointManager::new(
+								rpc_url.url.clone(),
+								fallback_urls,
+							),
+						});
 					}
 				}
 				Err(_) => continue,
@@ -72,32 +86,41 @@ impl HorizonTransportClient {
 	pub async fn send_raw_request(
 		&self,
 		method: &str,
-		params: Value,
+		params: Option<Value>,
 	) -> Result<Value, BlockChainError> {
-		let client = reqwest::Client::new();
-		let url = self.url.clone();
-
-		// Construct the JSON-RPC request
-		let request_body = json!({
-			"jsonrpc": "2.0",
-			"id": 1,
-			"method": method,
-			"params": params
-		});
-
-		let response = client
-			.post(url)
-			.header("Content-Type", "application/json")
-			.json(&request_body) // Use .json() instead of .body() for proper serialization
-			.send()
+		self.endpoint_manager
+			.send_raw_request(self, method, params)
 			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+	}
+}
 
-		let json: Value = response
-			.json()
-			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+#[async_trait]
+impl RotatingTransport for HorizonTransportClient {
+	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
+		match HorizonHttpClient::new_from_str(url) {
+			Ok(client) => {
+				let request = root::root();
+				if client.request(request).await.is_ok() {
+					Ok(())
+				} else {
+					Err(BlockChainError::connection_error(
+						"Failed to connect".to_string(),
+					))
+				}
+			}
+			Err(_) => Err(BlockChainError::connection_error("Invalid URL".to_string())),
+		}
+	}
 
-		Ok(json)
+	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+		if let Ok(new_client) = HorizonHttpClient::new_from_str(url) {
+			let mut client = self.client.write().await;
+			*client = new_client;
+			Ok(())
+		} else {
+			Err(BlockChainError::connection_error(
+				"Failed to create client".to_string(),
+			))
+		}
 	}
 }

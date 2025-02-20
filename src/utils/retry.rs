@@ -23,14 +23,14 @@ pub struct RetryConfig {
 
 impl Default for RetryConfig {
 	/// Creates a default retry configuration with:
-	/// - 3 maximum retries
+	/// - 2 maximum retries
 	/// - 1 second initial delay
-	/// - 8 seconds maximum delay
+	/// - 4 seconds maximum delay
 	fn default() -> Self {
 		Self {
-			max_retries: 3,
+			max_retries: 2,
 			initial_delay: Duration::from_secs(1),
-			max_delay: Duration::from_secs(8),
+			max_delay: Duration::from_secs(4),
 		}
 	}
 }

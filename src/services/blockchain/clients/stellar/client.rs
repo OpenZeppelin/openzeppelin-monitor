@@ -125,7 +125,7 @@ impl StellarClientTrait for StellarClient {
 
 					let response = self
 						.stellar_client
-						.send_raw_request("getTransactions", params)
+						.send_raw_request("getTransactions", Some(params))
 						.await?;
 
 					let ledger_transactions: Vec<StellarTransactionInfo> =
@@ -203,7 +203,7 @@ impl StellarClientTrait for StellarClient {
 
 					let response = self
 						.stellar_client
-						.send_raw_request("getEvents", params)
+						.send_raw_request("getEvents", Some(params))
 						.await?;
 
 					let ledger_events: Vec<StellarEvent> = serde_json::from_value(
@@ -261,12 +261,14 @@ impl BlockChainClient for StellarClient {
 			.attempt(|| async {
 				let response = self
 					.stellar_client
-					.client
-					.get_latest_ledger()
-					.await
-					.map_err(|e| BlockChainError::request_error(e.to_string()))?;
+					.send_raw_request("getLatestLedger", None)
+					.await?;
 
-				Ok(response.sequence as u64)
+				let sequence = response["result"]["sequence"].as_u64().ok_or_else(|| {
+					BlockChainError::request_error("Invalid sequence number".to_string())
+				})?;
+
+				Ok(sequence)
 			})
 			.await
 	}
@@ -314,7 +316,7 @@ impl BlockChainClient for StellarClient {
 					// TODO: Replace this once the SDK is updated with `get_ledgers`
 					let response = self
 						.stellar_client
-						.send_raw_request("getLedgers", params)
+						.send_raw_request("getLedgers", Some(params))
 						.await?;
 
 					let ledgers: Vec<StellarBlock> = serde_json::from_value(

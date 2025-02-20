@@ -4,17 +4,25 @@
 //! via Web3, supporting connection management and raw JSON-RPC request functionality.
 
 use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use web3::{transports::Http, Web3};
 
-use crate::{models::Network, services::blockchain::BlockChainError};
+use crate::{
+	models::Network,
+	services::blockchain::{
+		transports::{EndpointManager, RotatingTransport},
+		BlockChainError,
+	},
+};
 
 /// A client for interacting with EVM-compatible blockchain nodes via Web3
 #[derive(Clone)]
 pub struct Web3TransportClient {
 	/// The underlying Web3 client for RPC requests
-	pub client: Web3<Http>,
-	/// The base URL of the RPC endpoint
-	pub url: String,
+	pub client: Arc<RwLock<Web3<Http>>>,
+	/// Manages RPC endpoint rotation and request handling
+	endpoint_manager: EndpointManager,
 }
 
 impl Web3TransportClient {
@@ -38,18 +46,24 @@ impl Web3TransportClient {
 
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
-		for rpc_url in rpc_urls {
+		for rpc_url in rpc_urls.iter() {
 			match Http::new(rpc_url.url.as_str()) {
 				Ok(transport) => {
 					let client = Web3::new(transport);
-					match client.net().version().await {
-						Ok(_) => {
-							return Ok(Self {
-								client,
-								url: rpc_url.url.clone(),
-							})
-						}
-						Err(_) => continue,
+					if client.net().version().await.is_ok() {
+						let fallback_urls: Vec<String> = rpc_urls
+							.iter()
+							.filter(|url| url.url != rpc_url.url)
+							.map(|url| url.url.clone())
+							.collect();
+
+						return Ok(Self {
+							client: Arc::new(RwLock::new(client)),
+							endpoint_manager: EndpointManager::new(
+								rpc_url.url.clone(),
+								fallback_urls,
+							),
+						});
 					}
 				}
 				Err(_) => continue,
@@ -63,6 +77,9 @@ impl Web3TransportClient {
 
 	/// Sends a raw JSON-RPC request to the EVM node
 	///
+	/// This method sends a JSON-RPC request to the current active URL and handles
+	/// connection errors by rotating to a fallback URL.
+	///
 	/// # Arguments
 	/// * `method` - The JSON-RPC method to call
 	/// * `params` - Vector of parameters to pass to the method
@@ -74,30 +91,40 @@ impl Web3TransportClient {
 		method: &str,
 		params: Vec<Value>,
 	) -> Result<Value, BlockChainError> {
-		let client = reqwest::Client::new();
-		let url = self.url.clone();
-
-		// Construct the JSON-RPC request
-		let request_body = json!({
-			"jsonrpc": "2.0",
-			"id": 1,
-			"method": method,
-			"params": params
-		});
-
-		let response = client
-			.post(url)
-			.header("Content-Type", "application/json")
-			.json(&request_body) // Use .json() instead of .body() for proper serialization
-			.send()
+		self.endpoint_manager
+			.send_raw_request(self, method, Some(json!(params)))
 			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+	}
+}
 
-		let json: Value = response
-			.json()
-			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+#[async_trait::async_trait]
+impl RotatingTransport for Web3TransportClient {
+	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
+		match Http::new(url) {
+			Ok(transport) => {
+				let client = Web3::new(transport);
+				if client.net().version().await.is_ok() {
+					Ok(())
+				} else {
+					Err(BlockChainError::connection_error(
+						"Failed to connect".to_string(),
+					))
+				}
+			}
+			Err(_) => Err(BlockChainError::connection_error("Invalid URL".to_string())),
+		}
+	}
 
-		Ok(json)
+	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+		if let Ok(transport) = Http::new(url) {
+			let new_client = Web3::new(transport);
+			let mut client = self.client.write().await;
+			*client = new_client;
+			Ok(())
+		} else {
+			Err(BlockChainError::connection_error(
+				"Failed to create client".to_string(),
+			))
+		}
 	}
 }

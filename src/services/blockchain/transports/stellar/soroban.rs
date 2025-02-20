@@ -3,18 +3,27 @@
 //! This module provides a client implementation for interacting with Stellar Core nodes
 //! via JSON-RPC, supporting connection management and raw request functionality.
 
-use crate::{models::Network, services::blockchain::BlockChainError};
+use crate::{
+	models::Network,
+	services::blockchain::{
+		transports::{EndpointManager, RotatingTransport},
+		BlockChainError,
+	},
+};
 
-use serde_json::{json, Value};
+use async_trait::async_trait;
+use serde_json::Value;
+use std::sync::Arc;
 use stellar_rpc_client::Client as StellarHttpClient;
+use tokio::sync::RwLock;
 
 /// A client for interacting with Stellar Core RPC endpoints
 #[derive(Clone)]
 pub struct StellarTransportClient {
 	/// The underlying HTTP client for Stellar RPC requests
-	pub client: StellarHttpClient,
-	/// The base URL of the Stellar RPC endpoint
-	pub url: String,
+	pub client: Arc<RwLock<StellarHttpClient>>,
+	/// Manages RPC endpoint rotation and request handling
+	endpoint_manager: EndpointManager,
 }
 
 impl StellarTransportClient {
@@ -26,7 +35,6 @@ impl StellarTransportClient {
 	/// # Returns
 	/// * `Result<Self, BlockChainError>` - A new client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
-		// Filter stellar URLs with weight > 0 and sort by weight descending
 		let mut stellar_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
@@ -35,18 +43,23 @@ impl StellarTransportClient {
 
 		stellar_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
-		for rpc_url in stellar_urls {
+		for rpc_url in stellar_urls.iter() {
 			match StellarHttpClient::new(rpc_url.url.as_str()) {
 				Ok(client) => {
-					// Test connection by fetching network info
-					match client.get_network().await {
-						Ok(_) => {
-							return Ok(Self {
-								client,
-								url: rpc_url.url.clone(),
-							})
-						}
-						Err(_) => continue,
+					if client.get_network().await.is_ok() {
+						let fallback_urls: Vec<String> = stellar_urls
+							.iter()
+							.filter(|url| url.url != rpc_url.url)
+							.map(|url| url.url.clone())
+							.collect();
+
+						return Ok(Self {
+							client: Arc::new(RwLock::new(client)),
+							endpoint_manager: EndpointManager::new(
+								rpc_url.url.clone(),
+								fallback_urls,
+							),
+						});
 					}
 				}
 				Err(_) => continue,
@@ -69,32 +82,40 @@ impl StellarTransportClient {
 	pub async fn send_raw_request(
 		&self,
 		method: &str,
-		params: Value,
+		params: Option<Value>,
 	) -> Result<Value, BlockChainError> {
-		let client = reqwest::Client::new();
-		let url = self.url.clone();
-
-		// Construct the JSON-RPC request
-		let request_body = json!({
-			"jsonrpc": "2.0",
-			"id": 1,
-			"method": method,
-			"params": params
-		});
-
-		let response = client
-			.post(url)
-			.header("Content-Type", "application/json")
-			.json(&request_body) // Use .json() instead of .body() for proper serialization
-			.send()
+		self.endpoint_manager
+			.send_raw_request(self, method, params)
 			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+	}
+}
 
-		let json: Value = response
-			.json()
-			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+#[async_trait]
+impl RotatingTransport for StellarTransportClient {
+	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
+		match StellarHttpClient::new(url) {
+			Ok(client) => {
+				if client.get_network().await.is_ok() {
+					Ok(())
+				} else {
+					Err(BlockChainError::connection_error(
+						"Failed to connect".to_string(),
+					))
+				}
+			}
+			Err(_) => Err(BlockChainError::connection_error("Invalid URL".to_string())),
+		}
+	}
 
-		Ok(json)
+	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+		if let Ok(new_client) = StellarHttpClient::new(url) {
+			let mut client = self.client.write().await;
+			*client = new_client;
+			Ok(())
+		} else {
+			Err(BlockChainError::connection_error(
+				"Failed to create client".to_string(),
+			))
+		}
 	}
 }
