@@ -1,25 +1,33 @@
 #!/bin/bash
 
 main() {
-    # Validate we have the input argument
-    if [ $# -lt 1 ]; then
+    # Read JSON input from stdin
+    input_json=$(cat)
+
+    # Validate input
+    if [[ -z "$input_json" ]]; then
         echo "No input JSON provided"
         echo "false"
         exit 1
     fi
 
     # Parse input JSON and extract block number
-    # Using jq to safely parse JSON and extract the blockNumber
-    block_number_hex=$(echo "$1" | jq -r '.EVM.transaction.blockNumber // empty')
+    block_number_hex=$(echo "$input_json" | jq -r '.EVM.transaction.blockNumber // empty')
+
+    # Validate that block_number_hex is not empty
+    if [[ -z "$block_number_hex" ]]; then
+        echo "Invalid JSON or missing blockNumber"
+        echo "false"
+        exit 1
+    fi
 
     # Convert hex to decimal
-    # Remove '0x' prefix if present and convert using printf
     block_number=$(printf "%d" $((16#${block_number_hex#0x})))
 
     # Check if even or odd using modulo
     is_even=$((block_number % 2))
     
-    if [ $is_even -eq 0 ]; then
+    if [[ $is_even -eq 0 ]]; then
         echo "Block number $block_number is even"
         echo "true"
         exit 0
@@ -30,8 +38,8 @@ main() {
     fi
 }
 
-# Catch any errors
+# Enable error handling
 set -e
 
-# Call main function with all arguments
-main "$@"
+# Call main function
+main
