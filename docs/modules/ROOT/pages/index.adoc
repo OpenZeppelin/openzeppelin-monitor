@@ -1020,6 +1020,54 @@ docker run \
 * Trigger conditions are executed in the order defined by the execution_order field. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _**temporarily**_ increase it with `ulimit -n 2048`.
 * HTTP requests to RPC endpoints consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
 
+==== List of RPC Calls
+
+Below is a list of RPC calls made by the monitor for each network type for each iteration of the cron schedule.
+As the number of blocks being processed increases, the number of RPC calls grows, potentially leading to rate limiting issues or increased costs if not properly managed.
+
+[NOTE]
+====
+It is recommended to use private RPC providers to avoid rate limiting and improve reliability as well as configure multiple RPC endpoints to load balance the requests.
+====
+
+[mermaid,width=100%]
+....
+graph TD
+    A[Main] -->|EVM| B[Network #1]
+    A[Main] -->|Stellar| C[Network #2]
+    B -->|net_version| D[Process New Blocks]
+    C -->|getNetwork| D
+    D -->|eth_blockNumber| E[For every block in range]
+    D -->|getLatestLedger| F[In batches of 200 blocks]
+    E -->|eth_getBlockByNumber| G[Create Block Handler]
+    F -->|getLedgers| G
+    G -->|net_version| H[Filter Block]
+    G -->|getNetwork| H
+    H -->|EVM| J[For every transaction in block]
+    J -->|eth_getTransactionReceipt| I[Complete]
+    H -->|Stellar| K[In batches of 200 transactions and events]
+    K -->|getTransactions| L[Complete]
+    K -->|getEvents| L[Complete]
+
+....
+
+*EVM*
+
+* RPC Client initialization (per active network): `net_version`
+* Fetching the latest block number (per cron iteration): `eth_blockNumber`
+* Fetching block data (per block): `eth_getBlockByNumber`
+* RPC Client initialization (per block): `net_version`
+* Fetching transaction receipt (per transaction in block): `eth_getTransactionReceipt`
+
+*Stellar*
+
+* RPC Client initialization (per active network): `getNetwork`
+* Fetching the latest ledger (per cron iteration): `getLatestLedger`
+* Fetching ledger data (batched up to 200 in a single request): `getLedgers`
+* RPC Client initialization (per ledger): `getNetwork`
+* Fetching transactions (batched up to 200 in a single request): `getTransactions`
+* Fetching events (batched up to 200 in a single request): `getEvents`
+
 === Notification Considerations
 
 * Email notification port defaults to 465 if not specified
