@@ -142,16 +142,8 @@ mod tests {
 		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
 		MatchConditions, Monitor, MonitorMatch, TransactionCondition,
 	};
-	use std::io::Write;
-	use tempfile::NamedTempFile;
 	use web3::types::{TransactionReceipt, H160, U256};
 
-	// Helper function to create a temporary script file
-	fn create_temp_script(content: &str) -> NamedTempFile {
-		let mut file = NamedTempFile::new().unwrap();
-		file.write_all(content.as_bytes()).unwrap();
-		file
-	}
 	/// Creates a test monitor with customizable parameters
 	fn create_test_monitor(
 		event_conditions: Vec<EventCondition>,

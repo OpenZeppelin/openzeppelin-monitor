@@ -175,7 +175,11 @@ async fn test_create_trigger_handler() {
 		.return_once(|_, _| Ok(()));
 
 	let (shutdown_tx, _) = watch::channel(false);
-	let trigger_handler = create_trigger_handler(shutdown_tx, Arc::new(trigger_execution_service));
+	let trigger_handler = create_trigger_handler(
+		shutdown_tx,
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
+	);
 
 	assert!(Arc::strong_count(&trigger_handler) == 1);
 
