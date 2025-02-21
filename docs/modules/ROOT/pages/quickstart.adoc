@@ -169,6 +169,15 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
       }
     ]
   },
+  "trigger_conditions": [
+    {
+      "execution_order": 1,
+      "script_path": "scripts/evm_large_transfer_usdc_filter.py",
+      "language": "python",
+      "arguments": "--verbose",
+      "timeout_ms": 1000
+    }
+  ],
   "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
 }
 ----
