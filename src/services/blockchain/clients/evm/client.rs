@@ -206,9 +206,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 					.get("result")
 					.and_then(|v| v.as_str())
 					.ok_or_else(|| {
-						BlockChainError::request_error(
-							"Invalid response format: missing 'result' field".to_string(),
-						)
+						BlockChainError::request_error("Missing 'result' field".to_string())
 					})?;
 
 				// Parse hex string to u64

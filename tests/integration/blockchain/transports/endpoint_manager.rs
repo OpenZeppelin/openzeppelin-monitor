@@ -221,3 +221,52 @@ async fn test_customize_request() {
 		})
 	);
 }
+
+#[tokio::test]
+async fn test_rotate_url_no_fallbacks() {
+	let server = Server::new_async().await;
+
+	// Create manager with no fallback URLs
+	let manager = EndpointManager::new(server.url(), vec![]);
+	let transport = MockTransport::new();
+
+	// Attempt to rotate
+	let result = manager.rotate_url(&transport).await;
+
+	// Verify we get the expected error
+	assert!(matches!(
+		result,
+		Err(BlockChainError::ConnectionError(msg)) if msg == "No fallback URLs available"
+	));
+
+	// Verify the active URL hasn't changed
+	assert_eq!(&*manager.active_url.read().await, &server.url());
+}
+
+#[tokio::test]
+async fn test_rotate_url_connection_failure() {
+	let server = Server::new_async().await;
+
+	// Create manager with an invalid fallback URL that will fail to connect
+	let invalid_url = "http://invalid-domain-that-does-not-exist:12345";
+	let manager = EndpointManager::new(server.url(), vec![invalid_url.to_string()]);
+	let transport = MockTransport::new();
+
+	// Attempt to rotate
+	let result = manager.rotate_url(&transport).await;
+
+	// Verify we get the expected error
+	assert!(matches!(
+		result,
+		Err(BlockChainError::ConnectionError(msg)) if msg == "Failed to connect to fallback URL"
+	));
+
+	// Verify the active URL hasn't changed
+	assert_eq!(&*manager.active_url.read().await, &server.url());
+
+	// Verify the failed URL was pushed back to fallback_urls
+	assert_eq!(
+		&*manager.fallback_urls.read().await,
+		&vec![invalid_url.to_string()]
+	);
+}

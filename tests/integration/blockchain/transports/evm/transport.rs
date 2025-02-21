@@ -279,6 +279,71 @@ async fn test_get_transaction_receipt_invalid_hash() {
 }
 
 #[tokio::test]
+async fn test_get_transaction_receipt_missing_result() {
+	let mut mock_web3 = MockWeb3TransportClient::new();
+
+	// Mock response without result field
+	let mock_response = json!({
+		"id": 1,
+		"jsonrpc": "2.0"
+	});
+
+	mock_web3
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client =
+		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let result = client
+		.get_transaction_receipt(
+			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+		)
+		.await;
+
+	assert!(result.is_err());
+	match result.unwrap_err() {
+		BlockChainError::RequestError(msg) => {
+			assert_eq!(msg, "Missing 'result' field");
+		}
+		err => panic!("Expected RequestError, got {:?}", err),
+	}
+}
+
+#[tokio::test]
+async fn test_get_transaction_receipt_parse_failure() {
+	let mut mock_web3 = MockWeb3TransportClient::new();
+
+	// Mock response with malformed receipt data
+	let mock_response = json!({
+		"result": {
+			"transactionHash": "invalid_hash",
+			"blockNumber": "not_a_hex",
+			// Missing required fields
+		}
+	});
+
+	mock_web3
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client =
+		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let result = client
+		.get_transaction_receipt(
+			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+		)
+		.await;
+
+	assert!(result.is_err());
+	match result.unwrap_err() {
+		BlockChainError::RequestError(msg) => {
+			assert!(msg.contains("Failed to parse receipt"));
+		}
+		err => panic!("Expected RequestError, got {:?}", err),
+	}
+}
+
+#[tokio::test]
 async fn test_get_latest_block_number_success() {
 	let mut mock_web3 = MockWeb3TransportClient::new();
 
@@ -346,7 +411,7 @@ async fn test_get_latest_block_number_missing_result() {
 	assert!(result.is_err());
 	match result.unwrap_err() {
 		BlockChainError::RequestError(msg) => {
-			assert_eq!(msg, "Invalid response format: missing 'result' field");
+			assert_eq!(msg, "Missing 'result' field");
 		}
 		err => panic!("Expected RequestError, got {:?}", err),
 	}
@@ -466,5 +531,37 @@ async fn test_get_blocks_null_result() {
 			assert_eq!(block_num, 1);
 		}
 		err => panic!("Expected BlockNotFound, got {:?}", err),
+	}
+}
+
+#[tokio::test]
+async fn test_get_blocks_parse_failure() {
+	let mut mock_web3 = MockWeb3TransportClient::new();
+
+	// Mock response with malformed block data
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"id": 1,
+		"result": {
+			"number": "not_a_hex_number",
+			"hash": "invalid_hash",
+			// Missing required fields
+		}
+	});
+
+	mock_web3
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client =
+		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+
+	let result = client.get_blocks(1, None).await;
+	assert!(result.is_err());
+	match result.unwrap_err() {
+		BlockChainError::RequestError(msg) => {
+			assert!(msg.contains("Failed to parse block"));
+		}
+		err => panic!("Expected RequestError, got {:?}", err),
 	}
 }
