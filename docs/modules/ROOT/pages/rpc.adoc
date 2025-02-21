@@ -1,0 +1,189 @@
+= RPC Client
+:description: Documentation for the RPC client implementation and endpoint management features
+
+The OpenZeppelin Monitor includes a robust RPC client implementation with automatic endpoint rotation and fallback capabilities. This ensures reliable blockchain monitoring even when individual RPC endpoints experience issues.
+
+== Features
+
+* Multiple RPC endpoint support with weighted load balancing
+* Automatic fallback on endpoint failures
+* Rate limit handling (429 responses)
+* Connection health checks
+* Thread-safe endpoint rotation
+
+== Configuration
+
+=== RPC URLs
+
+RPC endpoints are configured in the network configuration files with weights for load balancing:
+
+[source,json]
+----
+{
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": "https://primary-endpoint.example.com",
+      "weight": 100
+    },
+    {
+      "type_": "rpc",
+      "url": "https://backup-endpoint.example.com",
+      "weight": 50
+    }
+  ]
+}
+----
+
+[TIP]
+====
+For high-availability setups, configure at least 3 RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
+====
+
+=== Configuration Fields
+
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|type_
+|String
+|Type of endpoint (currently only "rpc" is supported)
+
+|url
+|String
+|The RPC endpoint URL
+
+|weight
+|Number
+|Load balancing weight (0-100)
+|===
+
+== Endpoint Management
+
+The endpoint manager handles:
+
+* Initial endpoint selection based on weights
+* Automatic rotation on failures
+* Connection health checks
+* Thread-safe endpoint updates
+
+=== Retry and Rotation Behavior
+
+The RPC client includes an automatic retry mechanism for handling failures:
+
+* For 429 (Too Many Requests) responses:
+** Immediately rotates to a fallback URL
+** Retries the request with the new endpoint
+** Continues this process until successful or all endpoints are exhausted
+
+* For connection failures:
+** Immediately attempts to rotate to a fallback URL
+** If the new connection fails, returns the URL to the fallback pool
+** Continues until a successful connection is made or all URLs have been tried
+
+* For other errors:
+** Retries up to 2 times with the same URL
+** Uses exponential backoff with delays up to 4 seconds
+** Continues with normal operation after successful retry
+** Reports error if all retries fail
+
+This retry strategy ensures optimal handling of different types of failures while maintaining service availability.
+
+[mermaid,width=100%]
+....
+sequenceDiagram
+    participant M as Monitor
+    participant EM as Endpoint Manager
+    participant P as Primary RPC
+    participant F as Fallback RPC
+
+    rect rgb(240, 240, 240)
+        Note over M,F: Case 1: Rate Limit (429)
+        M->>EM: Send Request
+        EM->>P: Try Primary
+        P-->>EM: 429 Response
+        EM->>EM: Rotate URL
+        EM->>F: Try Fallback
+        F-->>EM: Success
+        EM-->>M: Return Response
+    end
+
+    rect rgb(240, 240, 240)
+        Note over M,F: Case 2: Connection Failure
+        M->>EM: Send Request
+        EM->>P: Try Primary
+        P--xEM: Connection Failed
+        EM->>EM: Rotate URL
+        EM->>F: Try Fallback
+        F-->>EM: Success
+        EM-->>M: Return Response
+    end
+
+    rect rgb(240, 240, 240)
+        Note over M,F: Case 3: Other Errors
+        M->>EM: Send Request
+        EM->>P: Try Primary
+        P-->>EM: Error Response
+        Note over EM: Wait with backoff
+        EM->>P: Retry #1
+        P-->>EM: Error Response
+        Note over EM: Wait with backoff
+        EM->>P: Retry #2
+        P-->>EM: Success
+        EM-->>M: Return Response
+    end
+....
+
+
+== Best Practices
+
+* Use private RPC providers when possible
+* Configure multiple fallback endpoints
+* Consider geographic distribution of endpoints
+* Monitor endpoint reliability and adjust weights accordingly
+
+=== Error Handling
+
+Configure appropriate retry settings:
+
+[source,rust]
+----
+#[derive(Clone, Debug)]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts before giving up
+	pub max_retries: u32,
+
+	/// Initial delay between retry attempts
+	/// This delay will be exponentially increased with each retry
+	pub initial_delay: Duration,
+
+	/// Maximum delay between retry attempts
+	/// The exponential backoff will not exceed this delay
+	pub max_delay: Duration,
+}
+----
+
+
+== Troubleshooting
+
+=== Common Issues
+
+* *429 Too Many Requests*: Increase the number of fallback URLs or reduce monitoring frequency
+* *Connection Timeouts*: Check endpoint health and network connectivity
+* *Invalid Responses*: Verify RPC endpoint compatibility with your network type
+
+=== Logging
+
+Enable debug logging for detailed RPC client information:
+
+[source,bash]
+----
+RUST_LOG=debug
+----
+
+This will show:
+
+* Endpoint rotations
+* Connection attempts
+* Request/response details
