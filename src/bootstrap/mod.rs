@@ -18,10 +18,7 @@
 use futures::future::BoxFuture;
 use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::{
-	sync::{watch, Semaphore},
-	time::Duration,
-};
+use tokio::{sync::watch, time::Duration};
 
 use crate::{
 	models::{
@@ -255,9 +252,14 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 		let trigger_service = trigger_service.clone();
 		let trigger_scripts = active_monitors_trigger_scripts.clone();
 		let block = block.clone();
+
 		tokio::spawn(async move {
 			tokio::select! {
 				_ = async {
+					let matches = block.processing_results.len();
+					if matches == 0 {
+						return;
+					}
 					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
 					for monitor_match in &filtered_matches {
 						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
@@ -324,12 +326,13 @@ async fn execute_trigger_condition(
 ) -> bool {
 	let executor = ScriptExecutorFactory::create(&script_content.0, &script_content.1);
 
-	match tokio::time::timeout(
+	let result = tokio::time::timeout(
 		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
 		executor.execute(monitor_match.clone()),
 	)
-	.await
-	{
+	.await;
+
+	match result {
 		Ok(Ok(false)) => true,
 		Ok(Err(e)) => {
 			ScriptError::execution_error(e.to_string());
@@ -349,11 +352,6 @@ async fn run_trigger_filters(
 	trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 ) -> Vec<MonitorMatch> {
 	let mut filtered_matches = vec![];
-	// We are running this function for every block, so we need to limit the number of concurrent
-	// open files to avoid running out of file descriptors
-	const MAX_CONCURRENT_OPEN_FILES: usize = 50;
-	// Create a semaphore to limit concurrent script executions
-	static PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_OPEN_FILES);
 
 	for monitor_match in matches {
 		let mut is_filtered = false;
@@ -366,14 +364,6 @@ async fn run_trigger_filters(
 		sorted_conditions.sort_by_key(|condition| condition.execution_order);
 
 		for trigger_condition in sorted_conditions {
-			// Acquire semaphore permit, this will block if the semaphore is full
-			let _permit = match PERMITS.acquire().await {
-				Ok(permit) => permit,
-				Err(e) => {
-					ScriptError::system_error(e.to_string());
-					continue;
-				}
-			};
 			let monitor_name = match monitor_match {
 				MonitorMatch::EVM(evm_match) => evm_match.monitor.name.clone(),
 				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
@@ -391,6 +381,7 @@ async fn run_trigger_filters(
 			filtered_matches.push(monitor_match.clone());
 		}
 	}
+
 	filtered_matches
 }
 

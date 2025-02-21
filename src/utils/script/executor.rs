@@ -1,6 +1,8 @@
 use crate::{models::MonitorMatch, utils::script::error::ScriptError};
 use async_trait::async_trait;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use libc::{c_int, getrlimit, RLIMIT_NOFILE};
+use log::info;
+use std::{mem::MaybeUninit, process::Stdio};
 
 /// A trait that defines the interface for executing custom scripts in different languages.
 /// Implementors must be both Send and Sync to ensure thread safety.
@@ -22,21 +24,77 @@ pub struct PythonScriptExecutor {
 	pub script_content: String,
 }
 
+/// Counts the number of open file descriptors for the current process
+fn count_open_fds() -> (usize, u64) {
+	#[cfg(unix)]
+	{
+		let mut rlimit = MaybeUninit::uninit();
+		let ret = unsafe { getrlimit(RLIMIT_NOFILE, rlimit.as_mut_ptr()) };
+
+		if ret == 0 {
+			let rlimit = unsafe { rlimit.assume_init() };
+			let mut count = 0;
+
+			// Check each potential file descriptor up to the soft limit
+			for fd in 0..rlimit.rlim_cur {
+				let ret = unsafe { libc::fcntl(fd as c_int, libc::F_GETFD) };
+				if ret != -1 {
+					count += 1;
+				}
+			}
+			(count, rlimit.rlim_cur)
+		} else {
+			info!("Failed to get rlimit");
+			(0, 0)
+		}
+	}
+}
+
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
 	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
-		let output = tokio::process::Command::new("python3")
+		let (open_fds, max_fds) = count_open_fds();
+		info!("MAX FDS: {}", max_fds);
+		info!("Open FDs: {}", open_fds);
+
+		// Warning if open file descriptors exceed the maximum limit
+		if open_fds > max_fds as usize {
+			log::warn!(
+				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
+				 This will cause issues. You should increase the limit for open files.",
+				open_fds,
+				max_fds
+			);
+		}
+
+		let cmd = tokio::process::Command::new("python3")
 			.arg("-c")
 			.arg(&self.script_content)
-			.arg(input_json)
+			.arg(&input_json)
+			.stdin(Stdio::null())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::piped())
 			.kill_on_drop(true)
-			.output()
+			.spawn()
+			.map_err(|e| {
+				if e.to_string().contains("too many open files") {
+					log::error!(
+						"Too many open files error detected. Current open FDs: {}/{}",
+						open_fds,
+						max_fds
+					);
+				}
+				ScriptError::execution_error(e.to_string())
+			})?;
+
+		let output = cmd
+			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-
+		info!("Output ===>: {:?}", output);
 		process_script_output(output)
 	}
 }
@@ -52,16 +110,42 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
+		let (open_fds, max_fds) = count_open_fds();
 
-		let output = tokio::process::Command::new("node")
+		// Warning if open file descriptors exceed the maximum limit
+		if open_fds > max_fds as usize {
+			log::warn!(
+				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
+				 This will cause issues. You should increase the limit for open files.",
+				open_fds,
+				max_fds
+			);
+		}
+
+		let cmd = tokio::process::Command::new("node")
 			.arg("-e")
 			.arg(&self.script_content)
-			.arg(input_json)
+			.arg(&input_json)
+			.stdin(Stdio::null())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::null())
 			.kill_on_drop(true)
-			.output()
+			.spawn()
+			.map_err(|e| {
+				if e.to_string().contains("too many open files") {
+					log::error!(
+						"Too many open files error detected. Current open FDs: {}/{}",
+						open_fds,
+						max_fds
+					);
+				}
+				ScriptError::execution_error(e.to_string())
+			})?;
+
+		let output = cmd
+			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-
 		process_script_output(output)
 	}
 }
@@ -77,16 +161,42 @@ impl ScriptExecutor for BashScriptExecutor {
 	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
+		let (open_fds, max_fds) = count_open_fds();
 
-		let output = tokio::process::Command::new("sh")
+		// Warning if open file descriptors exceed the maximum limit
+		if open_fds > max_fds as usize {
+			log::warn!(
+				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
+				 This will cause issues. You should increase the limit for open files.",
+				open_fds,
+				max_fds
+			);
+		}
+
+		let cmd = tokio::process::Command::new("sh")
 			.arg("-c")
 			.arg(&self.script_content)
-			.arg(input_json)
+			.arg(&input_json)
+			.stdin(Stdio::null())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::null())
 			.kill_on_drop(true)
-			.output()
+			.spawn()
+			.map_err(|e| {
+				if e.to_string().contains("too many open files") {
+					log::error!(
+						"Too many open files error detected. Current open FDs: {}/{}",
+						open_fds,
+						max_fds
+					);
+				}
+				ScriptError::execution_error(e.to_string())
+			})?;
+
+		let output = cmd
+			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-
 		process_script_output(output)
 	}
 }
