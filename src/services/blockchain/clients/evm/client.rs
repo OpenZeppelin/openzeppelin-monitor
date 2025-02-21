@@ -13,7 +13,8 @@ use crate::{
 	models::{BlockType, EVMBlock, Network},
 	services::{
 		blockchain::{
-			client::BlockChainClient, clients::Web3Transport, transports::Web3TransportClient,
+			client::BlockChainClient,
+			transports::{BlockchainTransport, Web3TransportClient},
 			BlockChainError, BlockFilterFactory,
 		},
 		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
@@ -57,7 +58,7 @@ impl EvmClient<Web3TransportClient> {
 	}
 }
 
-impl<T: Send + Sync + Clone + Web3Transport> BlockFilterFactory<Self> for EvmClient<T> {
+impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for EvmClient<T> {
 	type Filter = EVMBlockFilter<Self>;
 	fn filter() -> Self::Filter {
 		EVMBlockFilter {
@@ -97,7 +98,7 @@ pub trait EvmClientTrait {
 }
 
 #[async_trait]
-impl<T: Send + Sync + Clone + Web3Transport> EvmClientTrait for EvmClient<T> {
+impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<T> {
 	/// Retrieves a transaction receipt by hash with proper error handling
 	///
 	/// # Errors
@@ -124,7 +125,10 @@ impl<T: Send + Sync + Clone + Web3Transport> EvmClientTrait for EvmClient<T> {
 
 				let response = self
 					.web3_client
-					.send_raw_request("eth_getTransactionReceipt", params)
+					.send_raw_request(
+						"eth_getTransactionReceipt",
+						Some(serde_json::Value::Array(params)),
+					)
 					.await?;
 
 				// Extract the "result" field from the JSON-RPC response
@@ -168,7 +172,7 @@ impl<T: Send + Sync + Clone + Web3Transport> EvmClientTrait for EvmClient<T> {
 
 				let response = self
 					.web3_client
-					.send_raw_request("eth_getLogs", params)
+					.send_raw_request("eth_getLogs", Some(params))
 					.await?;
 
 				// Extract the "result" field from the JSON-RPC response
@@ -186,7 +190,7 @@ impl<T: Send + Sync + Clone + Web3Transport> EvmClientTrait for EvmClient<T> {
 }
 
 #[async_trait]
-impl<T: Send + Sync + Clone + Web3Transport> BlockChainClient for EvmClient<T> {
+impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClient<T> {
 	/// Retrieves the latest block number with retry functionality
 	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
 		let with_retry = WithRetry::with_default_config();
@@ -194,7 +198,7 @@ impl<T: Send + Sync + Clone + Web3Transport> BlockChainClient for EvmClient<T> {
 			.attempt(|| async {
 				let response = self
 					.web3_client
-					.send_raw_request("eth_blockNumber", vec![])
+					.send_raw_request::<serde_json::Value>("eth_blockNumber", None)
 					.await?;
 
 				// Extract the "result" field from the JSON-RPC response
@@ -237,10 +241,7 @@ impl<T: Send + Sync + Clone + Web3Transport> BlockChainClient for EvmClient<T> {
 
 					let response = self
 						.web3_client
-						.send_raw_request(
-							"eth_getBlockByNumber",
-							params.as_array().unwrap().to_vec(),
-						)
+						.send_raw_request("eth_getBlockByNumber", Some(params))
 						.await?;
 
 					// Extract the "result" field from the JSON-RPC response

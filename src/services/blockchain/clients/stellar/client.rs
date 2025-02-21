@@ -17,7 +17,7 @@ use crate::{
 		blockchain::{
 			client::{BlockChainClient, BlockFilterFactory},
 			transports::StellarTransportClient,
-			BlockChainError, StellarTransport,
+			BlockChainError, BlockchainTransport,
 		},
 		filter::StellarBlockFilter,
 	},
@@ -93,7 +93,7 @@ pub trait StellarClientTrait {
 }
 
 #[async_trait]
-impl<T: Send + Sync + Clone + StellarTransport> StellarClientTrait for StellarClient<T> {
+impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for StellarClient<T> {
 	/// Retrieves transactions within a sequence range with pagination
 	///
 	/// # Errors
@@ -249,7 +249,7 @@ impl<T: Send + Sync + Clone + StellarTransport> StellarClientTrait for StellarCl
 	}
 }
 
-impl<T: Send + Sync + Clone + StellarTransport> BlockFilterFactory<Self> for StellarClient<T> {
+impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for StellarClient<T> {
 	type Filter = StellarBlockFilter<Self>;
 
 	fn filter() -> Self::Filter {
@@ -260,7 +260,7 @@ impl<T: Send + Sync + Clone + StellarTransport> BlockFilterFactory<Self> for Ste
 }
 
 #[async_trait]
-impl<T: Send + Sync + Clone + StellarTransport> BlockChainClient for StellarClient<T> {
+impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarClient<T> {
 	/// Retrieves the latest block number with retry functionality
 	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
 		let with_retry = WithRetry::with_default_config();
@@ -268,7 +268,7 @@ impl<T: Send + Sync + Clone + StellarTransport> BlockChainClient for StellarClie
 			.attempt(|| async {
 				let response = self
 					.stellar_client
-					.send_raw_request("getLatestLedger", None)
+					.send_raw_request::<serde_json::Value>("getLatestLedger", None)
 					.await?;
 
 				let sequence = response["result"]["sequence"].as_u64().ok_or_else(|| {

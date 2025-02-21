@@ -6,12 +6,13 @@
 use crate::{
 	models::Network,
 	services::blockchain::{
-		transports::{EndpointManager, RotatingTransport},
+		transports::{BlockchainTransport, EndpointManager, RotatingTransport},
 		BlockChainError,
 	},
 };
 
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use stellar_horizon::{
@@ -74,6 +75,17 @@ impl HorizonTransportClient {
 			"All Horizon RPC URLs failed to connect".to_string(),
 		))
 	}
+}
+
+#[async_trait]
+impl BlockchainTransport for HorizonTransportClient {
+	/// Gets the current active URL
+	///
+	/// # Returns
+	/// * `String` - The current active URL
+	async fn get_current_url(&self) -> String {
+		self.endpoint_manager.active_url.read().await.clone()
+	}
 
 	/// Sends a raw JSON-RPC request to the Horizon API endpoint
 	///
@@ -83,11 +95,14 @@ impl HorizonTransportClient {
 	///
 	/// # Returns
 	/// * `Result<Value, BlockChainError>` - JSON response or error
-	pub async fn send_raw_request(
+	async fn send_raw_request<P>(
 		&self,
 		method: &str,
-		params: Option<Value>,
-	) -> Result<Value, BlockChainError> {
+		params: Option<P>,
+	) -> Result<Value, BlockChainError>
+	where
+		P: Into<Value> + Send + Clone + Serialize,
+	{
 		self.endpoint_manager
 			.send_raw_request(self, method, params)
 			.await

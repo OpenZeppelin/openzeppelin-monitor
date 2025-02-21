@@ -41,6 +41,7 @@ mod integration {
 			mod stellar {
 				mod transport;
 			}
+			mod endpoint_manager;
 		}
 	}
 	mod bootstrap {

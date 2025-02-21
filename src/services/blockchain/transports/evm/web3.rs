@@ -3,7 +3,8 @@
 //! This module provides a client implementation for interacting with EVM-compatible nodes
 //! via Web3, supporting connection management and raw JSON-RPC request functionality.
 
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use web3::{transports::Http, Web3};
@@ -11,7 +12,7 @@ use web3::{transports::Http, Web3};
 use crate::{
 	models::Network,
 	services::blockchain::{
-		transports::{EndpointManager, RotatingTransport},
+		transports::{BlockchainTransport, EndpointManager, RotatingTransport},
 		BlockChainError,
 	},
 };
@@ -74,6 +75,17 @@ impl Web3TransportClient {
 			"All RPC URLs failed to connect".to_string(),
 		))
 	}
+}
+
+#[async_trait::async_trait]
+impl BlockchainTransport for Web3TransportClient {
+	/// Gets the current active URL
+	///
+	/// # Returns
+	/// * `String` - The current active URL
+	async fn get_current_url(&self) -> String {
+		self.endpoint_manager.active_url.read().await.clone()
+	}
 
 	/// Sends a raw JSON-RPC request to the EVM node
 	///
@@ -86,13 +98,16 @@ impl Web3TransportClient {
 	///
 	/// # Returns
 	/// * `Result<Value, BlockChainError>` - JSON response or error
-	pub async fn send_raw_request(
+	async fn send_raw_request<P>(
 		&self,
 		method: &str,
-		params: Vec<Value>,
-	) -> Result<Value, BlockChainError> {
+		params: Option<P>,
+	) -> Result<Value, BlockChainError>
+	where
+		P: Into<Value> + Send + Clone + Serialize,
+	{
 		self.endpoint_manager
-			.send_raw_request(self, method, Some(json!(params)))
+			.send_raw_request(self, method, params)
 			.await
 	}
 }

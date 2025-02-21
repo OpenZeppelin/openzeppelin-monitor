@@ -2,36 +2,40 @@ use mockall::mock;
 use serde_json::Value;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, RotatingTransport, StellarTransport, Web3Transport,
+	BlockChainError, BlockchainTransport, RotatingTransport,
 };
-
-// Mock implementation of a Web3 client.
-// Represents the internal web3 client used for Ethereum interactions.
-mock! {
-	pub Web3Client {}
-
-	impl Clone for Web3Client {
-		fn clone(&self) -> Self;
-	}
-}
 
 // Mock implementation of a Web3 transport client.
 // Used for testing Ethereum/Web3-compatible blockchain interactions.
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
-	pub Web3TransportClient {}
-
-	#[async_trait::async_trait]
-	impl Web3Transport for Web3TransportClient {
-		async fn send_raw_request(
-			&self,
-			method: &str,
-			params: Vec<Value>,
-		) -> Result<Value, BlockChainError>;
+	pub Web3TransportClient {
+		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, BlockChainError>;
+		pub async fn get_current_url(&self) -> String;
 	}
 
 	impl Clone for Web3TransportClient {
 		fn clone(&self) -> Self;
+	}
+}
+
+#[async_trait::async_trait]
+impl BlockchainTransport for MockWeb3TransportClient {
+	async fn get_current_url(&self) -> String {
+		self.get_current_url().await
+	}
+
+	async fn send_raw_request<P>(
+		&self,
+		method: &str,
+		params: Option<P>,
+	) -> Result<Value, BlockChainError>
+	where
+		P: Into<Value> + Send + Clone,
+	{
+		let params_value = params.map(|p| p.into());
+		self.send_raw_request(method, params_value.and_then(|v| v.as_array().cloned()))
+			.await
 	}
 }
 
@@ -46,38 +50,41 @@ impl RotatingTransport for MockWeb3TransportClient {
 	}
 }
 
-// Mock implementation of a Stellar client.
-// Represents the internal stellar client used for Stellar interactions.
-mock! {
-	pub StellarClient {}
-
-	impl Clone for StellarClient {
-		fn clone(&self) -> Self;
-	}
-}
-
-// Mock implementation of a Horizon transport client.
+// Mock implementation of a Stellar transport client.
 // Used for testing Stellar blockchain interactions.
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
-	pub HorizonTransportClient {}
-
-	#[async_trait::async_trait]
-	impl StellarTransport for HorizonTransportClient {
-		async fn send_raw_request(
-			&self,
-			method: &str,
-			params: Option<Value>,
-		) -> Result<Value, BlockChainError>;
+	pub StellarTransportClient {
+		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, BlockChainError>;
+		pub async fn get_current_url(&self) -> String;
 	}
 
-	impl Clone for HorizonTransportClient {
+	impl Clone for StellarTransportClient {
 		fn clone(&self) -> Self;
 	}
 }
 
 #[async_trait::async_trait]
-impl RotatingTransport for MockHorizonTransportClient {
+impl BlockchainTransport for MockStellarTransportClient {
+	async fn get_current_url(&self) -> String {
+		self.get_current_url().await
+	}
+
+	async fn send_raw_request<P>(
+		&self,
+		method: &str,
+		params: Option<P>,
+	) -> Result<Value, BlockChainError>
+	where
+		P: Into<Value> + Send + Clone,
+	{
+		self.send_raw_request(method, params.map(|p| p.into()))
+			.await
+	}
+}
+
+#[async_trait::async_trait]
+impl RotatingTransport for MockStellarTransportClient {
 	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
 		Ok(())
 	}
@@ -87,28 +94,41 @@ impl RotatingTransport for MockHorizonTransportClient {
 	}
 }
 
-// Mock implementation of a Stellar transport client.
+// Mock implementation of a Horizon transport client.
 // Used for testing Stellar blockchain interactions.
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
-	pub StellarTransportClient {}
-
-	#[async_trait::async_trait]
-	impl StellarTransport for StellarTransportClient {
-		async fn send_raw_request(
-			&self,
-			method: &str,
-			params: Option<Value>,
-		) -> Result<Value, BlockChainError>;
+	pub HorizonTransportClient {
+		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, BlockChainError>;
+		pub async fn get_current_url(&self) -> String;
 	}
 
-	impl Clone for StellarTransportClient {
+	impl Clone for HorizonTransportClient {
 		fn clone(&self) -> Self;
 	}
 }
 
 #[async_trait::async_trait]
-impl RotatingTransport for MockStellarTransportClient {
+impl BlockchainTransport for MockHorizonTransportClient {
+	async fn get_current_url(&self) -> String {
+		self.get_current_url().await
+	}
+
+	async fn send_raw_request<P>(
+		&self,
+		method: &str,
+		params: Option<P>,
+	) -> Result<Value, BlockChainError>
+	where
+		P: Into<Value> + Send + Clone,
+	{
+		self.send_raw_request(method, params.map(|p| p.into()))
+			.await
+	}
+}
+
+#[async_trait::async_trait]
+impl RotatingTransport for MockHorizonTransportClient {
 	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
 		Ok(())
 	}
