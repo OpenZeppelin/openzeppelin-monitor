@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use libc::{c_int, getrlimit, RLIMIT_NOFILE};
 use log::info;
 use std::{mem::MaybeUninit, process::Stdio};
-
 /// A trait that defines the interface for executing custom scripts in different languages.
 /// Implementors must be both Send and Sync to ensure thread safety.
 #[async_trait]
@@ -57,14 +56,13 @@ impl ScriptExecutor for PythonScriptExecutor {
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
 		let (open_fds, max_fds) = count_open_fds();
-		info!("MAX FDS: {}", max_fds);
-		info!("Open FDs: {}", open_fds);
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
 			log::warn!(
 				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
-				 This will cause issues. You should increase the limit for open files.",
+				 This will cause issues. You should increase the limit for open files by running:  \
+				 ulimit -n <number of fds>",
 				open_fds,
 				max_fds
 			);
@@ -94,7 +92,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-		info!("Output ===>: {:?}", output);
+
 		process_script_output(output)
 	}
 }
