@@ -25,6 +25,24 @@ mod properties {
 }
 
 mod integration {
+	mod blockchain {
+		mod clients {
+			mod evm {
+				mod client;
+			}
+			mod stellar {
+				mod client;
+			}
+		}
+		mod transports {
+			mod evm {
+				mod transport;
+			}
+			mod stellar {
+				mod transport;
+			}
+		}
+	}
 	mod bootstrap {
 		mod main;
 	}

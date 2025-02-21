@@ -13,6 +13,10 @@ mod error;
 mod transports;
 
 pub use client::{BlockChainClient, BlockFilterFactory};
-pub use clients::{EvmClient, EvmClientTrait, StellarClient, StellarClientTrait};
+pub use clients::{
+	EvmClient, EvmClientTrait, StellarClient, StellarClientTrait, StellarTransport, Web3Transport,
+};
 pub use error::BlockChainError;
-pub use transports::{HorizonTransportClient, Web3TransportClient};
+pub use transports::{
+	HorizonTransportClient, RotatingTransport, StellarTransportClient, Web3TransportClient,
+};

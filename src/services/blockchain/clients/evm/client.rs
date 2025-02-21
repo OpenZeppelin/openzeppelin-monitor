@@ -13,8 +13,8 @@ use crate::{
 	models::{BlockType, EVMBlock, Network},
 	services::{
 		blockchain::{
-			client::BlockChainClient, transports::Web3TransportClient, BlockChainError,
-			BlockFilterFactory,
+			client::BlockChainClient, clients::Web3Transport, transports::Web3TransportClient,
+			BlockChainError, BlockFilterFactory,
 		},
 		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
 	},
@@ -26,14 +26,24 @@ use crate::{
 /// Provides high-level access to EVM blockchain data and operations through Web3
 /// transport layer.
 #[derive(Clone)]
-pub struct EvmClient {
+pub struct EvmClient<T: Send + Sync + Clone> {
 	/// The underlying Web3 transport client for RPC communication
-	web3_client: Web3TransportClient,
+	web3_client: T,
 	/// Network configuration for this client instance
 	_network: Network,
 }
 
-impl EvmClient {
+impl<T: Send + Sync + Clone> EvmClient<T> {
+	/// Creates a new EVM client instance with a specific transport client
+	pub fn new_with_transport(web3_client: T, network: &Network) -> Self {
+		Self {
+			web3_client,
+			_network: network.clone(),
+		}
+	}
+}
+
+impl EvmClient<Web3TransportClient> {
 	/// Creates a new EVM client instance
 	///
 	/// # Arguments
@@ -43,14 +53,11 @@ impl EvmClient {
 	/// * `Result<Self, BlockChainError>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
 		let web3_client = Web3TransportClient::new(network).await?;
-		Ok(Self {
-			web3_client,
-			_network: network.clone(),
-		})
+		Ok(Self::new_with_transport(web3_client, network))
 	}
 }
 
-impl BlockFilterFactory<Self> for EvmClient {
+impl<T: Send + Sync + Clone + Web3Transport> BlockFilterFactory<Self> for EvmClient<T> {
 	type Filter = EVMBlockFilter<Self>;
 	fn filter() -> Self::Filter {
 		EVMBlockFilter {
@@ -90,7 +97,7 @@ pub trait EvmClientTrait {
 }
 
 #[async_trait]
-impl EvmClientTrait for EvmClient {
+impl<T: Send + Sync + Clone + Web3Transport> EvmClientTrait for EvmClient<T> {
 	/// Retrieves a transaction receipt by hash with proper error handling
 	///
 	/// # Errors
@@ -179,7 +186,7 @@ impl EvmClientTrait for EvmClient {
 }
 
 #[async_trait]
-impl BlockChainClient for EvmClient {
+impl<T: Send + Sync + Clone + Web3Transport> BlockChainClient for EvmClient<T> {
 	/// Retrieves the latest block number with retry functionality
 	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
 		let with_retry = WithRetry::with_default_config();

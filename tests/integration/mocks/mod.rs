@@ -11,7 +11,7 @@ mod clients;
 mod models;
 mod repositories;
 mod services;
-
+mod transports;
 #[allow(unused_imports)]
 pub use clients::*;
 #[allow(unused_imports)]
@@ -20,3 +20,5 @@ pub use models::*;
 pub use repositories::*;
 #[allow(unused_imports)]
 pub use services::*;
+#[allow(unused_imports)]
+pub use transports::*;

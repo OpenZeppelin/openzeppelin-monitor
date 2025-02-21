@@ -99,3 +99,100 @@ impl WithRetry {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::sync::{
+		atomic::{AtomicU32, Ordering},
+		Arc,
+	};
+
+	#[test]
+	fn test_default_config() {
+		let config = RetryConfig::default();
+		assert_eq!(config.max_retries, 2);
+		assert_eq!(config.initial_delay, Duration::from_secs(1));
+		assert_eq!(config.max_delay, Duration::from_secs(4));
+	}
+
+	#[tokio::test]
+	async fn test_successful_first_attempt() {
+		let retry = WithRetry::with_default_config();
+		let result = retry.attempt(|| async { Ok::<_, &str>("success") }).await;
+		assert_eq!(result.unwrap(), "success");
+	}
+
+	#[tokio::test]
+	async fn test_successful_after_retry() {
+		let attempts = Arc::new(AtomicU32::new(0));
+		let retry = WithRetry::with_default_config();
+
+		let attempts_clone = attempts.clone();
+		let result = retry
+			.attempt(|| {
+				let attempts = attempts_clone.clone();
+				async move {
+					let current = attempts.fetch_add(1, Ordering::SeqCst);
+					if current == 0 {
+						Err("first attempt fails")
+					} else {
+						Ok("success")
+					}
+				}
+			})
+			.await;
+
+		assert_eq!(result.unwrap(), "success");
+		assert_eq!(attempts.load(Ordering::SeqCst), 2);
+	}
+
+	#[tokio::test]
+	async fn test_exhausts_retries() {
+		let attempts = Arc::new(AtomicU32::new(0));
+		let retry = WithRetry::new(RetryConfig {
+			max_retries: 3,
+			initial_delay: Duration::from_millis(10),
+			max_delay: Duration::from_millis(100),
+		});
+
+		let attempts_clone = attempts.clone();
+		let result = retry
+			.attempt(|| {
+				let attempts = attempts_clone.clone();
+				async move {
+					attempts.fetch_add(1, Ordering::SeqCst);
+					Err::<&str, _>("always fails")
+				}
+			})
+			.await;
+
+		assert!(result.is_err());
+		assert_eq!(attempts.load(Ordering::SeqCst), 3);
+	}
+
+	#[tokio::test]
+	async fn test_custom_config() {
+		let retry = WithRetry::new(RetryConfig {
+			max_retries: 1,
+			initial_delay: Duration::from_millis(10),
+			max_delay: Duration::from_millis(100),
+		});
+
+		let attempts = Arc::new(AtomicU32::new(0));
+		let attempts_clone = attempts.clone();
+
+		let result = retry
+			.attempt(|| {
+				let attempts = attempts_clone.clone();
+				async move {
+					attempts.fetch_add(1, Ordering::SeqCst);
+					Err::<&str, _>("fails")
+				}
+			})
+			.await;
+
+		assert!(result.is_err());
+		assert_eq!(attempts.load(Ordering::SeqCst), 1);
+	}
+}

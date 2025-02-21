@@ -17,7 +17,7 @@ use crate::{
 		blockchain::{
 			client::{BlockChainClient, BlockFilterFactory},
 			transports::StellarTransportClient,
-			BlockChainError,
+			BlockChainError, StellarTransport,
 		},
 		filter::StellarBlockFilter,
 	},
@@ -29,14 +29,24 @@ use crate::{
 /// Provides high-level access to Stellar blockchain data and operations through
 /// both Stellar Core RPC and Horizon API endpoints.
 #[derive(Clone)]
-pub struct StellarClient {
+pub struct StellarClient<T: Send + Sync + Clone> {
 	/// The underlying Stellar transport client for RPC communication
-	stellar_client: StellarTransportClient,
+	stellar_client: T,
 	/// Network configuration for this client instance
 	_network: Network,
 }
 
-impl StellarClient {
+impl<T: Send + Sync + Clone> StellarClient<T> {
+	/// Creates a new Stellar client instance with a specific transport client
+	pub fn new_with_transport(stellar_client: T, network: &Network) -> Self {
+		Self {
+			stellar_client,
+			_network: network.clone(),
+		}
+	}
+}
+
+impl StellarClient<StellarTransportClient> {
 	/// Creates a new Stellar client instance
 	///
 	/// # Arguments
@@ -46,10 +56,7 @@ impl StellarClient {
 	/// * `Result<Self, BlockChainError>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
 		let stellar_client: StellarTransportClient = StellarTransportClient::new(network).await?;
-		Ok(Self {
-			stellar_client,
-			_network: network.clone(),
-		})
+		Ok(Self::new_with_transport(stellar_client, network))
 	}
 }
 
@@ -86,7 +93,7 @@ pub trait StellarClientTrait {
 }
 
 #[async_trait]
-impl StellarClientTrait for StellarClient {
+impl<T: Send + Sync + Clone + StellarTransport> StellarClientTrait for StellarClient<T> {
 	/// Retrieves transactions within a sequence range with pagination
 	///
 	/// # Errors
@@ -242,7 +249,7 @@ impl StellarClientTrait for StellarClient {
 	}
 }
 
-impl BlockFilterFactory<StellarClient> for StellarClient {
+impl<T: Send + Sync + Clone + StellarTransport> BlockFilterFactory<Self> for StellarClient<T> {
 	type Filter = StellarBlockFilter<Self>;
 
 	fn filter() -> Self::Filter {
@@ -253,7 +260,7 @@ impl BlockFilterFactory<StellarClient> for StellarClient {
 }
 
 #[async_trait]
-impl BlockChainClient for StellarClient {
+impl<T: Send + Sync + Clone + StellarTransport> BlockChainClient for StellarClient<T> {
 	/// Retrieves the latest block number with retry functionality
 	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
 		let with_retry = WithRetry::with_default_config();

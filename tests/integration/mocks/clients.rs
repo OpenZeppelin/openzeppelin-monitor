@@ -11,7 +11,7 @@
 use std::marker::PhantomData;
 
 use openzeppelin_monitor::{
-	models::{BlockType, StellarEvent, StellarTransaction},
+	models::{BlockType, Network, StellarEvent, StellarTransaction},
 	services::{
 		blockchain::{
 			BlockChainClient, BlockChainError, BlockFilterFactory, EvmClientTrait,
@@ -29,10 +29,12 @@ mock! {
 	///
 	/// This mock allows testing EVM-specific functionality by simulating blockchain
 	/// responses without actual network calls.
-	pub EvmClientTrait {}
+	pub EvmClientTrait<T: Send + Sync + Clone + 'static> {
+		pub fn new_with_transport(transport: T, network: &Network) -> Self;
+	}
 
 	#[async_trait]
-	impl BlockChainClient for EvmClientTrait {
+	impl<T: Send + Sync + Clone + 'static> BlockChainClient for EvmClientTrait<T> {
 		async fn get_latest_block_number(&self) -> Result<u64, BlockChainError>;
 		async fn get_blocks(
 			&self,
@@ -42,7 +44,7 @@ mock! {
 	}
 
 	#[async_trait]
-	impl EvmClientTrait for EvmClientTrait {
+	impl<T: Send + Sync + Clone + 'static> EvmClientTrait for EvmClientTrait<T> {
 		async fn get_transaction_receipt(
 			&self,
 			transaction_hash: String,
@@ -55,7 +57,7 @@ mock! {
 		) -> Result<Vec<web3::types::Log>, BlockChainError>;
 	}
 
-	impl Clone for EvmClientTrait {
+	impl<T: Send + Sync + Clone + 'static> Clone for EvmClientTrait<T> {
 		fn clone(&self) -> Self {
 			self.clone()
 		}
@@ -67,10 +69,12 @@ mock! {
 	///
 	/// This mock allows testing Stellar-specific functionality by simulating blockchain
 	/// responses without actual network calls.
-	pub StellarClientTrait {}
+	pub StellarClientTrait<T: Send + Sync + Clone + 'static> {
+		pub fn new_with_transport(transport: T, network: &Network) -> Self;
+	}
 
 	#[async_trait]
-	impl BlockChainClient for StellarClientTrait {
+	impl<T: Send + Sync + Clone + 'static> BlockChainClient for StellarClientTrait<T> {
 		async fn get_latest_block_number(&self) -> Result<u64, BlockChainError>;
 		async fn get_blocks(
 			&self,
@@ -80,7 +84,7 @@ mock! {
 	}
 
 	#[async_trait]
-	impl StellarClientTrait for StellarClientTrait {
+	impl<T: Send + Sync + Clone + 'static> StellarClientTrait for StellarClientTrait<T> {
 		async fn get_transactions(
 			&self,
 			start_sequence: u32,
@@ -94,15 +98,17 @@ mock! {
 		) -> Result<Vec<StellarEvent>, BlockChainError>;
 	}
 
-	impl Clone for StellarClientTrait {
+	impl<T: Send + Sync + Clone + 'static> Clone for StellarClientTrait<T> {
 		fn clone(&self) -> Self {
 			self.clone()
 		}
 	}
 }
 
-impl BlockFilterFactory<MockStellarClientTrait> for MockStellarClientTrait {
-	type Filter = StellarBlockFilter<MockStellarClientTrait>;
+impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockStellarClientTrait<T>>
+	for MockStellarClientTrait<T>
+{
+	type Filter = StellarBlockFilter<MockStellarClientTrait<T>>;
 	fn filter() -> Self::Filter {
 		StellarBlockFilter {
 			_client: PhantomData,
@@ -110,8 +116,10 @@ impl BlockFilterFactory<MockStellarClientTrait> for MockStellarClientTrait {
 	}
 }
 
-impl BlockFilterFactory<MockEvmClientTrait> for MockEvmClientTrait {
-	type Filter = EVMBlockFilter<MockEvmClientTrait>;
+impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockEvmClientTrait<T>>
+	for MockEvmClientTrait<T>
+{
+	type Filter = EVMBlockFilter<MockEvmClientTrait<T>>;
 	fn filter() -> Self::Filter {
 		EVMBlockFilter {
 			_client: PhantomData,
