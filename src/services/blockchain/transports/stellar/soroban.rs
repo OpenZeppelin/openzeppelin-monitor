@@ -126,6 +126,11 @@ impl RotatingTransport for StellarTransportClient {
 		if let Ok(new_client) = StellarHttpClient::new(url) {
 			let mut client = self.client.write().await;
 			*client = new_client;
+
+			// Update the endpoint manager's active URL as well
+			let mut active_url = self.endpoint_manager.active_url.write().await;
+			*active_url = url.to_string();
+
 			Ok(())
 		} else {
 			Err(BlockChainError::connection_error(

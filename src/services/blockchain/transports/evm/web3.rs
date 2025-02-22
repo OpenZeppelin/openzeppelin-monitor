@@ -38,7 +38,6 @@ impl Web3TransportClient {
 	/// # Returns
 	/// * `Result<Self, BlockChainError>` - A new client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
-		// Filter web3 URLs with weight > 0 and sort by weight descending
 		let mut rpc_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
@@ -48,23 +47,26 @@ impl Web3TransportClient {
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
 		for rpc_url in rpc_urls.iter() {
-			match Http::new(rpc_url.url.as_str()) {
+			match Http::new(&rpc_url.url) {
 				Ok(transport) => {
 					let client = Web3::new(transport);
-					if client.net().version().await.is_ok() {
-						let fallback_urls: Vec<String> = rpc_urls
-							.iter()
-							.filter(|url| url.url != rpc_url.url)
-							.map(|url| url.url.clone())
-							.collect();
+					match client.net().version().await {
+						Ok(_version) => {
+							let fallback_urls: Vec<String> = rpc_urls
+								.iter()
+								.filter(|url| url.url != rpc_url.url)
+								.map(|url| url.url.clone())
+								.collect();
 
-						return Ok(Self {
-							client: Arc::new(RwLock::new(client)),
-							endpoint_manager: EndpointManager::new(
-								rpc_url.url.clone(),
-								fallback_urls,
-							),
-						});
+							return Ok(Self {
+								client: Arc::new(RwLock::new(client)),
+								endpoint_manager: EndpointManager::new(
+									rpc_url.url.clone(),
+									fallback_urls,
+								),
+							});
+						}
+						Err(_) => continue,
 					}
 				}
 				Err(_) => continue,
@@ -135,6 +137,11 @@ impl RotatingTransport for Web3TransportClient {
 			let new_client = Web3::new(transport);
 			let mut client = self.client.write().await;
 			*client = new_client;
+
+			// Update the endpoint manager's active URL as well
+			let mut active_url = self.endpoint_manager.active_url.write().await;
+			*active_url = url.to_string();
+
 			Ok(())
 		} else {
 			Err(BlockChainError::connection_error(

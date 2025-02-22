@@ -51,23 +51,30 @@ impl HorizonTransportClient {
 			match HorizonHttpClient::new_from_str(&rpc_url.url) {
 				Ok(client) => {
 					let request = root::root();
-					if client.request(request).await.is_ok() {
-						let fallback_urls: Vec<String> = horizon_urls
-							.iter()
-							.filter(|url| url.url != rpc_url.url)
-							.map(|url| url.url.clone())
-							.collect();
+					match client.request(request).await {
+						Ok(_) => {
+							let fallback_urls: Vec<String> = horizon_urls
+								.iter()
+								.filter(|url| url.url != rpc_url.url)
+								.map(|url| url.url.clone())
+								.collect();
 
-						return Ok(Self {
-							client: Arc::new(RwLock::new(client)),
-							endpoint_manager: EndpointManager::new(
-								rpc_url.url.clone(),
-								fallback_urls,
-							),
-						});
+							return Ok(Self {
+								client: Arc::new(RwLock::new(client)),
+								endpoint_manager: EndpointManager::new(
+									rpc_url.url.clone(),
+									fallback_urls,
+								),
+							});
+						}
+						Err(_) => {
+							continue;
+						}
 					}
 				}
-				Err(_) => continue,
+				Err(_) => {
+					continue;
+				}
 			}
 		}
 
@@ -131,6 +138,11 @@ impl RotatingTransport for HorizonTransportClient {
 		if let Ok(new_client) = HorizonHttpClient::new_from_str(url) {
 			let mut client = self.client.write().await;
 			*client = new_client;
+
+			// Update the endpoint manager's active URL as well
+			let mut active_url = self.endpoint_manager.active_url.write().await;
+			*active_url = url.to_string();
+
 			Ok(())
 		} else {
 			Err(BlockChainError::connection_error(

@@ -37,8 +37,11 @@ mod integration {
 		mod transports {
 			mod evm {
 				mod transport;
+				mod web3;
 			}
 			mod stellar {
+				mod horizon;
+				mod soroban;
 				mod transport;
 			}
 			mod endpoint_manager;
