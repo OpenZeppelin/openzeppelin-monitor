@@ -66,6 +66,17 @@ async fn test_client_creation() {
 		}
 		Err(e) => panic!("Transport creation failed: {:?}", e),
 	}
+
+	let network = create_test_network(vec!["invalid-url"]);
+
+	match StellarTransportClient::new(&network).await {
+		Err(BlockChainError::ConnectionError(msg)) => {
+			assert_eq!(msg, "All Stellar RPC URLs failed to connect");
+		}
+		_ => panic!("Transport creation should fail"),
+	}
+
+	mock.assert();
 }
 
 #[tokio::test]
@@ -130,6 +141,7 @@ async fn test_client_update_client() {
 async fn test_client_try_connect() {
 	let mut server = Server::new_async().await;
 	let mut server2 = Server::new_async().await;
+	let server3 = Server::new_async().await;
 
 	let mock = create_valid_server_mock_network_response(&mut server);
 	let mock2 = create_valid_server_mock_network_response(&mut server2);
@@ -142,6 +154,21 @@ async fn test_client_try_connect() {
 
 	let result = client.try_connect("invalid-url").await;
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
+	match result {
+		Err(BlockChainError::ConnectionError(msg)) => {
+			assert_eq!(msg, "Invalid URL");
+		}
+		_ => panic!("Expected ConnectionError"),
+	}
+
+	let result = client.try_connect(&server3.url()).await;
+	assert!(result.is_err(), "Try connect with invalid URL should fail");
+	match result {
+		Err(BlockChainError::ConnectionError(msg)) => {
+			assert_eq!(msg, "Failed to connect");
+		}
+		_ => panic!("Expected ConnectionError"),
+	}
 
 	mock.assert();
 	mock2.assert();
