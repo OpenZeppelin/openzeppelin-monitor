@@ -1,9 +1,9 @@
 = RPC Client
-:description: Documentation for the RPC client implementation and endpoint management features
+:description: Documentation for the RPC client implementation and endpoint management features.
 
 The OpenZeppelin Monitor includes a robust RPC client implementation with automatic endpoint rotation and fallback capabilities. This ensures reliable blockchain monitoring even when individual RPC endpoints experience issues.
 
-== Features
+== Features:
 
 * Multiple RPC endpoint support with weighted load balancing
 * Automatic fallback on endpoint failures
@@ -11,9 +11,9 @@ The OpenZeppelin Monitor includes a robust RPC client implementation with automa
 * Connection health checks
 * Thread-safe endpoint rotation
 
-== Configuration
+== Configuration:
 
-=== RPC URLs
+=== RPC URLs:
 
 RPC endpoints are configured in the network configuration files with weights for load balancing:
 
@@ -40,7 +40,7 @@ RPC endpoints are configured in the network configuration files with weights for
 For high-availability setups, configure at least 3 RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
 ====
 
-=== Configuration Fields
+=== Configuration Fields:
 
 [cols="1,1,2"]
 |===
@@ -59,7 +59,7 @@ For high-availability setups, configure at least 3 RPC endpoints with appropriat
 |Load balancing weight (0-100)
 |===
 
-== Endpoint Management
+== Endpoint Management:
 
 The endpoint manager handles:
 
@@ -68,7 +68,7 @@ The endpoint manager handles:
 * Connection health checks
 * Thread-safe endpoint updates
 
-=== Retry and Rotation Behavior
+=== Retry and Rotation Behavior:
 
 The RPC client includes an automatic retry mechanism for handling failures:
 
@@ -134,6 +134,49 @@ sequenceDiagram
         EM-->>M: Return Response
     end
 ....
+
+== List of RPC Calls
+
+Below is a list of RPC calls made by the monitor for each network type for each iteration of the cron schedule.
+As the number of blocks being processed increases, the number of RPC calls grows, potentially leading to rate limiting issues or increased costs if not properly managed.
+
+[mermaid,width=100%]
+....
+graph TD
+    A[Main] -->|EVM| B[Network #1]
+    A[Main] -->|Stellar| C[Network #2]
+    B -->|net_version| D[Process New Blocks]
+    C -->|getNetwork| D
+    D -->|eth_blockNumber| E[For every block in range]
+    D -->|getLatestLedger| F[In batches of 200 blocks]
+    E -->|eth_getBlockByNumber| G[Create Block Handler]
+    F -->|getLedgers| G
+    G -->|net_version| H[Filter Block]
+    G -->|getNetwork| H
+    H -->|EVM| J[For every transaction in block]
+    J -->|eth_getTransactionReceipt| I[Complete]
+    H -->|Stellar| K[In batches of 200 transactions and events]
+    K -->|getTransactions| L[Complete]
+    K -->|getEvents| L[Complete]
+
+....
+
+*EVM*
+
+* RPC Client initialization (per active network): `net_version`
+* Fetching the latest block number (per cron iteration): `eth_blockNumber`
+* Fetching block data (per block): `eth_getBlockByNumber`
+* RPC Client initialization (per block): `net_version`
+* Fetching transaction receipt (per transaction in block): `eth_getTransactionReceipt`
+
+*Stellar*
+
+* RPC Client initialization (per active network): `getNetwork`
+* Fetching the latest ledger (per cron iteration): `getLatestLedger`
+* Fetching ledger data (batched up to 200 in a single request): `getLedgers`
+* RPC Client initialization (per ledger): `getNetwork`
+* Fetching transactions (batched up to 200 in a single request): `getTransactions`
+* Fetching events (batched up to 200 in a single request): `getEvents`
 
 
 == Best Practices

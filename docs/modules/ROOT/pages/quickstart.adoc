@@ -3,14 +3,14 @@
 
 This guide provides step-by-step instructions for setting up OpenZeppelin Monitor. It includes prerequisites, installation, and configuration examples.
 
-== Prerequisites
+== Prerequisites:
 
 * Rust 2021 edition
 * Docker (optional, for containerized deployment)
 
-== Environment Configuration
+== Environment Configuration:
 
-=== Configuration Instructions
+=== Configuration Instructions:
 
 Modify the configuration files with your preferred verbosity level:
 
@@ -25,7 +25,7 @@ Modify the configuration files with your preferred verbosity level:
 RUST_LOG=info
 ----
 
-=== Local Configuration
+=== Local Configuration:
 
 Copy the example environment file:
 
@@ -34,13 +34,13 @@ Copy the example environment file:
 cp .env.example .env
 ----
 
-=== Docker Configuration
+=== Docker Configuration:
 
 Modify the `env_dev` and `env_prod` files.
 
-== Installation
+== Installation:
 
-=== Local Installation
+=== Local Installation:
 
 . Clone the repository:
 +
@@ -57,7 +57,7 @@ cd openzeppelin-monitor
 cargo build
 ----
 
-=== Docker Installation
+=== Docker Installation:
 
 [source,bash]
 ----
@@ -68,11 +68,11 @@ docker build --tag openzeppelin-monitor -f Dockerfile.development .
 docker volume create openzeppelin-monitor-data
 ----
 
-== Examples
+== Examples:
 
-=== Monitoring USDC transfers (EVM)
+=== Monitoring USDC transfers (EVM):
 
-==== 1. Network Configuration
+==== 1. Network Configuration:
 
 Create the Ethereum mainnet network configuration:
 
@@ -105,7 +105,7 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/n
 }
 ----
 
-==== 2. Monitor Configuration
+==== 2. Monitor Configuration:
 
 Create the USDC transfer monitor configuration:
 
@@ -173,7 +173,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
 }
 ----
 
-==== 3. Notification Configuration
+==== 3. Notification Configuration:
 
 ===== For Slack Notifications:
 
@@ -235,7 +235,7 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
 }
 ----
 
-==== 4. Run the Monitor
+==== 4. Run the Monitor:
 
 **Local Deployment**
 
@@ -261,16 +261,16 @@ The monitor will now:
 2. Watch for USDC transfers over 10,000 USDC.
 3. Send notifications via Slack and email when large transfers occur.
 
-==== 5. Next Steps
+==== 5. Next Steps:
 
 * Adjust the transfer threshold by modifying the `expression` value.
 * Monitor additional ERC20 tokens by creating new monitor configurations.
 * Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/config/monitors[`config/monitors` directory].
 
 
-=== Monitoring Dex Swaps (Stellar)
+=== Monitoring Dex Swaps (Stellar):
 
-==== 1. Network Configuration
+==== 1. Network Configuration:
 
 Create the Stellar mainnet network configuration:
 
@@ -303,7 +303,7 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/n
 }
 ----
 
-==== 2. Monitor Configuration
+==== 2. Monitor Configuration:
 
 Create the large swap monitor configuration:
 
@@ -348,7 +348,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
 }
 ----
 
-==== 3. Notification Configuration
+==== 3. Notification Configuration:
 
 ===== For Slack Notifications:
 
@@ -376,7 +376,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
 }
 ----
 
-==== 4. Run the Monitor
+==== 4. Run the Monitor:
 
 **Local Deployment**
 
@@ -402,7 +402,7 @@ The monitor will now:
 2. Watch for large dex swaps.
 3. Send notifications via Slack when large swaps occur.
 
-==== 5. Next Steps
+==== 5. Next Steps:
 
 * Adjust the swap threshold by modifying the `expression` value.
 * Monitor additional dex swaps by creating new monitor configurations.
