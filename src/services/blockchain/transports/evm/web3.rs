@@ -51,7 +51,7 @@ impl Web3TransportClient {
 				Ok(transport) => {
 					let client = Web3::new(transport);
 					match client.net().version().await {
-						Ok(_version) => {
+						Ok(_) => {
 							let fallback_urls: Vec<String> = rpc_urls
 								.iter()
 								.filter(|url| url.url != rpc_url.url)

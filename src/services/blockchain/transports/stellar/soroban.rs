@@ -46,8 +46,8 @@ impl StellarTransportClient {
 
 		for rpc_url in stellar_urls.iter() {
 			match StellarHttpClient::new(rpc_url.url.as_str()) {
-				Ok(client) => {
-					if client.get_network().await.is_ok() {
+				Ok(client) => match client.get_network().await {
+					Ok(_) => {
 						let fallback_urls: Vec<String> = stellar_urls
 							.iter()
 							.filter(|url| url.url != rpc_url.url)
@@ -62,7 +62,8 @@ impl StellarTransportClient {
 							),
 						});
 					}
-				}
+					Err(_) => continue,
+				},
 				Err(_) => continue,
 			}
 		}
