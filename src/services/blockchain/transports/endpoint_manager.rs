@@ -74,19 +74,15 @@ impl EndpointManager {
 			Ok(_) => {
 				transport.update_client(&new_url).await?;
 
-				// Acquire locks only when needed and in a smaller scope
+				// Store the old URL and log before making the change
+				let old_url = self.active_url.read().await.clone();
+				debug!("Rotating RPC endpoint from {} to {}", old_url, new_url);
+
+				// Now update the URLs
 				{
 					let mut active_url = self.active_url.write().await;
 					let mut fallback_urls = self.fallback_urls.write().await;
-
 					fallback_urls.push(active_url.clone());
-
-					debug!(
-						"Rotating RPC endpoint from {} to {}",
-						active_url.as_str(),
-						new_url
-					);
-
 					*active_url = new_url;
 				}
 				Ok(())
