@@ -1,33 +1,10 @@
 use mockito::{Mock, Server};
-use openzeppelin_monitor::{
-	models::{BlockChainType, Network, RpcUrl},
-	services::blockchain::{
-		BlockChainError, BlockchainTransport, RotatingTransport, Web3TransportClient,
-	},
+use openzeppelin_monitor::services::blockchain::{
+	BlockChainError, BlockchainTransport, RotatingTransport, Web3TransportClient,
 };
+use serde_json::{json, Value};
 
-fn create_test_network(urls: Vec<&str>) -> Network {
-	Network {
-		name: "test".to_string(),
-		slug: "test".to_string(),
-		network_type: BlockChainType::EVM,
-		rpc_urls: urls
-			.iter()
-			.map(|url| RpcUrl {
-				url: url.to_string(),
-				type_: "rpc".to_string(),
-				weight: 100,
-			})
-			.collect(),
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: None,
-		network_passphrase: None,
-		block_time_ms: 5000,
-		max_past_blocks: None,
-	}
-}
+use crate::integration::mocks::create_evm_test_network_with_urls;
 
 fn create_valid_server_mock_network_response(server: &mut Server) -> Mock {
 	server
@@ -43,7 +20,7 @@ fn create_valid_server_mock_network_response(server: &mut Server) -> Mock {
 async fn test_client_creation() {
 	let mut server = Server::new_async().await;
 	let mock = create_valid_server_mock_network_response(&mut server);
-	let network = create_test_network(vec![&server.url()]);
+	let network = create_evm_test_network_with_urls(vec![&server.url()]);
 
 	match Web3TransportClient::new(&network).await {
 		Ok(transport) => {
@@ -54,7 +31,7 @@ async fn test_client_creation() {
 		Err(e) => panic!("Transport creation failed: {:?}", e),
 	}
 
-	let network = create_test_network(vec!["invalid-url"]);
+	let network = create_evm_test_network_with_urls(vec!["invalid-url"]);
 
 	match Web3TransportClient::new(&network).await {
 		Err(BlockChainError::ConnectionError(msg)) => {
@@ -80,7 +57,7 @@ async fn test_client_creation_with_fallback() {
 
 	let mock2 = create_valid_server_mock_network_response(&mut server2);
 
-	let network = create_test_network(vec![&server.url(), &server2.url()]);
+	let network = create_evm_test_network_with_urls(vec![&server.url(), &server2.url()]);
 
 	match Web3TransportClient::new(&network).await {
 		Ok(transport) => {
@@ -100,7 +77,7 @@ async fn test_client_update_client() {
 
 	let mock1 = create_valid_server_mock_network_response(&mut server);
 
-	let network = create_test_network(vec![&server.url()]);
+	let network = create_evm_test_network_with_urls(vec![&server.url()]);
 	let client = Web3TransportClient::new(&network).await.unwrap();
 
 	// Test successful update
@@ -129,7 +106,7 @@ async fn test_client_try_connect() {
 	let mock = create_valid_server_mock_network_response(&mut server);
 	let mock2 = create_valid_server_mock_network_response(&mut server2);
 
-	let network = create_test_network(vec![&server.url()]);
+	let network = create_evm_test_network_with_urls(vec![&server.url()]);
 	let client = Web3TransportClient::new(&network).await.unwrap();
 
 	let result = client.try_connect(&server2.url()).await;
@@ -155,4 +132,52 @@ async fn test_client_try_connect() {
 
 	mock.assert();
 	mock2.assert();
+}
+
+#[tokio::test]
+async fn test_send_raw_request() {
+	let mut server = Server::new_async().await;
+
+	// First, set up the network verification mock that's called during client creation
+	let network_mock = create_valid_server_mock_network_response(&mut server);
+
+	// Then set up the test request mock with the correct field order
+	let test_mock = server
+		.mock("POST", "/")
+		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"testMethod","params":{"key":"value"}}"#)
+		.with_header("content-type", "application/json")
+		.with_status(200)
+		.with_body(r#"{"jsonrpc":"2.0","result":{"data":"success"},"id":1}"#)
+		.create();
+
+	let network = create_evm_test_network_with_urls(vec![&server.url()]);
+	let client = Web3TransportClient::new(&network).await.unwrap();
+
+	// Test with params
+	let params = json!({"key": "value"});
+	let result = client.send_raw_request("testMethod", Some(params)).await;
+
+	assert!(result.is_ok());
+	let response = result.unwrap();
+	assert_eq!(response["result"]["data"], "success");
+
+	// Verify both mocks were called
+	network_mock.assert();
+	test_mock.assert();
+
+	// Test without params
+	let no_params_mock = server
+		.mock("POST", "/")
+		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"testMethod","params":null}"#)
+		.with_header("content-type", "application/json")
+		.with_status(200)
+		.with_body(r#"{"jsonrpc":"2.0","result":{"data":"success"},"id":1}"#)
+		.create();
+
+	let result = client.send_raw_request::<Value>("testMethod", None).await;
+
+	assert!(result.is_ok());
+	let response = result.unwrap();
+	assert_eq!(response["result"]["data"], "success");
+	no_params_mock.assert();
 }

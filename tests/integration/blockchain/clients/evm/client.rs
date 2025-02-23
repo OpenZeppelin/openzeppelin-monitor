@@ -1,10 +1,14 @@
 // ... existing code ...
 
-use crate::integration::mocks::{MockEvmClientTrait, MockWeb3TransportClient};
+use crate::integration::mocks::{
+	create_evm_test_network_with_urls, create_evm_valid_server_mock_network_response,
+	MockEvmClientTrait, MockWeb3TransportClient,
+};
 use mockall::predicate;
+use mockito::Server;
 use openzeppelin_monitor::{
 	models::{BlockType, EVMBlock},
-	services::blockchain::{BlockChainClient, EvmClientTrait},
+	services::blockchain::{BlockChainClient, EvmClient, EvmClientTrait},
 };
 use web3::types::{Log, TransactionReceipt, H256};
 
@@ -89,4 +93,18 @@ async fn test_get_blocks() {
 		BlockType::EVM(block) => assert_eq!(block.number, Some(1u64.into())),
 		_ => panic!("Expected EVM block"),
 	}
+}
+
+#[tokio::test]
+async fn test_new_client() {
+	let mut server = Server::new_async().await;
+
+	let mock = create_evm_valid_server_mock_network_response(&mut server);
+	// Create a test network
+	let network = create_evm_test_network_with_urls(vec![&server.url()]);
+
+	// Test successful client creation
+	let result = EvmClient::new(&network).await;
+	assert!(result.is_ok(), "Client creation should succeed");
+	mock.assert();
 }

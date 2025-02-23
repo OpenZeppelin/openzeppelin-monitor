@@ -1,11 +1,15 @@
-use crate::integration::mocks::{MockStellarClientTrait, MockStellarTransportClient};
+use crate::integration::mocks::{
+	create_stellar_test_network_with_urls, create_stellar_valid_server_mock_network_response,
+	MockStellarClientTrait, MockStellarTransportClient,
+};
 use mockall::predicate;
+use mockito::Server;
 use openzeppelin_monitor::{
 	models::{
 		BlockType, StellarBlock, StellarEvent, StellarLedgerInfo, StellarTransaction,
 		StellarTransactionInfo,
 	},
-	services::blockchain::{BlockChainClient, StellarClientTrait},
+	services::blockchain::{BlockChainClient, StellarClient, StellarClientTrait},
 };
 
 #[tokio::test]
@@ -80,4 +84,18 @@ async fn test_get_blocks() {
 		BlockType::Stellar(block) => assert_eq!(block.sequence, 1),
 		_ => panic!("Expected Stellar block"),
 	}
+}
+
+#[tokio::test]
+async fn test_new_client() {
+	let mut server = Server::new_async().await;
+
+	let mock = create_stellar_valid_server_mock_network_response(&mut server, "soroban");
+	// Create a test network
+	let network = create_stellar_test_network_with_urls(vec![&server.url()], "rpc");
+
+	// Test successful client creation
+	let result = StellarClient::new(&network).await;
+	assert!(result.is_ok(), "Client creation should succeed");
+	mock.assert();
 }
