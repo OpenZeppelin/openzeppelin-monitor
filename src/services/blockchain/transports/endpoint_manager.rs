@@ -59,7 +59,9 @@ impl EndpointManager {
 		// Acquire rotation lock first
 		let _guard = self.rotation_lock.lock().await;
 
-		// Scope the write lock to release it as soon as possible
+		let current_active = self.active_url.read().await.clone();
+
+		// Get a different URL from fallbacks
 		let new_url = {
 			let mut fallback_urls = self.fallback_urls.write().await;
 			if fallback_urls.is_empty() {
@@ -67,22 +69,33 @@ impl EndpointManager {
 					"No fallback URLs available".to_string(),
 				));
 			}
-			fallback_urls.remove(0)
-		}; // Lock is released here
+
+			// Find first URL that's different from current
+			let idx = fallback_urls.iter().position(|url| url != &current_active);
+
+			match idx {
+				Some(pos) => fallback_urls.remove(pos),
+				None => {
+					return Err(BlockChainError::connection_error(
+						"No fallback URLs available".to_string(),
+					));
+				}
+			}
+		};
 
 		match transport.try_connect(&new_url).await {
 			Ok(_) => {
 				transport.update_client(&new_url).await?;
 
-				// Store the old URL and log before making the change
-				let old_url = self.active_url.read().await.clone();
-				debug!("Rotating RPC endpoint from {} to {}", old_url, new_url);
-
-				// Now update the URLs
+				// Update URLs
 				{
 					let mut active_url = self.active_url.write().await;
 					let mut fallback_urls = self.fallback_urls.write().await;
-					fallback_urls.push(active_url.clone());
+					debug!(
+						"Successful rotation - from: {}, to: {}",
+						current_active, new_url
+					);
+					fallback_urls.push(current_active);
 					*active_url = new_url;
 				}
 				Ok(())
