@@ -244,6 +244,37 @@ async fn test_rotate_url_no_fallbacks() {
 }
 
 #[tokio::test]
+async fn test_rotate_url_all_urls_match_active() {
+	let server = Server::new_async().await;
+
+	// Create manager with fallback URLs that are identical to the active URL
+	let active_url = server.url();
+	let manager = EndpointManager::new(
+		active_url.clone(),
+		vec![active_url.clone(), active_url.clone()],
+	);
+	let transport = MockTransport::new();
+
+	// Attempt to rotate
+	let result = manager.rotate_url(&transport).await;
+
+	// Verify we get the expected error
+	assert!(matches!(
+		result,
+		Err(BlockChainError::ConnectionError(msg)) if msg == "No fallback URLs available"
+	));
+
+	// Verify the active URL hasn't changed
+	assert_eq!(&*manager.active_url.read().await, &active_url);
+
+	// Verify fallback URLs are unchanged
+	assert_eq!(
+		&*manager.fallback_urls.read().await,
+		&vec![active_url.clone(), active_url.clone()]
+	);
+}
+
+#[tokio::test]
 async fn test_rotate_url_connection_failure() {
 	let server = Server::new_async().await;
 
