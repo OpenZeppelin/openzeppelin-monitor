@@ -30,6 +30,9 @@ mod integration {
 	}
 	mod mocks;
 
+	mod blockchain {
+		mod pool;
+	}
 	mod blockwatcher {
 		mod service;
 	}

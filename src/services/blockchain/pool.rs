@@ -25,9 +25,9 @@ use tokio::sync::RwLock;
 /// for thread-safe access and Arc for shared ownership.
 pub struct ClientPool {
 	/// Thread-safe map of EVM clients indexed by network slug
-	evm_clients: Arc<RwLock<HashMap<String, Arc<EvmClient>>>>,
+	pub evm_clients: Arc<RwLock<HashMap<String, Arc<EvmClient>>>>,
 	/// Thread-safe map of Stellar clients indexed by network slug
-	stellar_clients: Arc<RwLock<HashMap<String, Arc<StellarClient>>>>,
+	pub stellar_clients: Arc<RwLock<HashMap<String, Arc<StellarClient>>>>,
 }
 
 impl ClientPool {
