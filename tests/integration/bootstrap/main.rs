@@ -12,7 +12,7 @@ use openzeppelin_monitor::{
 		NotificationMessage, ProcessedBlock, StellarBlock, StellarMonitorMatch, StellarTransaction,
 		StellarTransactionInfo, Trigger, TriggerType, TriggerTypeConfig,
 	},
-	services::filter::FilterService,
+	services::{blockchain::ClientPool, filter::FilterService},
 };
 
 use std::{collections::HashMap, sync::Arc};
@@ -155,7 +155,9 @@ async fn test_create_block_handler() {
 	)];
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
-	let block_handler = create_block_handler(shutdown_tx, filter_service, monitors);
+	let client_pool = Arc::new(ClientPool::new());
+	let block_handler =
+		create_block_handler(shutdown_tx, filter_service, monitors, client_pool.clone());
 
 	assert!(Arc::strong_count(&block_handler) == 1);
 

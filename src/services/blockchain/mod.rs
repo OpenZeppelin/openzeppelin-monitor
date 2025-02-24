@@ -10,9 +10,11 @@
 mod client;
 mod clients;
 mod error;
+mod pool;
 mod transports;
 
 pub use client::{BlockChainClient, BlockFilterFactory};
 pub use clients::{EvmClient, EvmClientTrait, StellarClient, StellarClientTrait};
 pub use error::BlockChainError;
+pub use pool::ClientPool;
 pub use transports::{HorizonTransportClient, Web3TransportClient};
