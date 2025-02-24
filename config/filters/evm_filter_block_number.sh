@@ -1,8 +1,8 @@
 #!/bin/bash
 
 main() {
-    # Read JSON input from stdin
-    input_json=$(cat)
+    # Read JSON input from first argument
+    input_json="$0"
 
     # Validate input
     if [[ -z "$input_json" ]]; then
