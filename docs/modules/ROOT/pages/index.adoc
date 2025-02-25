@@ -743,7 +743,7 @@ Important considerations:
 {
   "execution_order": 1,
   "script_path": "./config/filters/evm_custom_filter.py",
-  "language": "python",
+  "language": "Python",
   "arguments": "--verbose",
   "timeout_ms": 1000
 }
