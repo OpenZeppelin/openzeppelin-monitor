@@ -62,7 +62,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 		if open_fds > max_fds as usize {
 			log::warn!(
 				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
-				 This will cause issues. You should increase the limit for open files by running:  \
+				 This may cause unexpected runtime issues. You should increase the limit for open files by running:  \
 				 ulimit -n <number of fds>",
 				open_fds,
 				max_fds
@@ -107,7 +107,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 
 /// Executes JavaScript scripts using the Node.js runtime.
 pub struct JavaScriptScriptExecutor {
-	/// Path to the JavaScript script file to be executed
+	/// Content of the JavaScript script file to be executed
 	pub script_content: String,
 }
 
@@ -571,7 +571,6 @@ print("true")
 		let input = create_mock_monitor_match();
 
 		let result = executor.execute(input).await;
-		println!("result ===>: {:?}", result);
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
