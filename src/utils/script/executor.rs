@@ -195,6 +195,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
 		process_script_output(output)
 	}
 }
@@ -522,5 +523,33 @@ print("     true    ")  # Should handle whitespace correctly
 
 		let result = executor.execute(input).await;
 		assert!(result.is_err());
+	}
+
+	#[tokio::test]
+	async fn test_script_executor_with_multiple_lines_of_output() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("debugging...")
+print("false")
+print("true")
+print("false")
+print("true")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		// Create an invalid MonitorMatch that will fail JSON serialization
+		let input = create_mock_monitor_match();
+
+		let result = executor.execute(input).await;
+		println!("result ===>: {:?}", result);
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
 	}
 }
