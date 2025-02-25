@@ -545,7 +545,7 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
 * Network targets (which chains to monitor)
 * Contract addresses to watch
 * Conditions to match (functions, events, transactions)
-* Trigger conditions (scripts to execute that evaluate transaction data to determine matches)
+* Trigger conditions (scripts to execute that evaluate every monitor match to determine if it should launch a trigger or not)
 * Triggers to execute when conditions are met
 
 .Example Monitor Configuration
