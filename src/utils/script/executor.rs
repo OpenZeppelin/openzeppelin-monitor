@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use libc::{c_int, getrlimit, RLIMIT_NOFILE};
 use log::info;
 use std::{mem::MaybeUninit, process::Stdio};
+use tokio::io::AsyncWriteExt;
 /// A trait that defines the interface for executing custom scripts in different languages.
 /// Implementors must be both Send and Sync to ensure thread safety.
 #[async_trait]
@@ -68,11 +69,10 @@ impl ScriptExecutor for PythonScriptExecutor {
 			);
 		}
 
-		let cmd = tokio::process::Command::new("python3")
+		let mut cmd = tokio::process::Command::new("python3")
 			.arg("-c")
 			.arg(&self.script_content)
-			.arg(&input_json)
-			.stdin(Stdio::null())
+			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
 			.kill_on_drop(true)
@@ -87,6 +87,14 @@ impl ScriptExecutor for PythonScriptExecutor {
 				}
 				ScriptError::execution_error(e.to_string())
 			})?;
+
+		// Write the input_json to stdin
+		cmd.stdin
+			.take()
+			.unwrap()
+			.write_all(input_json.as_bytes())
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		let output = cmd
 			.wait_with_output()
@@ -120,11 +128,10 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			);
 		}
 
-		let cmd = tokio::process::Command::new("node")
+		let mut cmd = tokio::process::Command::new("node")
 			.arg("-e")
 			.arg(&self.script_content)
-			.arg(&input_json)
-			.stdin(Stdio::null())
+			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
@@ -140,10 +147,19 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 				ScriptError::execution_error(e.to_string())
 			})?;
 
+		// Write the input_json to stdin
+		cmd.stdin
+			.take()
+			.unwrap()
+			.write_all(input_json.as_bytes())
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
 		let output = cmd
 			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
 		process_script_output(output)
 	}
 }
@@ -171,11 +187,10 @@ impl ScriptExecutor for BashScriptExecutor {
 			);
 		}
 
-		let cmd = tokio::process::Command::new("sh")
+		let mut cmd = tokio::process::Command::new("sh")
 			.arg("-c")
 			.arg(&self.script_content)
-			.arg(&input_json)
-			.stdin(Stdio::null())
+			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
@@ -190,6 +205,14 @@ impl ScriptExecutor for BashScriptExecutor {
 				}
 				ScriptError::execution_error(e.to_string())
 			})?;
+
+		// Write the input_json to stdin
+		cmd.stdin
+			.take()
+			.unwrap()
+			.write_all(input_json.as_bytes())
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		let output = cmd
 			.wait_with_output()

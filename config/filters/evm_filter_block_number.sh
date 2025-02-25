@@ -5,8 +5,8 @@ set -e
 set -x  # Add debug output to see what's happening
 
 main() {
-    # Read JSON input from first argument
-    input_json="$0"
+    # Read JSON input from stdin
+    input_json=$(cat)
 
     # Validate input
     if [ -z "$input_json" ]; then
@@ -49,5 +49,5 @@ main() {
     fi
 }
 
-# Call main function with argument
-main "$0"
+# Call main function without arguments and let it read from stdin
+main

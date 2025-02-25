@@ -5,14 +5,15 @@ import logging
 
 def main():
     try:
-        # Validate we have the input argument
-        if len(sys.argv) < 2:
+        # Read input from stdin
+        input_data = sys.stdin.read()
+        if not input_data:
             print("No input JSON provided", flush=True)
             return False
 
         # Parse input JSON
         try:
-            data = json.loads(sys.argv[1])
+            data = json.loads(input_data)
         except json.JSONDecodeError as e:
             print(f"Invalid JSON input: {e}", flush=True)
             return False
