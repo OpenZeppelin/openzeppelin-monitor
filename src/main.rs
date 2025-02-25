@@ -82,6 +82,9 @@ async fn main() -> Result<()> {
 	}
 
 	let (shutdown_tx, _) = watch::channel(false);
+	// Pre-load all trigger scripts into memory at startup to reduce file I/O operations.
+	// This prevents repeated file descriptor usage during script execution and improves performance
+	// by keeping scripts readily available in memory.
 	let active_monitors_trigger_scripts = trigger_execution_service
 		.load_scripts(&active_monitors)
 		.await?;

@@ -770,11 +770,11 @@ Important considerations:
 
 |arguments
 |String
-|The arguments of the script  
+|The arguments of the script. The arguments are passed to the script as command line arguments.
 
 |timeout_ms
 |Number
-|The timeout of the script
+|The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default.
 |===
 
 ==== Important Considerations

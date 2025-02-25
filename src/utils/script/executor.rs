@@ -1,7 +1,7 @@
 use crate::{models::MonitorMatch, utils::script::error::ScriptError};
 use async_trait::async_trait;
 use libc::{c_int, getrlimit, RLIMIT_NOFILE};
-use log::info;
+use log::debug;
 use std::{mem::MaybeUninit, process::Stdio};
 use tokio::io::AsyncWriteExt;
 /// A trait that defines the interface for executing custom scripts in different languages.
@@ -20,7 +20,7 @@ pub trait ScriptExecutor: Send + Sync {
 
 /// Executes Python scripts using the python3 interpreter.
 pub struct PythonScriptExecutor {
-	/// Path to the Python script file to be executed
+	/// Content of the Python script file to be executed
 	pub script_content: String,
 }
 
@@ -44,7 +44,7 @@ fn count_open_fds() -> (usize, u64) {
 			}
 			(count, rlimit.rlim_cur)
 		} else {
-			info!("Failed to get rlimit");
+			debug!("Failed to get rlimit");
 			(0, 0)
 		}
 	}
@@ -62,8 +62,8 @@ impl ScriptExecutor for PythonScriptExecutor {
 		if open_fds > max_fds as usize {
 			log::warn!(
 				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
-				 This may cause unexpected runtime issues. You should increase the limit for open files by running:  \
-				 ulimit -n <number of fds>",
+				 This may cause unexpected runtime issues. You should increase the limit for open \
+				 files by running:  ulimit -n <number of fds>",
 				open_fds,
 				max_fds
 			);
@@ -77,16 +77,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.stderr(Stdio::piped())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| {
-				if e.to_string().contains("too many open files") {
-					log::error!(
-						"Too many open files error detected. Current open FDs: {}/{}",
-						open_fds,
-						max_fds
-					);
-				}
-				ScriptError::execution_error(e.to_string())
-			})?;
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		// Write the input_json to stdin
 		cmd.stdin
@@ -136,16 +127,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| {
-				if e.to_string().contains("too many open files") {
-					log::error!(
-						"Too many open files error detected. Current open FDs: {}/{}",
-						open_fds,
-						max_fds
-					);
-				}
-				ScriptError::execution_error(e.to_string())
-			})?;
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		// Write the input_json to stdin
 		cmd.stdin
@@ -166,7 +148,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 
 /// Executes Bash shell scripts.
 pub struct BashScriptExecutor {
-	/// Path to the Bash script file to be executed
+	/// Content of the Bash script file to be executed
 	pub script_content: String,
 }
 
@@ -195,16 +177,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| {
-				if e.to_string().contains("too many open files") {
-					log::error!(
-						"Too many open files error detected. Current open FDs: {}/{}",
-						open_fds,
-						max_fds
-					);
-				}
-				ScriptError::execution_error(e.to_string())
-			})?;
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
 		// Write the input_json to stdin
 		cmd.stdin
@@ -327,7 +300,8 @@ mod tests {
 import sys
 import json
 
-input_json = sys.argv[1]
+# Read from stdin instead of command line arguments
+input_json = sys.stdin.read()
 data = json.loads(input_json)
 print("debugging...")
 def test():
@@ -381,7 +355,8 @@ print(result)
 import sys
 import json
 
-input_json = sys.argv[1]
+# Read from stdin instead of command line arguments
+input_json = sys.stdin.read()
 data = json.loads(input_json)
 print("Starting script execution...")
 print("Processing data...")
@@ -554,7 +529,8 @@ print("     true    ")  # Should handle whitespace correctly
 import sys
 import json
 
-input_json = sys.argv[1]
+# Read from stdin instead of command line arguments
+input_json = sys.stdin.read()
 data = json.loads(input_json)
 print("debugging...")
 print("false")
@@ -567,7 +543,6 @@ print("true")
 			script_content: script_content.to_string(),
 		};
 
-		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = create_mock_monitor_match();
 
 		let result = executor.execute(input).await;
