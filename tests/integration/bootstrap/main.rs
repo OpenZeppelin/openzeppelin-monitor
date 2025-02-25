@@ -3,7 +3,10 @@ use crate::integration::{
 		setup_monitor_service, setup_network_service, setup_trigger_execution_service,
 		setup_trigger_service,
 	},
-	mocks::{create_test_block, create_test_network, MockEvmClientTrait},
+	mocks::{
+		create_test_block, create_test_network, MockClientPool, MockEvmClientTrait,
+		MockStellarClientTrait,
+	},
 };
 use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
@@ -12,7 +15,7 @@ use openzeppelin_monitor::{
 		NotificationMessage, ProcessedBlock, StellarBlock, StellarMonitorMatch, StellarTransaction,
 		StellarTransactionInfo, Trigger, TriggerType, TriggerTypeConfig,
 	},
-	services::{blockchain::ClientPool, filter::FilterService},
+	services::{blockchain::BlockChainError, filter::FilterService},
 };
 
 use std::{collections::HashMap, sync::Arc};
@@ -144,7 +147,7 @@ fn test_initialize_services() {
 }
 
 #[tokio::test]
-async fn test_create_block_handler() {
+async fn test_create_block_handler_evm() {
 	let (shutdown_tx, _) = watch::channel(false);
 	let filter_service = Arc::new(FilterService::new());
 	let monitors = vec![create_test_monitor(
@@ -155,15 +158,21 @@ async fn test_create_block_handler() {
 	)];
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
-	let client_pool = Arc::new(ClientPool::new());
-	let block_handler =
-		create_block_handler(shutdown_tx, filter_service, monitors, client_pool.clone());
 
-	assert!(Arc::strong_count(&block_handler) == 1);
+	// Create a mock client pool that returns a successful client
+	let mut mock_pool = MockClientPool::new();
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(MockEvmClientTrait::new())));
+	let client_pool = Arc::new(mock_pool);
+
+	let block_handler =
+		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
 
 	let result = block_handler(block, network).await;
-	assert!(result.block_number == 100);
-	assert!(result.network_slug == "ethereum_mainnet");
+	assert_eq!(result.block_number, 100);
+	assert_eq!(result.network_slug, "ethereum_mainnet");
+	// The mock client should return no matches
 	assert!(result.processing_results.is_empty());
 }
 
@@ -274,4 +283,104 @@ async fn test_process_block_with_shutdown() {
 		result.is_none(),
 		"Expected None when shutdown signal is received"
 	);
+}
+
+#[tokio::test]
+async fn test_create_block_handler_stellar() {
+	let (shutdown_tx, _) = watch::channel(false);
+	let filter_service = Arc::new(FilterService::new());
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["stellar_mainnet"],
+		false,
+		vec![],
+	)];
+	let block = create_test_block(BlockChainType::Stellar, 100);
+	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
+
+	// Create a mock client pool that returns a successful client
+	let mut mock_pool = MockClientPool::new();
+	mock_pool.expect_get_stellar_client().returning(move |_| {
+		let mut mock_client = MockStellarClientTrait::new();
+		// Stellar does an additional call to get the transactions as opposed to EVM where
+		// transactions is already in the block
+		mock_client
+			.expect_get_transactions()
+			.times(1)
+			.returning(move |_, _| Ok(vec![]));
+
+		Ok(Arc::new(mock_client))
+	});
+	let client_pool = Arc::new(mock_pool);
+
+	let block_handler =
+		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+
+	let result = block_handler(block, network).await;
+	assert_eq!(result.block_number, 100);
+	assert_eq!(result.network_slug, "stellar_mainnet");
+	// The mock client should return no matches
+	assert!(result.processing_results.is_empty());
+}
+
+#[tokio::test]
+async fn test_create_block_handler_evm_client_error() {
+	let (shutdown_tx, _) = watch::channel(false);
+	let filter_service = Arc::new(FilterService::new());
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
+	let block = create_test_block(BlockChainType::EVM, 100);
+	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	// Create a mock client pool that returns an error
+	let mut mock_pool = MockClientPool::new();
+	mock_pool.expect_get_evm_client().return_once(move |_| {
+		Err(BlockChainError::client_pool_error(
+			"Failed to get EVM client".to_string(),
+		))
+	});
+	let client_pool = Arc::new(mock_pool);
+
+	let block_handler =
+		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+
+	let result = block_handler(block, network).await;
+	assert_eq!(result.block_number, 100);
+	assert_eq!(result.network_slug, "ethereum_mainnet");
+	assert!(result.processing_results.is_empty());
+}
+
+#[tokio::test]
+async fn test_create_block_handler_stellar_client_error() {
+	let (shutdown_tx, _) = watch::channel(false);
+	let filter_service = Arc::new(FilterService::new());
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["stellar_mainnet"],
+		false,
+		vec![],
+	)];
+	let block = create_test_block(BlockChainType::Stellar, 100);
+	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
+
+	// Create a mock client pool that returns an error
+	let mut mock_pool = MockClientPool::new();
+	mock_pool.expect_get_stellar_client().return_once(move |_| {
+		Err(BlockChainError::client_pool_error(
+			"Failed to get Stellar client".to_string(),
+		))
+	});
+	let client_pool = Arc::new(mock_pool);
+
+	let block_handler =
+		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+
+	let result = block_handler(block, network).await;
+	assert_eq!(result.block_number, 100);
+	assert_eq!(result.network_slug, "stellar_mainnet");
+	assert!(result.processing_results.is_empty());
 }

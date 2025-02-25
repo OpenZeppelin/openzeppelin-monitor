@@ -1,6 +1,6 @@
 use openzeppelin_monitor::{
 	models::{BlockChainType, Network, RpcUrl},
-	services::blockchain::{ClientPool, EvmClient},
+	services::blockchain::{BlockChainError, ClientPool, ClientPoolTrait, EvmClient},
 };
 
 use std::sync::Arc;
@@ -68,7 +68,7 @@ async fn test_get_stellar_client_creates_and_caches() {
 }
 
 #[tokio::test]
-async fn test_different_networks_get_different_clients() {
+async fn test_different_evm_networks_get_different_clients() {
 	let pool = ClientPool::new();
 	let mut mock_server = mockito::Server::new_async().await;
 	let mut mock_server_2 = mockito::Server::new_async().await;
@@ -100,6 +100,45 @@ async fn test_different_networks_get_different_clients() {
 
 	// Should have two different clients
 	assert_eq!(pool.evm_clients.read().await.len(), 2);
+	assert!(!Arc::ptr_eq(&client1, &client2));
+
+	mock.assert();
+	mock_2.assert();
+}
+
+#[tokio::test]
+async fn test_different_stellar_networks_get_different_clients() {
+	let pool = ClientPool::new();
+	let mut mock_server = mockito::Server::new_async().await;
+	let mut mock_server_2 = mockito::Server::new_async().await;
+
+	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server, "soroban");
+	let mock_2 = create_stellar_valid_server_mock_network_response(&mut mock_server_2, "soroban");
+
+	let network1 = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+	let network2 = Network {
+		name: "test-2".to_string(),
+		slug: "test-2".to_string(),
+		network_type: BlockChainType::EVM,
+		rpc_urls: vec![RpcUrl {
+			url: mock_server_2.url(),
+			type_: "rpc".to_string(),
+			weight: 100,
+		}],
+		cron_schedule: "*/5 * * * * *".to_string(),
+		confirmation_blocks: 1,
+		store_blocks: Some(false),
+		chain_id: None,
+		network_passphrase: None,
+		block_time_ms: 5000,
+		max_past_blocks: None,
+	};
+
+	let client1 = pool.get_stellar_client(&network1).await.unwrap();
+	let client2 = pool.get_stellar_client(&network2).await.unwrap();
+
+	// Should have two different clients
+	assert_eq!(pool.stellar_clients.read().await.len(), 2);
 	assert!(!Arc::ptr_eq(&client1, &client2));
 
 	mock.assert();
@@ -153,4 +192,70 @@ async fn test_default_creates_empty_pool() {
 
 	let stellar_clients = pool.stellar_clients.read().await;
 	assert!(stellar_clients.is_empty());
+}
+
+#[tokio::test]
+async fn test_get_evm_client_handles_errors() {
+	let mut mock_server = mockito::Server::new_async().await;
+
+	// Setup mock to return an error response
+	let mock = mock_server
+		.mock("POST", "/")
+		.with_status(500)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"error": "Internal Server Error"}"#)
+		.create_async()
+		.await;
+
+	let pool = ClientPool::new();
+	let network = create_evm_test_network_with_urls(vec![&mock_server.url()]);
+
+	// Attempt to get client should result in error
+	let result = pool.get_evm_client(&network).await;
+	assert!(result.is_err());
+
+	if let Err(err) = result {
+		match err {
+			BlockChainError::ClientPoolError(_) => (),
+			other => panic!("Expected ClientPoolError, got: {:?}", other),
+		}
+	}
+
+	// Pool should remain empty after failed client creation
+	assert_eq!(pool.evm_clients.read().await.len(), 0);
+
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_stellar_client_handles_errors() {
+	let mut mock_server = mockito::Server::new_async().await;
+
+	// Setup mock to return an error response
+	let mock = mock_server
+		.mock("POST", "/")
+		.with_status(500)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"error": "Internal Server Error"}"#)
+		.create_async()
+		.await;
+
+	let pool = ClientPool::new();
+	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+
+	// Attempt to get client should result in error
+	let result = pool.get_stellar_client(&network).await;
+	assert!(result.is_err());
+
+	if let Err(err) = result {
+		match err {
+			BlockChainError::ClientPoolError(_) => (),
+			other => panic!("Expected ClientPoolError, got: {:?}", other),
+		}
+	}
+
+	// Pool should remain empty after failed client creation
+	assert_eq!(pool.stellar_clients.read().await.len(), 0);
+
+	mock.assert();
 }

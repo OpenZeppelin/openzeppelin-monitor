@@ -46,6 +46,6 @@ pub trait BlockChainClient: Send + Sync + Clone {
 /// This trait must be implemented by all blockchain-specific clients to provide
 /// a way to create block filters.
 pub trait BlockFilterFactory<T> {
-	type Filter: BlockFilter<Client = T>;
+	type Filter: BlockFilter<Client = T> + Send;
 	fn filter() -> Self::Filter;
 }

@@ -25,7 +25,7 @@ use crate::{
 ///
 /// Provides high-level access to EVM blockchain data and operations through Web3
 /// transport layer.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EvmClient {
 	/// The underlying Web3 transport client for RPC communication
 	web3_client: Web3TransportClient,

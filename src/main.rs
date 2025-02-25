@@ -32,7 +32,7 @@ use crate::{
 	models::Network,
 	repositories::{MonitorRepository, NetworkRepository, TriggerRepository},
 	services::{
-		blockchain::ClientPool,
+		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
 };

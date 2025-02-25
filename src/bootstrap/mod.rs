@@ -27,7 +27,7 @@ use crate::{
 		RepositoryError, TriggerRepositoryTrait, TriggerService,
 	},
 	services::{
-		blockchain::{BlockChainClient, BlockFilterFactory, ClientPool},
+		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
@@ -125,11 +125,11 @@ where
 ///
 /// # Returns
 /// Returns a function that handles incoming blocks
-pub fn create_block_handler(
+pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 	shutdown_tx: watch::Sender<bool>,
 	filter_service: Arc<FilterService>,
 	active_monitors: Vec<Monitor>,
-	client_pools: Arc<ClientPool>,
+	client_pools: Arc<P>,
 ) -> Arc<impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync> {
 	Arc::new(
 		move |block: BlockType, network: Network| -> BoxFuture<'static, ProcessedBlock> {
