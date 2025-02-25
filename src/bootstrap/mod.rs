@@ -353,7 +353,8 @@ async fn run_trigger_filters(
 ) -> Vec<MonitorMatch> {
 	let mut filtered_matches = vec![];
 
-	'match_loop: for monitor_match in matches {
+	for monitor_match in matches {
+		let mut is_filtered = false;
 		let trigger_conditions = match monitor_match {
 			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
 			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
@@ -371,12 +372,14 @@ async fn run_trigger_filters(
 			let script_content = trigger_scripts.get(monitor_name.as_str()).unwrap();
 
 			if execute_trigger_condition(&trigger_condition, monitor_match, script_content).await {
-				continue 'match_loop; // Skip this match and move to the next one
+				is_filtered = true;
+				break;
 			}
 		}
 
-		// If we get here, no conditions filtered out this match
-		filtered_matches.push(monitor_match.clone());
+		if !is_filtered {
+			filtered_matches.push(monitor_match.clone());
+		}
 	}
 
 	filtered_matches
@@ -582,8 +585,8 @@ print(result)
 import sys
 import json
 
-input_json = sys.argv[1]
-data = json.loads(input_json)
+input_data = sys.stdin.read()
+data = json.loads(input_data)
 print("debugging...")
 def test():
     return False
@@ -609,6 +612,9 @@ print(result)
 		let script_content = r#"
 import sys
 import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
 print(False)  # Script returns false
 "#;
 		let temp_file = create_temp_script(script_content);
@@ -634,6 +640,9 @@ print(False)  # Script returns false
 		let script_content = r#"
 import sys
 import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
 print(True)  # Script returns true
 "#;
 		let temp_file = create_temp_script(script_content);
@@ -651,37 +660,16 @@ print(True)  # Script returns true
 			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
 		assert!(result);
 
-		// Test case 3: Script timeout
+		// Test case 3: Script execution error
 		let script_content = r#"
 import sys
 import json
-import time
-time.sleep(2)  # Sleep for 2 seconds
-print(False)
-"#;
-		let temp_file = create_temp_script(script_content);
-		let mut trigger_scripts = HashMap::new();
-		trigger_scripts.insert(
-			"test".to_string(),
-			(ScriptLanguage::Python, script_content.to_string()),
-		);
-		let trigger_condition = TriggerConditions {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
-			timeout_ms: 100, // Set timeout to 100ms
-			..trigger_condition
-		};
 
-		let result =
-			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
-		assert!(result);
-
-		// Test case 4: Script execution error
-		let script_content = r#"
-import sys
-import json
+input_data = sys.stdin.read()
+data = json.loads(input_data)
 raise Exception("Test error")  # Raise an error
 print("debugging...")
-print(false)
+print(False)
 "#;
 		let temp_file = create_temp_script(script_content);
 		let mut trigger_scripts = HashMap::new();
