@@ -353,8 +353,7 @@ async fn run_trigger_filters(
 ) -> Vec<MonitorMatch> {
 	let mut filtered_matches = vec![];
 
-	for monitor_match in matches {
-		let mut is_filtered = false;
+	'match_loop: for monitor_match in matches {
 		let trigger_conditions = match monitor_match {
 			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
 			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
@@ -372,14 +371,12 @@ async fn run_trigger_filters(
 			let script_content = trigger_scripts.get(monitor_name.as_str()).unwrap();
 
 			if execute_trigger_condition(&trigger_condition, monitor_match, script_content).await {
-				is_filtered = true;
-				break;
+				continue 'match_loop; // Skip this match and move to the next one
 			}
 		}
 
-		if !is_filtered {
-			filtered_matches.push(monitor_match.clone());
-		}
+		// If we get here, no conditions filtered out this match
+		filtered_matches.push(monitor_match.clone());
 	}
 
 	filtered_matches
