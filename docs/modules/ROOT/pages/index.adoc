@@ -337,6 +337,29 @@ A Network configuration defines connection details and operational parameters fo
 
 * We strongly recommend using private RPC providers for improved reliability.
 
+==== Trigger Conditions (Custom filters)
+
+You can use custom filters to filter the matches that are processed by the monitor. The supported languages are:
+
+* Python
+* Bash
+* JavaScript
+
+A custom filter should be a script that returns true or false if the match meets the criteria or not. 
+The script will receive a json object with the monitor match as input. The script must print the result to the standard output, being the result a boolean value determining if the match should be processed or not.
+
+.Example Trigger Conditions Configuration
+[source,json]
+----
+{
+  "execution_order": 1, // The order of the execution of the script
+  "script_path": "./config/filters/evm_custom_filter.py", // The path to the script
+  "language": "python", // The language of the script
+  "arguments": "--verbose", // The arguments of the script
+  "timeout_ms": 1000 // The timeout of the script
+}
+----
+
 === Trigger Configuration
 
 A Trigger defines actions to take when monitored conditions are met. Triggers can send notifications, make HTTP requests, or execute scripts.
