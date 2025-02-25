@@ -732,7 +732,7 @@ Important considerations:
 * Input: The filter script receives a JSON object containing the monitor match data through standard input (stdin)
 * Processing: Your script can analyze any properties of the match data
 * Output: The script must print either `true` or `false` to stdout to indicate whether the match should be included
-* All filters must return false for a match to be processed
+* All filters against a monitor match must return `false` for it to be included
 * Scripts must exit with code 0 for their output to be considered valid
 * Invalid output or non-zero exit codes will cause the filter to fail and the match will be processed
 * Multiple filters are executed in order defined by execution_order
