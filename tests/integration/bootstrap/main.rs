@@ -209,7 +209,7 @@ async fn test_create_trigger_handler_with_conditions() {
 	// Create a HashMap with trigger conditions
 	let mut trigger_scripts = HashMap::new();
 	trigger_scripts.insert(
-		"test_trigger".to_string(),
+		"test_trigger-test_script.py".to_string(),
 		(
 			ScriptLanguage::Python,
 			r#"

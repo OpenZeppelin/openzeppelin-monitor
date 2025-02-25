@@ -369,14 +369,18 @@ async fn run_trigger_filters(
 				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
 			};
 
-			let script_content = trigger_scripts.get(monitor_name.as_str()).unwrap();
+			let script_content = trigger_scripts
+				.get(&format!(
+					"{}-{}",
+					monitor_name, trigger_condition.script_path
+				))
+				.unwrap();
 
 			if execute_trigger_condition(&trigger_condition, monitor_match, script_content).await {
 				is_filtered = true;
 				break;
 			}
 		}
-
 		if !is_filtered {
 			filtered_matches.push(monitor_match.clone());
 		}
@@ -541,12 +545,28 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_run_trigger_filters_empty_matches() {
+		// Create empty matches vector
 		let matches: Vec<MonitorMatch> = vec![];
+
+		// Create trigger scripts with a more realistic script path
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
-			"test".to_string(),
-			(ScriptLanguage::Python, "print('test')".to_string()),
+			"monitor_test-test.py".to_string(), // Using a more realistic key format
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(False)
+            "#
+				.to_string(),
+			),
 		);
+
+		// Test the filter function
 		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
 		assert!(filtered.is_empty());
 	}
@@ -568,7 +588,7 @@ print(result)
 		let temp_file = create_temp_script(script_content);
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
-			"test".to_string(),
+			format!("test-{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
@@ -596,7 +616,7 @@ print(result)
 		let temp_file = create_temp_script(script_content);
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
-			"test".to_string(),
+			format!("test-{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
@@ -620,7 +640,7 @@ print(False)  # Script returns false
 		let temp_file = create_temp_script(script_content);
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
-			"test".to_string(),
+			format!("test-{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
 		let trigger_condition = TriggerConditions {
@@ -631,7 +651,9 @@ print(False)  # Script returns false
 			arguments: None,
 		};
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
-		let script_content_mock = trigger_scripts.get("test").unwrap();
+		let script_content_mock = trigger_scripts
+			.get(&format!("test-{}", temp_file.path().to_str().unwrap()))
+			.unwrap();
 		let result =
 			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
 		assert!(result);
@@ -648,7 +670,7 @@ print(True)  # Script returns true
 		let temp_file = create_temp_script(script_content);
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
-			"test".to_string(),
+			format!("test-{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
 		let trigger_condition = TriggerConditions {
@@ -674,7 +696,7 @@ print(False)
 		let temp_file = create_temp_script(script_content);
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
-			"test".to_string(),
+			format!("test-{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
 		let trigger_condition = TriggerConditions {
@@ -696,5 +718,165 @@ print(False)
 		let result =
 			execute_trigger_condition(&trigger_condition, &match_item, script_content_mock).await;
 		assert!(result);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_multiple_conditions() {
+		// Create a monitor with two trigger conditions
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "test1.py".to_string(),
+					execution_order: Some(1),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "test2.py".to_string(),
+					execution_order: Some(2),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		// Create a match with this monitor
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		// Set up trigger scripts - first one returns false, second returns true
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test-test1.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(False)
+                "#
+				.to_string(),
+			),
+		);
+		trigger_scripts.insert(
+			"monitor_test-test2.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(True)
+                "#
+				.to_string(),
+			),
+		);
+
+		// Run the filter with our test data
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+
+		// Since the first condition returns false and second returns true,
+		// the match should be filtered out (not kept)
+		assert_eq!(filtered.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_multiple_conditions_keep_match() {
+		// Create a monitor with two trigger conditions
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "test1.py".to_string(),
+					execution_order: Some(1),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "test2.py".to_string(),
+					execution_order: Some(2),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		// Create a match with this monitor
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		// Set up trigger scripts - first one returns false, second returns true
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test-test1.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(True)
+                "#
+				.to_string(),
+			),
+		);
+		trigger_scripts.insert(
+			"monitor_test-test2.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(True)
+                "#
+				.to_string(),
+			),
+		);
+
+		// Run the filter with our test data
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+
+		// Since the first condition returns false and second returns true,
+		// the match should be filtered out (not kept)
+		assert_eq!(filtered.len(), 1);
 	}
 }
