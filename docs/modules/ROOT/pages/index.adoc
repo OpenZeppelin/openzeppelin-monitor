@@ -337,57 +337,6 @@ A Network configuration defines connection details and operational parameters fo
 
 * We strongly recommend using private RPC providers for improved reliability.
 
-==== Trigger Conditions (Custom filters)
-
-You can use custom filters to filter the matches that are processed by the monitor. The supported languages are:
-
-* Python
-* Bash
-* JavaScript
-
-A custom filter should be a script that returns true or false if the match meets the criteria or not. 
-The script will receive a json object with the monitor match as input. The script must print the result to the standard output, being the result a boolean value determining if the match should be processed or not.
-
-.Example Trigger Conditions Configuration
-[source,json]
-----
-{
-  "execution_order": 1,
-  "script_path": "./config/filters/evm_custom_filter.py",
-  "language": "python",
-  "arguments": "--verbose",
-  "timeout_ms": 1000
-}
-----
-
-==== Available Fields
-
-===== Trigger Conditions Fields
-[cols="1,1,2"]
-|===
-|Field |Type |Description
-
-|execution_order
-|Number
-|The order of the execution of the script
-
-|script_path
-|String
-|The path to the script
-
-|language
-|String
-|The language of the script
-
-|arguments
-|String
-|The arguments of the script  
-
-|timeout_ms
-|Number
-|The timeout of the script
-|===
-
 === Trigger Configuration
 
 A Trigger defines actions to take when monitored conditions are met. Triggers can send notifications, make HTTP requests, or execute scripts.
@@ -632,6 +581,15 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
       }
     ]
   },
+  "trigger_conditions": [
+    {
+      "execution_order": 1,
+      "script_path": "./config/filters/evm_filter_block_number.py",
+      "language": "python",
+      "arguments": "--verbose",
+      "timeout_ms": 1000
+    }
+  ],
   "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
 }
 ----
@@ -711,6 +669,10 @@ Match transaction properties:
 |Object
 |Collection of conditions that can trigger the monitor
 
+|trigger_conditions
+|Array[Object]
+|Collection of filters to apply to monitor matches before executing triggers
+
 |triggers
 |Array[String]
 |IDs of triggers to execute when conditions match
@@ -755,6 +717,66 @@ For Stellar function `transfer(Address,Address,I128)`:
 }
 ----
 
+==== Trigger Conditions (Custom filters)
+
+Custom filters allow you to create sophisticated filtering logic for processing monitor matches. These filters act as additional validation layers that determine whether a match should be launch a trigger or not.
+
+You can write custom filters in any of the following languages:
+
+* Python
+* JavaScript
+* Bash
+
+Important considerations:
+
+* Input: The filter script receives a JSON object containing the monitor match data through standard input (stdin)
+* Processing: Your script can analyze any properties of the match data
+* Output: The script must print either true or false to stdout to indicate whether the match should be processed
+* All filters must return false for a match to be processed
+* Scripts must exit with code 0 for their output to be considered valid
+* Invalid output or non-zero exit codes will cause the filter to fail and the match will be processed
+* Multiple filters are executed in order defined by execution_order
+
+.Example Trigger Conditions Configuration
+[source,json]
+----
+{
+  "execution_order": 1,
+  "script_path": "./config/filters/evm_custom_filter.py",
+  "language": "python",
+  "arguments": "--verbose",
+  "timeout_ms": 1000
+}
+----
+
+==== Available Fields
+
+===== Trigger Conditions Fields
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|execution_order
+|Number
+|The order of the execution of the script
+
+|script_path
+|String
+|The path to the script
+
+|language
+|String
+|The language of the script
+
+|arguments
+|String
+|The arguments of the script  
+
+|timeout_ms
+|Number
+|The timeout of the script
+|===
+
 ==== Important Considerations
 
 * Network slugs in the monitor must match valid network configurations
@@ -764,6 +786,7 @@ For Stellar function `transfer(Address,Address,I128)`:
 * The monitoring frequency is controlled by the network's `cron_schedule`
 * Each monitor can watch multiple networks and addresses simultaneously
 * Monitors can be paused without removing their configuration
+* Each monitor can have multiple triggers conditions
 
 == Running the Monitor
 

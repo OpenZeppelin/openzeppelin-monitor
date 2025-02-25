@@ -172,7 +172,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
   "trigger_conditions": [
     {
       "execution_order": 1,
-      "script_path": "scripts/evm_large_transfer_usdc_filter.py",
+      "script_path": ".config/filters/evm_filter_block_number.py",
       "language": "python",
       "arguments": "--verbose",
       "timeout_ms": 1000
@@ -347,6 +347,15 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
       }
     ]
   },
+  "trigger_conditions": [
+    {
+      "execution_order": 1,
+      "script_path": ".config/filters/stellar_filter_block_number.py",
+      "language": "python",
+      "arguments": "--verbose",
+      "timeout_ms": 1000
+    }
+  ],
   "triggers": [
     "stellar_large_swap_by_dex_slack"
   ]
