@@ -130,7 +130,6 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 						condition.script_path, e
 					))
 				})?;
-				println!("Loaded script ==> {}", condition.script_path);
 				// Store the script content with its language
 				scripts.insert(monitor.name.clone(), (condition.language.clone(), content));
 			}
