@@ -91,12 +91,14 @@ impl Web3TransportClient {
 			.json(&request_body) // Use .json() instead of .body() for proper serialization
 			.send()
 			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+			.map_err(|e| BlockChainError::connection_error_with_source(
+				"Failed to send request",
+				e,
+			))?;
 
-		let json: Value = response
-			.json()
-			.await
-			.map_err(|e| BlockChainError::connection_error(e.to_string()))?;
+		let json: Value = response.json().await.map_err(|e| {
+			BlockChainError::connection_error_with_source("Failed to parse response", e)
+		})?;
 
 		Ok(json)
 	}

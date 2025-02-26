@@ -30,9 +30,9 @@ mock! {
 
 	impl TriggerRepositoryTrait for TriggerRepository {
 		#[mockall::concretize]
-		fn new(path: Option<&Path>) -> Result<Self, RepositoryError>;
+		fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>>;
 		#[mockall::concretize]
-		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
+		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, Box<RepositoryError>>;
 		fn get(&self, trigger_id: &str) -> Option<Trigger>;
 		fn get_all(&self) -> HashMap<String, Trigger>;
 	}
@@ -53,9 +53,9 @@ mock! {
 
 	impl NetworkRepositoryTrait for NetworkRepository {
 		#[mockall::concretize]
-		fn new(path: Option<&Path>) -> Result<Self, RepositoryError>;
+		fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>>;
 		#[mockall::concretize]
-		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
+		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, Box<RepositoryError>>;
 		fn get(&self, network_id: &str) -> Option<Network>;
 		fn get_all(&self) -> HashMap<String, Network>;
 	}
@@ -82,13 +82,13 @@ mock! {
 			path: Option<&Path>,
 			network_service: Option<NetworkService<N>>,
 			trigger_service: Option<TriggerService<T>>,
-		) -> Result<Self, RepositoryError>;
+		) -> Result<Self, Box<RepositoryError>>;
 		#[mockall::concretize]
 		fn load_all(
 			path: Option<&Path>,
 			network_service: Option<NetworkService<N>>,
 			trigger_service: Option<TriggerService<T>>,
-		) -> Result<HashMap<String, Monitor>, RepositoryError>;
+		) -> Result<HashMap<String, Monitor>, Box<RepositoryError>>;
 		fn get(&self, monitor_id: &str) -> Option<Monitor>;
 		fn get_all(&self) -> HashMap<String, Monitor>;
 	}

@@ -6,7 +6,7 @@
 //! - Compare different types of parameter values
 //! - Evaluate complex matching expressions
 
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use async_trait::async_trait;
 use base64::Engine;
@@ -1031,14 +1031,22 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 		block: &BlockType,
 		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
+		let mut context = HashMap::from([("network".to_string(), _network.slug.clone())]);
+
 		let stellar_block = match block {
 			BlockType::Stellar(block) => block,
 			_ => {
 				return Err(FilterError::block_type_mismatch(
 					"Expected Stellar block".to_string(),
-				))
+					Some(context),
+				));
 			}
 		};
+
+		context.insert(
+			"block_sequence".to_string(),
+			stellar_block.sequence.to_string(),
+		);
 
 		let mut matching_results = Vec::new();
 
@@ -1046,7 +1054,11 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 			.get_transactions(stellar_block.sequence, None)
 			.await
 			.map_err(|e| {
-				FilterError::network_error(format!("Failed to get transactions: {}", e))
+				FilterError::network_error_with_source(
+					"Failed to get transactions",
+					e,
+					Some(context.clone()),
+				)
 			})?;
 
 		if transactions.is_empty() {
@@ -1059,7 +1071,13 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 		let events = client
 			.get_events(stellar_block.sequence, None)
 			.await
-			.map_err(|e| FilterError::network_error(format!("Failed to get events: {}", e)))?;
+			.map_err(|e| {
+				FilterError::network_error_with_source(
+					"Failed to get events",
+					e,
+					Some(context.clone()),
+				)
+			})?;
 
 		debug!("Processing {} event(s)", events.len());
 

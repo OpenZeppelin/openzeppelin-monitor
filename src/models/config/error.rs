@@ -3,72 +3,134 @@
 //! This module defines the error types that can occur during configuration
 //! loading and validation.
 
-use log::error;
-use std::{error::Error, fmt};
+use std::collections::HashMap;
+
+use crate::utils::{EnhancedContext, ErrorContext};
 
 /// Errors that can occur during configuration operations
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
 pub enum ConfigError {
 	/// Configuration validation failed
-	ValidationError(String),
+	ValidationError(ErrorContext<String>),
 
 	/// Failed to parse configuration file
-	ParseError(String),
+	ParseError(ErrorContext<String>),
 
 	/// File system error during configuration loading
-	FileError(String),
+	FileError(ErrorContext<String>),
 }
 
 impl ConfigError {
-	/// Format the error message for display
-	fn format_message(&self) -> String {
+	const TARGET: &str = "config::error";
+
+	/// Create a new validation error with logging
+	pub fn validation_error(
+		msg: impl Into<String>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ValidationError(
+			ErrorContext::new(
+				msg.into(),
+				EnhancedContext::new("Validation Error").with_metadata(metadata),
+			)
+			.with_target(Self::TARGET),
+		)
+	}
+
+	/// Create a new validation error with source
+	pub fn validation_error_with_source(
+		msg: impl Into<String>,
+		source: impl std::error::Error + Send + Sync + 'static,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ValidationError(
+			ErrorContext::new(
+				msg.into(),
+				EnhancedContext::new("Validation Error").with_metadata(metadata),
+			)
+			.with_source(source)
+			.with_target(Self::TARGET),
+		)
+	}
+
+	/// Create a new parse error with logging
+	pub fn parse_error(msg: impl Into<String>, metadata: Option<HashMap<String, String>>) -> Self {
+		Self::ParseError(
+			ErrorContext::new(
+				msg.into(),
+				EnhancedContext::new("Parse Error").with_metadata(metadata),
+			)
+			.with_target(Self::TARGET),
+		)
+	}
+
+	/// Create a new parse error with source
+	pub fn parse_error_with_source(
+		msg: impl Into<String>,
+		source: impl std::error::Error + Send + Sync + 'static,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ParseError(
+			ErrorContext::new(
+				msg.into(),
+				EnhancedContext::new("Parse Error").with_metadata(metadata),
+			)
+			.with_source(source)
+			.with_target(Self::TARGET),
+		)
+	}
+
+	/// Create a new file error with logging
+	pub fn file_error(msg: impl Into<String>, metadata: Option<HashMap<String, String>>) -> Self {
+		Self::FileError(
+			ErrorContext::new(
+				msg.into(),
+				EnhancedContext::new("File Error").with_metadata(metadata),
+			)
+			.with_target(Self::TARGET),
+		)
+	}
+
+	/// Create a new file error with source
+	pub fn file_error_with_source(
+		msg: impl Into<String>,
+		source: impl std::error::Error + Send + Sync + 'static,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::FileError(
+			ErrorContext::new(
+				msg.into(),
+				EnhancedContext::new("File Error").with_metadata(metadata),
+			)
+			.with_source(source)
+			.with_target(Self::TARGET),
+		)
+	}
+}
+
+impl std::error::Error for ConfigError {}
+
+// Standard error trait implementations
+impl std::fmt::Display for ConfigError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Self::ValidationError(msg) => format!("Validation error: {}", msg),
-			Self::ParseError(msg) => format!("Parse error: {}", msg),
-			Self::FileError(msg) => format!("File error: {}", msg),
+			Self::ValidationError(ctx) => ctx.fmt(f),
+			Self::ParseError(ctx) => ctx.fmt(f),
+			Self::FileError(ctx) => ctx.fmt(f),
 		}
 	}
-
-	/// Create a new validation error and log it
-	pub fn validation_error(msg: impl Into<String>) -> Self {
-		let error = Self::ValidationError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
-
-	/// Create a new parse error and log it
-	pub fn parse_error(msg: impl Into<String>) -> Self {
-		let error = Self::ParseError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
-
-	/// Create a new file error and log it
-	pub fn file_error(msg: impl Into<String>) -> Self {
-		let error = Self::FileError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
 }
-
-impl fmt::Display for ConfigError {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{}", self.format_message())
-	}
-}
-
-impl Error for ConfigError {}
 
 impl From<std::io::Error> for ConfigError {
 	fn from(err: std::io::Error) -> Self {
-		Self::file_error(err.to_string())
+		Self::file_error_with_source(err.to_string(), err, None)
 	}
 }
 
 impl From<serde_json::Error> for ConfigError {
 	fn from(err: serde_json::Error) -> Self {
-		Self::parse_error(err.to_string())
+		Self::parse_error_with_source(err.to_string(), err, None)
 	}
 }
 
@@ -78,20 +140,79 @@ mod tests {
 
 	#[test]
 	fn test_validation_error_formatting() {
-		let error = ConfigError::validation_error("invalid config");
-		assert_eq!(error.to_string(), "Validation error: invalid config");
+		let error = ConfigError::validation_error("test error", None);
+		assert!(error.to_string().contains("Validation Error: test error"));
+		assert!(error.to_string().contains("[timestamp="));
+		let error = ConfigError::validation_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
+		);
+		assert!(error.to_string().contains("Validation Error: test error"));
+		assert!(error.to_string().contains("(test source)"));
+		assert!(error.to_string().contains("[timestamp="));
+
+		let error = ConfigError::validation_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert!(error.to_string().contains("Validation Error: test error"));
+		assert!(error.to_string().contains("(test source)"));
+		assert!(error.to_string().contains("timestamp="));
+		assert!(error.to_string().contains("[key1=value1"));
 	}
 
 	#[test]
 	fn test_parse_error_formatting() {
-		let error = ConfigError::parse_error("malformed json");
-		assert_eq!(error.to_string(), "Parse error: malformed json");
+		let error = ConfigError::parse_error("test error", None);
+		assert!(error.to_string().contains("Parse Error: test error"));
+		assert!(error.to_string().contains("[timestamp="));
+
+		let error = ConfigError::parse_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
+		);
+		assert!(error.to_string().contains("Parse Error: test error"));
+		assert!(error.to_string().contains("(test source)"));
+		assert!(error.to_string().contains("[timestamp="));
+
+		let error = ConfigError::parse_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert!(error.to_string().contains("Parse Error: test error"));
+		assert!(error.to_string().contains("(test source)"));
+		assert!(error.to_string().contains("timestamp="));
+		assert!(error.to_string().contains("[key1=value1"));
 	}
 
 	#[test]
 	fn test_file_error_formatting() {
-		let error = ConfigError::file_error("file not found");
-		assert_eq!(error.to_string(), "File error: file not found");
+		let error = ConfigError::file_error("test error", None);
+		assert!(error.to_string().contains("File Error: test error"));
+		assert!(error.to_string().contains("[timestamp="));
+
+		let error = ConfigError::file_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
+		);
+		assert!(error.to_string().contains("File Error: test error"));
+		assert!(error.to_string().contains("(test source)"));
+		assert!(error.to_string().contains("[timestamp="));
+
+		let error = ConfigError::file_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert!(error.to_string().contains("File Error: test error"));
+		assert!(error.to_string().contains("(test source)"));
+		assert!(error.to_string().contains("timestamp="));
+		assert!(error.to_string().contains("[key1=value1"));
 	}
 
 	#[test]

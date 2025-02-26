@@ -65,7 +65,7 @@ impl WebhookNotifier {
 		method: Option<String>,
 		secret: Option<String>,
 		headers: Option<HashMap<String, String>>,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		Ok(Self {
 			url,
 			title,
@@ -124,12 +124,12 @@ impl WebhookNotifier {
 		&self,
 		secret: &str,
 		payload: &WebhookMessage,
-	) -> Result<(String, String), NotificationError> {
+	) -> Result<(String, String), Box<NotificationError>> {
 		let timestamp = Utc::now().timestamp_millis();
 
 		// Create HMAC instance
 		let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-			.map_err(|_| NotificationError::config_error("Invalid secret"))?; // Handle error if secret is invalid
+			.map_err(|e| NotificationError::config_error_with_source("Invalid secret", e, None))?; // Handle error if secret is invalid
 
 		// Create the message to sign
 		let message = format!("{:?}{}", payload, timestamp);
@@ -166,7 +166,9 @@ impl Notifier for WebhookNotifier {
 		let mut headers = HeaderMap::new();
 
 		if let Some(secret) = &self.secret {
-			let (signature, timestamp) = self.sign_request(secret, &payload)?;
+			let (signature, timestamp) = self.sign_request(secret, &payload).map_err(|e| {
+				NotificationError::internal_error_with_source("Failed to sign request", e, None)
+			})?;
 			headers.insert(
 				HeaderName::from_bytes(b"X-Signature").unwrap(),
 				HeaderValue::from_str(&signature).unwrap(),
@@ -193,13 +195,19 @@ impl Notifier for WebhookNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+			.map_err(|e| {
+				NotificationError::network_error_with_source(
+					"Failed to send webhook notification",
+					e,
+					None,
+				)
+			})?;
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(format!(
-				"Webhook returned error status: {}",
-				response.status()
-			)));
+			return Err(NotificationError::network_error(
+				format!("Webhook returned error status: {}", response.status()),
+				None,
+			));
 		}
 
 		Ok(())

@@ -12,7 +12,7 @@ impl ConfigLoader for Monitor {
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
 	/// config directory) as monitor configurations.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
+	fn load_all<T>(path: Option<&Path>) -> Result<T, Box<ConfigError>>
 	where
 		T: FromIterator<(String, Self)>,
 	{
@@ -20,11 +20,18 @@ impl ConfigLoader for Monitor {
 		let mut pairs = Vec::new();
 
 		if !monitor_dir.exists() {
-			return Err(ConfigError::file_error("monitors directory not found"));
+			return Err(Box::new(ConfigError::file_error(
+				"monitors directory not found",
+				None,
+			)));
 		}
 
-		for entry in fs::read_dir(monitor_dir)? {
-			let entry = entry?;
+		for entry in fs::read_dir(monitor_dir).map_err(|e| {
+			ConfigError::file_error_with_source("Failed to read monitors directory", e, None)
+		})? {
+			let entry = entry.map_err(|e| {
+				ConfigError::file_error_with_source("Failed to read monitors directory", e, None)
+			})?;
 			let path = entry.path();
 
 			if !Self::is_json_file(&path) {
@@ -48,9 +55,11 @@ impl ConfigLoader for Monitor {
 	/// Load a monitor configuration from a specific file
 	///
 	/// Reads and parses a single JSON file as a monitor configuration.
-	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
-		let file = std::fs::File::open(path)?;
-		let config: Monitor = serde_json::from_reader(file)?;
+	fn load_from_path(path: &Path) -> Result<Self, Box<ConfigError>> {
+		let file = std::fs::File::open(path)
+			.map_err(|e| ConfigError::file_error_with_source("Failed to open file", e, None))?;
+		let config: Monitor = serde_json::from_reader(file)
+			.map_err(|e| ConfigError::parse_error_with_source("Failed to parse file", e, None))?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -59,18 +68,21 @@ impl ConfigLoader for Monitor {
 	}
 
 	/// Validate the monitor configuration
-	fn validate(&self) -> Result<(), ConfigError> {
+	fn validate(&self) -> Result<(), Box<ConfigError>> {
 		// Validate monitor name
 		if self.name.is_empty() {
-			return Err(ConfigError::validation_error("Monitor name is required"));
+			return Err(Box::new(ConfigError::validation_error(
+				"Monitor name is required",
+				None,
+			)));
 		}
 
 		// Validate function signatures
 		for func in &self.match_conditions.functions {
 			if !func.signature.contains('(') || !func.signature.contains(')') {
-				return Err(ConfigError::validation_error(format!(
-					"Invalid function signature format: {}",
-					func.signature
+				return Err(Box::new(ConfigError::validation_error(
+					format!("Invalid function signature format: {}", func.signature),
+					None,
 				)));
 			}
 		}
@@ -78,9 +90,9 @@ impl ConfigLoader for Monitor {
 		// Validate event signatures
 		for event in &self.match_conditions.events {
 			if !event.signature.contains('(') || !event.signature.contains(')') {
-				return Err(ConfigError::validation_error(format!(
-					"Invalid event signature format: {}",
-					event.signature
+				return Err(Box::new(ConfigError::validation_error(
+					format!("Invalid event signature format: {}", event.signature),
+					None,
 				)));
 			}
 		}

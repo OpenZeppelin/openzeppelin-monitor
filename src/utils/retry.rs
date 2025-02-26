@@ -4,6 +4,7 @@
 //! for handling temporary failures in async operations. It allows specifying
 //! the maximum number of retries, initial delay, and maximum delay between attempts.
 
+use log::debug;
 use std::time::Duration;
 
 /// Configuration for retry behavior
@@ -28,7 +29,7 @@ impl Default for RetryConfig {
 	/// - 8 seconds maximum delay
 	fn default() -> Self {
 		Self {
-			max_retries: 3,
+			max_retries: 0,
 			initial_delay: Duration::from_secs(1),
 			max_delay: Duration::from_secs(8),
 		}
@@ -71,7 +72,7 @@ impl WithRetry {
 	///
 	/// # Returns
 	/// * `Ok(T)` - If the operation succeeds
-	/// * `Err(E)` - If all retry attempts fail
+	/// * `Err(E)` - If a retry attempt fails
 	pub async fn attempt<F, Fut, T, E>(&self, operation: F) -> Result<T, E>
 	where
 		F: Fn() -> Fut + Send + Sync,
@@ -85,10 +86,10 @@ impl WithRetry {
 				Ok(value) => return Ok(value),
 				Err(e) => {
 					attempt += 1;
+					debug!("Retry attempt {} failed: {:?}", attempt, e);
 					if attempt >= self.config.max_retries {
 						return Err(e);
 					}
-
 					let delay =
 						(self.config.initial_delay.as_millis() * (1 << (attempt - 1))) as u64;
 					let delay =

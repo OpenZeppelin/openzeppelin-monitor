@@ -23,8 +23,13 @@ impl TriggerRepository {
 	///
 	/// Loads all trigger configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
-	pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path)?;
+	pub fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>> {
+		let triggers = Self::load_all(path).map_err(|e| {
+			Box::new(RepositoryError::load_error_with_source(
+				"Failed to load triggers",
+				e,
+			))
+		})?;
 		Ok(TriggerRepository { triggers })
 	}
 }
@@ -35,7 +40,7 @@ impl TriggerRepository {
 /// allowing for different storage backends while maintaining a consistent interface.
 pub trait TriggerRepositoryTrait: Clone {
 	/// Create a new trigger repository from the given path
-	fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
+	fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>>
 	where
 		Self: Sized;
 
@@ -43,7 +48,7 @@ pub trait TriggerRepositoryTrait: Clone {
 	///
 	/// If no path is provided, uses the default config directory.
 	/// This is a static method that doesn't require an instance.
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
+	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, Box<RepositoryError>>;
 
 	/// Get a specific trigger by ID
 	///
@@ -57,13 +62,23 @@ pub trait TriggerRepositoryTrait: Clone {
 }
 
 impl TriggerRepositoryTrait for TriggerRepository {
-	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path)?;
+	fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>> {
+		let triggers = Self::load_all(path).map_err(|e| {
+			Box::new(RepositoryError::load_error_with_source(
+				"Failed to load triggers",
+				e,
+			))
+		})?;
 		Ok(TriggerRepository { triggers })
 	}
 
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
-		Trigger::load_all(path).map_err(|e| RepositoryError::load_error(format!("Failed: {}", e)))
+	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, Box<RepositoryError>> {
+		Trigger::load_all(path).map_err(|e| {
+			Box::new(RepositoryError::load_error_with_source(
+				"Failed to load triggers",
+				e,
+			))
+		})
 	}
 
 	fn get(&self, trigger_id: &str) -> Option<Trigger> {
@@ -86,20 +101,22 @@ pub struct TriggerService<T: TriggerRepositoryTrait> {
 
 impl<T: TriggerRepositoryTrait> TriggerService<T> {
 	/// Create a new trigger service with the default repository implementation
-	pub fn new(path: Option<&Path>) -> Result<TriggerService<TriggerRepository>, RepositoryError> {
+	pub fn new(
+		path: Option<&Path>,
+	) -> Result<TriggerService<TriggerRepository>, Box<RepositoryError>> {
 		let repository = TriggerRepository::new(path)?;
 		Ok(TriggerService { repository })
 	}
 
 	/// Create a new trigger service with a custom repository implementation
-	pub fn new_with_repository(repository: T) -> Result<Self, RepositoryError> {
+	pub fn new_with_repository(repository: T) -> Result<Self, Box<RepositoryError>> {
 		Ok(TriggerService { repository })
 	}
 
 	/// Create a new trigger service with a specific configuration path
 	pub fn new_with_path(
 		path: Option<&Path>,
-	) -> Result<TriggerService<TriggerRepository>, RepositoryError> {
+	) -> Result<TriggerService<TriggerRepository>, Box<RepositoryError>> {
 		let repository = TriggerRepository::new(path)?;
 		Ok(TriggerService { repository })
 	}

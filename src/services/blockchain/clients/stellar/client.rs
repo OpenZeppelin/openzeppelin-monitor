@@ -100,9 +100,10 @@ impl StellarClientTrait for StellarClient {
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error(
-					"start_sequence cannot be greater than end_sequence".to_string(),
-				));
+				return Err(BlockChainError::request_error(format!(
+					"start_sequence {} cannot be greater than end_sequence {}",
+					start_sequence, end_sequence
+				)));
 			}
 		}
 
@@ -131,10 +132,13 @@ impl StellarClientTrait for StellarClient {
 					let ledger_transactions: Vec<StellarTransactionInfo> =
 						serde_json::from_value(response["result"]["transactions"].clone())
 							.map_err(|e| {
-								BlockChainError::request_error(format!(
-									"Failed to parse transaction response: {}",
-									e
-								))
+								BlockChainError::request_error_with_source(
+									format!(
+										"Failed to parse transaction response for ledger {}",
+										cursor.unwrap_or(start_sequence)
+									),
+									e,
+								)
 							})?;
 
 					if ledger_transactions.is_empty() {
@@ -175,9 +179,10 @@ impl StellarClientTrait for StellarClient {
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error(
-					"start_sequence cannot be greater than end_sequence".to_string(),
-				));
+				return Err(BlockChainError::request_error(format!(
+					"start_sequence {} cannot be greater than end_sequence {}",
+					start_sequence, end_sequence
+				)));
 			}
 		}
 
@@ -210,10 +215,13 @@ impl StellarClientTrait for StellarClient {
 						response["result"]["events"].clone(),
 					)
 					.map_err(|e| {
-						BlockChainError::request_error(format!(
-							"Failed to parse event response: {}",
-							e
-						))
+						BlockChainError::request_error_with_source(
+							format!(
+								"Failed to parse event response for ledger {}",
+								cursor.unwrap_or(start_sequence)
+							),
+							e,
+						)
 					})?;
 
 					if ledger_events.is_empty() {
@@ -264,7 +272,9 @@ impl BlockChainClient for StellarClient {
 					.client
 					.get_latest_ledger()
 					.await
-					.map_err(|e| BlockChainError::request_error(e.to_string()))?;
+					.map_err(|e| {
+						BlockChainError::request_error_with_source("Failed to get latest ledger", e)
+					})?;
 
 				Ok(response.sequence as u64)
 			})
@@ -321,10 +331,10 @@ impl BlockChainClient for StellarClient {
 						response["result"]["ledgers"].clone(),
 					)
 					.map_err(|e| {
-						BlockChainError::request_error(format!(
-							"Failed to parse ledger response: {}",
-							e
-						))
+						BlockChainError::request_error_with_source(
+							"Failed to parse ledger response",
+							e,
+						)
 					})?;
 
 					if ledgers.is_empty() {

@@ -100,10 +100,10 @@ impl EvmClientTrait for EvmClient {
 		&self,
 		transaction_hash: String,
 	) -> Result<web3::types::TransactionReceipt, BlockChainError> {
-		let hash = string_to_h256(&transaction_hash).map_err(|e| {
+		let hash = string_to_h256(&transaction_hash).map_err(|_| {
 			BlockChainError::internal_error(format!(
-				"Invalid transaction hash ({}): {}",
-				transaction_hash, e
+				"Invalid transaction hash ({})",
+				transaction_hash
 			))
 		})?;
 
@@ -116,7 +116,12 @@ impl EvmClientTrait for EvmClient {
 					.eth()
 					.transaction_receipt(hash)
 					.await
-					.map_err(|e| BlockChainError::request_error(e.to_string()))?;
+					.map_err(|e| {
+						BlockChainError::request_error_with_source(
+							"Failed to get transaction receipt",
+							e,
+						)
+					})?;
 
 				receipt.ok_or_else(|| {
 					BlockChainError::request_error("Transaction receipt not found".to_string())
@@ -146,7 +151,12 @@ impl EvmClientTrait for EvmClient {
 							.build(),
 					)
 					.await
-					.map_err(|e| BlockChainError::request_error(e.to_string()))
+					.map_err(|e| {
+						BlockChainError::request_error_with_source(
+							"Failed to get logs for blocks",
+							e,
+						)
+					})
 			})
 			.await
 	}
@@ -165,7 +175,12 @@ impl BlockChainClient for EvmClient {
 					.block_number()
 					.await
 					.map(|n| n.as_u64())
-					.map_err(|e| BlockChainError::request_error(e.to_string()))
+					.map_err(|e| {
+						BlockChainError::request_error_with_source(
+							"Failed to get latest block number",
+							e,
+						)
+					})
 			})
 			.await
 	}

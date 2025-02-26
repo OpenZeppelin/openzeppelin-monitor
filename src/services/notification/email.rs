@@ -87,7 +87,7 @@ impl EmailNotifier<SmtpTransport> {
 	pub fn new(
 		smtp_config: SmtpConfig,
 		email_content: EmailContent,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		let client = SmtpTransport::relay(&smtp_config.host)
 			.unwrap()
 			.port(smtp_config.port)
@@ -178,28 +178,40 @@ where
 			.join(", ");
 
 		let mailboxes: Mailboxes = recipients_str.parse().map_err(|e| {
-			NotificationError::internal_error(format!("Failed to parse email recipients: {}", e))
+			NotificationError::internal_error_with_source(
+				"Failed to parse email recipients",
+				e,
+				None,
+			)
 		})?;
 		let recipients_header: header::To = mailboxes.into();
 
 		let email = Message::builder()
 			.mailbox(recipients_header)
 			.from(self.sender.to_string().parse().map_err(|e| {
-				NotificationError::internal_error(format!("Failed to parse email sender: {}", e))
+				NotificationError::internal_error_with_source(
+					"Failed to parse email sender",
+					e,
+					None,
+				)
 			})?)
 			.reply_to(self.sender.to_string().parse().map_err(|e| {
-				NotificationError::internal_error(format!("Failed to parse email sender: {}", e))
+				NotificationError::internal_error_with_source(
+					"Failed to parse email sender",
+					e,
+					None,
+				)
 			})?)
 			.subject(&self.subject)
 			.header(ContentType::TEXT_PLAIN)
 			.body(message.to_owned())
 			.map_err(|e| {
-				NotificationError::internal_error(format!("Failed to build email: {}", e))
+				NotificationError::internal_error_with_source("Failed to build email", e, None)
 			})?;
 
-		self.client
-			.send(&email)
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+		self.client.send(&email).map_err(|e| {
+			NotificationError::network_error(format!("Failed to send email: {}", e), None)
+		})?;
 
 		Ok(())
 	}

@@ -408,7 +408,7 @@ pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedPara
 	match ReadXdr::from_xdr(bytes, Limits::none()) {
 		Ok(scval) => parse_sc_val(&scval, indexed),
 		Err(e) => {
-			log::warn!("Failed to parse XDR bytes: {}", e);
+			debug!("Failed to parse XDR bytes: {}", e);
 			None
 		}
 	}

@@ -8,7 +8,7 @@
 
 use async_trait::async_trait;
 use glob::glob;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{models::BlockType, services::blockwatcher::error::BlockWatcherError};
 
@@ -120,6 +120,7 @@ impl BlockStorage for FileBlockStorage {
 		&self,
 		network_id: &str,
 	) -> Result<Option<u64>, BlockWatcherError> {
+		let context = HashMap::from([("network_id".to_string(), network_id.to_string())]);
 		let file_path = self
 			.storage_path
 			.join(format!("{}_last_block.txt", network_id));
@@ -128,11 +129,19 @@ impl BlockStorage for FileBlockStorage {
 			return Ok(None);
 		}
 
-		let content = tokio::fs::read_to_string(file_path)
-			.await
-			.map_err(|e| BlockWatcherError::storage_error(format!("Failed to read file: {}", e)))?;
+		let content = tokio::fs::read_to_string(file_path).await.map_err(|e| {
+			BlockWatcherError::storage_error_with_source(
+				"Failed to read file",
+				e,
+				Some(context.clone()),
+			)
+		})?;
 		let block_number = content.trim().parse().map_err(|e| {
-			BlockWatcherError::storage_error(format!("Failed to parse block number: {}", e))
+			BlockWatcherError::storage_error_with_source(
+				"Failed to parse block number",
+				e,
+				Some(context),
+			)
 		})?;
 		Ok(Some(block_number))
 	}
@@ -146,13 +155,21 @@ impl BlockStorage for FileBlockStorage {
 		network_id: &str,
 		block: u64,
 	) -> Result<(), BlockWatcherError> {
+		let context = HashMap::from([
+			("network".to_string(), network_id.to_string()),
+			("block".to_string(), block.to_string()),
+		]);
 		let file_path = self
 			.storage_path
 			.join(format!("{}_last_block.txt", network_id));
 		tokio::fs::write(file_path, block.to_string())
 			.await
 			.map_err(|e| {
-				BlockWatcherError::storage_error(format!("Failed to write file: {}", e))
+				BlockWatcherError::storage_error_with_source(
+					"Failed to write file",
+					e,
+					Some(context),
+				)
 			})?;
 		Ok(())
 	}
@@ -167,16 +184,21 @@ impl BlockStorage for FileBlockStorage {
 		network_slug: &str,
 		blocks: &[BlockType],
 	) -> Result<(), BlockWatcherError> {
+		let context = HashMap::from([("network".to_string(), network_slug.to_string())]);
 		let file_path = self.storage_path.join(format!(
 			"{}_blocks_{}.json",
 			network_slug,
 			chrono::Utc::now().timestamp()
 		));
 		let json = serde_json::to_string(blocks).map_err(|e| {
-			BlockWatcherError::storage_error(format!("Failed to serialize blocks: {}", e))
+			BlockWatcherError::storage_error_with_source(
+				"Failed to serialize blocks",
+				e,
+				Some(context.clone()),
+			)
 		})?;
 		tokio::fs::write(file_path, json).await.map_err(|e| {
-			BlockWatcherError::storage_error(format!("Failed to write file: {}", e))
+			BlockWatcherError::storage_error_with_source("Failed to write file", e, Some(context))
 		})?;
 		Ok(())
 	}
@@ -187,6 +209,7 @@ impl BlockStorage for FileBlockStorage {
 	/// Uses glob pattern matching to find and delete all files matching:
 	/// "{network_id}_blocks_*.json"
 	async fn delete_blocks(&self, network_slug: &str) -> Result<(), BlockWatcherError> {
+		let context = HashMap::from([("network".to_string(), network_slug.to_string())]);
 		let pattern = self
 			.storage_path
 			.join(format!("{}_blocks_*.json", network_slug))
@@ -194,11 +217,21 @@ impl BlockStorage for FileBlockStorage {
 			.to_string();
 
 		for entry in glob(&pattern)
-			.map_err(|e| BlockWatcherError::storage_error(format!("Failed to glob files: {}", e)))?
+			.map_err(|e| {
+				BlockWatcherError::storage_error_with_source(
+					"Failed to glob files",
+					e,
+					Some(context.clone()),
+				)
+			})?
 			.flatten()
 		{
 			tokio::fs::remove_file(entry).await.map_err(|e| {
-				BlockWatcherError::storage_error(format!("Failed to remove file: {}", e))
+				BlockWatcherError::storage_error_with_source(
+					"Failed to remove file",
+					e,
+					Some(context.clone()),
+				)
 			})?;
 		}
 		Ok(())
@@ -217,6 +250,10 @@ impl BlockStorage for FileBlockStorage {
 		network_id: &str,
 		block: u64,
 	) -> Result<(), BlockWatcherError> {
+		let context = HashMap::from([
+			("network_id".to_string(), network_id.to_string()),
+			("block".to_string(), block.to_string()),
+		]);
 		let file_path = self
 			.storage_path
 			.join(format!("{}_missed_blocks.txt", network_id));
@@ -227,13 +264,23 @@ impl BlockStorage for FileBlockStorage {
 			.append(true)
 			.open(file_path)
 			.await
-			.map_err(|e| BlockWatcherError::storage_error(format!("Failed to open file: {}", e)))?;
+			.map_err(|e| {
+				BlockWatcherError::storage_error_with_source(
+					"Failed to open file",
+					e,
+					Some(context.clone()),
+				)
+			})?;
 
 		// Write the block number followed by a newline
 		tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", block).as_bytes())
 			.await
 			.map_err(|e| {
-				BlockWatcherError::storage_error(format!("Failed to write file: {}", e))
+				BlockWatcherError::storage_error_with_source(
+					"Failed to write file",
+					e,
+					Some(context.clone()),
+				)
 			})?;
 
 		Ok(())

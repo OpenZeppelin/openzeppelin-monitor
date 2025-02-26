@@ -71,10 +71,17 @@ impl NotificationService {
 					notifier
 						.notify(&notifier.format_message(&variables))
 						.await
-						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+						.map_err(|e| {
+							NotificationError::config_error_with_source(
+								format!("Failed to send slack notification: {}", e),
+								e,
+								None,
+							)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid slack configuration",
+						None,
 					));
 				}
 			}
@@ -84,10 +91,17 @@ impl NotificationService {
 					notifier
 						.notify(&notifier.format_message(&variables))
 						.await
-						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+						.map_err(|e| {
+							NotificationError::config_error_with_source(
+								format!("Failed to send email notification: {}", e),
+								e,
+								None,
+							)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid email configuration",
+						None,
 					));
 				}
 			}
@@ -97,10 +111,17 @@ impl NotificationService {
 					notifier
 						.notify(&notifier.format_message(&variables))
 						.await
-						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+						.map_err(|e| {
+							NotificationError::config_error_with_source(
+								format!("Failed to send webhook notification: {}", e),
+								e,
+								None,
+							)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid webhook configuration",
+						None,
 					));
 				}
 			}
@@ -111,10 +132,17 @@ impl NotificationService {
 					notifier
 						.notify(&notifier.format_message(&variables))
 						.await
-						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+						.map_err(|e| {
+							NotificationError::config_error_with_source(
+								format!("Failed to send discord notification: {}", e),
+								e,
+								None,
+							)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid discord configuration",
+						None,
 					));
 				}
 			}
@@ -124,10 +152,17 @@ impl NotificationService {
 					notifier
 						.notify(&notifier.format_message(&variables))
 						.await
-						.map_err(|e| NotificationError::config_error(e.to_string()))?;
+						.map_err(|e| {
+							NotificationError::config_error_with_source(
+								format!("Failed to send telegram notification: {}", e),
+								e,
+								None,
+							)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid telegram configuration",
+						None,
 					));
 				}
 			}

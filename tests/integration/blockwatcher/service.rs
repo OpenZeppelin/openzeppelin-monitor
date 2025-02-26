@@ -117,7 +117,7 @@ fn setup_mocks(
 }
 
 #[tokio::test]
-async fn test_normal_block_range() -> Result<(), BlockWatcherError> {
+async fn test_normal_block_range() -> Result<(), Box<BlockWatcherError>> {
 	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 
 	let config = MockConfig {
@@ -226,7 +226,7 @@ async fn test_fresh_start_processing() {
 }
 
 #[tokio::test]
-async fn test_no_new_blocks() -> Result<(), BlockWatcherError> {
+async fn test_no_new_blocks() -> Result<(), Box<BlockWatcherError>> {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.store_blocks = Some(true);
 
@@ -276,7 +276,7 @@ async fn test_no_new_blocks() -> Result<(), BlockWatcherError> {
 }
 
 #[tokio::test]
-async fn test_concurrent_processing() -> Result<(), BlockWatcherError> {
+async fn test_concurrent_processing() -> Result<(), Box<BlockWatcherError>> {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.max_past_blocks = Some(51); // match processing limit
 
@@ -380,7 +380,7 @@ async fn test_concurrent_processing() -> Result<(), BlockWatcherError> {
 }
 
 #[tokio::test]
-async fn test_ordered_trigger_handling() -> Result<(), BlockWatcherError> {
+async fn test_ordered_trigger_handling() -> Result<(), Box<BlockWatcherError>> {
 	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 
 	// Create blocks with varying processing times to ensure out-of-order processing
@@ -475,7 +475,7 @@ async fn test_ordered_trigger_handling() -> Result<(), BlockWatcherError> {
 }
 
 #[tokio::test]
-async fn test_block_storage_enabled() -> Result<(), BlockWatcherError> {
+async fn test_block_storage_enabled() -> Result<(), Box<BlockWatcherError>> {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.store_blocks = Some(true);
 
@@ -527,7 +527,7 @@ async fn test_block_storage_enabled() -> Result<(), BlockWatcherError> {
 }
 
 #[tokio::test]
-async fn test_max_past_blocks_limit() -> Result<(), BlockWatcherError> {
+async fn test_max_past_blocks_limit() -> Result<(), Box<BlockWatcherError>> {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.max_past_blocks = Some(3); // Only process last 3 blocks max
 
@@ -580,7 +580,7 @@ async fn test_max_past_blocks_limit() -> Result<(), BlockWatcherError> {
 }
 
 #[tokio::test]
-async fn test_max_past_blocks_limit_recommended() -> Result<(), BlockWatcherError> {
+async fn test_max_past_blocks_limit_recommended() -> Result<(), Box<BlockWatcherError>> {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.max_past_blocks = None; // Use recommended past blocks
 	network.block_time_ms = 12000;
@@ -659,7 +659,7 @@ async fn test_max_past_blocks_limit_recommended() -> Result<(), BlockWatcherErro
 }
 
 #[tokio::test]
-async fn test_confirmation_blocks() -> Result<(), BlockWatcherError> {
+async fn test_confirmation_blocks() -> Result<(), Box<BlockWatcherError>> {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.confirmation_blocks = 2;
 

@@ -16,7 +16,7 @@
 //!   from the block processing pipeline
 
 use futures::future::BoxFuture;
-use log::{error, info};
+use log::info;
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::watch;
 
@@ -28,7 +28,7 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, EvmClient, StellarClient},
-		filter::{handle_match, FilterService},
+		filter::{handle_match, FilterError, FilterService},
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
@@ -217,7 +217,13 @@ where
 			match result {
 				Ok(matches) => Some(matches),
 				Err(e) => {
-					error!("Error filtering block: {}", e);
+					match &e {
+						FilterError::NetworkError(ctx) |
+						FilterError::BlockTypeMismatch(ctx) |
+						FilterError::InternalError(ctx) => {
+							ctx.log_once();
+						}
+					}
 					None
 				}
 			}
@@ -251,7 +257,13 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 				_ = async {
 					for monitor_match in &block.processing_results {
 						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
-							error!("Error handling trigger: {}", e);
+							match &e {
+								FilterError::NetworkError(ctx) |
+								FilterError::BlockTypeMismatch(ctx) |
+								FilterError::InternalError(ctx) => {
+									ctx.log_once();
+								}
+							}
 						}
 					}
 				} => {}

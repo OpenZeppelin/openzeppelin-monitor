@@ -43,7 +43,7 @@ impl TelegramNotifier {
 		disable_web_preview: Option<bool>,
 		title: String,
 		body_template: String,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		Ok(Self {
 			token,
 			chat_id,
@@ -120,18 +120,22 @@ impl Notifier for TelegramNotifier {
 	/// * `Result<(), NotificationError>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		let url = self.construct_url(message);
-		let response = self
-			.client
-			.get(&url)
-			.send()
-			.await
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+		let response = self.client.get(&url).send().await.map_err(|e| {
+			NotificationError::network_error_with_source(
+				"Failed to send telegram notification",
+				e,
+				None,
+			)
+		})?;
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(format!(
-				"Telegram webhook returned error status: {}",
-				response.status()
-			)));
+			return Err(NotificationError::network_error(
+				format!(
+					"Telegram webhook returned error status: {}",
+					response.status()
+				),
+				None,
+			));
 		}
 
 		Ok(())

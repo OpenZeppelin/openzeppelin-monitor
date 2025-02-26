@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use ethabi::Contract;
 use log::{debug, warn};
 use serde_json::Value;
-use std::{marker::PhantomData, str::FromStr};
+use std::{collections::HashMap, marker::PhantomData, str::FromStr};
 use web3::types::{Log, Transaction, TransactionReceipt, U64};
 
 use crate::{
@@ -176,10 +176,11 @@ impl<T> EVMBlockFilter<T> {
 										let decoded = function
 											.decode_input(&input_data.0[4..])
 											.unwrap_or_else(|e| {
-												FilterError::internal_error(format!(
-													"Failed to decode function input: {}",
-													e
-												));
+												FilterError::internal_error_with_source(
+													"Failed to decode function input",
+													e,
+													None,
+												);
 												vec![]
 											});
 
@@ -447,7 +448,7 @@ impl<T> EVMBlockFilter<T> {
 	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = Contract::load(abi.to_string().as_bytes())
-			.map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
+			.map_err(|e| FilterError::internal_error_with_source("Failed to parse ABI", e, None))
 			.ok()?;
 
 		let decoded_log = contract
@@ -517,14 +518,22 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		block: &BlockType,
 		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
+		let mut context = HashMap::from([("network".to_string(), _network.slug.clone())]);
+
 		let evm_block = match block {
 			BlockType::EVM(block) => block,
 			_ => {
 				return Err(FilterError::block_type_mismatch(
 					"Expected EVM block".to_string(),
+					Some(context),
 				))
 			}
 		};
+
+		context.insert(
+			"block_number".to_string(),
+			evm_block.number.unwrap_or(U64::from(0)).to_string(),
+		);
 
 		debug!(
 			"Processing block {}",
@@ -544,14 +553,17 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		let receipts: Vec<_> = futures::future::join_all(receipt_futures)
 			.await
 			.into_iter()
-			.filter_map(|result| match result {
-				Ok(receipt) => Some(receipt),
-				Err(e) => {
-					warn!("Failed to get transaction receipt: {}", e);
-					None
-				}
-			})
-			.collect();
+			.collect::<Result<Vec<_>, _>>()
+			.map_err(|e| {
+				FilterError::internal_error_with_source(
+					format!(
+						"Failed to get transaction receipts for block {}",
+						evm_block.number.unwrap_or(U64::from(0)),
+					),
+					e,
+					Some(context.clone()),
+				)
+			})?;
 
 		if receipts.is_empty() {
 			debug!(
