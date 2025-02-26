@@ -12,8 +12,9 @@ use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
 	models::{
 		BlockChainType, EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch,
-		NotificationMessage, ProcessedBlock, StellarBlock, StellarMonitorMatch, StellarTransaction,
-		StellarTransactionInfo, Trigger, TriggerType, TriggerTypeConfig,
+		NotificationMessage, ProcessedBlock, ScriptLanguage, StellarBlock, StellarMonitorMatch,
+		StellarTransaction, StellarTransactionInfo, Trigger, TriggerConditions, TriggerType,
+		TriggerTypeConfig,
 	},
 	services::{blockchain::BlockChainError, filter::FilterService},
 };
@@ -188,7 +189,11 @@ async fn test_create_trigger_handler() {
 		.return_once(|_, _| Ok(()));
 
 	let (shutdown_tx, _) = watch::channel(false);
-	let trigger_handler = create_trigger_handler(shutdown_tx, Arc::new(trigger_execution_service));
+	let trigger_handler = create_trigger_handler(
+		shutdown_tx,
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
+	);
 
 	assert!(Arc::strong_count(&trigger_handler) == 1);
 
@@ -196,6 +201,72 @@ async fn test_create_trigger_handler() {
 		block_number: 100,
 		network_slug: "ethereum_mainnet".to_string(),
 		processing_results: vec![create_test_monitor_match(BlockChainType::EVM)],
+	};
+
+	let handle = trigger_handler(&processed_block);
+	handle
+		.await
+		.expect("Trigger handler task should complete successfully");
+}
+
+#[tokio::test]
+async fn test_create_trigger_handler_with_conditions() {
+	// Setup test triggers in JSON with known configurations
+	let mut trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+
+	trigger_execution_service
+		.expect_execute()
+		.times(1)
+		.return_once(|_, _| Ok(()));
+
+	// Create a HashMap with trigger conditions
+	let mut trigger_scripts = HashMap::new();
+	trigger_scripts.insert(
+		"test_trigger-test_script.py".to_string(),
+		(
+			ScriptLanguage::Python,
+			r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print(True)  # Always return true for test
+"#
+			.to_string(),
+		),
+	);
+
+	let (shutdown_tx, _) = watch::channel(false);
+	let trigger_handler = create_trigger_handler(
+		shutdown_tx,
+		Arc::new(trigger_execution_service),
+		trigger_scripts,
+	);
+
+	assert!(Arc::strong_count(&trigger_handler) == 1);
+
+	// Create a monitor with trigger conditions
+	let mut monitor = create_test_monitor("test_trigger", vec!["ethereum_mainnet"], false, vec![]);
+	monitor.trigger_conditions = vec![TriggerConditions {
+		execution_order: Some(1),
+		script_path: "test_script.py".to_string(),
+		language: ScriptLanguage::Python,
+		timeout_ms: 1000,
+		arguments: None,
+	}];
+
+	let processed_block = ProcessedBlock {
+		block_number: 100,
+		network_slug: "ethereum_mainnet".to_string(),
+		processing_results: vec![MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor,
+			transaction: create_test_evm_transaction(),
+			receipt: web3::types::TransactionReceipt::default(),
+			matched_on: MatchConditions::default(),
+			matched_on_args: None,
+		}))],
 	};
 
 	let handle = trigger_handler(&processed_block);

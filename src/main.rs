@@ -41,6 +41,7 @@ use clap::Command;
 use dotenvy::dotenv;
 use log::{error, info};
 use models::BlockChainType;
+use services::trigger::TriggerExecutionServiceTrait;
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -82,7 +83,12 @@ async fn main() -> Result<()> {
 	}
 
 	let (shutdown_tx, _) = watch::channel(false);
-
+	// Pre-load all trigger scripts into memory at startup to reduce file I/O operations.
+	// This prevents repeated file descriptor usage during script execution and improves performance
+	// by keeping scripts readily available in memory.
+	let active_monitors_trigger_scripts = trigger_execution_service
+		.load_scripts(&active_monitors)
+		.await?;
 	let client_pool = Arc::new(ClientPool::new());
 	let block_handler = create_block_handler(
 		shutdown_tx.clone(),
@@ -90,7 +96,11 @@ async fn main() -> Result<()> {
 		active_monitors,
 		client_pool.clone(),
 	);
-	let trigger_handler = create_trigger_handler(shutdown_tx.clone(), trigger_execution_service);
+	let trigger_handler = create_trigger_handler(
+		shutdown_tx.clone(),
+		trigger_execution_service,
+		active_monitors_trigger_scripts,
+	);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
 	let block_watcher = BlockWatcherService::new(

@@ -67,8 +67,8 @@
   "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"],
   "trigger_conditions": [{
     "execution_order": 1,
-    "script_path": "./config/filters/filter_block_number.py",
-    "language": "Python",
+    "script_path": "./config/filters/evm_filter_block_number.sh",
+    "language": "Bash",
     "timeout_ms": 10000
   }]
 }
