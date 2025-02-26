@@ -729,7 +729,7 @@ You can write custom filters in any of the following languages:
 
 Important considerations:
 
-* Input: The filter script receives a JSON object containing two fields: `monitor_match` and `args`. The `monitor_match` field contains the monitor match data and the `args` (array of strings) field contains the arguments of the script.
+* Input: The filter script receives a JSON object containing two fields: `monitor_match` and `args`. The `monitor_match` field contains the monitor match data and the `args` (strings separated by commas) field contains the arguments of the script.
 * Processing: Your script can analyze any properties of the match data
 * Output: The script must print either `true` or `false` to stdout to indicate whether the match should be included
 * All filters against a monitor match must return `false` for it to be included
