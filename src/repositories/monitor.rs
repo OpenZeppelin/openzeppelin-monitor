@@ -40,6 +40,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 			Box::new(RepositoryError::load_error_with_source(
 				"Failed to load monitors",
 				e,
+				None,
 			))
 		})?;
 		Ok(MonitorRepository {
@@ -88,10 +89,13 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		}
 
 		if !validation_errors.is_empty() {
-			return Err(Box::new(RepositoryError::validation_error(format!(
-				"Configuration validation failed:\n{}",
-				validation_errors.join("\n")
-			))));
+			return Err(Box::new(RepositoryError::validation_error(
+				format!(
+					"Configuration validation failed:\n{}",
+					validation_errors.join("\n"),
+				),
+				None,
+			)));
 		}
 
 		Ok(())
@@ -156,6 +160,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 			Box::new(RepositoryError::load_error_with_source(
 				"Failed to load monitors",
 				e,
+				None,
 			))
 		})?;
 

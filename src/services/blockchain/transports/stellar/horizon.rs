@@ -3,6 +3,8 @@
 //! This module provides a client implementation for interacting with Stellar's Horizon API,
 //! supporting connection management and raw JSON-RPC requests.
 
+use std::collections::HashMap;
+
 use crate::{models::Network, services::blockchain::BlockChainError};
 
 use serde_json::{json, Value};
@@ -58,6 +60,10 @@ impl HorizonTransportClient {
 
 		Err(BlockChainError::connection_error(
 			"All Horizon RPC URLs failed to connect".to_string(),
+			Some(HashMap::from([(
+				"network".to_string(),
+				network.name.clone(),
+			)])),
 		))
 	}
 
@@ -92,11 +98,15 @@ impl HorizonTransportClient {
 			.send()
 			.await
 			.map_err(|e| {
-				BlockChainError::connection_error_with_source("Failed to send request", e)
+				BlockChainError::connection_error_with_source(
+					"Failed to send request",
+					e,
+					None,
+				)
 			})?;
 
 		let json: Value = response.json().await.map_err(|e| {
-			BlockChainError::connection_error_with_source("Failed to parse response", e)
+			BlockChainError::connection_error_with_source("Failed to parse response", e, None)
 		})?;
 
 		Ok(json)

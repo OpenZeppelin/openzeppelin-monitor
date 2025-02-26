@@ -3,6 +3,8 @@
 //! This module provides a client implementation for interacting with EVM-compatible nodes
 //! via Web3, supporting connection management and raw JSON-RPC request functionality.
 
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
 use web3::{transports::Http, Web3};
 
@@ -58,6 +60,10 @@ impl Web3TransportClient {
 
 		Err(BlockChainError::connection_error(
 			"All RPC URLs failed to connect".to_string(),
+			Some(HashMap::from([(
+				"network".to_string(),
+				network.name.clone(),
+			)])),
 		))
 	}
 
@@ -94,10 +100,11 @@ impl Web3TransportClient {
 			.map_err(|e| BlockChainError::connection_error_with_source(
 				"Failed to send request",
 				e,
+				None,
 			))?;
 
 		let json: Value = response.json().await.map_err(|e| {
-			BlockChainError::connection_error_with_source("Failed to parse response", e)
+			BlockChainError::connection_error_with_source("Failed to parse response", e, None)
 		})?;
 
 		Ok(json)

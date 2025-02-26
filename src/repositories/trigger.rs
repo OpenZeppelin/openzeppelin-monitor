@@ -28,6 +28,7 @@ impl TriggerRepository {
 			Box::new(RepositoryError::load_error_with_source(
 				"Failed to load triggers",
 				e,
+				None,
 			))
 		})?;
 		Ok(TriggerRepository { triggers })
@@ -67,6 +68,7 @@ impl TriggerRepositoryTrait for TriggerRepository {
 			Box::new(RepositoryError::load_error_with_source(
 				"Failed to load triggers",
 				e,
+				None,
 			))
 		})?;
 		Ok(TriggerRepository { triggers })
@@ -77,6 +79,7 @@ impl TriggerRepositoryTrait for TriggerRepository {
 			Box::new(RepositoryError::load_error_with_source(
 				"Failed to load triggers",
 				e,
+				None,
 			))
 		})
 	}

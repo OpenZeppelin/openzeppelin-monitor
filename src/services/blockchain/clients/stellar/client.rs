@@ -4,7 +4,7 @@
 //! supporting operations like block retrieval, transaction lookup, and event filtering.
 //! It works with both Stellar Core nodes and Horizon API endpoints.
 
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use async_trait::async_trait;
 use serde_json::json;
@@ -97,13 +97,17 @@ impl StellarClientTrait for StellarClient {
 		start_sequence: u32,
 		end_sequence: Option<u32>,
 	) -> Result<Vec<StellarTransaction>, BlockChainError> {
+		let context = HashMap::from([("network".to_string(), self._network.name.clone())]);
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error(format!(
-					"start_sequence {} cannot be greater than end_sequence {}",
-					start_sequence, end_sequence
-				)));
+				return Err(BlockChainError::request_error(
+					format!(
+						"start_sequence {} cannot be greater than end_sequence {}",
+						start_sequence, end_sequence
+					),
+					Some(context.clone()),
+				));
 			}
 		}
 
@@ -138,6 +142,7 @@ impl StellarClientTrait for StellarClient {
 										cursor.unwrap_or(start_sequence)
 									),
 									e,
+									Some(context.clone()),
 								)
 							})?;
 
@@ -176,13 +181,17 @@ impl StellarClientTrait for StellarClient {
 		start_sequence: u32,
 		end_sequence: Option<u32>,
 	) -> Result<Vec<StellarEvent>, BlockChainError> {
+		let context = HashMap::from([("network".to_string(), self._network.name.clone())]);
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error(format!(
-					"start_sequence {} cannot be greater than end_sequence {}",
-					start_sequence, end_sequence
-				)));
+				return Err(BlockChainError::request_error(
+					format!(
+						"start_sequence {} cannot be greater than end_sequence {}",
+						start_sequence, end_sequence
+					),
+					Some(context.clone()),
+				));
 			}
 		}
 
@@ -221,6 +230,7 @@ impl StellarClientTrait for StellarClient {
 								cursor.unwrap_or(start_sequence)
 							),
 							e,
+							Some(context.clone()),
 						)
 					})?;
 
@@ -273,7 +283,14 @@ impl BlockChainClient for StellarClient {
 					.get_latest_ledger()
 					.await
 					.map_err(|e| {
-						BlockChainError::request_error_with_source("Failed to get latest ledger", e)
+						BlockChainError::request_error_with_source(
+							"Failed to get latest ledger",
+							e,
+							Some(HashMap::from([(
+								"network".to_string(),
+								self._network.name.clone(),
+							)])),
+						)
 					})?;
 
 				Ok(response.sequence as u64)
@@ -294,6 +311,7 @@ impl BlockChainClient for StellarClient {
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, BlockChainError> {
+		let context = HashMap::from([("network".to_string(), self._network.name.clone())]);
 		// max limit for the RPC endpoint is 200
 		const PAGE_LIMIT: u32 = 200;
 
@@ -302,6 +320,7 @@ impl BlockChainClient for StellarClient {
 			if start_block > end_block {
 				return Err(BlockChainError::request_error(
 					"start_block cannot be greater than end_block".to_string(),
+					Some(context.clone()),
 				));
 			}
 		}
@@ -334,6 +353,7 @@ impl BlockChainClient for StellarClient {
 						BlockChainError::request_error_with_source(
 							"Failed to parse ledger response",
 							e,
+							Some(context.clone()),
 						)
 					})?;
 

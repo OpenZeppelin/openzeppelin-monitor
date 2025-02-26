@@ -4,7 +4,7 @@
 //! blockchains, supporting operations like block retrieval, transaction receipt lookup,
 //! and log filtering.
 
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use async_trait::async_trait;
 use web3::types::{BlockId, BlockNumber};
@@ -100,11 +100,15 @@ impl EvmClientTrait for EvmClient {
 		&self,
 		transaction_hash: String,
 	) -> Result<web3::types::TransactionReceipt, BlockChainError> {
+		let context = HashMap::from([
+			("network".to_string(), self._network.name.clone()),
+			("hash".to_string(), transaction_hash.clone()),
+		]);
 		let hash = string_to_h256(&transaction_hash).map_err(|_| {
-			BlockChainError::internal_error(format!(
-				"Invalid transaction hash ({})",
-				transaction_hash
-			))
+			BlockChainError::internal_error(
+				format!("Invalid transaction hash ({})", transaction_hash),
+				Some(context.clone()),
+			)
 		})?;
 
 		let with_retry = WithRetry::with_default_config();
@@ -120,11 +124,15 @@ impl EvmClientTrait for EvmClient {
 						BlockChainError::request_error_with_source(
 							"Failed to get transaction receipt",
 							e,
+							Some(context.clone()),
 						)
 					})?;
 
 				receipt.ok_or_else(|| {
-					BlockChainError::request_error("Transaction receipt not found".to_string())
+					BlockChainError::request_error(
+						"Transaction receipt not found".to_string(),
+						Some(context.clone()),
+					)
 				})
 			})
 			.await
@@ -155,6 +163,11 @@ impl EvmClientTrait for EvmClient {
 						BlockChainError::request_error_with_source(
 							"Failed to get logs for blocks",
 							e,
+							Some(HashMap::from([
+								("network".to_string(), self._network.name.clone()),
+								("from_block".to_string(), from_block.to_string()),
+								("to_block".to_string(), to_block.to_string()),
+							])),
 						)
 					})
 			})
@@ -179,6 +192,10 @@ impl BlockChainClient for EvmClient {
 						BlockChainError::request_error_with_source(
 							"Failed to get latest block number",
 							e,
+							Some(HashMap::from([(
+								"network".to_string(),
+								self._network.name.clone(),
+							)])),
 						)
 					})
 			})
@@ -205,7 +222,15 @@ impl BlockChainClient for EvmClient {
 						.eth()
 						.block_with_txs(BlockId::Number(BlockNumber::Number(block_number.into())))
 						.await?
-						.ok_or_else(|| BlockChainError::block_not_found(block_number))?;
+						.ok_or_else(|| {
+							BlockChainError::block_not_found(
+								block_number,
+								Some(HashMap::from([
+									("network".to_string(), self._network.name.clone()),
+									("block_number".to_string(), block_number.to_string()),
+								])),
+							)
+						})?;
 
 					blocks.push(BlockType::EVM(Box::new(EVMBlock::from(block))));
 				}

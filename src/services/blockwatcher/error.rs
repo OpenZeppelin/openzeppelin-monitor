@@ -234,10 +234,9 @@ mod tests {
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			None,
 		);
-		assert_eq!(
-			error.to_string(),
-			"Scheduler Error: test error (test source)"
-		);
+		assert!(error.to_string().contains("Scheduler Error: test error"));
+		assert!(error.to_string().contains("(test source)"));
+		assert!(error.to_string().contains("[timestamp="));
 	}
 
 	#[test]

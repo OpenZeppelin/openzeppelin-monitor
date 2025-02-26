@@ -28,6 +28,7 @@ impl NetworkRepository {
 			Box::new(RepositoryError::load_error_with_source(
 				"Failed to load networks",
 				e,
+				None,
 			))
 		})?;
 		Ok(NetworkRepository { networks })
@@ -71,6 +72,7 @@ impl NetworkRepositoryTrait for NetworkRepository {
 			Box::new(RepositoryError::load_error_with_source(
 				"Failed to load networks",
 				e,
+				None,
 			))
 		})
 	}
