@@ -20,16 +20,16 @@ impl ScriptExecutorFactory {
 	///
 	/// Returns a boxed (Rust will allocate on the heap) trait object implementing the
 	/// `ScriptExecutor` trait
-	pub fn create(language: &ScriptLanguage, script_path: &str) -> Box<dyn ScriptExecutor> {
+	pub fn create(language: &ScriptLanguage, script_content: &str) -> Box<dyn ScriptExecutor> {
 		match language {
 			ScriptLanguage::Python => Box::new(PythonScriptExecutor {
-				script_path: script_path.to_string(),
+				script_content: script_content.to_string(),
 			}),
 			ScriptLanguage::JavaScript => Box::new(JavaScriptScriptExecutor {
-				script_path: script_path.to_string(),
+				script_content: script_content.to_string(),
 			}),
 			ScriptLanguage::Bash => Box::new(BashScriptExecutor {
-				script_path: script_path.to_string(),
+				script_content: script_content.to_string(),
 			}),
 		}
 	}

@@ -15,6 +15,8 @@ pub enum ScriptError {
 	ExecutionError(String),
 	/// When script configuration is invalid
 	ParseError(String),
+	/// When a system error occurs
+	SystemError(String),
 }
 
 impl ScriptError {
@@ -25,6 +27,9 @@ impl ScriptError {
 			ScriptError::ExecutionError(msg) => format!("Script execution error: {}", msg),
 			ScriptError::ParseError(msg) => {
 				format!("Script parse error: {}", msg)
+			}
+			ScriptError::SystemError(msg) => {
+				format!("System error: {}", msg)
 			}
 		}
 	}
@@ -46,6 +51,12 @@ impl ScriptError {
 	/// Creates a new configuration error with logging
 	pub fn parse_error(msg: impl Into<String>) -> Self {
 		let error = ScriptError::ParseError(msg.into());
+		error!("{}", error.format_message());
+		error
+	}
+
+	pub fn system_error(msg: impl Into<String>) -> Self {
+		let error = ScriptError::SystemError(msg.into());
 		error!("{}", error.format_message());
 		error
 	}

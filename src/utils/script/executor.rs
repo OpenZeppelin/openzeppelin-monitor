@@ -1,6 +1,9 @@
 use crate::{models::MonitorMatch, utils::script::error::ScriptError};
 use async_trait::async_trait;
-
+use libc::{c_int, getrlimit, RLIMIT_NOFILE};
+use log::debug;
+use std::{mem::MaybeUninit, process::Stdio};
+use tokio::io::AsyncWriteExt;
 /// A trait that defines the interface for executing custom scripts in different languages.
 /// Implementors must be both Send and Sync to ensure thread safety.
 #[async_trait]
@@ -12,25 +15,83 @@ pub trait ScriptExecutor: Send + Sync {
 	///
 	/// # Returns
 	/// * `Result<bool, ScriptError>` - Returns true/false based on script execution or an error
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError>;
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
 pub struct PythonScriptExecutor {
-	/// Path to the Python script file to be executed
-	pub script_path: String,
+	/// Content of the Python script file to be executed
+	pub script_content: String,
+}
+
+/// Counts the number of open file descriptors for the current process
+fn count_open_fds() -> (usize, u64) {
+	#[cfg(unix)]
+	{
+		let mut rlimit = MaybeUninit::uninit();
+		let ret = unsafe { getrlimit(RLIMIT_NOFILE, rlimit.as_mut_ptr()) };
+
+		if ret == 0 {
+			let rlimit = unsafe { rlimit.assume_init() };
+			let mut count = 0;
+
+			// Check each potential file descriptor up to the soft limit
+			for fd in 0..rlimit.rlim_cur {
+				let ret = unsafe { libc::fcntl(fd as c_int, libc::F_GETFD) };
+				if ret != -1 {
+					count += 1;
+				}
+			}
+			(count, rlimit.rlim_cur)
+		} else {
+			debug!("Failed to get rlimit");
+			(0, 0)
+		}
+	}
 }
 
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
-		let input_json =
-			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
+		let (open_fds, max_fds) = count_open_fds();
+		let combined_input = serde_json::json!({
+			"monitor_match": input,
+			"args": args
+		});
+		let input_json = serde_json::to_string(&combined_input)
+			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
-		let output = tokio::process::Command::new("python3")
-			.arg(&self.script_path)
-			.arg(input_json)
-			.output()
+		// Warning if open file descriptors exceed the maximum limit
+		if open_fds > max_fds as usize {
+			log::warn!(
+				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
+				 This may cause unexpected runtime issues. You should increase the limit for open \
+				 files by running:  ulimit -n <number of fds>",
+				open_fds,
+				max_fds
+			);
+		}
+
+		let mut cmd = tokio::process::Command::new("python3")
+			.arg("-c")
+			.arg(&self.script_content)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::piped())
+			.kill_on_drop(true)
+			.spawn()
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
+		// Write the input_json to stdin
+		cmd.stdin
+			.take()
+			.unwrap()
+			.write_all(input_json.as_bytes())
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
+		let output = cmd
+			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
@@ -40,43 +101,108 @@ impl ScriptExecutor for PythonScriptExecutor {
 
 /// Executes JavaScript scripts using the Node.js runtime.
 pub struct JavaScriptScriptExecutor {
-	/// Path to the JavaScript script file to be executed
-	pub script_path: String,
+	/// Content of the JavaScript script file to be executed
+	pub script_content: String,
 }
 
 #[async_trait]
 impl ScriptExecutor for JavaScriptScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
-		let input_json =
-			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
+		let (open_fds, max_fds) = count_open_fds();
+		// Create a combined input with both the monitor match and arguments
+		let combined_input = serde_json::json!({
+			"monitor_match": input,
+			"args": args
+		});
+		let input_json = serde_json::to_string(&combined_input)
+			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
-		let output = tokio::process::Command::new("node")
-			.arg(&self.script_path)
-			.arg(input_json)
-			.output()
+		// Warning if open file descriptors exceed the maximum limit
+		if open_fds > max_fds as usize {
+			log::warn!(
+				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
+				 This will cause issues. You should increase the limit for open files.",
+				open_fds,
+				max_fds
+			);
+		}
+
+		let mut cmd = tokio::process::Command::new("node")
+			.arg("-e")
+			.arg(&self.script_content)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::null())
+			.kill_on_drop(true)
+			.spawn()
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
+		// Write the input_json to stdin
+		cmd.stdin
+			.take()
+			.unwrap()
+			.write_all(input_json.as_bytes())
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
+		let output = cmd
+			.wait_with_output()
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 		process_script_output(output)
 	}
 }
 
 /// Executes Bash shell scripts.
 pub struct BashScriptExecutor {
-	/// Path to the Bash script file to be executed
-	pub script_path: String,
+	/// Content of the Bash script file to be executed
+	pub script_content: String,
 }
 
 #[async_trait]
 impl ScriptExecutor for BashScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
-		let input_json =
-			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
+		// Create a combined input with both the monitor match and arguments
+		let combined_input = serde_json::json!({
+			"monitor_match": input,
+			"args": args
+		});
 
-		let output = tokio::process::Command::new("bash")
-			.arg(&self.script_path)
-			.arg(input_json)
-			.output()
+		let input_json = serde_json::to_string(&combined_input)
+			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+
+		let (open_fds, max_fds) = count_open_fds();
+
+		// Warning if open file descriptors exceed the maximum limit
+		if open_fds > max_fds as usize {
+			log::warn!(
+				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
+				 This will cause issues. You should increase the limit for open files.",
+				open_fds,
+				max_fds
+			);
+		}
+
+		let mut cmd = tokio::process::Command::new("sh")
+			.arg("-c")
+			.arg(&self.script_content)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::null())
+			.kill_on_drop(true)
+			.spawn()
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
+		// Write the combined input_json to stdin
+		cmd.stdin
+			.take()
+			.unwrap()
+			.write_all(input_json.as_bytes())
+			.await
+			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+
+		let output = cmd
+			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
@@ -135,16 +261,8 @@ mod tests {
 		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
 		MatchConditions, Monitor, MonitorMatch, TransactionCondition,
 	};
-	use std::io::Write;
-	use tempfile::NamedTempFile;
 	use web3::types::{TransactionReceipt, H160, U256};
 
-	// Helper function to create a temporary script file
-	fn create_temp_script(content: &str) -> NamedTempFile {
-		let mut file = NamedTempFile::new().unwrap();
-		file.write_all(content.as_bytes()).unwrap();
-		file
-	}
 	/// Creates a test monitor with customizable parameters
 	fn create_test_monitor(
 		event_conditions: Vec<EventCondition>,
@@ -196,7 +314,8 @@ mod tests {
 import sys
 import json
 
-input_json = sys.argv[1]
+# Read from stdin instead of command line arguments
+input_json = sys.stdin.read()
 data = json.loads(input_json)
 print("debugging...")
 def test():
@@ -204,15 +323,14 @@ def test():
 result = test()
 print(result)
 "#;
-		let temp_file = create_temp_script(script_content);
 
 		let executor = PythonScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -228,15 +346,14 @@ def test():
 result = test()
 print(result)
 "#;
-		let temp_file = create_temp_script(script_content);
 
 		let executor = PythonScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -252,22 +369,22 @@ print(result)
 import sys
 import json
 
-input_json = sys.argv[1]
+# Read from stdin instead of command line arguments
+input_json = sys.stdin.read()
 data = json.loads(input_json)
 print("Starting script execution...")
 print("Processing data...")
 print("More debug info")
 print("true")
 "#;
-		let temp_file = create_temp_script(script_content);
 
 		let executor = PythonScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -275,21 +392,19 @@ print("true")
 	#[tokio::test]
 	async fn test_javascript_script_executor_success() {
 		let script_content = r#"
-	const input = JSON.parse(process.argv[2]);
-	// Do something with input and return true/false
-	console.log("debugging...");
-	console.log("finished");
-	console.log("true");
-	"#;
-		let temp_file = create_temp_script(script_content);
+		// Do something with input and return true/false
+		console.log("debugging...");
+		console.log("finished");
+		console.log("true");
+		"#;
 
 		let executor = JavaScriptScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -297,20 +412,18 @@ print("true")
 	#[tokio::test]
 	async fn test_javascript_script_executor_invalid_output() {
 		let script_content = r#"
-	const input = JSON.parse(process.argv[2]);
-	console.log("debugging...");
-	console.log("finished");
-	console.log("not a boolean");
-	"#;
-		let temp_file = create_temp_script(script_content);
+		console.log("debugging...");
+		console.log("finished");
+		console.log("not a boolean");
+		"#;
 
 		let executor = JavaScriptScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -323,18 +436,17 @@ print("true")
 	#[tokio::test]
 	async fn test_bash_script_executor_success() {
 		let script_content = r#"
-#!/bin/bash
-echo "debugging..."
-echo "true"
-"#;
-		let temp_file = create_temp_script(script_content);
+	#!/bin/bash
+	echo "debugging..."
+	echo "true"
+	"#;
 		let executor = BashScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -342,19 +454,18 @@ echo "true"
 	#[tokio::test]
 	async fn test_bash_script_executor_invalid_output() {
 		let script_content = r#"
-#!/bin/bash
-echo "debugging..."
-echo "not a boolean"
-"#;
-		let temp_file = create_temp_script(script_content);
+	#!/bin/bash
+	echo "debugging..."
+	echo "not a boolean"
+	"#;
 
 		let executor = BashScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -367,16 +478,15 @@ echo "not a boolean"
 	#[tokio::test]
 	async fn test_script_executor_empty_output() {
 		let script_content = r#"
-# This script produces no output
-"#;
-		let temp_file = create_temp_script(script_content);
+	# This script produces no output
+	"#;
 
 		let executor = PythonScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -392,15 +502,13 @@ echo "not a boolean"
 print("   ")
 print("     true    ")  # Should handle whitespace correctly
 "#;
-		let temp_file = create_temp_script(script_content);
 
 		let executor = PythonScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input).await;
-
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -408,25 +516,159 @@ print("     true    ")  # Should handle whitespace correctly
 	#[tokio::test]
 	async fn test_script_executor_invalid_json_input() {
 		let script_content = r#"
-import sys
-import json
+	import sys
+	import json
 
-input_json = sys.argv[1]
-data = json.loads(input_json)
-print("true")
-print("Invalid JSON input")
-exit(1)
-"#;
-		let temp_file = create_temp_script(script_content);
+	input_json = sys.argv[1]
+	data = json.loads(input_json)
+	print("true")
+	print("Invalid JSON input")
+	exit(1)
+	"#;
 
 		let executor = PythonScriptExecutor {
-			script_path: temp_file.path().to_str().unwrap().to_string(),
+			script_content: script_content.to_string(),
 		};
 
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
+	}
+
+	#[tokio::test]
+	async fn test_script_executor_with_multiple_lines_of_output() {
+		let script_content = r#"
+import sys
+import json
+
+# Read from stdin instead of command line arguments
+input_json = sys.stdin.read()
+data = json.loads(input_json)
+print("debugging...")
+print("false")
+print("true")
+print("false")
+print("true")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		let result = executor.execute(input, "").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_monitor_match_fields() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.stdin.read()
+data = json.loads(input_json)
+
+monitor_match = data['monitor_match']
+# Verify it's an EVM match type
+if monitor_match['EVM']:
+	block_number = monitor_match['EVM']['transaction']['blockNumber']
+	if block_number:
+		print("true")
+	else:
+		print("false")
+else:
+    print("false")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, "").await;
+		assert_eq!(result.unwrap(), false);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_with_args() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.stdin.read()
+data = json.loads(input_json)
+
+# Verify both fields exist
+if 'monitor_match' not in data or 'args' not in data:
+    print("false")
+    exit(1)
+
+# Test args parsing
+args = data['args']
+if args == "--verbose":
+    print("true")
+else:
+    print("false")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		// Test with matching argument
+		let result = executor.execute(input.clone(), "test_argument").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), false);
+
+		// Test with non-matching argument
+		let result = executor.execute(input, "--verbose").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_combined_fields() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.stdin.read()
+data = json.loads(input_json)
+
+monitor_match = data['monitor_match']
+args = data['args']
+
+# Test both monitor_match and args together
+if (monitor_match['EVM'] and 
+    args == "--verbose,--specific_arg,--test"):
+    print("true")
+else:
+    print("false")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		// Test with correct combination
+		let result = executor
+			.execute(input.clone(), "--verbose,--specific_arg,--test")
+			.await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
+
+		// Test with wrong argument
+		let result = executor.execute(input, "wrong_arg").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), false);
 	}
 }
