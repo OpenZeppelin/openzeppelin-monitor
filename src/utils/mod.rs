@@ -14,6 +14,6 @@ pub use cron_utils::*;
 pub use expression::*;
 pub use retry::*;
 pub use script::{
-	BashScriptExecutor, JavaScriptScriptExecutor, PythonScriptExecutor, ScriptExecutor,
-	ScriptExecutorFactory,
+	process_script_output, BashScriptExecutor, JavaScriptScriptExecutor, PythonScriptExecutor,
+	ScriptError, ScriptExecutor, ScriptExecutorFactory,
 };

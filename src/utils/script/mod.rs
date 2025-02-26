@@ -1,7 +1,7 @@
 mod error;
 mod executor;
 mod factory;
-pub use error::*;
+pub use error::ScriptError;
 pub use executor::{
 	process_script_output, BashScriptExecutor, JavaScriptScriptExecutor, PythonScriptExecutor,
 	ScriptExecutor,

@@ -35,7 +35,7 @@ use crate::{
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
-	utils::script::{ScriptError, ScriptExecutorFactory},
+	utils::{ScriptError, ScriptExecutorFactory},
 };
 
 /// Type alias for handling ServiceResult
