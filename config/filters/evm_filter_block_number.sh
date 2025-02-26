@@ -5,40 +5,35 @@ set -e
 
 main() {
     verbose=false
-    # Process command line arguments first
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --verbose)
-                verbose=true
-                shift # move to next argument
-                ;;
-            *)
-                shift # ignore unknown arguments
-                ;;
-        esac
-    done
-
-    if [ "$verbose" = true ]; then
-        echo "Verbose mode enabled"
-    fi
-
+    
     # Read JSON input from stdin
     input_json=$(cat)
 
+    # Parse arguments from the input JSON
+    args=$(echo "$input_json" | jq -r '.args // empty')
+    if [ ! -z "$args" ]; then
+        if [[ $args == *"--verbose"* ]]; then
+            verbose=true
+            echo "Verbose mode enabled"
+        fi
+    fi
+
+    # Extract the monitor match data from the input
+    monitor_data=$(echo "$input_json" | jq -r '.monitor_match')
+
     # Validate input
-    if [ -z "$input_json" ]; then
+    if [ -z "$monitor_data" ]; then
         echo "No input JSON provided"
         echo "false"
         exit 1
     fi
 
     if [ "$verbose" = true ]; then
-        echo "Verbose mode enabled"
         echo "Input JSON received:"
-        echo "$input_json"
     fi
 
-    block_number_hex=$(echo "$input_json" | grep -o '"blockNumber":"[^"]*"' | head -n1 | cut -d'"' -f4 || echo "")
+    # Extract blockNumber from the EVM receipt or transaction
+    block_number_hex=$(echo "$monitor_data" | jq -r '.EVM.transaction.blockNumber' || echo "")
 
     # Validate that block_number_hex is not empty
     if [ -z "$block_number_hex" ]; then
@@ -51,7 +46,7 @@ main() {
     block_number_hex=$(echo "$block_number_hex" | tr -d '\n' | tr -d ' ')
     block_number_hex=${block_number_hex#0x}
 
-    if [[ "$*" == *"--verbose"* ]]; then
+    if [ "$verbose" = true ]; then
         echo "Extracted block number (hex): $block_number_hex"
     fi
 
@@ -62,7 +57,7 @@ main() {
         exit 1
     fi
 
-    if [[ "$*" == *"--verbose"* ]]; then
+    if [ "$verbose" = true ]; then
         echo "Converted block number (decimal): $block_number"
     fi
 
@@ -82,5 +77,5 @@ main() {
     fi
 }
 
-# Call main function with all arguments
-main "$@"
+# Call main function
+main

@@ -1,17 +1,19 @@
 try {
-    // Read from stdin instead of command line arguments
-    let inputJson = '';
+    // Read from stdin
+    let inputData = '';
     process.stdin.on('data', chunk => {
-        inputJson += chunk;
+        inputData += chunk;
     });
     
     process.stdin.on('end', () => {
-        const data = JSON.parse(inputJson);
+        const data = JSON.parse(inputData);
+        const monitorMatch = data.monitor_match;
+        const args = data.args;
         
         // Extract ledger sequence number
         let ledgerNumber = null;
-        if (data.Stellar) {
-            ledgerNumber = data.Stellar.ledger.sequence;
+        if (monitorMatch.Stellar) {
+            ledgerNumber = monitorMatch.Stellar.ledger.sequence;
         }
 
         if (ledgerNumber === null) {

@@ -4,7 +4,7 @@
 set -e
 
 main() {
-    # Read JSON input from stdin instead of argument
+    # Read JSON input from stdin
     input_json=$(cat)
 
     # Validate input
@@ -14,8 +14,8 @@ main() {
         exit 1
     fi
 
-    # Extract ledger number using grep and cut
-    ledger_number=$(echo "$input_json" | grep -o '"sequence":[^,}]*' | head -n1 | cut -d':' -f2 || echo "")
+    # Extract ledger number from the nested monitor_match.Stellar structure
+    ledger_number=$(echo "$input_json" | jq -r '.monitor_match.Stellar.ledger.sequence // empty')
 
     # Validate ledger number
     if [ -z "$ledger_number" ]; then

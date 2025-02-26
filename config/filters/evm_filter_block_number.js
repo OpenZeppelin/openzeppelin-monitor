@@ -7,11 +7,13 @@ try {
 
     process.stdin.on('end', () => {
         const data = JSON.parse(inputData);
+        const monitorMatch = data.monitor_match;
+        const args = data.args;
 
         // Extract block_number
         let blockNumber = null;
-        if (data.EVM) {
-            const hexBlock = data.EVM.transaction?.blockNumber;
+        if (monitorMatch.EVM) {
+            const hexBlock = monitorMatch.EVM.transaction?.blockNumber;
             if (hexBlock) {
                 // Convert hex string to integer
                 blockNumber = parseInt(hexBlock, 16);

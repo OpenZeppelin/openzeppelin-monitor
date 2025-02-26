@@ -14,14 +14,16 @@ def main():
         # Parse input JSON
         try:
             data = json.loads(input_data)
+            monitor_match = data['monitor_match']
+            args = data['args']
         except json.JSONDecodeError as e:
             print(f"Invalid JSON input: {e}", flush=True)
             return False
 
         # Extract block_number
         block_number = None
-        if "EVM" in data:
-            hex_block = data['EVM']['transaction'].get('blockNumber')
+        if "EVM" in monitor_match:
+            hex_block = monitor_match['EVM']['transaction'].get('blockNumber')
             if hex_block:
                 # Convert hex string to integer
                 block_number = int(hex_block, 16)
