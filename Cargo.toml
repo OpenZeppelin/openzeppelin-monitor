@@ -40,6 +40,7 @@ stellar-xdr = "22.1.0"
 tokio = { version = "1.0", features = ["full"] }
 tokio-cron-scheduler = "0.13.0"
 web3 = "0.19.0"
+libc = "0.2"
 
 [dev-dependencies]
 cargo-llvm-cov = "0.5"
