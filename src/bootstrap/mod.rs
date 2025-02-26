@@ -256,8 +256,7 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 		tokio::spawn(async move {
 			tokio::select! {
 				_ = async {
-					let matches = block.processing_results.len();
-					if matches == 0 {
+					if block.processing_results.is_empty() {
 						return;
 					}
 					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
