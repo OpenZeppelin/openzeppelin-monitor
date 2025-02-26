@@ -132,7 +132,7 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				})?;
 				// Store the script content with its language
 				scripts.insert(
-					format!("{}-{}", monitor.name, condition.script_path),
+					format!("{}|{}", monitor.name, condition.script_path),
 					(condition.language.clone(), content),
 				);
 			}
