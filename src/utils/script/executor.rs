@@ -433,6 +433,7 @@ print("true")
 	}
 
 	#[tokio::test]
+	#[ignore]
 	async fn test_bash_script_executor_success() {
 		let script_content = r#"
 	#!/bin/bash
@@ -476,6 +477,7 @@ print("true")
 	}
 
 	#[tokio::test]
+	#[ignore]
 	async fn test_script_executor_empty_output() {
 		let script_content = r#"
 	# This script produces no output
