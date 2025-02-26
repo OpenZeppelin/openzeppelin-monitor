@@ -63,14 +63,6 @@ pub fn notification_message_strategy() -> impl Strategy<Value = NotificationMess
 		.prop_map(|(title, body)| NotificationMessage { title, body })
 }
 
-pub fn notification_message_strategy() -> impl Strategy<Value = NotificationMessage> {
-	(
-		"[a-zA-Z0-9_]{1,50}".prop_map(|s| s.to_string()),
-		"[a-zA-Z0-9_]{1,100}".prop_map(|s| s.to_string()),
-	)
-		.prop_map(|(title, body)| NotificationMessage { title, body })
-}
-
 pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 	prop_oneof![
 		// Slack strategy
