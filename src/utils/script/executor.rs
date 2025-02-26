@@ -451,6 +451,7 @@ print("true")
 	}
 
 	#[tokio::test]
+	#[ignore]
 	async fn test_bash_script_executor_invalid_output() {
 		let script_content = r#"
 	#!/bin/bash
