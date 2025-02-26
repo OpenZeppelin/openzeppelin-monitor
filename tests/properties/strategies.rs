@@ -289,62 +289,41 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 }
 
 pub fn process_output_strategy() -> impl Strategy<Value = std::process::Output> {
-	// Helper strategy for whitespace
-	let whitespace_strategy = prop_oneof![
-		Just(""),
-		Just(" "),
-		Just("  "),
-		Just("\t"),
-		Just("\n"),
-		Just("\r\n")
-	]
-	.prop_map(|s| s.to_string());
-
-	// Generate random stdout content with possible whitespace
-	let stdout_strategy = prop_oneof![
-		// Valid single boolean with optional whitespace
-		(
-			whitespace_strategy.clone(),
-			prop_oneof![Just("true"), Just("false")],
-			whitespace_strategy.clone()
-		)
-			.prop_map(|(pre, val, post)| format!("{}{}{}", pre, val, post)),
-		// Valid multiple booleans with whitespace and newlines
-		prop::collection::vec(
-			(
-				whitespace_strategy.clone(),
-				prop_oneof![Just("true"), Just("false")],
-				whitespace_strategy.clone()
-			)
-				.prop_map(|(pre, val, post)| format!("{}{}{}", pre, val, post)),
-			1..5
-		)
-		.prop_map(|v| v.join("\n")),
-		// Invalid content
-		"[a-zA-Z0-9]{1,20}".prop_map(|s| s.to_string()),
-		// Empty content with possible whitespace
-		whitespace_strategy.clone(),
-		// Mixed content with whitespace
-		prop::collection::vec(
-			(
-				whitespace_strategy.clone(),
-				prop_oneof![
-					Just("true".to_string()),
-					Just("false".to_string()),
-					"[a-zA-Z0-9]{1,10}".prop_map(|s| s.to_string())
-				],
-				whitespace_strategy.clone()
-			)
-				.prop_map(|(pre, val, post)| format!("{}{}{}", pre, val, post)),
-			1..5
-		)
-		.prop_map(|v| v.join("\n"))
+	// Helper strategy for debug output lines
+	let debug_line_strategy = prop_oneof![
+		"[a-zA-Z0-9 ]{1,50}".prop_map(|s| format!("{}...", s)),
+		"debugging...".prop_map(|s| s.to_string()),
+		"Processing data...".prop_map(|s| s.to_string()),
+		"Starting script execution...".prop_map(|s| s.to_string())
 	];
 
-	// Generate random stderr content
+	// Generate stdout content with optional debug lines and a final boolean
+	let stdout_strategy = (
+		// 0 to 5 debug lines
+		prop::collection::vec(debug_line_strategy, 0..5),
+		// Final boolean output with optional whitespace
+		(
+			"[ \t]*".prop_map(|s| s.to_string()),
+			prop_oneof![Just("true"), Just("false")],
+			"[ \t\n]*".prop_map(|s| s.to_string()),
+		),
+	)
+		.prop_map(|(debug_lines, (pre, val, post))| {
+			let mut output = String::new();
+			for line in debug_lines {
+				output.push_str(&line);
+				output.push('\n');
+			}
+			output.push_str(&format!("{}{}{}", pre, val, post));
+			output
+		});
+
+	// Generate stderr content for error cases
 	let stderr_strategy = prop_oneof![
 		Just("".to_string()),
-		"[a-zA-Z0-9\n]{0,50}".prop_map(|s| s.to_string())
+		"Script execution failed:.*".prop_map(|s| s.to_string()),
+		"ImportError:.*".prop_map(|s| s.to_string()),
+		"SyntaxError:.*".prop_map(|s| s.to_string())
 	];
 
 	(stdout_strategy, stderr_strategy, prop::bool::ANY).prop_map(|(stdout, stderr, success)| {

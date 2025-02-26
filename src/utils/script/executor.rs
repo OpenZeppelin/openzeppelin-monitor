@@ -248,8 +248,7 @@ pub fn process_script_output(output: std::process::Output) -> Result<bool, Scrip
 		"true" => Ok(true),
 		"false" => Ok(false),
 		_ => Err(ScriptError::parse_error(format!(
-			"Last line of output is not a valid boolean: '{}'",
-			last_line
+			"Last line of output is not a valid boolean"
 		))),
 	}
 }
@@ -490,6 +489,7 @@ print("true")
 
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
+				println!("msg: {}", msg);
 				assert!(msg.contains("Script produced no output"));
 			}
 			_ => panic!("Expected ParseError"),
