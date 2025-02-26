@@ -15,7 +15,7 @@ pub trait ScriptExecutor: Send + Sync {
 	///
 	/// # Returns
 	/// * `Result<bool, ScriptError>` - Returns true/false based on script execution or an error
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError>;
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
@@ -50,13 +50,17 @@ fn count_open_fds() -> (usize, u64) {
 	}
 }
 
+// TODO: change the docs to refer bash script (check chat with Nami!)
+// TODO: run some tests with args
+// TODO: check the best way to pass args (optional or not) to the script
+
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
-
 		let (open_fds, max_fds) = count_open_fds();
+		let args = args.split(',').collect::<Vec<&str>>();
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -72,6 +76,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 		let mut cmd = tokio::process::Command::new("python3")
 			.arg("-c")
 			.arg(&self.script_content)
+			.args(&args)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
@@ -92,6 +97,8 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
+		println!("output: {:?}", output);
+
 		process_script_output(output)
 	}
 }
@@ -104,10 +111,11 @@ pub struct JavaScriptScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for JavaScriptScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 		let (open_fds, max_fds) = count_open_fds();
+		let args = args.split(',').collect::<Vec<&str>>();
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -122,6 +130,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		let mut cmd = tokio::process::Command::new("node")
 			.arg("-e")
 			.arg(&self.script_content)
+			.args(&args)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::null())
@@ -154,10 +163,11 @@ pub struct BashScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for BashScriptExecutor {
-	async fn execute(&self, input: MonitorMatch) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
 		let input_json =
 			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 		let (open_fds, max_fds) = count_open_fds();
+		let args = args.split(',').collect::<Vec<&str>>();
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -172,6 +182,7 @@ impl ScriptExecutor for BashScriptExecutor {
 		let mut cmd = tokio::process::Command::new("sh")
 			.arg("-c")
 			.arg(&self.script_content)
+			.args(&args)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::null())
@@ -316,7 +327,7 @@ print(result)
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -339,7 +350,7 @@ print(result)
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -370,7 +381,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -390,7 +401,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -409,7 +420,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -432,7 +443,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -451,7 +462,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -472,7 +483,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -494,7 +505,7 @@ print("     true    ")  # Should handle whitespace correctly
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -519,7 +530,7 @@ print("     true    ")  # Should handle whitespace correctly
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_err());
 	}
 
@@ -545,7 +556,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input).await;
+		let result = executor.execute(input, "").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}

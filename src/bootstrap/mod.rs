@@ -328,7 +328,10 @@ async fn execute_trigger_condition(
 
 	let result = tokio::time::timeout(
 		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
-		executor.execute(monitor_match.clone()),
+		executor.execute(
+			monitor_match.clone(),
+			trigger_condition.arguments.as_deref().unwrap_or(""),
+		),
 	)
 	.await;
 
@@ -375,7 +378,6 @@ async fn run_trigger_filters(
 					monitor_name, trigger_condition.script_path
 				))
 				.unwrap();
-
 			if execute_trigger_condition(&trigger_condition, monitor_match, script_content).await {
 				is_filtered = true;
 				break;
