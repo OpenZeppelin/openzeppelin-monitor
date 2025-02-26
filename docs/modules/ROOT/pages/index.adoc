@@ -584,8 +584,8 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
   "trigger_conditions": [
     {
       "execution_order": 1,
-      "script_path": "./config/filters/evm_filter_block_number.py",
-      "language": "python",
+      "script_path": "./config/filters/evm_filter_block_number.sh",
+      "language": "bash",
       "arguments": "--verbose",
       "timeout_ms": 1000
     }
