@@ -545,7 +545,7 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
 * Network targets (which chains to monitor)
 * Contract addresses to watch
 * Conditions to match (functions, events, transactions)
-* Trigger conditions (scripts to execute that evaluate every monitor match to determine if it should launch a trigger or not)
+* Trigger conditions (custom scripts that act as filters for each monitor match to determine whether a trigger should be activated).
 * Triggers to execute when conditions are met
 
 .Example Monitor Configuration
@@ -719,7 +719,7 @@ For Stellar function `transfer(Address,Address,I128)`:
 
 ==== Trigger Conditions (Custom filters)
 
-Custom filters allow you to create sophisticated filtering logic for processing monitor matches. These filters act as additional validation layers that determine whether a match should be launch a trigger or not.
+Custom filters allow you to create sophisticated filtering logic for processing monitor matches. These filters act as additional validation layers that determine whether a match should trigger the execution of a trigger or not.
 
 You can write custom filters in any of the following languages:
 
