@@ -9,7 +9,7 @@
 mod cron_utils;
 mod expression;
 mod retry;
-pub mod script;
+mod script;
 pub use cron_utils::*;
 pub use expression::*;
 pub use retry::*;
