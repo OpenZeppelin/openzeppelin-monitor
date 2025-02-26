@@ -57,10 +57,14 @@ fn count_open_fds() -> (usize, u64) {
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
-		let input_json =
-			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 		let (open_fds, max_fds) = count_open_fds();
 		let args = args.split(',').collect::<Vec<&str>>();
+		let combined_input = serde_json::json!({
+			"monitor_match": input,
+			"args": args
+		});
+		let input_json = serde_json::to_string(&combined_input)
+			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -76,7 +80,6 @@ impl ScriptExecutor for PythonScriptExecutor {
 		let mut cmd = tokio::process::Command::new("python3")
 			.arg("-c")
 			.arg(&self.script_content)
-			.args(&args)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
@@ -97,8 +100,6 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
-		println!("output: {:?}", output);
-
 		process_script_output(output)
 	}
 }
@@ -112,10 +113,14 @@ pub struct JavaScriptScriptExecutor {
 #[async_trait]
 impl ScriptExecutor for JavaScriptScriptExecutor {
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
-		let input_json =
-			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
 		let (open_fds, max_fds) = count_open_fds();
-		let args = args.split(',').collect::<Vec<&str>>();
+		// Create a combined input with both the monitor match and arguments
+		let combined_input = serde_json::json!({
+			"monitor_match": input,
+			"args": args
+		});
+		let input_json = serde_json::to_string(&combined_input)
+			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -130,7 +135,6 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		let mut cmd = tokio::process::Command::new("node")
 			.arg("-e")
 			.arg(&self.script_content)
-			.args(&args)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::null())
@@ -150,7 +154,6 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-
 		process_script_output(output)
 	}
 }
@@ -164,10 +167,16 @@ pub struct BashScriptExecutor {
 #[async_trait]
 impl ScriptExecutor for BashScriptExecutor {
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
-		let input_json =
-			serde_json::to_string(&input).map_err(|e| ScriptError::parse_error(e.to_string()))?;
+		// Create a combined input with both the monitor match and arguments
+		let combined_input = serde_json::json!({
+			"monitor_match": input,
+			"args": args
+		});
+
+		let input_json = serde_json::to_string(&combined_input)
+			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+
 		let (open_fds, max_fds) = count_open_fds();
-		let args = args.split(',').collect::<Vec<&str>>();
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -182,7 +191,6 @@ impl ScriptExecutor for BashScriptExecutor {
 		let mut cmd = tokio::process::Command::new("sh")
 			.arg("-c")
 			.arg(&self.script_content)
-			.args(&args)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::null())
@@ -190,7 +198,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.spawn()
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
 
-		// Write the input_json to stdin
+		// Write the combined input_json to stdin
 		cmd.stdin
 			.take()
 			.unwrap()
