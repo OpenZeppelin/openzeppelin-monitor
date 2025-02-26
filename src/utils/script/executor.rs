@@ -50,10 +50,6 @@ fn count_open_fds() -> (usize, u64) {
 	}
 }
 
-// TODO: change the docs to refer bash script (check chat with Nami!)
-// TODO: run some tests with args
-// TODO: check the best way to pass args (optional or not) to the script
-
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
