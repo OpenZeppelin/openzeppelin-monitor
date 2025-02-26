@@ -58,7 +58,6 @@ fn count_open_fds() -> (usize, u64) {
 impl ScriptExecutor for PythonScriptExecutor {
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
 		let (open_fds, max_fds) = count_open_fds();
-		let args = args.split(',').collect::<Vec<&str>>();
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
 			"args": args
