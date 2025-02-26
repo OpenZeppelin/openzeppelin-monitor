@@ -563,4 +563,112 @@ print("true")
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_monitor_match_fields() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.stdin.read()
+data = json.loads(input_json)
+
+monitor_match = data['monitor_match']
+# Verify it's an EVM match type
+if monitor_match['EVM']:
+	block_number = monitor_match['EVM']['transaction']['blockNumber']
+	if block_number:
+		print("true")
+	else:
+		print("false")
+else:
+    print("false")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, "").await;
+		assert_eq!(result.unwrap(), false);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_with_args() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.stdin.read()
+data = json.loads(input_json)
+
+# Verify both fields exist
+if 'monitor_match' not in data or 'args' not in data:
+    print("false")
+    exit(1)
+
+# Test args parsing
+args = data['args']
+if args == "--verbose":
+    print("true")
+else:
+    print("false")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		// Test with matching argument
+		let result = executor.execute(input.clone(), "test_argument").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), false);
+
+		// Test with non-matching argument
+		let result = executor.execute(input, "--verbose").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_combined_fields() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.stdin.read()
+data = json.loads(input_json)
+
+monitor_match = data['monitor_match']
+args = data['args']
+
+# Test both monitor_match and args together
+if (monitor_match['EVM'] and 
+    args == "--verbose,--specific_arg,--test"):
+    print("true")
+else:
+    print("false")
+"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+
+		// Test with correct combination
+		let result = executor
+			.execute(input.clone(), "--verbose,--specific_arg,--test")
+			.await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
+
+		// Test with wrong argument
+		let result = executor.execute(input, "wrong_arg").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), false);
+	}
 }
