@@ -162,8 +162,7 @@ mod tests {
 	#[test]
 	fn test_validation_error_formatting() {
 		let error = RepositoryError::validation_error("test error", None, None);
-		assert!(error.to_string().contains("Validation Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = RepositoryError::validation_error_with_source(
 			"test error",
@@ -171,9 +170,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Validation Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = RepositoryError::validation_error_with_source(
 			"test error",
@@ -181,17 +178,14 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Validation Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_load_error_formatting() {
 		let error = RepositoryError::load_error("test error", None, None);
-		assert!(error.to_string().contains("Load Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = RepositoryError::load_error_with_source(
 			"test error",
@@ -199,9 +193,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Load Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = RepositoryError::load_error_with_source(
 			"test error",
@@ -209,17 +201,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Load Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_internal_error_formatting() {
 		let error = RepositoryError::internal_error("test error", None, None);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = RepositoryError::internal_error_with_source(
 			"test error",
@@ -227,9 +215,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = RepositoryError::internal_error_with_source(
 			"test error",
@@ -237,9 +223,6 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 }

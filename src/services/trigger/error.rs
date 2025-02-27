@@ -157,10 +157,7 @@ mod tests {
 	#[test]
 	fn test_not_found_error_formatting() {
 		let error = TriggerError::not_found("test error", None, None);
-		assert!(error
-			.to_string()
-			.contains("Trigger Not Found Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = TriggerError::not_found_with_source(
 			"test error",
@@ -168,30 +165,20 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Trigger Not Found Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 		let error = TriggerError::not_found_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Trigger Not Found Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_execution_error_formatting() {
 		let error = TriggerError::execution_error("test error", None, None);
-		assert!(error.to_string().contains("Execution Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = TriggerError::execution_error_with_source(
 			"test error",
@@ -199,9 +186,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Execution Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = TriggerError::execution_error_with_source(
 			"test error",
@@ -209,19 +194,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Execution Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_configuration_error_formatting() {
 		let error = TriggerError::configuration_error("test error", None, None);
-		assert!(error
-			.to_string()
-			.contains("Configuration Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = TriggerError::configuration_error_with_source(
 			"test error",
@@ -229,11 +208,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Configuration Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = TriggerError::configuration_error_with_source(
 			"test error",
@@ -241,11 +216,6 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Configuration Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 }

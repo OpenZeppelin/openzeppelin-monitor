@@ -246,8 +246,7 @@ mod tests {
 	#[test]
 	fn test_connection_error_formatting() {
 		let error = BlockChainError::connection_error("test error", None, None);
-		assert!(error.to_string().contains("Connection Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockChainError::connection_error_with_source(
 			"test error",
@@ -255,9 +254,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Connection Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockChainError::connection_error_with_source(
 			"test error",
@@ -265,17 +262,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Connection Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_request_error_formatting() {
 		let error = BlockChainError::request_error("test error", None, None);
-		assert!(error.to_string().contains("Request Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockChainError::request_error_with_source(
 			"test error",
@@ -283,9 +276,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Request Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockChainError::request_error_with_source(
 			"test error",
@@ -293,17 +284,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Request Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_block_not_found_formatting() {
 		let error = BlockChainError::block_not_found(1, None, None);
-		assert!(error.to_string().contains("Block Not Found Error: 1"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "1");
 
 		let error = BlockChainError::block_not_found_with_source(
 			1,
@@ -311,9 +298,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Block Not Found Error: 1"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "1 (test source)");
 
 		let error = BlockChainError::block_not_found_with_source(
 			1,
@@ -321,17 +306,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Block Not Found Error: 1"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "1 (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_transaction_error_formatting() {
 		let error = BlockChainError::transaction_error("test error", None, None);
-		assert!(error.to_string().contains("Transaction Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockChainError::transaction_error_with_source(
 			"test error",
@@ -339,9 +320,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Transaction Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockChainError::transaction_error_with_source(
 			"test error",
@@ -349,17 +328,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Transaction Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_internal_error_formatting() {
 		let error = BlockChainError::internal_error("test error", None, None);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockChainError::internal_error_with_source(
 			"test error",
@@ -367,9 +342,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockChainError::internal_error_with_source(
 			"test error",
@@ -377,19 +350,16 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_from_web3_error() {
 		let error = web3::Error::InvalidResponse("test error".to_string());
 		let block_chain_error: BlockChainError = error.into();
-		assert!(block_chain_error
-			.to_string()
-			.contains("Request Error: Got invalid response: test error"));
-		assert!(block_chain_error.to_string().contains("[timestamp="));
+		assert_eq!(
+			block_chain_error.to_string(),
+			"Got invalid response: test error"
+		);
 	}
 }

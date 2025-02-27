@@ -260,8 +260,7 @@ mod tests {
 	#[test]
 	fn test_scheduler_error_formatting() {
 		let error = BlockWatcherError::scheduler_error("test error", None, None);
-		assert!(error.to_string().contains("Scheduler Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockWatcherError::scheduler_error_with_source(
 			"test error",
@@ -269,16 +268,13 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Scheduler Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 	}
 
 	#[test]
 	fn test_network_error_formatting() {
 		let error = BlockWatcherError::network_error("test error", None, None);
-		assert!(error.to_string().contains("Network Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockWatcherError::network_error_with_source(
 			"test error",
@@ -286,9 +282,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Network Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockWatcherError::network_error_with_source(
 			"test error",
@@ -296,17 +290,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Network Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_processing_error_formatting() {
 		let error = BlockWatcherError::processing_error("test error", None, None);
-		assert!(error.to_string().contains("Processing Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockWatcherError::processing_error_with_source(
 			"test error",
@@ -314,9 +304,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Processing Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockWatcherError::processing_error_with_source(
 			"test error",
@@ -324,17 +312,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Processing Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_storage_error_formatting() {
 		let error = BlockWatcherError::storage_error("test error", None, None);
-		assert!(error.to_string().contains("Storage Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockWatcherError::storage_error_with_source(
 			"test error",
@@ -342,9 +326,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Storage Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockWatcherError::storage_error_with_source(
 			"test error",
@@ -352,19 +334,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Storage Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_block_tracker_error_formatting() {
 		let error = BlockWatcherError::block_tracker_error("test error", None, None);
-		assert!(error
-			.to_string()
-			.contains("Block Tracker Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = BlockWatcherError::block_tracker_error_with_source(
 			"test error",
@@ -372,23 +348,13 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Block Tracker Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
-
+		assert_eq!(error.to_string(), "test error (test source)");
 		let error = BlockWatcherError::block_tracker_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Block Tracker Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 }

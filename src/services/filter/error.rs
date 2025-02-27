@@ -158,10 +158,7 @@ mod tests {
 	#[test]
 	fn test_block_type_mismatch_error_formatting() {
 		let error = FilterError::block_type_mismatch("test error", None, None);
-		assert!(error
-			.to_string()
-			.contains("Block Type Mismatch Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = FilterError::block_type_mismatch_with_source(
 			"test error",
@@ -169,11 +166,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Block Type Mismatch Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = FilterError::block_type_mismatch_with_source(
 			"test error",
@@ -181,19 +174,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error
-			.to_string()
-			.contains("Block Type Mismatch Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_network_error_formatting() {
 		let error = FilterError::network_error("test error", None, None);
-		assert!(error.to_string().contains("Network Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = FilterError::network_error_with_source(
 			"test error",
@@ -201,9 +188,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Network Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = FilterError::network_error_with_source(
 			"test error",
@@ -211,17 +196,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Network Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_internal_error_formatting() {
 		let error = FilterError::internal_error("test error", None, None);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = FilterError::internal_error_with_source(
 			"test error",
@@ -229,9 +210,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = FilterError::internal_error_with_source(
 			"test error",
@@ -239,9 +218,6 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Internal Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 }
