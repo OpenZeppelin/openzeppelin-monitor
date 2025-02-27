@@ -57,7 +57,7 @@ mock! {
 
 	impl Clone for EvmClientTrait {
 		fn clone(&self) -> Self {
-			self.clone()
+			Self{}
 		}
 	}
 }
@@ -96,7 +96,7 @@ mock! {
 
 	impl Clone for StellarClientTrait {
 		fn clone(&self) -> Self {
-			self.clone()
+			Self{}
 		}
 	}
 }
