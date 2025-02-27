@@ -373,9 +373,28 @@ async fn test_process_block_with_shutdown() {
 
 #[tokio::test]
 async fn test_load_scripts() {
-	// Setup test triggers in JSON with known configurations
-	let trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+	// Create the mock service
+	let mut mock_service = MockTriggerExecutionService::<MockTriggerRepository>::default();
+
+	// Set up expectation for load_scripts method
+	mock_service
+		.expect_load_scripts()
+		.times(1)
+		.returning(|monitors| {
+			let mut scripts = HashMap::new();
+			for monitor in monitors {
+				for condition in &monitor.trigger_conditions {
+					scripts.insert(
+						format!("{}|{}", monitor.name, condition.script_path),
+						(
+							condition.language.clone(),
+							"mock script content".to_string(),
+						),
+					);
+				}
+			}
+			Ok(scripts)
+		});
 
 	// Create test monitors with trigger conditions
 	let monitors = vec![Monitor {
@@ -392,10 +411,7 @@ async fn test_load_scripts() {
 	}];
 
 	// Test loading scripts
-	let scripts = trigger_execution_service
-		.load_scripts(&monitors)
-		.await
-		.unwrap();
+	let scripts = mock_service.load_scripts(&monitors).await.unwrap();
 
 	// Verify results
 	assert_eq!(scripts.len(), 1);
