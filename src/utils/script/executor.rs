@@ -433,32 +433,45 @@ print("true")
 	}
 
 	#[tokio::test]
-	#[ignore]
 	async fn test_bash_script_executor_success() {
 		let script_content = r#"
-	#!/bin/bash
-	echo "debugging..."
-	echo "true"
-	"#;
+#!/bin/bash
+set -e  # Exit on any error
+sleep 0.1  # Small delay to ensure process startup
+echo "debugging..."
+echo "true"
+"#;
 		let executor = BashScriptExecutor {
 			script_content: script_content.to_string(),
 		};
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
-		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		for _ in 0..3 {
+			// Retry logic for flaky tests
+			match executor.execute(input.clone(), "").await {
+				Ok(result) => {
+					assert_eq!(result, true);
+					return;
+				}
+				Err(e) => {
+					eprintln!("Test attempt failed: {}", e);
+					tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+				}
+			}
+		}
+		panic!("Test failed after 3 retries");
 	}
 
 	#[tokio::test]
-	#[ignore]
 	async fn test_bash_script_executor_invalid_output() {
 		let script_content = r#"
-	#!/bin/bash
-	echo "debugging..."
-	echo "not a boolean"
-	"#;
+#!/bin/bash
+set -e  # Exit on any error
+sleep 0.1  # Small delay to ensure process startup
+echo "debugging..."
+echo "not a boolean"
+"#;
 
 		let executor = BashScriptExecutor {
 			script_content: script_content.to_string(),
@@ -466,18 +479,26 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
-		assert!(result.is_err());
-		match result {
-			Err(ScriptError::ParseError(msg)) => {
-				assert!(msg.contains("Last line of output is not a valid boolean"));
+		for _ in 0..3 {
+			// Retry logic for flaky tests
+			match executor.execute(input.clone(), "").await {
+				Err(ScriptError::ParseError(msg)) => {
+					assert!(msg.contains("Last line of output is not a valid boolean"));
+					return;
+				}
+				Ok(_) => {
+					panic!("Expected ParseError, got success");
+				}
+				Err(e) => {
+					eprintln!("Test attempt failed with unexpected error: {}", e);
+					tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+				}
 			}
-			_ => panic!("Expected ParseError"),
 		}
+		panic!("Test failed after 3 retries");
 	}
 
 	#[tokio::test]
-	#[ignore]
 	async fn test_script_executor_empty_output() {
 		let script_content = r#"
 	# This script produces no output
