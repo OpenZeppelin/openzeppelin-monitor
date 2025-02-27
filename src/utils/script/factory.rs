@@ -34,3 +34,39 @@ impl ScriptExecutorFactory {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::ScriptLanguage;
+
+	#[test]
+	fn test_create_python_executor() {
+		let script = "print('Hello')";
+		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, script);
+
+		// Test with empty script
+		let empty_script = "";
+		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, empty_script);
+	}
+
+	#[test]
+	fn test_create_javascript_executor() {
+		let script = "console.log('Hello')";
+		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script);
+
+		// Test with empty script
+		let empty_script = "";
+		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, empty_script);
+	}
+
+	#[test]
+	fn test_create_bash_executor() {
+		let script = "echo 'Hello'";
+		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, script);
+
+		// Test with empty script
+		let empty_script = "";
+		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, empty_script);
+	}
+}
