@@ -12,8 +12,11 @@ use openzeppelin_monitor::{
 };
 
 use crate::integration::{
-	filters::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
-	mocks::{MockStellarClientTrait, MockStellarTransportClient},
+	filters::common::{load_test_data, read_and_parse_json},
+	mocks::{
+		MockStellarClientTrait, MockStellarTransportClient, MockTriggerExecutionService,
+		MockTriggerRepository,
+	},
 };
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
@@ -689,10 +692,15 @@ async fn test_handle_match() -> Result<(), FilterError> {
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
 
-	let mut trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/stellar/triggers/trigger.json");
+	// Create mock for TriggerExecutionService
+	let mut mock = MockTriggerExecutionService::<MockTriggerRepository>::default();
 
-	trigger_execution_service
+	// Set up expectations for new()
+	MockTriggerExecutionService::<MockTriggerRepository>::new_context()
+		.expect()
+		.return_once(|_, _| MockTriggerExecutionService::default());
+
+	mock
 		.expect_execute()
 		.withf(|trigger_name, variables| {
 			trigger_name == ["example_trigger_slack"]
@@ -716,7 +724,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 		.once()
 		.returning(|_, _| Ok(()));
 
-	trigger_execution_service
+	mock
 		.expect_execute()
 		.withf(|trigger_name, variables| {
 			trigger_name == ["example_trigger_slack"]
@@ -744,7 +752,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	assert!(!matches.is_empty(), "Should have found matches to handle");
 
 	for matching_monitor in matches {
-		let result = handle_match(matching_monitor.clone(), &trigger_execution_service).await;
+		let result = handle_match(matching_monitor.clone(), &mock).await;
 		assert!(result.is_ok(), "Handle match should succeed");
 	}
 

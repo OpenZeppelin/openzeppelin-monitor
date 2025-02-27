@@ -62,7 +62,7 @@ mock! {
 
 	impl<T: Send + Sync + Clone + 'static> Clone for EvmClientTrait<T> {
 		fn clone(&self) -> Self {
-			self.clone()
+			Self{}
 		}
 	}
 }
@@ -103,7 +103,7 @@ mock! {
 
 	impl<T: Send + Sync + Clone + 'static> Clone for StellarClientTrait<T> {
 		fn clone(&self) -> Self {
-			self.clone()
+			Self{}
 		}
 	}
 }
