@@ -3,7 +3,10 @@ use crate::integration::{
 		setup_monitor_service, setup_network_service, setup_trigger_execution_service,
 		setup_trigger_service,
 	},
-	mocks::{create_test_block, create_test_network, MockEvmClientTrait},
+	mocks::{
+		create_test_block, create_test_network, MockEvmClientTrait, MockTriggerExecutionService,
+		MockTriggerRepository,
+	},
 };
 use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
@@ -347,6 +350,30 @@ async fn test_process_block_with_shutdown() {
 
 #[tokio::test]
 async fn test_load_scripts() {
+	// Set up expectation for the constructor
+	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
+	ctx.expect()
+		.with(mockall::predicate::always(), mockall::predicate::always())
+		.returning(|_trigger_service, _notification_service| {
+			let mut mock = MockTriggerExecutionService::default();
+			mock.expect_load_scripts().returning(|monitors| {
+				let mut scripts = HashMap::new();
+				for monitor in monitors {
+					for condition in &monitor.trigger_conditions {
+						scripts.insert(
+							format!("{}|{}", monitor.name, condition.script_path),
+							(
+								condition.language.clone(),
+								"mock script content".to_string(),
+							),
+						);
+					}
+				}
+				Ok(scripts)
+			});
+			mock
+		});
+
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
 		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
