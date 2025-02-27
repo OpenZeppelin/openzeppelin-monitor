@@ -494,3 +494,31 @@ async fn test_load_scripts_error() {
 		_ => panic!("Expected error"),
 	}
 }
+
+#[tokio::test]
+async fn test_load_scripts_empty_conditions() {
+	// Create test monitors with empty trigger conditions
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![], // Empty trigger conditions
+		..Default::default()
+	}];
+
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(HashMap::new());
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	// Test loading scripts
+	let scripts = trigger_execution_service
+		.load_scripts(&monitors)
+		.await
+		.unwrap();
+
+	// Verify results
+	assert!(
+		scripts.is_empty(),
+		"Scripts map should be empty when there are no trigger conditions"
+	);
+}
