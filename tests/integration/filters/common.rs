@@ -73,7 +73,25 @@ pub fn setup_trigger_execution_service(
 	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
 	ctx.expect()
 		.with(mockall::predicate::always(), mockall::predicate::always())
-		.returning(|_, _| MockTriggerExecutionService::default());
+		.returning(|_trigger_service, _notification_service| {
+			let mut mock = MockTriggerExecutionService::default();
+			mock.expect_load_scripts().returning(|monitors| {
+				let mut scripts = HashMap::new();
+				for monitor in monitors {
+					for condition in &monitor.trigger_conditions {
+						scripts.insert(
+							format!("{}|{}", monitor.name, condition.script_path),
+							(
+								condition.language.clone(),
+								"mock script content".to_string(),
+							),
+						);
+					}
+				}
+				Ok(scripts)
+			});
+			mock
+		});
 
 	// Then make the actual call that will match the expectation
 	MockTriggerExecutionService::new(trigger_service, notification_service)

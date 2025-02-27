@@ -13,7 +13,7 @@ use openzeppelin_monitor::{
 		StellarTransaction, StellarTransactionInfo, Trigger, TriggerConditions, TriggerType,
 		TriggerTypeConfig,
 	},
-	services::filter::FilterService,
+	services::{filter::FilterService, trigger::TriggerExecutionServiceTrait},
 };
 
 use std::{collections::HashMap, sync::Arc};
@@ -343,4 +343,43 @@ async fn test_process_block_with_shutdown() {
 		result.is_none(),
 		"Expected None when shutdown signal is received"
 	);
+}
+
+#[tokio::test]
+async fn test_load_scripts() {
+	// Setup test triggers in JSON with known configurations
+	let trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+
+	// Create test monitors with trigger conditions
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			execution_order: Some(1),
+			script_path: "tests/integration/fixtures/filters/evm_filter_block_number.py"
+				.to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		}],
+		..Default::default()
+	}];
+
+	// Test loading scripts
+	let scripts = trigger_execution_service
+		.load_scripts(&monitors)
+		.await
+		.unwrap();
+
+	// Verify results
+	assert_eq!(scripts.len(), 1);
+
+	let script_key =
+		format!("test_monitor|tests/integration/fixtures/filters/evm_filter_block_number.py");
+
+	assert!(scripts.contains_key(&script_key));
+
+	let (lang, content) = &scripts[&script_key];
+	assert_eq!(*lang, ScriptLanguage::Python);
+	assert_eq!(content, "mock script content");
 }
