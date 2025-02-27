@@ -67,8 +67,14 @@ where
 	let network_service = match network_service {
 		Some(service) => service,
 		None => {
-			let repository = N::new(None)
-				.map_err(|_| RepositoryError::load_error("Unable to load networks", None))?;
+			let repository = N::new(None).map_err(|e| match &e {
+				RepositoryError::ValidationError(ctx)
+				| RepositoryError::LoadError(ctx)
+				| RepositoryError::InternalError(ctx) => {
+					ctx.log_once();
+					e
+				}
+			})?;
 			NetworkService::<N>::new_with_repository(repository)?
 		}
 	};
@@ -76,8 +82,14 @@ where
 	let trigger_service = match trigger_service {
 		Some(service) => service,
 		None => {
-			let repository = T::new(None)
-				.map_err(|_| RepositoryError::load_error("Unable to load triggers", None))?;
+			let repository = T::new(None).map_err(|e| match &e {
+				RepositoryError::ValidationError(ctx)
+				| RepositoryError::LoadError(ctx)
+				| RepositoryError::InternalError(ctx) => {
+					ctx.log_once();
+					e
+				}
+			})?;
 			TriggerService::<T>::new_with_repository(repository)?
 		}
 	};
@@ -90,7 +102,14 @@ where
 				Some(network_service.clone()),
 				Some(trigger_service.clone()),
 			)
-			.map_err(|_| RepositoryError::load_error("Unable to load monitors", None))?;
+			.map_err(|e| match &e {
+				RepositoryError::ValidationError(ctx)
+				| RepositoryError::LoadError(ctx)
+				| RepositoryError::InternalError(ctx) => {
+					ctx.log_once();
+					e
+				}
+			})?;
 			MonitorService::<M, N, T>::new_with_repository(repository)?
 		}
 	};

@@ -4,7 +4,7 @@
 //! managing individual watchers for each network and coordinating block processing.
 
 use futures::{channel::mpsc, future::BoxFuture, stream::StreamExt, SinkExt};
-use log::{error, info};
+use log::info;
 use std::{
 	collections::{BTreeMap, HashMap},
 	sync::Arc,
@@ -75,13 +75,13 @@ where
 		block_tracker: Arc<BlockTracker<S>>,
 	) -> Result<Self, BlockWatcherError> {
 		let scheduler = JobScheduler::new().await.map_err(|e| {
-			BlockWatcherError::scheduler_error_with_source(
-				format!("Failed to create scheduler: {}", e),
-				e,
+			BlockWatcherError::scheduler_error(
+				e.to_string(),
 				Some(HashMap::from([(
 					"network".to_string(),
 					network.slug.clone(),
 				)])),
+				Some("new"),
 			)
 		})?;
 		Ok(Self {
@@ -127,38 +127,40 @@ where
 				)
 				.await
 				{
-					Ok(_) => info!(
-						"Network {} ({}) processed blocks successfully",
-						network.name, network.slug
-					),
-					Err(e) => error!(
-						"Network {} ({}) error processing blocks: {}",
-						network.name, network.slug, e
-					),
+					Ok(_) => (),
+					Err(e) => match e {
+						BlockWatcherError::NetworkError(e)
+						| BlockWatcherError::StorageError(e)
+						| BlockWatcherError::ProcessingError(e)
+						| BlockWatcherError::SchedulerError(e)
+						| BlockWatcherError::BlockTrackerError(e) => {
+							e.log_once();
+						}
+					},
 				}
 			})
 		})
 		.map_err(|e| {
-			BlockWatcherError::scheduler_error_with_source(
+			BlockWatcherError::scheduler_error(
 				format!("Failed to create job: {}", e),
-				e,
 				Some(context.clone()),
+				Some("start"),
 			)
 		})?;
 
 		self.scheduler.add(job).await.map_err(|e| {
-			BlockWatcherError::scheduler_error_with_source(
+			BlockWatcherError::scheduler_error(
 				format!("Failed to add job: {}", e),
-				e,
 				Some(context.clone()),
+				Some("start"),
 			)
 		})?;
 
 		self.scheduler.start().await.map_err(|e| {
-			BlockWatcherError::scheduler_error_with_source(
+			BlockWatcherError::scheduler_error(
 				format!("Failed to start scheduler: {}", e),
-				e,
 				Some(context.clone()),
+				Some("start"),
 			)
 		})?;
 
@@ -171,13 +173,13 @@ where
 	/// Shuts down the scheduler and stops watching for new blocks.
 	pub async fn stop(&mut self) -> Result<(), BlockWatcherError> {
 		self.scheduler.shutdown().await.map_err(|e| {
-			BlockWatcherError::scheduler_error_with_source(
-				format!("Failed to stop scheduler: {}", e),
-				e,
+			BlockWatcherError::scheduler_error(
+				e.to_string(),
 				Some(HashMap::from([(
 					"network".to_string(),
 					self.network.slug.clone(),
 				)])),
+				Some("stop"),
 			)
 		})?;
 
@@ -298,18 +300,20 @@ pub async fn process_new_blocks<
 		.await
 		.map_err(|e| {
 			BlockWatcherError::storage_error_with_source(
-				format!("Failed to get last processed block: {}", e),
+				"Failed to get last processed block",
 				e,
 				Some(context.clone()),
+				Some("process_new_blocks"),
 			)
 		})?
 		.unwrap_or(0);
 
 	let latest_block = rpc_client.get_latest_block_number().await.map_err(|e| {
 		BlockWatcherError::network_error_with_source(
-			format!("Failed to get latest block number: {}", e),
+			"Failed to get latest block number",
 			e,
 			Some(context.clone()),
+			Some("process_new_blocks"),
 		)
 	})?;
 
@@ -361,6 +365,7 @@ pub async fn process_new_blocks<
 					format!("Failed to get block {}", latest_confirmed_block),
 					e,
 					Some(context.clone()),
+					Some("process_new_blocks"),
 				)
 			})?;
 	} else if last_processed_block < latest_confirmed_block {
@@ -370,11 +375,12 @@ pub async fn process_new_blocks<
 			.map_err(|e| {
 				BlockWatcherError::network_error_with_source(
 					format!(
-						"Failed to get blocks from {} to {}: {}",
-						start_block, latest_confirmed_block, e
+						"Failed to get blocks from {} to {}",
+						start_block, latest_confirmed_block
 					),
 					e,
 					Some(context.clone()),
+					Some("process_new_blocks"),
 				)
 			})?;
 	}
@@ -402,10 +408,10 @@ pub async fn process_new_blocks<
 			// Process all results and send them to trigger channel
 			while let Some(result) = results.next().await {
 				trigger_tx.send(result).await.map_err(|e| {
-					BlockWatcherError::processing_error_with_source(
-						"Failed to send processed block",
-						e,
+					BlockWatcherError::processing_error(
+						format!("Failed to send processed block: {}", e),
 						Some(context.clone()),
+						Some("process_new_blocks"),
 					)
 				})?;
 			}
@@ -465,10 +471,10 @@ pub async fn process_new_blocks<
 				.send((block.clone(), block_number))
 				.await
 				.map_err(|e| {
-					BlockWatcherError::processing_error_with_source(
-						"Failed to send block to pipeline",
-						e,
+					BlockWatcherError::processing_error(
+						format!("Failed to send block to pipeline: {}", e),
 						None,
+						Some("process_new_blocks"),
 					)
 				})
 		}
@@ -482,9 +488,7 @@ pub async fn process_new_blocks<
 	drop(trigger_tx);
 
 	// Wait for both pipeline stages to complete
-	let (process_result, trigger_result) = tokio::join!(process_handle, trigger_handle);
-	process_result.map_err(|e| BlockWatcherError::processing_error(e.to_string(), None))??;
-	trigger_result.map_err(|e| BlockWatcherError::processing_error(e.to_string(), None))??;
+	let (_process_result, _trigger_result) = tokio::join!(process_handle, trigger_handle);
 
 	if network.store_blocks.unwrap_or(false) {
 		// Delete old blocks before saving new ones
@@ -492,14 +496,24 @@ pub async fn process_new_blocks<
 			.delete_blocks(&network.slug)
 			.await
 			.map_err(|e| {
-				BlockWatcherError::storage_error_with_source("Failed to delete old blocks", e, None)
+				BlockWatcherError::storage_error_with_source(
+					"Failed to delete old blocks",
+					e,
+					None,
+					Some("process_new_blocks"),
+				)
 			})?;
 
 		block_storage
 			.save_blocks(&network.slug, &blocks)
 			.await
 			.map_err(|e| {
-				BlockWatcherError::storage_error_with_source("Failed to save blocks", e, None)
+				BlockWatcherError::storage_error_with_source(
+					"Failed to save blocks",
+					e,
+					None,
+					Some("process_new_blocks"),
+				)
 			})?;
 	}
 	// Update the last processed block
@@ -511,6 +525,7 @@ pub async fn process_new_blocks<
 				"Failed to save last processed block",
 				e,
 				None,
+				Some("process_new_blocks"),
 			)
 		})?;
 

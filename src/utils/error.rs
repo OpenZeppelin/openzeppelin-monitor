@@ -12,49 +12,102 @@ use std::{
 	collections::HashMap,
 	sync::atomic::{AtomicBool, Ordering},
 };
+use uuid::Uuid;
+
+/// A trait for types that can provide error context and serve as an error source
+pub trait ErrorContextProvider: std::error::Error + Send + Sync {
+	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
+		None
+	}
+}
+
+impl ErrorContextProvider for std::io::Error {}
 
 /// A context for logging errors with additional information
 #[derive(Debug)]
 pub struct EnhancedContext {
-	// The description of the context
-	pub description: String,
+	// The source of the error (e.g. "std::io::Error")
+	pub source: Option<Box<dyn ErrorContextProvider + 'static>>,
 
 	// The metadata of the context
 	pub metadata: Option<HashMap<String, String>>,
-
-	// The timestamp of the context
-	pub timestamp: i64,
 }
 
 impl EnhancedContext {
-	pub fn new(description: &str) -> Self {
+	/// Create a new `EnhancedContext` with the given source
+	///
+	/// # Arguments
+	/// * `source` - The source of the error
+	///
+	/// # Returns
+	pub fn new(source: Option<Box<dyn ErrorContextProvider + 'static>>) -> Self {
 		Self {
-			description: description.to_string(),
+			source,
 			metadata: None,
-			timestamp: Utc::now().timestamp_millis(),
 		}
 	}
 
+	/// Add metadata to the context
+	///
+	/// # Arguments
+	/// * `metadata` - The metadata to add
+	///
+	/// # Returns
 	pub fn with_metadata(mut self, metadata: Option<HashMap<String, String>>) -> Self {
 		self.metadata = metadata;
 		self
 	}
 
+	/// Format the context
+	///
+	/// # Returns
 	pub fn format(&self) -> String {
+		let source = self.format_source();
+		let metadata = self.format_metadata();
+		if !source.is_empty() && !metadata.is_empty() {
+			format!("{} {}", source, metadata)
+		} else if !source.is_empty() {
+			source
+		} else {
+			metadata
+		}
+	}
+
+	/// Format the source
+	///
+	/// # Returns
+	fn format_source(&self) -> String {
+		if let Some(source) = &self.source {
+			source.to_string()
+		} else {
+			"".to_string()
+		}
+	}
+
+	/// Format the metadata
+	///
+	/// # Returns
+	fn format_metadata(&self) -> String {
 		let mut parts: Vec<String> = vec![];
 		if let Some(metadata) = &self.metadata {
-			for (key, value) in metadata {
-				parts.push(format!("{}={}", key, value));
+			// Collect keys into a vector and sort them
+			let mut keys: Vec<_> = metadata.keys().collect();
+			keys.sort();
+
+			// Build parts using sorted keys
+			for key in keys {
+				parts.push(format!("{}={}", key, metadata.get(key).unwrap()));
 			}
+			format!("[{}]", parts.join(", "))
+		} else {
+			"".to_string()
 		}
-		parts.push(format!("timestamp={}", self.timestamp));
-		format!("[{}]", parts.join(", "))
 	}
 }
 
 impl std::fmt::Display for EnhancedContext {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{} {}", self.description, self.format())
+		write!(f, "{}", self.format())
 	}
 }
 
@@ -64,10 +117,25 @@ impl std::fmt::Display for EnhancedContext {
 /// and track whether it has been logged.
 #[derive(Debug)]
 pub struct ErrorContext<T> {
+	// The message of the error (e.g. "Failed to fetch data")
 	pub message: T,
-	pub source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+
+	// The type of the error (e.g. "FilterError")
+	pub error_type: String,
+
+	// The context of the error
 	pub context: EnhancedContext,
+
+	// The target of the error (e.g. "filter::handle_match")
 	pub target: Option<String>,
+
+	// The timestamp of the error (e.g. 1714435200000)
+	pub timestamp: i64,
+
+	// The trace ID of the error (e.g. 123e4567-e89b-12d3-a456-426614174000)
+	pub trace_id: String,
+
+	// Whether the error has been logged
 	logged: AtomicBool,
 }
 
@@ -75,100 +143,123 @@ impl<T: std::fmt::Display> ErrorContext<T> {
 	/// Create a new `ErrorContext` with the given error and context
 	///
 	/// # Arguments
+	/// * `error_type` - The type of the error
 	/// * `message` - The error to wrap
 	/// * `context` - The context to log with the error
 	///
 	/// # Returns
-	pub fn new(message: T, context: EnhancedContext) -> Self {
+	pub fn new(error_type: &str, message: T, context: EnhancedContext) -> Self {
 		Self {
 			message,
-			source: None,
+			error_type: error_type.to_string(),
 			context,
 			target: None,
+			timestamp: Utc::now().timestamp_millis(),
+			trace_id: Uuid::new_v4().to_string(),
 			logged: AtomicBool::new(false),
 		}
 	}
 
-	/// Add a source error to the context
-	///
-	/// # Arguments
-	/// * `source` - The source error to add
-	///
-	/// # Returns
-	pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-		self.source = Some(Box::new(source));
-		self
-	}
-
-	/// Add a target to the context
+	/// Add a target to the context, including any recursive source targets
 	///
 	/// # Arguments
 	/// * `target` - The target to log the error to
 	///
 	/// # Returns
 	pub fn with_target(mut self, target: impl Into<String>) -> Self {
-		self.target = Some(target.into());
+		let base_target = target.into();
+		let source_target = self.get_recursive_source_target();
+
+		self.target = if source_target.is_empty() {
+			Some(base_target)
+		} else {
+			Some(format!("{}{}", base_target, source_target))
+		};
+
 		self
 	}
 
+	/// Format the error message
+	///
+	/// # Returns
+	pub fn format_message(&self) -> String {
+		let mut message = format!("{}", self.message);
+
+		// Get the context formatting
+		let context = self.context.format();
+		if !context.is_empty() {
+			message.push_str(&format!(" ({})", context));
+		}
+
+		message
+	}
 	/// Log the error if it hasn't been logged yet
 	pub fn log_once(&self) {
 		if !self.logged.swap(true, Ordering::SeqCst) {
-			let log_message = if let Some(source) = &self.source {
-				format!(
-					"{}: {} ({}) {}",
-					self.context.description,
-					self.message,
-					source,
-					self.context.format()
-				)
-			} else {
-				format!(
-					"{}: {} {}",
-					self.context.description,
-					self.message,
-					self.context.format()
-				)
-			};
-
 			if let Some(target) = &self.target {
 				error!(
 					target: format!("openzeppelin_monitor::{}", target).as_str(),
 					"{}",
-					log_message
+					self.format_message()
 				);
 			} else {
-				error!("{}", log_message);
+				error!("{}", self.format_message());
 			}
 		}
 	}
 
-	/// Get the message of the error
-	pub fn message(&self) -> &T {
-		&self.message
+	pub fn target(&self) -> Option<String> {
+		self.target.clone()
+	}
+
+	/// Get the target of the error from the source in a recursive manner
+	///
+	/// # Arguments
+	/// * `source` - The source of the error
+	///
+	/// # Returns
+	fn get_recursive_source_target(&self) -> String {
+		let mut target = String::new();
+		let mut current_error = self.context.source.as_ref();
+		let mut depth = 0;
+		const MAX_DEPTH: usize = 8;
+
+		while let Some(err) = current_error {
+			if depth >= MAX_DEPTH {
+				break;
+			}
+
+			if let Some(err_ctx) = err.provide_error_context() {
+				if let Some(ctx_target) = err_ctx.target() {
+					target.push_str("::");
+					target.push_str(&ctx_target);
+				}
+				// Break if there's no source in the context
+				if err_ctx.context.source.is_none() {
+					break;
+				}
+				current_error = err_ctx.context.source.as_ref();
+			} else {
+				break;
+			}
+			depth += 1;
+		}
+
+		target
 	}
 }
 
 impl<T: std::fmt::Display> std::fmt::Display for ErrorContext<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if let Some(source) = &self.source {
-			write!(
-				f,
-				"{}: {} ({}) {}",
-				self.context.description,
-				self.message,
-				source,
-				self.context.format()
-			)
-		} else {
-			write!(
-				f,
-				"{}: {} {}",
-				self.context.description,
-				self.message,
-				self.context.format()
-			)
-		}
+		write!(f, "{}", self.format_message())
+	}
+}
+impl<T: std::fmt::Display + std::fmt::Debug> std::error::Error for ErrorContext<T> {}
+impl<T: std::fmt::Display + std::fmt::Debug + Send + Sync> ErrorContextProvider
+	for ErrorContext<T>
+{
+	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
+		None
 	}
 }
 
@@ -226,7 +317,14 @@ mod tests {
 
 	#[test]
 	fn test_error_context_display() {
-		let error = ErrorContext::new("test error", EnhancedContext::new("test context"));
+		let error = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(std::io::Error::new(
+				std::io::ErrorKind::Other,
+				"test context",
+			)))),
+		);
 		assert!(error.to_string().contains("test context"));
 		assert!(error.to_string().contains("test error"));
 		assert!(error.to_string().contains("timestamp="));
@@ -234,37 +332,58 @@ mod tests {
 
 	#[test]
 	fn test_error_context_log_once() {
-		let error = ErrorContext::new("test error", EnhancedContext::new("test context"));
+		let error = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(std::io::Error::new(
+				std::io::ErrorKind::Other,
+				"test context",
+			)))),
+		);
 		error.log_once();
 		assert!(error.logged.load(Ordering::SeqCst));
 	}
 
 	#[test]
 	fn test_error_context_log_once_with_source() {
-		let error =
-			ErrorContext::new("test error", EnhancedContext::new("test context")).with_source(
-				std::io::Error::new(std::io::ErrorKind::Other, "test source"),
-			);
+		let error = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(std::io::Error::new(
+				std::io::ErrorKind::Other,
+				"test context",
+			)))),
+		);
 		error.log_once();
 		assert!(error.logged.load(Ordering::SeqCst));
 	}
 
 	#[test]
 	fn test_error_context_log_once_with_target() {
-		let error = ErrorContext::new("test error", EnhancedContext::new("test context"))
-			.with_target("test target");
+		let error = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(std::io::Error::new(
+				std::io::ErrorKind::Other,
+				"test context",
+			)))),
+		)
+		.with_target("test target");
 		error.log_once();
 		assert!(error.logged.load(Ordering::SeqCst));
 	}
 
 	#[test]
 	fn test_error_context_log_once_with_source_and_target() {
-		let error = ErrorContext::new("test error", EnhancedContext::new("test context"))
-			.with_source(std::io::Error::new(
+		let error = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(std::io::Error::new(
 				std::io::ErrorKind::Other,
-				"test source",
-			))
-			.with_target("test target");
+				"test context",
+			)))),
+		)
+		.with_target("test target");
 		error.log_once();
 		assert!(error.logged.load(Ordering::SeqCst));
 	}
@@ -273,8 +392,15 @@ mod tests {
 	fn test_error_context_log_once_called_twice() {
 		let logger = setup_test_logger();
 
-		let error = ErrorContext::new("test error", EnhancedContext::new("test context"))
-			.with_target("test_specific_target");
+		let error = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(std::io::Error::new(
+				std::io::ErrorKind::Other,
+				"test context",
+			)))),
+		)
+		.with_target("test_specific_target");
 		error.log_once();
 		error.log_once();
 
@@ -283,5 +409,42 @@ mod tests {
 		assert!(messages[0].contains("test context"));
 		assert!(messages[0].contains("test error"));
 		assert!(messages[0].contains("timestamp="));
+	}
+
+	#[test]
+	fn test_get_recursive_source_target() {
+		let base_error = ErrorContext::new(
+			"base test type",
+			"base test error",
+			EnhancedContext::new(None),
+		);
+		assert_eq!(base_error.get_recursive_source_target(), "");
+
+		let error1 = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(base_error))),
+		)
+		.with_target("target1");
+		assert_eq!(error1.get_recursive_source_target(), "target1");
+
+		let error2 = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(error1))),
+		)
+		.with_target("target2");
+		assert_eq!(error2.get_recursive_source_target(), "target2::target1");
+
+		let error3 = ErrorContext::new(
+			"test type",
+			"test error",
+			EnhancedContext::new(Some(Box::new(error2))),
+		)
+		.with_target("target3");
+		assert_eq!(
+			error3.get_recursive_source_target(),
+			"target3::target2::target1"
+		);
 	}
 }

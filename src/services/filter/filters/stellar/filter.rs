@@ -1039,6 +1039,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 				return Err(FilterError::block_type_mismatch(
 					"Expected Stellar block".to_string(),
 					Some(context),
+					Some("filter_block"),
 				));
 			}
 		};
@@ -1058,6 +1059,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 					"Failed to get transactions",
 					e,
 					Some(context.clone()),
+					Some("filter_block"),
 				)
 			})?;
 
@@ -1076,6 +1078,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 					"Failed to get events",
 					e,
 					Some(context.clone()),
+					Some("filter_block"),
 				)
 			})?;
 

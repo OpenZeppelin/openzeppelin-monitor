@@ -106,15 +106,18 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 					BlockWatcherError::block_tracker_error(
 						format!("Missed block {}", missed),
 						Some(context.clone()),
+						Some("record_block"),
 					);
 
 					if network.store_blocks.unwrap_or(false) {
 						if let Some(storage) = &self.storage {
 							// Store the missed block info
 							if let Err(e) = storage.save_missed_block(&network.slug, missed).await {
-								BlockWatcherError::storage_error(
-									format!("Failed to store missed block {}: {}", missed, e,),
+								BlockWatcherError::storage_error_with_source(
+									format!("Failed to store missed block {}", missed),
+									e,
 									Some(context.clone()),
+									Some("record_block"),
 								);
 							}
 						}
@@ -127,6 +130,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 						block_number, last_block
 					),
 					Some(context.clone()),
+					Some("record_block"),
 				);
 			}
 		}

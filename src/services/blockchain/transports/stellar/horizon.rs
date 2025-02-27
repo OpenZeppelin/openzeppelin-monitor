@@ -64,6 +64,7 @@ impl HorizonTransportClient {
 				"network".to_string(),
 				network.name.clone(),
 			)])),
+			Some("new"),
 		))
 	}
 
@@ -98,15 +99,19 @@ impl HorizonTransportClient {
 			.send()
 			.await
 			.map_err(|e| {
-				BlockChainError::connection_error_with_source(
-					"Failed to send request",
-					e,
-					None,
+				BlockChainError::connection_error(
+					e.to_string(),
+					Some(HashMap::from([("method".to_string(), method.to_string())])),
+					Some("send_raw_request"),
 				)
 			})?;
 
 		let json: Value = response.json().await.map_err(|e| {
-			BlockChainError::connection_error_with_source("Failed to parse response", e, None)
+			BlockChainError::connection_error(
+				e.to_string(),
+				Some(HashMap::from([("method".to_string(), method.to_string())])),
+				Some("send_raw_request"),
+			)
 		})?;
 
 		Ok(json)

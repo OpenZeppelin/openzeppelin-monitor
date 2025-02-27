@@ -39,7 +39,7 @@ impl ConfigLoader for Network {
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
 	/// config directory) as network configurations.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, Box<ConfigError>>
+	fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
 	where
 		T: FromIterator<(String, Self)>,
 	{
@@ -47,18 +47,18 @@ impl ConfigLoader for Network {
 		let mut pairs = Vec::new();
 
 		if !network_dir.exists() {
-			return Err(Box::new(ConfigError::file_error(
+			return Err(ConfigError::file_error(
 				"networks directory not found",
 				None,
-			)));
+				Some("load_all"),
+			));
 		}
 
-		for entry in std::fs::read_dir(network_dir).map_err(|e| {
-			ConfigError::file_error_with_source("Failed to read networks directory", e, None)
-		})? {
-			let entry = entry.map_err(|e| {
-				ConfigError::file_error_with_source("Failed to read networks directory", e, None)
-			})?;
+		for entry in std::fs::read_dir(network_dir)
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?
+		{
+			let entry = entry
+				.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
 			let path = entry.path();
 
 			if !Self::is_json_file(&path) {
@@ -82,11 +82,11 @@ impl ConfigLoader for Network {
 	/// Load a network configuration from a specific file
 	///
 	/// Reads and parses a single JSON file as a network configuration.
-	fn load_from_path(path: &std::path::Path) -> Result<Self, Box<ConfigError>> {
+	fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path)
-			.map_err(|e| ConfigError::file_error_with_source("Failed to open file", e, None))?;
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_from_path")))?;
 		let config: Network = serde_json::from_reader(file)
-			.map_err(|e| ConfigError::parse_error_with_source("Failed to parse file", e, None))?;
+			.map_err(|e| ConfigError::parse_error(e.to_string(), None, Some("load_from_path")))?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -101,23 +101,25 @@ impl ConfigLoader for Network {
 	/// - At least one RPC URL is specified
 	/// - Required chain-specific parameters are present
 	/// - Block time and confirmation values are reasonable
-	fn validate(&self) -> Result<(), Box<ConfigError>> {
+	fn validate(&self) -> Result<(), ConfigError> {
 		// Validate network name
 		if self.name.is_empty() {
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"Network name is required",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate network_type
 		match self.network_type {
 			BlockChainType::EVM | BlockChainType::Stellar => {}
 			_ => {
-				return Err(Box::new(ConfigError::validation_error(
+				return Err(ConfigError::validation_error(
 					"Invalid network_type",
 					None,
-				)));
+					Some("validate"),
+				));
 			}
 		}
 
@@ -127,10 +129,11 @@ impl ConfigLoader for Network {
 			.chars()
 			.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 		{
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"Slug must contain only lowercase letters, numbers, and underscores",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate RPC URL types
@@ -140,73 +143,80 @@ impl ConfigLoader for Network {
 			.iter()
 			.all(|rpc_url| supported_types.contains(&rpc_url.type_.as_str()))
 		{
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				format!(
 					"RPC URL type must be one of: {}",
 					supported_types.join(", ")
 				),
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate RPC URLs format
 		if !self.rpc_urls.iter().all(|rpc_url| {
 			rpc_url.url.starts_with("http://") || rpc_url.url.starts_with("https://")
 		}) {
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"All RPC URLs must start with http:// or https://",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate RPC URL weights
 		if !self.rpc_urls.iter().all(|rpc_url| rpc_url.weight <= 100) {
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"All RPC URL weights must be between 0 and 100",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate block time
 		if self.block_time_ms < 100 {
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"Block time must be at least 100ms",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate confirmation blocks
 		if self.confirmation_blocks == 0 {
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"Confirmation blocks must be greater than 0",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate cron_schedule
 		if self.cron_schedule.is_empty() {
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"Cron schedule must be provided",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Add cron schedule format validation
 		if let Err(e) = cron::Schedule::from_str(&self.cron_schedule) {
-			return Err(Box::new(ConfigError::validation_error_with_source(
-				"Invalid cron schedule format",
-				e,
+			return Err(ConfigError::validation_error(
+				e.to_string(),
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		// Validate max_past_blocks
 		if let Some(max_blocks) = self.max_past_blocks {
 			if max_blocks == 0 {
-				return Err(Box::new(ConfigError::validation_error(
+				return Err(ConfigError::validation_error(
 					"max_past_blocks must be greater than 0",
 					None,
-				)));
+					Some("validate"),
+				));
 			}
 
 			let recommended_blocks = self.get_recommended_past_blocks();
@@ -278,7 +288,7 @@ mod tests {
 		network.name = "".to_string();
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -288,7 +298,7 @@ mod tests {
 		network.slug = "Invalid-Slug".to_string();
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -298,7 +308,7 @@ mod tests {
 		network.rpc_urls[0].type_ = "invalid".to_string();
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -308,7 +318,7 @@ mod tests {
 		network.rpc_urls[0].url = "invalid-url".to_string();
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -318,7 +328,7 @@ mod tests {
 		network.rpc_urls[0].weight = 101;
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -328,7 +338,7 @@ mod tests {
 		network.block_time_ms = 50;
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -338,7 +348,7 @@ mod tests {
 		network.confirmation_blocks = 0;
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -348,7 +358,7 @@ mod tests {
 		network.cron_schedule = "invalid cron".to_string();
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 
@@ -358,7 +368,7 @@ mod tests {
 		network.max_past_blocks = Some(0);
 		assert!(matches!(
 			network.validate(),
-			Err(box_err) if matches!(&*box_err, ConfigError::ValidationError(_))
+			Err(ConfigError::ValidationError(_))
 		));
 	}
 }

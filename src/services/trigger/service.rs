@@ -82,13 +82,18 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 			let trigger = self
 				.trigger_service
 				.get(trigger_slug)
-				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string(), None))?;
+				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string(), None, None))?;
 
 			self.notification_service
 				.execute(&trigger, variables.clone())
 				.await
 				.map_err(|e| {
-					TriggerError::execution_error_with_source("Failed to execute trigger", e, None)
+					TriggerError::execution_error_with_source(
+						"Failed to execute trigger",
+						e,
+						None,
+						Some("execute"),
+					)
 				})?;
 		}
 		Ok(())

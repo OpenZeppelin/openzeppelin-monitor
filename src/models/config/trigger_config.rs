@@ -24,37 +24,35 @@ impl ConfigLoader for Trigger {
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
 	/// config directory) as trigger configurations.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, Box<ConfigError>>
+	fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
 	where
 		T: FromIterator<(String, Self)>,
 	{
 		let config_dir = path.unwrap_or(Path::new("config/triggers"));
-		let entries = fs::read_dir(config_dir).map_err(|e| {
-			ConfigError::file_error_with_source("Failed to read triggers directory", e, None)
-		})?;
+		let entries = fs::read_dir(config_dir)
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
 
 		let mut trigger_pairs = Vec::new();
 		for entry in entries {
-			let entry = entry.map_err(|e| {
-				ConfigError::file_error_with_source("Failed to read triggers directory", e, None)
-			})?;
+			let entry = entry
+				.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
 			if Self::is_json_file(&entry.path()) {
-				let content = fs::read_to_string(entry.path()).map_err(|e| {
-					ConfigError::file_error_with_source("Failed to read trigger file", e, None)
-				})?;
+				let content = fs::read_to_string(entry.path())
+					.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
 				let file_triggers: TriggerConfigFile = serde_json::from_str(&content)
-					.map_err(|e| ConfigError::parse_error(e.to_string(), None))?;
+					.map_err(|e| ConfigError::parse_error(e.to_string(), None, Some("load_all")))?;
 
 				// Validate each trigger before adding it
 				for (name, trigger) in file_triggers.triggers {
 					if let Err(validation_error) = trigger.validate() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							format!(
 								"Validation failed for trigger '{}': {}",
 								name, validation_error
 							),
 							None,
-						)));
+							Some("load_all"),
+						));
 					}
 					trigger_pairs.push((name, trigger));
 				}
@@ -66,11 +64,11 @@ impl ConfigLoader for Trigger {
 	/// Load a trigger configuration from a specific file
 	///
 	/// Reads and parses a single JSON file as a trigger configuration.
-	fn load_from_path(path: &Path) -> Result<Self, Box<ConfigError>> {
+	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path)
-			.map_err(|e| ConfigError::file_error_with_source("Failed to open file", e, None))?;
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_from_path")))?;
 		let config: Trigger = serde_json::from_reader(file)
-			.map_err(|e| ConfigError::parse_error_with_source("Failed to parse file", e, None))?;
+			.map_err(|e| ConfigError::parse_error(e.to_string(), None, Some("load_from_path")))?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -86,13 +84,14 @@ impl ConfigLoader for Trigger {
 	/// - Required configuration fields for the trigger type are present
 	/// - URLs are valid for webhook and Slack triggers
 	/// - Script paths exist for script triggers
-	fn validate(&self) -> Result<(), Box<ConfigError>> {
+	fn validate(&self) -> Result<(), ConfigError> {
 		// Validate trigger name
 		if self.name.is_empty() {
-			return Err(Box::new(ConfigError::validation_error(
+			return Err(ConfigError::validation_error(
 				"Trigger cannot be empty",
 				None,
-			)));
+				Some("validate"),
+			));
 		}
 
 		match &self.trigger_type {
@@ -100,24 +99,27 @@ impl ConfigLoader for Trigger {
 				if let TriggerTypeConfig::Slack { slack_url, message } = &self.config {
 					// Validate webhook URL
 					if !slack_url.starts_with("https://hooks.slack.com/") {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Invalid Slack webhook URL format",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate template is not empty
 					if message.body.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 				}
 			}
@@ -134,10 +136,11 @@ impl ConfigLoader for Trigger {
 				{
 					// Validate host
 					if host.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Host cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate host format
 					if !host.contains('.')
@@ -145,69 +148,78 @@ impl ConfigLoader for Trigger {
 							.chars()
 							.all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 					{
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Invalid SMTP host format",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 
 					// Basic username validation
 					if username.is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"SMTP username cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					if username.chars().any(|c| c.is_control()) {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"SMTP username contains invalid control characters",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate password
 					if password.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Password cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate subject according to RFC 5322
 					// Max length of 998 characters, no control chars except whitespace
 					if message.title.len() > 998 {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Subject exceeds maximum length of 998 characters",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					if message
 						.title
 						.chars()
 						.any(|c| c.is_control() && !c.is_whitespace())
 					{
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Subject contains invalid control characters",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Add minimum length check after trim
 					if message.title.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Subject must contain at least 1 character",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 
 					// Validate email body according to RFC 5322
@@ -217,33 +229,37 @@ impl ConfigLoader for Trigger {
 						.chars()
 						.any(|c| c.is_control() && !matches!(c, '\r' | '\n' | '\t' | ' '))
 					{
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Body contains invalid control characters",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 
 					// Validate sender
 					if !EmailAddress::is_valid(sender.as_str()) {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							format!("Invalid sender email address: {}", sender),
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 
 					// Validate recipients
 					if recipients.is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Recipients cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					for recipient in recipients {
 						if !EmailAddress::is_valid(recipient.as_str()) {
-							return Err(Box::new(ConfigError::validation_error(
+							return Err(ConfigError::validation_error(
 								format!("Invalid recipient email address: {}", recipient),
 								None,
-							)));
+								Some("validate"),
+							));
 						}
 					}
 				}
@@ -258,35 +274,39 @@ impl ConfigLoader for Trigger {
 				{
 					// Validate URL format
 					if !url.starts_with("http://") && !url.starts_with("https://") {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Invalid webhook URL format",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate HTTP method
 					if let Some(method) = method {
 						match method.to_uppercase().as_str() {
 							"GET" | "POST" | "PUT" | "DELETE" => {}
 							_ => {
-								return Err(Box::new(ConfigError::validation_error(
+								return Err(ConfigError::validation_error(
 									"Invalid HTTP method",
 									None,
-								)))
+									Some("validate"),
+								));
 							}
 						}
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 				}
 			}
@@ -301,40 +321,45 @@ impl ConfigLoader for Trigger {
 					// Validate token
 					// /^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$/ regex
 					if token.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Token cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					if !regex::Regex::new(r"^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$")
 						.unwrap()
 						.is_match(token)
 					{
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Invalid token format",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 
 					// Validate chat ID
 					if chat_id.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Chat ID cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 				}
 			}
@@ -347,23 +372,26 @@ impl ConfigLoader for Trigger {
 				{
 					// Validate webhook URL
 					if !discord_url.starts_with("https://discord.com/api/webhooks/") {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Invalid Discord webhook URL format",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 				}
 			}
@@ -371,10 +399,11 @@ impl ConfigLoader for Trigger {
 				if let TriggerTypeConfig::Script { path, .. } = &self.config {
 					// Validate script path exists
 					if !Path::new(path).exists() {
-						return Err(Box::new(ConfigError::validation_error(
+						return Err(ConfigError::validation_error(
 							format!("Script path does not exist: {}", path),
 							None,
-						)));
+							Some("validate"),
+						));
 					}
 				}
 			}

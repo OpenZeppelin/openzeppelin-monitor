@@ -100,14 +100,12 @@ impl EvmClientTrait for EvmClient {
 		&self,
 		transaction_hash: String,
 	) -> Result<web3::types::TransactionReceipt, BlockChainError> {
-		let context = HashMap::from([
-			("network".to_string(), self._network.name.clone()),
-			("hash".to_string(), transaction_hash.clone()),
-		]);
+		let context = HashMap::from([("hash".to_string(), transaction_hash.clone())]);
 		let hash = string_to_h256(&transaction_hash).map_err(|_| {
 			BlockChainError::internal_error(
-				format!("Invalid transaction hash ({})", transaction_hash),
+				"Invalid transaction hash".to_string(),
 				Some(context.clone()),
+				Some("get_transaction_receipt"),
 			)
 		})?;
 
@@ -121,10 +119,10 @@ impl EvmClientTrait for EvmClient {
 					.transaction_receipt(hash)
 					.await
 					.map_err(|e| {
-						BlockChainError::request_error_with_source(
-							"Failed to get transaction receipt",
-							e,
+						BlockChainError::request_error(
+							e.to_string(),
 							Some(context.clone()),
+							Some("get_transaction_receipt"),
 						)
 					})?;
 
@@ -132,6 +130,7 @@ impl EvmClientTrait for EvmClient {
 					BlockChainError::request_error(
 						"Transaction receipt not found".to_string(),
 						Some(context.clone()),
+						Some("get_transaction_receipt"),
 					)
 				})
 			})
@@ -160,14 +159,13 @@ impl EvmClientTrait for EvmClient {
 					)
 					.await
 					.map_err(|e| {
-						BlockChainError::request_error_with_source(
-							"Failed to get logs for blocks",
-							e,
+						BlockChainError::request_error(
+							e.to_string(),
 							Some(HashMap::from([
-								("network".to_string(), self._network.name.clone()),
 								("from_block".to_string(), from_block.to_string()),
 								("to_block".to_string(), to_block.to_string()),
 							])),
+							Some("get_logs_for_blocks"),
 						)
 					})
 			})
@@ -189,13 +187,10 @@ impl BlockChainClient for EvmClient {
 					.await
 					.map(|n| n.as_u64())
 					.map_err(|e| {
-						BlockChainError::request_error_with_source(
-							"Failed to get latest block number",
-							e,
-							Some(HashMap::from([(
-								"network".to_string(),
-								self._network.name.clone(),
-							)])),
+						BlockChainError::request_error(
+							e.to_string(),
+							None,
+							Some("get_latest_block_number"),
 						)
 					})
 			})
@@ -225,10 +220,11 @@ impl BlockChainClient for EvmClient {
 						.ok_or_else(|| {
 							BlockChainError::block_not_found(
 								block_number,
-								Some(HashMap::from([
-									("network".to_string(), self._network.name.clone()),
-									("block_number".to_string(), block_number.to_string()),
-								])),
+								Some(HashMap::from([(
+									"block_number".to_string(),
+									block_number.to_string(),
+								)])),
+								Some("get_blocks"),
 							)
 						})?;
 

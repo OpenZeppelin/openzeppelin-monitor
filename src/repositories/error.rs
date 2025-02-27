@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::{EnhancedContext, ErrorContext};
+use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
 
 /// Errors that can occur during repository operations
 #[derive(Debug)]
@@ -21,63 +21,90 @@ pub enum RepositoryError {
 	InternalError(ErrorContext<String>),
 }
 
+impl ErrorContextProvider for RepositoryError {
+	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
+		match self {
+			Self::ValidationError(ctx) => Some(ctx),
+			Self::LoadError(ctx) => Some(ctx),
+			Self::InternalError(ctx) => Some(ctx),
+		}
+	}
+}
+
 impl RepositoryError {
-	const TARGET: &str = "repository::error";
+	const TARGET: &str = "repository";
+
+	fn format_target(target: Option<&str>) -> String {
+		if let Some(target) = target {
+			format!("{}::{}", Self::TARGET, target)
+		} else {
+			Self::TARGET.to_string()
+		}
+	}
 
 	/// Create a new validation error with logging
 	pub fn validation_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::ValidationError(
 			ErrorContext::new(
+				"Validation Error",
 				msg.into(),
-				EnhancedContext::new("Validation Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Create a new validation error with source
 	pub fn validation_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::ValidationError(
 			ErrorContext::new(
+				"Validation Error",
 				msg.into(),
-				EnhancedContext::new("Validation Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Create a new load error with logging
-	pub fn load_error(msg: impl Into<String>, metadata: Option<HashMap<String, String>>) -> Self {
+	pub fn load_error(
+		msg: impl Into<String>,
+		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
+	) -> Self {
 		Self::LoadError(
 			ErrorContext::new(
+				"Load Error",
 				msg.into(),
-				EnhancedContext::new("Load Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Create a new load error with source
 	pub fn load_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::LoadError(
 			ErrorContext::new(
+				"Load Error",
 				msg.into(),
-				EnhancedContext::new("Load Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
@@ -85,29 +112,32 @@ impl RepositoryError {
 	pub fn internal_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::InternalError(
 			ErrorContext::new(
+				"Internal Error",
 				msg.into(),
-				EnhancedContext::new("Internal Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Create a new internal error with source
 	pub fn internal_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::InternalError(
 			ErrorContext::new(
+				"Internal Error",
 				msg.into(),
-				EnhancedContext::new("Internal Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 }
@@ -131,13 +161,14 @@ mod tests {
 
 	#[test]
 	fn test_validation_error_formatting() {
-		let error = RepositoryError::validation_error("test error", None);
+		let error = RepositoryError::validation_error("test error", None, None);
 		assert!(error.to_string().contains("Validation Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = RepositoryError::validation_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Validation Error: test error"));
@@ -148,6 +179,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Validation Error: test error"));
 		assert!(error.to_string().contains("(test source)"));
@@ -157,13 +189,14 @@ mod tests {
 
 	#[test]
 	fn test_load_error_formatting() {
-		let error = RepositoryError::load_error("test error", None);
+		let error = RepositoryError::load_error("test error", None, None);
 		assert!(error.to_string().contains("Load Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = RepositoryError::load_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Load Error: test error"));
@@ -174,6 +207,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Load Error: test error"));
 		assert!(error.to_string().contains("(test source)"));
@@ -183,13 +217,14 @@ mod tests {
 
 	#[test]
 	fn test_internal_error_formatting() {
-		let error = RepositoryError::internal_error("test error", None);
+		let error = RepositoryError::internal_error("test error", None, None);
 		assert!(error.to_string().contains("Internal Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = RepositoryError::internal_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Internal Error: test error"));
@@ -200,6 +235,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Internal Error: test error"));
 		assert!(error.to_string().contains("(test source)"));

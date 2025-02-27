@@ -173,16 +173,17 @@ impl<T> EVMBlockFilter<T> {
 										&condition.signature,
 										&function_signature_with_params,
 									) {
-										let decoded = function
-											.decode_input(&input_data.0[4..])
-											.unwrap_or_else(|e| {
-												FilterError::internal_error_with_source(
-													"Failed to decode function input",
-													e,
+										let decoded =
+											function
+												.decode_input(&input_data.0[4..])
+												.unwrap_or_else(|e| {
+													FilterError::internal_error(
+													format!("Failed to decode function input: {}", e),
 													None,
+													Some("find_matching_functions_for_transaction"),
 												);
-												vec![]
-											});
+													vec![]
+												});
 
 										let params: Vec<EVMMatchParamEntry> = function
 											.inputs
@@ -448,7 +449,13 @@ impl<T> EVMBlockFilter<T> {
 	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = Contract::load(abi.to_string().as_bytes())
-			.map_err(|e| FilterError::internal_error_with_source("Failed to parse ABI", e, None))
+			.map_err(|e| {
+				FilterError::internal_error(
+					format!("Failed to parse ABI: {}", e),
+					None,
+					Some("decode_events"),
+				)
+			})
 			.ok()?;
 
 		let decoded_log = contract
@@ -526,6 +533,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 				return Err(FilterError::block_type_mismatch(
 					"Expected EVM block".to_string(),
 					Some(context),
+					Some("filter_block"),
 				))
 			}
 		};
@@ -556,12 +564,10 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			.collect::<Result<Vec<_>, _>>()
 			.map_err(|e| {
 				FilterError::internal_error_with_source(
-					format!(
-						"Failed to get transaction receipts for block {}",
-						evm_block.number.unwrap_or(U64::from(0)),
-					),
+					"Failed to get transaction receipts",
 					e,
 					Some(context.clone()),
+					Some("filter_block"),
 				)
 			})?;
 

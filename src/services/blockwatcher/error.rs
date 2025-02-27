@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::{EnhancedContext, ErrorContext};
+use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
 
 /// Represents possible errors that can occur during block watching operations
 #[derive(Debug)]
@@ -51,36 +51,58 @@ pub enum BlockWatcherError {
 	BlockTrackerError(ErrorContext<String>),
 }
 
-impl BlockWatcherError {
-	const TARGET: &str = "blockwatcher::error";
+impl ErrorContextProvider for BlockWatcherError {
+	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
+		match self {
+			Self::SchedulerError(ctx) => Some(ctx),
+			Self::NetworkError(ctx) => Some(ctx),
+			Self::ProcessingError(ctx) => Some(ctx),
+			Self::StorageError(ctx) => Some(ctx),
+			Self::BlockTrackerError(ctx) => Some(ctx),
+		}
+	}
+}
 
+impl BlockWatcherError {
+	const TARGET: &str = "blockwatcher";
+
+	fn format_target(target: Option<&str>) -> String {
+		if let Some(target) = target {
+			format!("{}::{}", Self::TARGET, target)
+		} else {
+			Self::TARGET.to_string()
+		}
+	}
 	/// Creates a new scheduler error with logging
 	pub fn scheduler_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::SchedulerError(
 			ErrorContext::new(
+				"Scheduler Error",
 				msg.into(),
-				EnhancedContext::new("Scheduler Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new scheduler error with source
 	pub fn scheduler_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::SchedulerError(
 			ErrorContext::new(
+				"Scheduler Error",
 				msg.into(),
-				EnhancedContext::new("Scheduler Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
@@ -88,29 +110,32 @@ impl BlockWatcherError {
 	pub fn network_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::NetworkError(
 			ErrorContext::new(
+				"Network Error",
 				msg.into(),
-				EnhancedContext::new("Network Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new network error with source
 	pub fn network_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::NetworkError(
 			ErrorContext::new(
+				"Network Error",
 				msg.into(),
-				EnhancedContext::new("Network Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
@@ -118,29 +143,32 @@ impl BlockWatcherError {
 	pub fn processing_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::ProcessingError(
 			ErrorContext::new(
+				"Processing Error",
 				msg.into(),
-				EnhancedContext::new("Processing Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new processing error with source
 	pub fn processing_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::ProcessingError(
 			ErrorContext::new(
+				"Processing Error",
 				msg.into(),
-				EnhancedContext::new("Processing Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
@@ -148,29 +176,32 @@ impl BlockWatcherError {
 	pub fn storage_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::StorageError(
 			ErrorContext::new(
+				"Storage Error",
 				msg.into(),
-				EnhancedContext::new("Storage Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new storage error with source
 	pub fn storage_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::StorageError(
 			ErrorContext::new(
+				"Storage Error",
 				msg.into(),
-				EnhancedContext::new("Storage Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
@@ -178,29 +209,32 @@ impl BlockWatcherError {
 	pub fn block_tracker_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::BlockTrackerError(
 			ErrorContext::new(
+				"Block Tracker Error",
 				msg.into(),
-				EnhancedContext::new("Block Tracker Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new block tracker error with source
 	pub fn block_tracker_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::BlockTrackerError(
 			ErrorContext::new(
+				"Block Tracker Error",
 				msg.into(),
-				EnhancedContext::new("Block Tracker Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 }
@@ -225,13 +259,14 @@ mod tests {
 
 	#[test]
 	fn test_scheduler_error_formatting() {
-		let error = BlockWatcherError::scheduler_error("test error", None);
+		let error = BlockWatcherError::scheduler_error("test error", None, None);
 		assert!(error.to_string().contains("Scheduler Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = BlockWatcherError::scheduler_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Scheduler Error: test error"));
@@ -241,13 +276,14 @@ mod tests {
 
 	#[test]
 	fn test_network_error_formatting() {
-		let error = BlockWatcherError::network_error("test error", None);
+		let error = BlockWatcherError::network_error("test error", None, None);
 		assert!(error.to_string().contains("Network Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = BlockWatcherError::network_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Network Error: test error"));
@@ -258,6 +294,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Network Error: test error"));
 		assert!(error.to_string().contains("(test source)"));
@@ -267,13 +304,14 @@ mod tests {
 
 	#[test]
 	fn test_processing_error_formatting() {
-		let error = BlockWatcherError::processing_error("test error", None);
+		let error = BlockWatcherError::processing_error("test error", None, None);
 		assert!(error.to_string().contains("Processing Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = BlockWatcherError::processing_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Processing Error: test error"));
@@ -284,6 +322,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Processing Error: test error"));
 		assert!(error.to_string().contains("(test source)"));
@@ -293,13 +332,14 @@ mod tests {
 
 	#[test]
 	fn test_storage_error_formatting() {
-		let error = BlockWatcherError::storage_error("test error", None);
+		let error = BlockWatcherError::storage_error("test error", None, None);
 		assert!(error.to_string().contains("Storage Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = BlockWatcherError::storage_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Storage Error: test error"));
@@ -310,6 +350,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Storage Error: test error"));
 		assert!(error.to_string().contains("(test source)"));
@@ -319,7 +360,7 @@ mod tests {
 
 	#[test]
 	fn test_block_tracker_error_formatting() {
-		let error = BlockWatcherError::block_tracker_error("test error", None);
+		let error = BlockWatcherError::block_tracker_error("test error", None, None);
 		assert!(error
 			.to_string()
 			.contains("Block Tracker Error: test error"));
@@ -328,6 +369,7 @@ mod tests {
 		let error = BlockWatcherError::block_tracker_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error
@@ -340,6 +382,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error
 			.to_string()

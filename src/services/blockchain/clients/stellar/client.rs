@@ -4,7 +4,7 @@
 //! supporting operations like block retrieval, transaction lookup, and event filtering.
 //! It works with both Stellar Core nodes and Horizon API endpoints.
 
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 
 use async_trait::async_trait;
 use serde_json::json;
@@ -97,7 +97,6 @@ impl StellarClientTrait for StellarClient {
 		start_sequence: u32,
 		end_sequence: Option<u32>,
 	) -> Result<Vec<StellarTransaction>, BlockChainError> {
-		let context = HashMap::from([("network".to_string(), self._network.name.clone())]);
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
@@ -106,7 +105,8 @@ impl StellarClientTrait for StellarClient {
 						"start_sequence {} cannot be greater than end_sequence {}",
 						start_sequence, end_sequence
 					),
-					Some(context.clone()),
+					None,
+					Some("get_transactions"),
 				));
 			}
 		}
@@ -136,13 +136,10 @@ impl StellarClientTrait for StellarClient {
 					let ledger_transactions: Vec<StellarTransactionInfo> =
 						serde_json::from_value(response["result"]["transactions"].clone())
 							.map_err(|e| {
-								BlockChainError::request_error_with_source(
-									format!(
-										"Failed to parse transaction response for ledger {}",
-										cursor.unwrap_or(start_sequence)
-									),
-									e,
-									Some(context.clone()),
+								BlockChainError::request_error(
+									e.to_string(),
+									None,
+									Some("get_transactions"),
 								)
 							})?;
 
@@ -181,7 +178,6 @@ impl StellarClientTrait for StellarClient {
 		start_sequence: u32,
 		end_sequence: Option<u32>,
 	) -> Result<Vec<StellarEvent>, BlockChainError> {
-		let context = HashMap::from([("network".to_string(), self._network.name.clone())]);
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
@@ -190,7 +186,8 @@ impl StellarClientTrait for StellarClient {
 						"start_sequence {} cannot be greater than end_sequence {}",
 						start_sequence, end_sequence
 					),
-					Some(context.clone()),
+					None,
+					Some("get_events"),
 				));
 			}
 		}
@@ -224,14 +221,7 @@ impl StellarClientTrait for StellarClient {
 						response["result"]["events"].clone(),
 					)
 					.map_err(|e| {
-						BlockChainError::request_error_with_source(
-							format!(
-								"Failed to parse event response for ledger {}",
-								cursor.unwrap_or(start_sequence)
-							),
-							e,
-							Some(context.clone()),
-						)
+						BlockChainError::request_error(e.to_string(), None, Some("get_events"))
 					})?;
 
 					if ledger_events.is_empty() {
@@ -283,13 +273,10 @@ impl BlockChainClient for StellarClient {
 					.get_latest_ledger()
 					.await
 					.map_err(|e| {
-						BlockChainError::request_error_with_source(
-							"Failed to get latest ledger",
-							e,
-							Some(HashMap::from([(
-								"network".to_string(),
-								self._network.name.clone(),
-							)])),
+						BlockChainError::request_error(
+							e.to_string(),
+							None,
+							Some("get_latest_block_number"),
 						)
 					})?;
 
@@ -311,7 +298,6 @@ impl BlockChainClient for StellarClient {
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, BlockChainError> {
-		let context = HashMap::from([("network".to_string(), self._network.name.clone())]);
 		// max limit for the RPC endpoint is 200
 		const PAGE_LIMIT: u32 = 200;
 
@@ -319,8 +305,12 @@ impl BlockChainClient for StellarClient {
 		if let Some(end_block) = end_block {
 			if start_block > end_block {
 				return Err(BlockChainError::request_error(
-					"start_block cannot be greater than end_block".to_string(),
-					Some(context.clone()),
+					format!(
+						"start_block {} cannot be greater than end_block {}",
+						start_block, end_block
+					),
+					None,
+					Some("get_blocks"),
 				));
 			}
 		}
@@ -350,11 +340,7 @@ impl BlockChainClient for StellarClient {
 						response["result"]["ledgers"].clone(),
 					)
 					.map_err(|e| {
-						BlockChainError::request_error_with_source(
-							"Failed to parse ledger response",
-							e,
-							Some(context.clone()),
-						)
+						BlockChainError::request_error(e.to_string(), None, Some("get_blocks"))
 					})?;
 
 					if ledgers.is_empty() {

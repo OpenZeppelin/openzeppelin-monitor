@@ -86,7 +86,10 @@ impl WithRetry {
 				Ok(value) => return Ok(value),
 				Err(e) => {
 					attempt += 1;
-					debug!("Retry attempt {} failed: {:?}", attempt, e);
+					debug!(
+						"Retry attempt {}/{} failed: {:?}",
+						attempt, self.config.max_retries, e
+					);
 					if attempt >= self.config.max_retries {
 						return Err(e);
 					}

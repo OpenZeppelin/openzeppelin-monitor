@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::{EnhancedContext, ErrorContext};
+use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
 
 /// Represents errors that can occur during filter operations
 #[derive(Debug)]
@@ -18,36 +18,56 @@ pub enum FilterError {
 	InternalError(ErrorContext<String>),
 }
 
-impl FilterError {
-	const TARGET: &str = "filter::error";
+impl ErrorContextProvider for FilterError {
+	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
+		match self {
+			Self::BlockTypeMismatch(ctx) => Some(ctx),
+			Self::NetworkError(ctx) => Some(ctx),
+			Self::InternalError(ctx) => Some(ctx),
+		}
+	}
+}
 
+impl FilterError {
+	const TARGET: &str = "filter";
+
+	fn format_target(target: Option<&str>) -> String {
+		if let Some(target) = target {
+			format!("{}::{}", Self::TARGET, target)
+		} else {
+			Self::TARGET.to_string()
+		}
+	}
 	/// Creates a new block type mismatch error
 	pub fn block_type_mismatch(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::BlockTypeMismatch(
 			ErrorContext::new(
+				"Block Type Mismatch Error",
 				msg.into(),
-				EnhancedContext::new("Block Type Mismatch Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new block type mismatch error with source
 	pub fn block_type_mismatch_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::BlockTypeMismatch(
 			ErrorContext::new(
+				"Block Type Mismatch Error",
 				msg.into(),
-				EnhancedContext::new("Block Type Mismatch Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
@@ -55,29 +75,32 @@ impl FilterError {
 	pub fn network_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::NetworkError(
 			ErrorContext::new(
+				"Network Error",
 				msg.into(),
-				EnhancedContext::new("Network Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new network error with source
 	pub fn network_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::NetworkError(
 			ErrorContext::new(
+				"Network Error",
 				msg.into(),
-				EnhancedContext::new("Network Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
@@ -85,29 +108,32 @@ impl FilterError {
 	pub fn internal_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::InternalError(
 			ErrorContext::new(
+				"Internal Error",
 				msg.into(),
-				EnhancedContext::new("Internal Error").with_metadata(metadata),
+				EnhancedContext::new(None).with_metadata(metadata),
 			)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 
 	/// Creates a new internal error with source
 	pub fn internal_error_with_source(
 		msg: impl Into<String>,
-		source: impl std::error::Error + Send + Sync + 'static,
+		source: impl ErrorContextProvider + 'static,
 		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
 	) -> Self {
 		Self::InternalError(
 			ErrorContext::new(
+				"Internal Error",
 				msg.into(),
-				EnhancedContext::new("Internal Error").with_metadata(metadata),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
 			)
-			.with_source(source)
-			.with_target(Self::TARGET),
+			.with_target(Self::format_target(target)),
 		)
 	}
 }
@@ -131,7 +157,7 @@ mod tests {
 
 	#[test]
 	fn test_block_type_mismatch_error_formatting() {
-		let error = FilterError::block_type_mismatch("test error", None);
+		let error = FilterError::block_type_mismatch("test error", None, None);
 		assert!(error
 			.to_string()
 			.contains("Block Type Mismatch Error: test error"));
@@ -140,6 +166,7 @@ mod tests {
 		let error = FilterError::block_type_mismatch_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error
@@ -152,6 +179,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error
 			.to_string()
@@ -163,13 +191,14 @@ mod tests {
 
 	#[test]
 	fn test_network_error_formatting() {
-		let error = FilterError::network_error("test error", None);
+		let error = FilterError::network_error("test error", None, None);
 		assert!(error.to_string().contains("Network Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = FilterError::network_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Network Error: test error"));
@@ -180,6 +209,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Network Error: test error"));
 		assert!(error.to_string().contains("(test source)"));
@@ -189,13 +219,14 @@ mod tests {
 
 	#[test]
 	fn test_internal_error_formatting() {
-		let error = FilterError::internal_error("test error", None);
+		let error = FilterError::internal_error("test error", None, None);
 		assert!(error.to_string().contains("Internal Error: test error"));
 		assert!(error.to_string().contains("[timestamp="));
 
 		let error = FilterError::internal_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
 			None,
 		);
 		assert!(error.to_string().contains("Internal Error: test error"));
@@ -206,6 +237,7 @@ mod tests {
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
 		);
 		assert!(error.to_string().contains("Internal Error: test error"));
 		assert!(error.to_string().contains("(test source)"));

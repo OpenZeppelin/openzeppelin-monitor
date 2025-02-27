@@ -4,6 +4,8 @@
 //! blockchain connection details and parameters. The repository loads network
 //! configurations from JSON files.
 
+#![allow(clippy::result_large_err)]
+
 use std::{collections::HashMap, path::Path};
 
 use crate::{
@@ -23,13 +25,9 @@ impl NetworkRepository {
 	///
 	/// Loads all network configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
-	pub fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>> {
+	pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
 		let networks = Self::load_all(path).map_err(|e| {
-			Box::new(RepositoryError::load_error_with_source(
-				"Failed to load networks",
-				e,
-				None,
-			))
+			RepositoryError::load_error_with_source("Failed to load networks", e, None, Some("new"))
 		})?;
 		Ok(NetworkRepository { networks })
 	}
@@ -41,7 +39,7 @@ impl NetworkRepository {
 /// allowing for different storage backends while maintaining a consistent interface.
 pub trait NetworkRepositoryTrait: Clone {
 	/// Create a new repository instance
-	fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>>
+	fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
 	where
 		Self: Sized;
 
@@ -49,7 +47,7 @@ pub trait NetworkRepositoryTrait: Clone {
 	///
 	/// If no path is provided, uses the default config directory.
 	/// This is a static method that doesn't require an instance.
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, Box<RepositoryError>>;
+	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
 
 	/// Get a specific network by ID
 	///
@@ -63,18 +61,13 @@ pub trait NetworkRepositoryTrait: Clone {
 }
 
 impl NetworkRepositoryTrait for NetworkRepository {
-	fn new(path: Option<&Path>) -> Result<Self, Box<RepositoryError>> {
+	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
 		NetworkRepository::new(path)
 	}
 
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, Box<RepositoryError>> {
-		Network::load_all(path).map_err(|e| {
-			Box::new(RepositoryError::load_error_with_source(
-				"Failed to load networks",
-				e,
-				None,
-			))
-		})
+	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
+		Network::load_all(path)
+			.map_err(|e| RepositoryError::load_error(e.to_string(), None, Some("load_all")))
 	}
 
 	fn get(&self, network_id: &str) -> Option<Network> {
@@ -98,22 +91,20 @@ pub struct NetworkService<T: NetworkRepositoryTrait> {
 
 impl<T: NetworkRepositoryTrait> NetworkService<T> {
 	/// Create a new network service with the default repository implementation
-	pub fn new(
-		path: Option<&Path>,
-	) -> Result<NetworkService<NetworkRepository>, Box<RepositoryError>> {
+	pub fn new(path: Option<&Path>) -> Result<NetworkService<NetworkRepository>, RepositoryError> {
 		let repository = NetworkRepository::new(path)?;
 		Ok(NetworkService { repository })
 	}
 
 	/// Create a new network service with a custom repository implementation
-	pub fn new_with_repository(repository: T) -> Result<Self, Box<RepositoryError>> {
+	pub fn new_with_repository(repository: T) -> Result<Self, RepositoryError> {
 		Ok(NetworkService { repository })
 	}
 
 	/// Create a new network service with a specific configuration path
 	pub fn new_with_path(
 		path: Option<&Path>,
-	) -> Result<NetworkService<NetworkRepository>, Box<RepositoryError>> {
+	) -> Result<NetworkService<NetworkRepository>, RepositoryError> {
 		let repository = NetworkRepository::new(path)?;
 		Ok(NetworkService { repository })
 	}

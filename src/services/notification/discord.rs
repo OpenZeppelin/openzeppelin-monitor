@@ -158,13 +158,7 @@ impl Notifier for DiscordNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| {
-				NotificationError::network_error_with_source(
-					"Failed to send Discord webhook",
-					e,
-					None,
-				)
-			})?;
+			.map_err(|e| NotificationError::network_error(e.to_string(), None, Some("notify")))?;
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(
@@ -173,6 +167,7 @@ impl Notifier for DiscordNotifier {
 					response.status()
 				),
 				None,
+				Some("notify"),
 			));
 		}
 

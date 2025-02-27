@@ -8,7 +8,7 @@ use email_address::EmailAddress;
 use lettre::{
 	message::{
 		header::{self, ContentType},
-		Mailboxes,
+		Mailbox, Mailboxes,
 	},
 	transport::smtp::authentication::Credentials,
 	Message, SmtpTransport, Transport,
@@ -177,41 +177,27 @@ where
 			.collect::<Vec<_>>()
 			.join(", ");
 
-		let mailboxes: Mailboxes = recipients_str.parse().map_err(|e| {
-			NotificationError::internal_error_with_source(
-				"Failed to parse email recipients",
-				e,
-				None,
-			)
-		})?;
+		let mailboxes: Mailboxes = recipients_str
+			.parse::<Mailboxes>()
+			.map_err(|e| NotificationError::internal_error(e.to_string(), None, Some("notify")))?;
 		let recipients_header: header::To = mailboxes.into();
 
 		let email = Message::builder()
 			.mailbox(recipients_header)
-			.from(self.sender.to_string().parse().map_err(|e| {
-				NotificationError::internal_error_with_source(
-					"Failed to parse email sender",
-					e,
-					None,
-				)
+			.from(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+				NotificationError::internal_error(e.to_string(), None, Some("notify"))
 			})?)
-			.reply_to(self.sender.to_string().parse().map_err(|e| {
-				NotificationError::internal_error_with_source(
-					"Failed to parse email sender",
-					e,
-					None,
-				)
+			.reply_to(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+				NotificationError::internal_error(e.to_string(), None, Some("notify"))
 			})?)
 			.subject(&self.subject)
 			.header(ContentType::TEXT_PLAIN)
 			.body(message.to_owned())
-			.map_err(|e| {
-				NotificationError::internal_error_with_source("Failed to build email", e, None)
-			})?;
+			.map_err(|e| NotificationError::internal_error(e.to_string(), None, Some("notify")))?;
 
-		self.client.send(&email).map_err(|e| {
-			NotificationError::network_error(format!("Failed to send email: {}", e), None)
-		})?;
+		self.client
+			.send(&email)
+			.map_err(|e| NotificationError::network_error(e.to_string(), None, Some("notify")))?;
 
 		Ok(())
 	}

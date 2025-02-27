@@ -128,8 +128,13 @@ impl WebhookNotifier {
 		let timestamp = Utc::now().timestamp_millis();
 
 		// Create HMAC instance
-		let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-			.map_err(|e| NotificationError::config_error_with_source("Invalid secret", e, None))?; // Handle error if secret is invalid
+		let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e| {
+			NotificationError::config_error(
+				format!("Invalid secret: {}", e),
+				None,
+				Some("sign_request"),
+			)
+		})?; // Handle error if secret is invalid
 
 		// Create the message to sign
 		let message = format!("{:?}{}", payload, timestamp);
@@ -167,7 +172,7 @@ impl Notifier for WebhookNotifier {
 
 		if let Some(secret) = &self.secret {
 			let (signature, timestamp) = self.sign_request(secret, &payload).map_err(|e| {
-				NotificationError::internal_error_with_source("Failed to sign request", e, None)
+				NotificationError::internal_error(e.to_string(), None, Some("notify"))
 			})?;
 			headers.insert(
 				HeaderName::from_bytes(b"X-Signature").unwrap(),
@@ -195,18 +200,13 @@ impl Notifier for WebhookNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| {
-				NotificationError::network_error_with_source(
-					"Failed to send webhook notification",
-					e,
-					None,
-				)
-			})?;
+			.map_err(|e| NotificationError::network_error(e.to_string(), None, Some("notify")))?;
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(
 				format!("Webhook returned error status: {}", response.status()),
 				None,
+				Some("notify"),
 			));
 		}
 

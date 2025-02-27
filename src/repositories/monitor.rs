@@ -4,6 +4,8 @@
 //! validation of references to networks and triggers. The repository loads monitor
 //! configurations from JSON files and ensures all referenced components exist.
 
+#![allow(clippy::result_large_err)]
+
 use std::{collections::HashMap, marker::PhantomData, path::Path};
 
 use crate::{
@@ -35,13 +37,9 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
-	) -> Result<Self, Box<RepositoryError>> {
+	) -> Result<Self, RepositoryError> {
 		let monitors = Self::load_all(path, network_service, trigger_service).map_err(|e| {
-			Box::new(RepositoryError::load_error_with_source(
-				"Failed to load monitors",
-				e,
-				None,
-			))
+			RepositoryError::load_error_with_source("Failed to load monitors", e, None, Some("new"))
 		})?;
 		Ok(MonitorRepository {
 			monitors,
@@ -63,7 +61,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		monitors: &HashMap<String, Monitor>,
 		triggers: &HashMap<String, Trigger>,
 		networks: &HashMap<String, Network>,
-	) -> Result<(), Box<RepositoryError>> {
+	) -> Result<(), RepositoryError> {
 		let mut validation_errors = Vec::new();
 
 		for (monitor_name, monitor) in monitors {
@@ -89,13 +87,14 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		}
 
 		if !validation_errors.is_empty() {
-			return Err(Box::new(RepositoryError::validation_error(
+			return Err(RepositoryError::validation_error(
 				format!(
 					"Configuration validation failed:\n{}",
 					validation_errors.join("\n"),
 				),
 				None,
-			)));
+				Some("validate_monitor_references"),
+			));
 		}
 
 		Ok(())
@@ -114,7 +113,7 @@ pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepository
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
-	) -> Result<Self, Box<RepositoryError>>
+	) -> Result<Self, RepositoryError>
 	where
 		Self: Sized;
 
@@ -127,7 +126,7 @@ pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepository
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
-	) -> Result<HashMap<String, Monitor>, Box<RepositoryError>>;
+	) -> Result<HashMap<String, Monitor>, RepositoryError>;
 
 	/// Get a specific monitor by ID
 	///
@@ -147,7 +146,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
-	) -> Result<Self, Box<RepositoryError>> {
+	) -> Result<Self, RepositoryError> {
 		MonitorRepository::new(path, network_service, trigger_service)
 	}
 
@@ -155,14 +154,9 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
-	) -> Result<HashMap<String, Monitor>, Box<RepositoryError>> {
-		let monitors = Monitor::load_all(path).map_err(|e| {
-			Box::new(RepositoryError::load_error_with_source(
-				"Failed to load monitors",
-				e,
-				None,
-			))
-		})?;
+	) -> Result<HashMap<String, Monitor>, RepositoryError> {
+		let monitors = Monitor::load_all(path)
+			.map_err(|e| RepositoryError::load_error(e.to_string(), None, Some("load_all")))?;
 
 		let networks = match network_service {
 			Some(service) => service.get_all(),
@@ -215,7 +209,7 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
-	) -> Result<MonitorService<M, N, T>, Box<RepositoryError>> {
+	) -> Result<MonitorService<M, N, T>, RepositoryError> {
 		let repository = M::new(path, network_service, trigger_service)?;
 		Ok(MonitorService {
 			repository,
@@ -227,9 +221,7 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	/// Create a new monitor service with a specific configuration path
 	///
 	/// Similar to `new()` but makes the path parameter more explicit.
-	pub fn new_with_path(
-		path: Option<&Path>,
-	) -> Result<MonitorService<M, N, T>, Box<RepositoryError>> {
+	pub fn new_with_path(path: Option<&Path>) -> Result<MonitorService<M, N, T>, RepositoryError> {
 		let repository = M::new(path, None, None)?;
 		Ok(MonitorService {
 			repository,
@@ -241,7 +233,7 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	/// Create a new monitor service with a custom repository implementation
 	///
 	/// Allows for using alternative storage backends that implement the MonitorRepositoryTrait.
-	pub fn new_with_repository(repository: M) -> Result<Self, Box<RepositoryError>> {
+	pub fn new_with_repository(repository: M) -> Result<Self, RepositoryError> {
 		Ok(MonitorService {
 			repository,
 			_network_repository: PhantomData,
