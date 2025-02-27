@@ -174,17 +174,14 @@ mod tests {
 	#[test]
 	fn test_validation_error_formatting() {
 		let error = ConfigError::validation_error("test error", None, None);
-		assert!(error.to_string().contains("Validation Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 		let error = ConfigError::validation_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Validation Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = ConfigError::validation_error_with_source(
 			"test error",
@@ -192,17 +189,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Validation Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_parse_error_formatting() {
 		let error = ConfigError::parse_error("test error", None, None);
-		assert!(error.to_string().contains("Parse Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = ConfigError::parse_error_with_source(
 			"test error",
@@ -210,9 +203,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("Parse Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = ConfigError::parse_error_with_source(
 			"test error",
@@ -220,17 +211,13 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("Parse Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
-		assert!(error.to_string().contains("[key1=value1"));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 	}
 
 	#[test]
 	fn test_file_error_formatting() {
 		let error = ConfigError::file_error("test error", None, None);
-		assert!(error.to_string().contains("File Error: test error"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error");
 
 		let error = ConfigError::file_error_with_source(
 			"test error",
@@ -238,9 +225,7 @@ mod tests {
 			None,
 			None,
 		);
-		assert!(error.to_string().contains("File Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("[timestamp="));
+		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = ConfigError::file_error_with_source(
 			"test error",
@@ -248,9 +233,7 @@ mod tests {
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 			None,
 		);
-		assert!(error.to_string().contains("File Error: test error"));
-		assert!(error.to_string().contains("(test source)"));
-		assert!(error.to_string().contains("timestamp="));
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
 		assert!(error.to_string().contains("[key1=value1"));
 	}
 
