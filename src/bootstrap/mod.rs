@@ -401,6 +401,7 @@ mod tests {
 	use super::*;
 	use crate::models::{
 		EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
+		StellarBlock, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
 	};
 	use std::io::Write;
 	use tempfile::NamedTempFile;
@@ -442,6 +443,32 @@ mod tests {
 				..Default::default()
 			}
 		})
+	}
+
+	fn create_test_stellar_transaction() -> StellarTransaction {
+		StellarTransaction::from({
+			StellarTransactionInfo {
+				..Default::default()
+			}
+		})
+	}
+
+	fn create_test_stellar_block() -> StellarBlock {
+		StellarBlock::default()
+	}
+
+	fn create_mock_stellar_monitor_match(script_path: Option<&str>) -> MonitorMatch {
+		MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
+			monitor: create_test_monitor("test", vec![], false, script_path),
+			transaction: create_test_stellar_transaction(),
+			ledger: create_test_stellar_block(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}))
 	}
 
 	fn create_mock_monitor_match(script_path: Option<&str>) -> MonitorMatch {
@@ -1058,5 +1085,111 @@ print(True)
 		let matches = vec![match_item.clone()];
 		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
 		assert_eq!(filtered.len(), 1);
+	}
+
+	// Add these new test cases
+	#[tokio::test]
+	async fn test_run_trigger_filters_stellar_empty_matches() {
+		let matches: Vec<MonitorMatch> = vec![];
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|test.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(False)
+                "#
+				.to_string(),
+			),
+		);
+
+		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
+		assert!(filtered.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_stellar_true_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("debugging...")
+def test():
+    return True
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			format!("test|{}", temp_file.path().to_str().unwrap()),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
+		let match_item =
+			create_mock_stellar_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+		assert!(matches_equal(&filtered[0], &match_item));
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_stellar_multiple_conditions() {
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["stellar_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition1.py".to_string(),
+					execution_order: Some(1),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition2.py".to_string(),
+					execution_order: Some(2),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		let match_item = MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_stellar_transaction(),
+			ledger: create_test_stellar_block(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(True)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 0); // Match should be filtered out because condition2 returns true
 	}
 }
