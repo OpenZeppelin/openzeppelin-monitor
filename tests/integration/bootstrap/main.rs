@@ -212,6 +212,43 @@ async fn test_create_trigger_handler() {
 }
 
 #[tokio::test]
+async fn test_create_trigger_handler_empty_matches() {
+	// Set up expectation for the constructor first
+	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
+	ctx.expect()
+		.with(mockall::predicate::always(), mockall::predicate::always())
+		.returning(|_trigger_service, _notification_service| {
+			let mut mock = MockTriggerExecutionService::default();
+			mock.expect_execute().times(0);
+			mock
+		});
+
+	// Setup test triggers in JSON with known configurations
+	let trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+
+	let (shutdown_tx, _) = watch::channel(false);
+	let trigger_handler = create_trigger_handler(
+		shutdown_tx,
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
+	);
+
+	assert!(Arc::strong_count(&trigger_handler) == 1);
+
+	let processed_block = ProcessedBlock {
+		block_number: 100,
+		network_slug: "ethereum_mainnet".to_string(),
+		processing_results: vec![],
+	};
+
+	let handle = trigger_handler(&processed_block);
+	handle
+		.await
+		.expect("Trigger handler task should complete successfully");
+}
+
+#[tokio::test]
 async fn test_create_trigger_handler_with_conditions() {
 	// Set up expectation for the constructor first
 	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
