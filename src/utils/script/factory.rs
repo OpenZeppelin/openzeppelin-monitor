@@ -14,7 +14,7 @@ impl ScriptExecutorFactory {
 	/// # Arguments
 	///
 	/// * `language` - The programming language of the script
-	/// * `script_path` - The file path to the script
+	/// * `script_content` - The content of the script
 	///
 	/// # Returns
 	///
