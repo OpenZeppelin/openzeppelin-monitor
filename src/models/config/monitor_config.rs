@@ -440,23 +440,21 @@ mod tests {
 	fn test_validate_monitor_with_different_script_languages() {
 		// Create a temporary directory and script files
 		let temp_dir = TempDir::new().unwrap();
-		let python_script = temp_dir.path().join("test_script.py");
-		let js_script = temp_dir.path().join("test_script.js");
-		let bash_script = temp_dir.path().join("test_script.sh");
+		let temp_path = temp_dir.path().to_owned();
+
+		let python_script = temp_path.join("test_script.py");
+		let js_script = temp_path.join("test_script.js");
+		let bash_script = temp_path.join("test_script.sh");
 
 		fs::write(&python_script, "print('test')").unwrap();
 		fs::write(&js_script, "console.log('test')").unwrap();
 		fs::write(&bash_script, "echo 'test'").unwrap();
 
-		// Set current directory to temp directory
-		let original_dir = std::env::current_dir().unwrap();
-		std::env::set_current_dir(temp_dir.path()).unwrap();
-
 		// Test each script language
 		let test_cases = vec![
-			(ScriptLanguage::Python, "test_script.py"),
-			(ScriptLanguage::JavaScript, "test_script.js"),
-			(ScriptLanguage::Bash, "test_script.sh"),
+			(ScriptLanguage::Python, python_script),
+			(ScriptLanguage::JavaScript, js_script),
+			(ScriptLanguage::Bash, bash_script),
 		];
 
 		for (language, script_path) in test_cases {
@@ -472,7 +470,7 @@ mod tests {
 				},
 				trigger_conditions: vec![TriggerConditions {
 					execution_order: Some(1),
-					script_path: script_path.to_string(),
+					script_path: script_path.to_string_lossy().into_owned(),
 					timeout_ms: 1000,
 					arguments: None,
 					language: language.clone(),
@@ -482,9 +480,12 @@ mod tests {
 			assert!(monitor.validate().is_ok());
 
 			// Test with mismatched extension
+			let wrong_path = temp_path.join("test_script.wrong");
+			fs::write(&wrong_path, "test content").unwrap();
+
 			let monitor_wrong_ext = Monitor {
 				trigger_conditions: vec![TriggerConditions {
-					script_path: "test_script.wrong".to_string(),
+					script_path: wrong_path.to_string_lossy().into_owned(),
 					language,
 					execution_order: monitor.trigger_conditions[0].execution_order,
 					timeout_ms: monitor.trigger_conditions[0].timeout_ms,
@@ -495,7 +496,6 @@ mod tests {
 			assert!(monitor_wrong_ext.validate().is_err());
 		}
 
-		// Restore original directory
-		std::env::set_current_dir(original_dir).unwrap();
+		// TempDir will automatically clean up when dropped
 	}
 }
