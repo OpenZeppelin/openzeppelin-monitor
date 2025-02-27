@@ -20,11 +20,16 @@ use openzeppelin_monitor::{
 		TriggerTypeConfig,
 	},
 	services::{
-		blockchain::BlockChainError, filter::FilterService, trigger::TriggerExecutionServiceTrait,
+		
+		blockchain::BlockChainError, filter::FilterService,
+		notification::NotificationService,
+		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait,
+	},
 	},
 };
 
 use std::{collections::HashMap, sync::Arc};
+use tempfile;
 use tokio::sync::watch;
 use web3::types::{H160, U256};
 
@@ -373,36 +378,19 @@ async fn test_process_block_with_shutdown() {
 
 #[tokio::test]
 async fn test_load_scripts() {
-	// Create the mock service
-	let mut mock_service = MockTriggerExecutionService::<MockTriggerRepository>::default();
+	// Create a temporary test script file
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
 
-	// Set up expectation for load_scripts method
-	mock_service
-		.expect_load_scripts()
-		.times(1)
-		.returning(|monitors| {
-			let mut scripts = HashMap::new();
-			for monitor in monitors {
-				for condition in &monitor.trigger_conditions {
-					scripts.insert(
-						format!("{}|{}", monitor.name, condition.script_path),
-						(
-							condition.language.clone(),
-							"mock script content".to_string(),
-						),
-					);
-				}
-			}
-			Ok(scripts)
-		});
-
-	// Create test monitors with trigger conditions
+	// Create test monitors with real trigger conditions
 	let monitors = vec![Monitor {
 		name: "test_monitor".to_string(),
 		trigger_conditions: vec![TriggerConditions {
 			execution_order: Some(1),
-			script_path: "tests/integration/fixtures/filters/evm_filter_block_number.py"
-				.to_string(),
+			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
 			arguments: None,
@@ -410,18 +398,62 @@ async fn test_load_scripts() {
 		..Default::default()
 	}];
 
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(HashMap::new());
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
 	// Test loading scripts
-	let scripts = mock_service.load_scripts(&monitors).await.unwrap();
+	let scripts = trigger_execution_service
+		.load_scripts(&monitors)
+		.await
+		.unwrap();
 
 	// Verify results
 	assert_eq!(scripts.len(), 1);
 
-	let script_key =
-		format!("test_monitor|tests/integration/fixtures/filters/evm_filter_block_number.py");
-
+	let script_key = format!("test_monitor|{}", script_path.to_str().unwrap());
 	assert!(scripts.contains_key(&script_key));
 
 	let (lang, content) = &scripts[&script_key];
 	assert_eq!(*lang, ScriptLanguage::Python);
-	assert_eq!(content, "mock script content");
+	assert_eq!(content.trim(), "print('test script content')");
+
+	// Cleanup is handled automatically when temp_dir is dropped
+}
+
+// Also add a test for the error case
+#[tokio::test]
+async fn test_load_scripts_error() {
+	// Create test monitors with non-existent script path
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			execution_order: Some(1),
+			script_path: "non_existent_script.py".to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		}],
+		..Default::default()
+	}];
+
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(HashMap::new());
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	// Test loading scripts
+	let result = trigger_execution_service.load_scripts(&monitors).await;
+	assert!(result.is_err());
+
+	match result {
+		Err(e) => {
+			assert!(matches!(e, TriggerError::ConfigurationError(_)));
+			assert!(e.to_string().contains("Failed to read script file"));
+		}
+		_ => panic!("Expected error"),
+	}
 }
