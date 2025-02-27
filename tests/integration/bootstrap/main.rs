@@ -171,14 +171,19 @@ async fn test_create_block_handler() {
 
 #[tokio::test]
 async fn test_create_trigger_handler() {
-	// Setup test triggers in JSON with known configurations
-	let mut trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+	// Set up expectation for the constructor first
+	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
+	ctx.expect()
+		.with(mockall::predicate::always(), mockall::predicate::always())
+		.returning(|_trigger_service, _notification_service| {
+			let mut mock = MockTriggerExecutionService::default();
+			mock.expect_execute().times(1).return_once(|_, _| Ok(()));
+			mock
+		});
 
-	trigger_execution_service
-		.expect_execute()
-		.times(1)
-		.return_once(|_, _| Ok(()));
+	// Setup test triggers in JSON with known configurations
+	let trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
 
 	let (shutdown_tx, _) = watch::channel(false);
 	let trigger_handler = create_trigger_handler(
@@ -203,19 +208,24 @@ async fn test_create_trigger_handler() {
 
 #[tokio::test]
 async fn test_create_trigger_handler_with_conditions() {
-	// Setup test triggers in JSON with known configurations
-	let mut trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+	// Set up expectation for the constructor first
+	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
+	ctx.expect()
+		.with(mockall::predicate::always(), mockall::predicate::always())
+		.returning(|_trigger_service, _notification_service| {
+			let mut mock = MockTriggerExecutionService::default();
+			mock.expect_execute().times(1).return_once(|_, _| Ok(()));
+			mock
+		});
 
-	trigger_execution_service
-		.expect_execute()
-		.times(1)
-		.return_once(|_, _| Ok(()));
+	// Setup test triggers in JSON with known configurations
+	let trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
 
 	// Create a HashMap with trigger conditions
 	let mut trigger_scripts = HashMap::new();
 	trigger_scripts.insert(
-		"test_trigger-test_script.py".to_string(),
+		"test_trigger|test_script.py".to_string(),
 		(
 			ScriptLanguage::Python,
 			r#"
