@@ -7,7 +7,10 @@ use crate::integration::mocks::{
 };
 use openzeppelin_monitor::{
 	models::{BlockChainType, BlockType, Network, ProcessedBlock},
-	services::blockwatcher::{process_new_blocks, BlockTrackerTrait, BlockWatcherError},
+	services::{
+		blockchain::BlockChainError,
+		blockwatcher::{process_new_blocks, BlockTrackerTrait, BlockWatcherError},
+	},
 	utils::get_cron_interval_ms,
 };
 
@@ -705,6 +708,402 @@ async fn test_confirmation_blocks() -> Result<(), Box<BlockWatcherError>> {
 	.await;
 
 	assert!(result.is_ok(), "Block processing should succeed");
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_process_new_blocks_storage_error() -> Result<(), Box<dyn std::error::Error>> {
+	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	// Create mock block storage that returns an error
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.with(predicate::always())
+		.returning(|_| {
+			Err(BlockWatcherError::storage_error(
+				"Storage error",
+				None,
+				Some("test_error"),
+			))
+		})
+		.times(1);
+
+	let block_storage = Arc::new(block_storage);
+
+	// Setup other required mocks
+	let ctx = MockBlockTracker::<MockBlockStorage>::new_context();
+	ctx.expect()
+		.withf(|_, _| true)
+		.returning(|_, _| MockBlockTracker::<MockBlockStorage>::default());
+
+	let rpc_client = MockEvmClientTrait::new();
+
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 101,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	// Process blocks - should fail with storage error
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(MockBlockTracker::default()),
+	)
+	.await;
+
+	assert!(result.is_err());
+	if let Err(e) = result {
+		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_process_new_blocks_network_errors() -> Result<(), Box<dyn std::error::Error>> {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	// Setup mock block storage
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	// Setup mock RPC client that fails
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| {
+			Err(BlockChainError::request_error(
+				"RPC error",
+				None,
+				Some("test_error"),
+			))
+		})
+		.times(1);
+
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	// Process blocks - should fail with network error
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(MockBlockTracker::default()),
+	)
+	.await;
+
+	assert!(result.is_err());
+	if let Err(e) = result {
+		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_process_new_blocks_get_blocks_error() -> Result<(), Box<dyn std::error::Error>> {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	// Setup mock block storage
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	// Setup mock RPC client that fails on get_blocks
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(|_, _| {
+			Err(BlockChainError::request_error(
+				"Failed to fetch blocks",
+				None,
+				Some("test_error"),
+			))
+		})
+		.times(1);
+
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(MockBlockTracker::default()),
+	)
+	.await;
+
+	assert!(result.is_err());
+	if let Err(e) = result {
+		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_process_new_blocks_storage_save_error() -> Result<(), Box<dyn std::error::Error>> {
+	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	network.store_blocks = Some(true);
+
+	// Setup mock block storage that fails on save
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+	block_storage
+		.expect_delete_blocks()
+		.returning(|_| Ok(()))
+		.times(1);
+	block_storage
+		.expect_save_blocks()
+		.returning(|_, _| {
+			Err(BlockWatcherError::storage_error(
+				"Failed to save blocks",
+				None,
+				Some("test_error"),
+			))
+		})
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	// Setup block tracker expectations
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_record_block()
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| ())
+		.times(1);
+
+	// Setup mock RPC client
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(|_, _| Ok(vec![create_test_block(BlockChainType::EVM, 101)]))
+		.times(1);
+
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 101,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(result.is_err());
+	if let Err(e) = result {
+		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_process_new_blocks_save_last_processed_error(
+) -> Result<(), Box<dyn std::error::Error>> {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	// Setup mock block storage that fails on save_last_processed_block
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+	block_storage
+		.expect_save_last_processed_block()
+		.returning(|_, _| {
+			Err(BlockWatcherError::storage_error(
+				"Failed to save last processed block",
+				None,
+				Some("test_error"),
+			))
+		})
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	// Setup block tracker expectations
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_record_block()
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| ())
+		.times(1);
+
+	// Setup mock RPC client
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(|_, _| Ok(vec![create_test_block(BlockChainType::EVM, 101)]))
+		.times(1);
+
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 101,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(result.is_err());
+	if let Err(e) = result {
+		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_process_new_blocks_storage_delete_error() -> Result<(), Box<dyn std::error::Error>> {
+	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	network.store_blocks = Some(true);
+
+	// Setup mock block storage that fails on delete
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+	block_storage
+		.expect_delete_blocks()
+		.returning(|_| {
+			Err(BlockWatcherError::storage_error(
+				"Failed to delete blocks",
+				None,
+				Some("test_error"),
+			))
+		})
+		.times(1);
+	// save_blocks should not be called if delete fails
+	block_storage.expect_save_blocks().times(0);
+	let block_storage = Arc::new(block_storage);
+
+	// Setup block tracker expectations
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_record_block()
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| ())
+		.times(1);
+
+	// Setup mock RPC client
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(|_, _| Ok(vec![create_test_block(BlockChainType::EVM, 101)]))
+		.times(1);
+
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 101,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(result.is_err());
+	if let Err(e) = result {
+		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+	}
 
 	Ok(())
 }
