@@ -71,9 +71,8 @@ impl ConfigLoader for Network {
 				.unwrap_or("unknown")
 				.to_string();
 
-			if let Ok(network) = Self::load_from_path(&path) {
-				pairs.push((name, network));
-			}
+			let network = Self::load_from_path(&path)?;
+			pairs.push((name, network));
 		}
 
 		Ok(T::from_iter(pairs))

@@ -146,84 +146,71 @@ impl<T> EVMBlockFilter<T> {
 				// Process the matching address's ABI
 				if let Some(abi) = &monitored_addr.abi {
 					// Create contract object from ABI
-					if let Ok(contract) = Contract::load(abi.to_string().as_bytes()) {
-						// Get the function selector (first 4 bytes of input data)
-						if input_data.0.len() >= 4 {
-							let selector = &input_data.0[..4];
+					let contract = match Contract::load(abi.to_string().as_bytes()) {
+						Ok(c) => c,
+						Err(e) => {
+							FilterError::internal_error(
+								format!("Failed to parse ABI: {}", e),
+								None,
+								Some("find_matching_functions_for_transaction"),
+							);
+							return;
+						}
+					};
 
-							// Try to find matching function in ABI
-							if let Some(function) = contract
-								.functions()
-								.find(|f| f.short_signature().as_slice() == selector)
-							{
-								let function_signature_with_params = format!(
-									"{}({})",
-									function.name,
-									function
+					// Get the function selector (first 4 bytes of input data)
+					if input_data.0.len() >= 4 {
+						let selector = &input_data.0[..4];
+
+						// Try to find matching function in ABI
+						if let Some(function) = contract
+							.functions()
+							.find(|f| f.short_signature().as_slice() == selector)
+						{
+							let function_signature_with_params = format!(
+								"{}({})",
+								function.name,
+								function
+									.inputs
+									.iter()
+									.map(|p| p.kind.to_string())
+									.collect::<Vec<String>>()
+									.join(",")
+							);
+
+							// Check each function condition
+							for condition in &monitor.match_conditions.functions {
+								if are_same_signature(
+									&condition.signature,
+									&function_signature_with_params,
+								) {
+									let decoded = function
+										.decode_input(&input_data.0[4..])
+										.unwrap_or_else(|e| {
+											FilterError::internal_error(
+												format!("Failed to decode function input: {}", e),
+												None,
+												Some("find_matching_functions_for_transaction"),
+											);
+											vec![]
+										});
+
+									let params: Vec<EVMMatchParamEntry> = function
 										.inputs
 										.iter()
-										.map(|p| p.kind.to_string())
-										.collect::<Vec<String>>()
-										.join(",")
-								);
-
-								// Check each function condition
-								for condition in &monitor.match_conditions.functions {
-									if are_same_signature(
-										&condition.signature,
-										&function_signature_with_params,
-									) {
-										let decoded =
-											function
-												.decode_input(&input_data.0[4..])
-												.unwrap_or_else(|e| {
-													FilterError::internal_error(
-													format!("Failed to decode function input: {}", e),
-													None,
-													Some("find_matching_functions_for_transaction"),
-												);
-													vec![]
-												});
-
-										let params: Vec<EVMMatchParamEntry> = function
-											.inputs
-											.iter()
-											.zip(decoded.iter())
-											.map(|(input, value)| EVMMatchParamEntry {
-												name: input.name.clone(),
-												value: format_token_value(value),
-												kind: input.kind.to_string(),
-												indexed: false,
-											})
-											.collect();
-										if let Some(expr) = &condition.expression {
-											if self.evaluate_expression(expr, &Some(params.clone()))
-											{
-												matched_functions.push(FunctionCondition {
-													signature: function_signature_with_params
-														.clone(),
-													expression: Some(expr.to_string()),
-												});
-												if let Some(functions) =
-													&mut matched_on_args.functions
-												{
-													functions.push(EVMMatchParamsMap {
-														signature: function_signature_with_params
-															.clone(),
-														args: Some(params.clone()),
-														hex_signature: Some(format!(
-															"0x{}",
-															hex::encode(function.short_signature())
-														)),
-													});
-												}
-												break;
-											}
-										} else {
-											// No expression, just match on function name
+										.zip(decoded.iter())
+										.map(|(input, value)| EVMMatchParamEntry {
+											name: input.name.clone(),
+											value: format_token_value(value),
+											kind: input.kind.to_string(),
+											indexed: false,
+										})
+										.collect();
+									if let Some(expr) = &condition.expression {
+										if self.evaluate_expression(expr, &Some(params.clone())) {
 											matched_functions.push(FunctionCondition {
 												signature: function_signature_with_params.clone(),
-												expression: None,
+												expression: Some(expr.to_string()),
 											});
 											if let Some(functions) = &mut matched_on_args.functions
 											{
@@ -231,13 +218,30 @@ impl<T> EVMBlockFilter<T> {
 													signature: function_signature_with_params
 														.clone(),
 													args: Some(params.clone()),
-													hex_signature: Some(hex::encode(
-														function.short_signature(),
+													hex_signature: Some(format!(
+														"0x{}",
+														hex::encode(function.short_signature())
 													)),
 												});
 											}
 											break;
 										}
+									} else {
+										// No expression, just match on function name
+										matched_functions.push(FunctionCondition {
+											signature: function_signature_with_params.clone(),
+											expression: None,
+										});
+										if let Some(functions) = &mut matched_on_args.functions {
+											functions.push(EVMMatchParamsMap {
+												signature: function_signature_with_params.clone(),
+												args: Some(params.clone()),
+												hex_signature: Some(hex::encode(
+													function.short_signature(),
+												)),
+											});
+										}
+										break;
 									}
 								}
 							}
