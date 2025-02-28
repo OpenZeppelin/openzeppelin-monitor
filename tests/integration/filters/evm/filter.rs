@@ -14,10 +14,7 @@ use openzeppelin_monitor::{
 	},
 };
 
-use crate::integration::{
-	filters::common::{load_test_data, setup_trigger_execution_service},
-	mocks::{MockTriggerExecutionService, MockTriggerRepository},
-};
+use crate::integration::filters::common::{load_test_data, setup_trigger_execution_service};
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.functions = vec![];

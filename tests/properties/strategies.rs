@@ -272,26 +272,34 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 	let script_paths = prop::sample::select(vec![
 		"tests/integration/fixtures/filters/evm_filter_block_number.py".to_string(),
 		"tests/integration/fixtures/filters/stellar_filter_block_number.py".to_string(),
+		"tests/integration/fixtures/filters/evm_filter_block_number.js".to_string(),
+		"tests/integration/fixtures/filters/stellar_filter_block_number.js".to_string(),
+		"tests/integration/fixtures/filters/evm_filter_block_number.sh".to_string(),
+		"tests/integration/fixtures/filters/stellar_filter_block_number.sh".to_string(),
 	]);
 
 	(
 		1u32..=100u32,
-		script_paths, // Use predefined paths instead of random generation
+		script_paths,
 		"[a-zA-Z0-9_]+".prop_map(|s| s.to_string()),
-		Just(ScriptLanguage::Python),
 		Just(1000u32),
 	)
-		.prop_map(
-			|(execution_order, script_path, arguments, language, timeout_ms)| {
-				vec![TriggerConditions {
-					execution_order: Some(execution_order),
-					script_path,
-					arguments: Some(arguments),
-					language,
-					timeout_ms,
-				}]
-			},
-		)
+		.prop_map(|(execution_order, script_path, arguments, timeout_ms)| {
+			let language = match script_path.split('.').last() {
+				Some("py") => ScriptLanguage::Python,
+				Some("js") => ScriptLanguage::JavaScript,
+				Some("sh") => ScriptLanguage::Bash,
+				_ => ScriptLanguage::Python, // fallback to Python for unknown extensions
+			};
+
+			vec![TriggerConditions {
+				execution_order: Some(execution_order),
+				script_path,
+				arguments: Some(arguments),
+				language,
+				timeout_ms,
+			}]
+		})
 }
 
 pub fn process_output_strategy() -> impl Strategy<Value = std::process::Output> {
