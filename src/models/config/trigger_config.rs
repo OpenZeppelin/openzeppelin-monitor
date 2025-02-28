@@ -287,12 +287,12 @@ impl ConfigLoader for Trigger {
 				}
 			}
 			TriggerType::Script => {
-				if let TriggerTypeConfig::Script { path, .. } = &self.config {
+				if let TriggerTypeConfig::Script { script_path, .. } = &self.config {
 					// Validate script path exists
-					if !Path::new(path).exists() {
+					if !Path::new(script_path).exists() {
 						return Err(ConfigError::validation_error(format!(
 							"Script path does not exist: {}",
-							path
+							script_path
 						)));
 					}
 				}
@@ -307,7 +307,7 @@ mod tests {
 	use super::*;
 	use crate::models::{
 		core::{Trigger, TriggerType},
-		NotificationMessage,
+		NotificationMessage, ScriptLanguage,
 	};
 
 	#[test]
@@ -754,8 +754,10 @@ mod tests {
 			name: "test_script".to_string(),
 			trigger_type: TriggerType::Script,
 			config: TriggerTypeConfig::Script {
-				path: script_path.to_str().unwrap().to_string(),
-				args: vec!["arg1".to_string(), "arg2".to_string()],
+				script_path: script_path.to_str().unwrap().to_string(),
+				arguments: Some("arg1".to_string()),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
 			},
 		};
 		assert!(valid_trigger.validate().is_ok());
@@ -765,8 +767,10 @@ mod tests {
 			name: "test_script".to_string(),
 			trigger_type: TriggerType::Script,
 			config: TriggerTypeConfig::Script {
-				path: "/non/existent/path".to_string(),
-				args: vec!["arg1".to_string(), "arg2".to_string()],
+				script_path: "/non/existent/path".to_string(),
+				arguments: Some("arg1".to_string()),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
 			},
 		};
 		assert!(invalid_path.validate().is_err());

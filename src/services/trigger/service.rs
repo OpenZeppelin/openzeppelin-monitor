@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 use crate::{
 	models::{Monitor, ScriptLanguage},
-	repositories::{TriggerRepositoryTrait, TriggerService},
+	repositories::{TriggerRepository, TriggerRepositoryTrait, TriggerService},
 	services::{notification::NotificationService, trigger::error::TriggerError},
 };
 
@@ -136,6 +136,14 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 					(condition.language.clone(), content),
 				);
 			}
+
+			// For each trigger, we'll load the script
+			// for trigger in &monitor.triggers {
+			// 	let trigger = self.trigger_service.get(trigger.as_str()).ok_or_else(|| {
+			// 		TriggerError::configuration_error(format!("Failed to get trigger: {}", trigger))
+			// 	})?;
+			// 	println!("trigger FOUND ==>: {:?}", trigger);
+			// }
 		}
 
 		Ok(scripts)
