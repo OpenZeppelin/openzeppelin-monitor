@@ -2,12 +2,15 @@ use crate::{models::MonitorMatch, utils::script::error::ScriptError};
 use async_trait::async_trait;
 use libc::{c_int, getrlimit, RLIMIT_NOFILE};
 use log::debug;
-use std::{mem::MaybeUninit, process::Stdio};
+use std::{any::Any, mem::MaybeUninit, process::Stdio};
 use tokio::io::AsyncWriteExt;
+
 /// A trait that defines the interface for executing custom scripts in different languages.
 /// Implementors must be both Send and Sync to ensure thread safety.
 #[async_trait]
-pub trait ScriptExecutor: Send + Sync {
+pub trait ScriptExecutor: Send + Sync + Any {
+	/// Enables downcasting by returning a reference to `Any`
+	fn as_any(&self) -> &dyn Any;
 	/// Executes the script with the given MonitorMatch input.
 	///
 	/// # Arguments
@@ -52,6 +55,9 @@ fn count_open_fds() -> (usize, u64) {
 
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
+	fn as_any(&self) -> &dyn Any {
+		self
+	}
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
 		let (open_fds, max_fds) = count_open_fds();
 		let combined_input = serde_json::json!({
@@ -107,6 +113,9 @@ pub struct JavaScriptScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for JavaScriptScriptExecutor {
+	fn as_any(&self) -> &dyn Any {
+		self
+	}
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
 		let (open_fds, max_fds) = count_open_fds();
 		// Create a combined input with both the monitor match and arguments
@@ -161,6 +170,9 @@ pub struct BashScriptExecutor {
 
 #[async_trait]
 impl ScriptExecutor for BashScriptExecutor {
+	fn as_any(&self) -> &dyn Any {
+		self
+	}
 	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
@@ -260,7 +272,16 @@ mod tests {
 		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
 		MatchConditions, Monitor, MonitorMatch, TransactionCondition,
 	};
+	use std::{fs, path::Path};
 	use web3::types::{TransactionReceipt, H160, U256};
+
+	fn read_fixture(filename: &str) -> String {
+		let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+			.join("tests/integration/fixtures/filters")
+			.join(filename);
+		fs::read_to_string(fixture_path)
+			.unwrap_or_else(|_| panic!("Failed to read fixture file: {}", filename))
+	}
 
 	/// Creates a test monitor with customizable parameters
 	fn create_test_monitor(
@@ -692,6 +713,30 @@ else:
 
 		// Test with wrong argument
 		let result = executor.execute(input, "wrong_arg").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), false);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_with_verbose_arg() {
+		let script_content = read_fixture("evm_filter_by_arguments.py");
+		let executor = PythonScriptExecutor { script_content };
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, "--verbose").await;
+
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), true);
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_with_wrong_arg() {
+		let script_content = read_fixture("evm_filter_by_arguments.py");
+		let executor = PythonScriptExecutor { script_content };
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, "--wrong_arg,--test").await;
+
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), false);
 	}

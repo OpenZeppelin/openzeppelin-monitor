@@ -43,30 +43,72 @@ mod tests {
 	#[test]
 	fn test_create_python_executor() {
 		let script = "print('Hello')";
-		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, script);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, script);
+		assert!(
+			executor
+				.as_any()
+				.downcast_ref::<PythonScriptExecutor>()
+				.unwrap()
+				.script_content
+				== script
+		);
 
 		// Test with empty script
 		let empty_script = "";
-		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, empty_script);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, empty_script);
+		assert!(executor
+			.as_any()
+			.downcast_ref::<PythonScriptExecutor>()
+			.unwrap()
+			.script_content
+			.is_empty());
 	}
 
 	#[test]
 	fn test_create_javascript_executor() {
 		let script = "console.log('Hello')";
-		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script);
+		assert!(
+			executor
+				.as_any()
+				.downcast_ref::<JavaScriptScriptExecutor>()
+				.unwrap()
+				.script_content
+				== script
+		);
 
 		// Test with empty script
 		let empty_script = "";
-		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, empty_script);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, empty_script);
+		assert!(executor
+			.as_any()
+			.downcast_ref::<JavaScriptScriptExecutor>()
+			.unwrap()
+			.script_content
+			.is_empty());
 	}
 
 	#[test]
 	fn test_create_bash_executor() {
 		let script = "echo 'Hello'";
-		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, script);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, script);
+		assert!(
+			executor
+				.as_any()
+				.downcast_ref::<BashScriptExecutor>()
+				.unwrap()
+				.script_content
+				== script
+		);
 
 		// Test with empty script
 		let empty_script = "";
-		let _executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, empty_script);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, empty_script);
+		assert!(executor
+			.as_any()
+			.downcast_ref::<BashScriptExecutor>()
+			.unwrap()
+			.script_content
+			.is_empty());
 	}
 }
