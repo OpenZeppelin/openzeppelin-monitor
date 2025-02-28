@@ -102,8 +102,8 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 	/// * `monitors` - List of monitors containing trigger conditions
 	///
 	/// # Returns
-	/// * `Result<HashMap<String, (ScriptLanguage, String)>, TriggerError>` - Map of monitor names and script path
-	///   to their script language and content
+	/// * `Result<HashMap<String, (ScriptLanguage, String)>, TriggerError>` - Map of monitor names
+	///   and script path to their script language and content
 	///
 	/// # Errors
 	/// - Returns `TriggerError::ConfigurationError` if script files cannot be read
