@@ -3,6 +3,8 @@
 //! Tests the monitoring functionality for EVM-compatible blockchains,
 //! including event and transaction filtering.
 
+use std::collections::HashMap;
+
 use openzeppelin_monitor::{
 	models::{
 		BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, TransactionCondition,
@@ -466,13 +468,14 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
 	let client = EvmClient::new(&test_data.network).await.unwrap();
+	let trigger_scripts = HashMap::new();
 
 	let mut trigger_execution_service =
 		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
 
 	// Set up expectations for execute()
 	trigger_execution_service.expect_execute()
-		.withf(|trigger_name, variables| {
+		.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 			trigger_name == ["example_trigger_slack"]
 				// Event variables
 				&& variables.get("event_0_signature") == Some(&"Transfer(address,address,uint256)".to_string())
@@ -492,7 +495,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 				&& variables.get("monitor_name") == Some(&"Mint USDC Token".to_string())
 		})
 		.once()
-		.returning(|_, _| Ok(()));
+		.returning(|_, _, _, _| Ok(()));
 
 	let matches = filter_service
 		.filter_block(
@@ -506,7 +509,12 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	assert!(!matches.is_empty(), "Should have found matches to handle");
 
 	for matching_monitor in matches {
-		let result = handle_match(matching_monitor.clone(), &trigger_execution_service).await;
+		let result = handle_match(
+			matching_monitor.clone(),
+			&trigger_execution_service,
+			&trigger_scripts,
+		)
+		.await;
 		assert!(result.is_ok(), "Handle match should succeed");
 	}
 

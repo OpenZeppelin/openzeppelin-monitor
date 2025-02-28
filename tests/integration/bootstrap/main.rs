@@ -182,7 +182,9 @@ async fn test_create_trigger_handler() {
 		.with(mockall::predicate::always(), mockall::predicate::always())
 		.returning(|_trigger_service, _notification_service| {
 			let mut mock = MockTriggerExecutionService::default();
-			mock.expect_execute().times(1).return_once(|_, _| Ok(()));
+			mock.expect_execute()
+				.times(1)
+				.return_once(|_, _, _, _| Ok(()));
 			mock
 		});
 
@@ -256,7 +258,9 @@ async fn test_create_trigger_handler_with_conditions() {
 		.with(mockall::predicate::always(), mockall::predicate::always())
 		.returning(|_trigger_service, _notification_service| {
 			let mut mock = MockTriggerExecutionService::default();
-			mock.expect_execute().times(1).return_once(|_, _| Ok(()));
+			mock.expect_execute()
+				.times(1)
+				.return_once(|_, _, _, _| Ok(()));
 			mock
 		});
 
