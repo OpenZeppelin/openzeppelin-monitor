@@ -7,7 +7,7 @@ use log::error;
 use std::{error::Error, fmt};
 
 /// Represents possible errors during script operations
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ScriptError {
 	/// When a requested script cannot be found
 	NotFound(String),
@@ -69,3 +69,55 @@ impl fmt::Display for ScriptError {
 }
 
 impl Error for ScriptError {}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_script_error_not_found() {
+		let error = ScriptError::not_found("test script");
+		match &error {
+			ScriptError::NotFound(msg) => {
+				assert_eq!(msg, "test script");
+				assert_eq!(error.to_string(), "Script not found: test script");
+			}
+			_ => panic!("Expected NotFound error"),
+		}
+	}
+
+	#[test]
+	fn test_script_error_system_error() {
+		let error = ScriptError::system_error("system failure");
+		match &error {
+			ScriptError::SystemError(msg) => {
+				assert_eq!(msg, "system failure");
+				assert_eq!(error.to_string(), "System error: system failure");
+			}
+			_ => panic!("Expected SystemError"),
+		}
+	}
+
+	#[test]
+	fn test_script_error_display() {
+		let errors = vec![
+			(
+				ScriptError::not_found("script.py"),
+				"Script not found: script.py",
+			),
+			(
+				ScriptError::execution_error("failed"),
+				"Script execution error: failed",
+			),
+			(
+				ScriptError::parse_error("invalid"),
+				"Script parse error: invalid",
+			),
+			(ScriptError::system_error("crash"), "System error: crash"),
+		];
+
+		for (error, expected) in errors {
+			assert_eq!(error.to_string(), expected);
+		}
+	}
+}
