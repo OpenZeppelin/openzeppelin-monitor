@@ -29,12 +29,12 @@ use crate::{
 /// Manages block watching and processing for a specific blockchain network,
 /// including scheduling and block handling.
 pub struct NetworkBlockWatcher<S, H, T> {
-	network: Network,
-	block_storage: Arc<S>,
-	block_handler: Arc<H>,
-	trigger_handler: Arc<T>,
-	scheduler: JobScheduler,
-	block_tracker: Arc<BlockTracker<S>>,
+	pub network: Network,
+	pub block_storage: Arc<S>,
+	pub block_handler: Arc<H>,
+	pub trigger_handler: Arc<T>,
+	pub scheduler: JobScheduler,
+	pub block_tracker: Arc<BlockTracker<S>>,
 }
 
 /// Map of active block watchers
@@ -45,11 +45,11 @@ type BlockWatchersMap<S, H, T> = HashMap<String, NetworkBlockWatcher<S, H, T>>;
 /// Coordinates block watching across multiple networks, managing individual
 /// watchers and their lifecycles.
 pub struct BlockWatcherService<S, H, T> {
-	block_storage: Arc<S>,
-	block_handler: Arc<H>,
-	trigger_handler: Arc<T>,
-	active_watchers: Arc<RwLock<BlockWatchersMap<S, H, T>>>,
-	block_tracker: Arc<BlockTracker<S>>,
+	pub block_storage: Arc<S>,
+	pub block_handler: Arc<H>,
+	pub trigger_handler: Arc<T>,
+	pub active_watchers: Arc<RwLock<BlockWatchersMap<S, H, T>>>,
+	pub block_tracker: Arc<BlockTracker<S>>,
 }
 
 impl<S, H, T> NetworkBlockWatcher<S, H, T>

@@ -9,7 +9,10 @@ use openzeppelin_monitor::{
 	models::{BlockChainType, BlockType, Network, ProcessedBlock},
 	services::{
 		blockchain::BlockChainError,
-		blockwatcher::{process_new_blocks, BlockTrackerTrait, BlockWatcherError},
+		blockwatcher::{
+			process_new_blocks, BlockTracker, BlockTrackerTrait, BlockWatcherError,
+			BlockWatcherService, NetworkBlockWatcher,
+		},
 	},
 	utils::get_cron_interval_ms,
 };
@@ -120,7 +123,7 @@ fn setup_mocks(
 }
 
 #[tokio::test]
-async fn test_normal_block_range() -> Result<(), Box<BlockWatcherError>> {
+async fn test_normal_block_range() {
 	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 
 	let config = MockConfig {
@@ -169,7 +172,7 @@ async fn test_normal_block_range() -> Result<(), Box<BlockWatcherError>> {
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
 
 	// Process blocks
-	process_new_blocks(
+	let result = process_new_blocks(
 		&network,
 		&rpc_client,
 		block_storage.clone(),
@@ -177,9 +180,9 @@ async fn test_normal_block_range() -> Result<(), Box<BlockWatcherError>> {
 		trigger_handler,
 		Arc::new(block_tracker),
 	)
-	.await?;
+	.await;
 
-	Ok(())
+	assert!(result.is_ok(), "Process should complete successfully");
 }
 
 #[tokio::test]
@@ -229,7 +232,7 @@ async fn test_fresh_start_processing() {
 }
 
 #[tokio::test]
-async fn test_no_new_blocks() -> Result<(), Box<BlockWatcherError>> {
+async fn test_no_new_blocks() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.store_blocks = Some(true);
 
@@ -275,11 +278,10 @@ async fn test_no_new_blocks() -> Result<(), Box<BlockWatcherError>> {
 		result.is_ok(),
 		"Process should complete successfully even with no new blocks"
 	);
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_concurrent_processing() -> Result<(), Box<BlockWatcherError>> {
+async fn test_concurrent_processing() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.max_past_blocks = Some(51); // match processing limit
 
@@ -378,12 +380,10 @@ async fn test_concurrent_processing() -> Result<(), Box<BlockWatcherError>> {
 		max_concurrent <= 32,
 		"Should not exceed buffer_unordered(32) limit"
 	);
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_ordered_trigger_handling() -> Result<(), Box<BlockWatcherError>> {
+async fn test_ordered_trigger_handling() {
 	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 
 	// Create blocks with varying processing times to ensure out-of-order processing
@@ -473,12 +473,10 @@ async fn test_ordered_trigger_handling() -> Result<(), Box<BlockWatcherError>> {
 		blocks_to_process.len(),
 		"All blocks should be triggered"
 	);
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_block_storage_enabled() -> Result<(), Box<BlockWatcherError>> {
+async fn test_block_storage_enabled() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.store_blocks = Some(true);
 
@@ -526,11 +524,10 @@ async fn test_block_storage_enabled() -> Result<(), Box<BlockWatcherError>> {
 		result.is_ok(),
 		"Block processing should succeed with storage enabled"
 	);
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_max_past_blocks_limit() -> Result<(), Box<BlockWatcherError>> {
+async fn test_max_past_blocks_limit() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.max_past_blocks = Some(3); // Only process last 3 blocks max
 
@@ -579,11 +576,10 @@ async fn test_max_past_blocks_limit() -> Result<(), Box<BlockWatcherError>> {
 		result.is_ok(),
 		"Block processing should succeed with max_past_blocks limit"
 	);
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_max_past_blocks_limit_recommended() -> Result<(), Box<BlockWatcherError>> {
+async fn test_max_past_blocks_limit_recommended() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.max_past_blocks = None; // Use recommended past blocks
 	network.block_time_ms = 12000;
@@ -657,12 +653,10 @@ async fn test_max_past_blocks_limit_recommended() -> Result<(), Box<BlockWatcher
 		result.is_ok(),
 		"Block processing should succeed without max_past_blocks limit"
 	);
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_confirmation_blocks() -> Result<(), Box<BlockWatcherError>> {
+async fn test_confirmation_blocks() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.confirmation_blocks = 2;
 
@@ -708,12 +702,10 @@ async fn test_confirmation_blocks() -> Result<(), Box<BlockWatcherError>> {
 	.await;
 
 	assert!(result.is_ok(), "Block processing should succeed");
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_process_new_blocks_storage_error() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_process_new_blocks_storage_error() {
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	// Create mock block storage that returns an error
@@ -767,12 +759,10 @@ async fn test_process_new_blocks_storage_error() -> Result<(), Box<dyn std::erro
 	if let Err(e) = result {
 		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
 	}
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_process_new_blocks_network_errors() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_process_new_blocks_network_errors() {
 	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 
 	// Setup mock block storage
@@ -823,12 +813,10 @@ async fn test_process_new_blocks_network_errors() -> Result<(), Box<dyn std::err
 	if let Err(e) = result {
 		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
 	}
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_process_new_blocks_get_blocks_error() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_process_new_blocks_get_blocks_error() {
 	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 
 	// Setup mock block storage
@@ -882,12 +870,10 @@ async fn test_process_new_blocks_get_blocks_error() -> Result<(), Box<dyn std::e
 	if let Err(e) = result {
 		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
 	}
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_process_new_blocks_storage_save_error() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_process_new_blocks_storage_save_error() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.store_blocks = Some(true);
 
@@ -958,13 +944,10 @@ async fn test_process_new_blocks_storage_save_error() -> Result<(), Box<dyn std:
 	if let Err(e) = result {
 		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
 	}
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_process_new_blocks_save_last_processed_error(
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn test_process_new_blocks_save_last_processed_error() {
 	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 
 	// Setup mock block storage that fails on save_last_processed_block
@@ -1030,12 +1013,10 @@ async fn test_process_new_blocks_save_last_processed_error(
 	if let Err(e) = result {
 		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
 	}
-
-	Ok(())
 }
 
 #[tokio::test]
-async fn test_process_new_blocks_storage_delete_error() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_process_new_blocks_storage_delete_error() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
 	network.store_blocks = Some(true);
 
@@ -1104,6 +1085,180 @@ async fn test_process_new_blocks_storage_delete_error() -> Result<(), Box<dyn st
 	if let Err(e) = result {
 		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
 	}
+}
 
-	Ok(())
+#[tokio::test]
+async fn test_network_block_watcher_new() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	let block_storage = Arc::new(MockBlockStorage::new());
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+
+	let watcher = NetworkBlockWatcher::new(
+		network,
+		block_storage,
+		block_handler,
+		trigger_handler,
+		block_tracker,
+	)
+	.await;
+
+	assert!(watcher.is_ok());
+
+	// Not expected to be initialized since we haven't started the watcher
+	assert!(!watcher
+		.unwrap()
+		.scheduler
+		.inited
+		.load(std::sync::atomic::Ordering::Relaxed));
+}
+
+#[tokio::test]
+async fn test_network_block_watcher_start_stop() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	let block_storage = Arc::new(MockBlockStorage::new());
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+
+	let watcher = NetworkBlockWatcher::new(
+		network.clone(),
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		block_tracker,
+	)
+	.await;
+
+	// Setup mock RPC client
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(100))
+		.times(0);
+
+	let mut watcher = watcher.unwrap();
+	// Test start
+	let started_result = watcher.start(rpc_client).await;
+	assert!(started_result.is_ok());
+	assert!(watcher.scheduler.inited().await);
+
+	// Test stop
+	let stopped_result = watcher.stop().await;
+	assert!(stopped_result.is_ok());
+}
+
+#[tokio::test]
+async fn test_block_watcher_service_start_stop_network() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	let block_storage = Arc::new(MockBlockStorage::new());
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+
+	let service = BlockWatcherService::new(
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		block_tracker,
+	)
+	.await;
+
+	// Setup mock RPC client
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(100))
+		.times(0);
+
+	rpc_client
+		.expect_clone()
+		.times(2)
+		.returning(MockEvmClientTrait::new);
+
+	let service = service.unwrap();
+
+	// Test starting a network watcher
+	let started_result = service
+		.start_network_watcher(&network, rpc_client.clone())
+		.await;
+	assert!(started_result.is_ok());
+	{
+		let watchers = service.active_watchers.read().await;
+		assert!(watchers.contains_key(&network.slug));
+	}
+
+	// Test starting the same network watcher again (should be idempotent)
+	let started_result = service
+		.start_network_watcher(&network, rpc_client.clone())
+		.await;
+	assert!(started_result.is_ok());
+	{
+		let watchers = service.active_watchers.read().await;
+		assert_eq!(watchers.len(), 1);
+	}
+
+	// Test stopping the network watcher
+	let stopped_result = service.stop_network_watcher(&network.slug).await;
+	assert!(stopped_result.is_ok());
+	{
+		let watchers = service.active_watchers.read().await;
+		assert!(!watchers.contains_key(&network.slug));
+	}
+
+	// Test stopping a non-existent network watcher (should not error)
+	let stopped_result = service.stop_network_watcher("non-existent").await;
+	assert!(stopped_result.is_ok());
+}
+
+#[tokio::test]
+async fn test_block_watcher_service_new() {
+	let block_storage = Arc::new(MockBlockStorage::new());
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+
+	let service = BlockWatcherService::new(
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		block_tracker,
+	)
+	.await;
+
+	assert!(service.is_ok());
+	assert!(service.unwrap().active_watchers.read().await.is_empty());
 }
