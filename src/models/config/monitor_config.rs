@@ -85,6 +85,7 @@ impl ConfigLoader for Monitor {
 				Some("validate"),
 			));
 		}
+
 		// Validate function signatures
 		for func in &self.match_conditions.functions {
 			if !func.signature.contains('(') || !func.signature.contains(')') {
