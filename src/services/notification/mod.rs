@@ -9,6 +9,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
+use tokio::time::Duration;
 
 mod discord;
 mod email;
@@ -17,7 +18,10 @@ mod slack;
 mod telegram;
 mod webhook;
 
-use crate::models::{Trigger, TriggerType};
+use crate::{
+	models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig},
+	utils::ScriptExecutorFactory,
+};
 
 pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
@@ -63,6 +67,8 @@ impl NotificationService {
 		&self,
 		trigger: &Trigger,
 		variables: HashMap<String, String>,
+		monitor_match: &MonitorMatch,
+		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), NotificationError> {
 		match &trigger.trigger_type {
 			TriggerType::Slack => {
@@ -132,7 +138,57 @@ impl NotificationService {
 				}
 			}
 			TriggerType::Script => {
-				println!("Script notification");
+				match &trigger.config {
+					TriggerTypeConfig::Script {
+						language,
+						script_path,
+						arguments,
+						timeout_ms,
+					} => {
+						let monitor_name = match monitor_match {
+							MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
+							MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,
+						};
+						let script = trigger_scripts
+							.get(&format!("{}|{}", monitor_name, script_path))
+							.ok_or_else(|| {
+								NotificationError::execution_error(
+									"Script content not found".to_string(),
+								)
+							});
+						let script_content = match &script {
+							Ok(content) => content,
+							Err(e) => {
+								return Err(NotificationError::execution_error(e.to_string()))
+							}
+						};
+						let executor = ScriptExecutorFactory::create(language, &script_content.1);
+						// Set timeout for script execution
+						let result = tokio::time::timeout(
+							Duration::from_millis(u64::from(*timeout_ms)),
+							executor
+								.execute(monitor_match.clone(), arguments.as_deref().unwrap_or("")),
+						)
+						.await;
+
+						match result {
+							Ok(Ok(true)) => (),
+							Err(e) => {
+								return Err(NotificationError::execution_error(e.to_string()));
+							}
+							_ => {
+								return Err(NotificationError::execution_error(
+									"Trigger script execution error",
+								))
+							}
+						}
+					}
+					_ => {
+						return Err(NotificationError::config_error(
+							"Invalid trigger configuration",
+						))
+					}
+				}
 			}
 		}
 		Ok(())

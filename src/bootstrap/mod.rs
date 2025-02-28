@@ -261,7 +261,7 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 					}
 					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
 					for monitor_match in &filtered_matches {
-						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
+						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service, &trigger_scripts).await {
 							error!("Error handling trigger: {}", e);
 						}
 					}

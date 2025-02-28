@@ -8,8 +8,8 @@ use std::{collections::HashMap, path::Path};
 use async_trait::async_trait;
 
 use crate::{
-	models::{Monitor, ScriptLanguage},
-	repositories::{TriggerRepository, TriggerRepositoryTrait, TriggerService},
+	models::{Monitor, MonitorMatch, ScriptLanguage, TriggerTypeConfig},
+	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{notification::NotificationService, trigger::error::TriggerError},
 };
 
@@ -23,6 +23,8 @@ pub trait TriggerExecutionServiceTrait {
 		&self,
 		trigger_slugs: &[String],
 		variables: HashMap<String, String>,
+		monitor_match: &MonitorMatch,
+		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), TriggerError>;
 	async fn load_scripts(
 		&self,
@@ -82,6 +84,8 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 		&self,
 		trigger_slugs: &[String],
 		variables: HashMap<String, String>,
+		monitor_match: &MonitorMatch,
+		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), TriggerError> {
 		for trigger_slug in trigger_slugs {
 			let trigger = self
@@ -90,7 +94,12 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string()))?;
 
 			self.notification_service
-				.execute(&trigger, variables.clone())
+				.execute(
+					&trigger,
+					variables.clone(),
+					&monitor_match,
+					&trigger_scripts,
+				)
 				.await
 				.map_err(|e| TriggerError::execution_error(e.to_string()))?;
 		}
@@ -138,12 +147,39 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 			}
 
 			// For each trigger, we'll load the script
-			// for trigger in &monitor.triggers {
-			// 	let trigger = self.trigger_service.get(trigger.as_str()).ok_or_else(|| {
-			// 		TriggerError::configuration_error(format!("Failed to get trigger: {}", trigger))
-			// 	})?;
-			// 	println!("trigger FOUND ==>: {:?}", trigger);
-			// }
+			for trigger in &monitor.triggers {
+				let trigger_config =
+					self.trigger_service.get(trigger.as_str()).ok_or_else(|| {
+						TriggerError::configuration_error(format!(
+							"Failed to get trigger: {}",
+							trigger
+						))
+					})?;
+
+				match trigger_config.config {
+					TriggerTypeConfig::Script {
+						language,
+						script_path,
+						arguments: _,
+						timeout_ms: _,
+					} => {
+						let script_path = Path::new(&script_path);
+						let content =
+							tokio::fs::read_to_string(script_path).await.map_err(|e| {
+								TriggerError::configuration_error(format!(
+									"Failed to read script file {}: {}",
+									script_path.display(),
+									e
+								))
+							})?;
+						scripts.insert(
+							format!("{}|{}", monitor.name, script_path.display()),
+							(language, content),
+						);
+					}
+					_ => continue,
+				}
+			}
 		}
 
 		Ok(scripts)

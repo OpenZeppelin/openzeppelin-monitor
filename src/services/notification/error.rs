@@ -15,6 +15,8 @@ pub enum NotificationError {
 	ConfigError(String),
 	/// Internal errors (e.g., failed to build email)
 	InternalError(String),
+	/// Script execution errors
+	ExecutionError(String),
 }
 
 use reqwest;
@@ -26,6 +28,7 @@ impl NotificationError {
 			Self::NetworkError(msg) => format!("Network error: {}", msg),
 			Self::ConfigError(msg) => format!("Config error: {}", msg),
 			Self::InternalError(msg) => format!("Internal error: {}", msg),
+			Self::ExecutionError(msg) => format!("Execution error: {}", msg),
 		}
 	}
 
@@ -49,8 +52,14 @@ impl NotificationError {
 		error!("{}", error.format_message());
 		error
 	}
-}
 
+	/// Creates a new script execution error with logging
+	pub fn execution_error(msg: impl Into<String>) -> Self {
+		let error = Self::ExecutionError(msg.into());
+		error!("{}", error.format_message());
+		error
+	}
+}
 impl From<reqwest::Error> for NotificationError {
 	fn from(error: reqwest::Error) -> Self {
 		Self::network_error(error.to_string())
