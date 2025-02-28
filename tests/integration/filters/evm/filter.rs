@@ -15,7 +15,7 @@ use openzeppelin_monitor::{
 };
 
 use crate::integration::{
-	filters::common::load_test_data,
+	filters::common::{load_test_data, setup_trigger_execution_service},
 	mocks::{MockTriggerExecutionService, MockTriggerRepository},
 };
 
@@ -470,16 +470,11 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	let filter_service = FilterService::new();
 	let client = EvmClient::new(&test_data.network).await.unwrap();
 
-	// Create mock for TriggerExecutionService
-	let mut mock = MockTriggerExecutionService::<MockTriggerRepository>::default();
-
-	// Set up expectations for new()
-	MockTriggerExecutionService::<MockTriggerRepository>::new_context()
-		.expect()
-		.return_once(|_, _| MockTriggerExecutionService::default());
+	let mut trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
 
 	// Set up expectations for execute()
-	mock.expect_execute()
+	trigger_execution_service.expect_execute()
 		.withf(|trigger_name, variables| {
 			trigger_name == ["example_trigger_slack"]
 				// Event variables
@@ -514,7 +509,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	assert!(!matches.is_empty(), "Should have found matches to handle");
 
 	for matching_monitor in matches {
-		let result = handle_match(matching_monitor.clone(), &mock).await;
+		let result = handle_match(matching_monitor.clone(), &trigger_execution_service).await;
 		assert!(result.is_ok(), "Handle match should succeed");
 	}
 

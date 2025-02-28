@@ -69,6 +69,12 @@ pub fn setup_trigger_execution_service(
 	let trigger_service = TriggerService::new_with_repository(mock_trigger_repository).unwrap();
 	let notification_service = NotificationService::new();
 
+	// Set up expectation for the constructor
+	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
+	ctx.expect()
+		.with(mockall::predicate::always(), mockall::predicate::always())
+		.returning(|_, _| MockTriggerExecutionService::default());
+
 	// Then make the actual call that will match the expectation
 	MockTriggerExecutionService::new(trigger_service, notification_service)
 }
