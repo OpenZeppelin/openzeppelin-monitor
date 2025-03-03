@@ -83,10 +83,69 @@ The RPC client includes an automatic retry mechanism for handling failures:
 ** Continues until a successful connection is made or all URLs have been tried
 
 * For other errors:
-** Retries up to 2 times with the same URL
-** Uses exponential backoff with delays up to 4 seconds
-** Continues with normal operation after successful retry
-** Reports error if all retries fail
+** Uses `reqwest-retry` middleware with exponential backoff strategy
+** Retries up to 2 times (configurable via `ExponentialBackoff` builder)
+** Automatically handles transient HTTP errors and network failures
+** Applies exponential backoff between retry attempts
+** Returns the final error if all retry attempts fail
+** Maintains the same URL throughout the retry process
+** Independent from the endpoint rotation mechanism
+
+==== Retry Strategy
+
+Each transport client implements `reqwest-retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
+
+===== Configuration Options
+
+The retry policy can be customized using the `ExponentialBackoff` builder in the respective transport client. The default retry policy is:
+
+[source,rust]
+----
+let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+----
+
+The retry policy can be customized with the following options:
+
+[source,rust]
+----
+pub struct ExponentialBackoff {
+    pub max_n_retries: Option<u32>,     // Maximum number of allowed retries attempts.
+    pub min_retry_interval: Duration,   // Minimum waiting time between two retry attempts (it can end up being lower when using full jitter).
+    pub max_retry_interval: Duration,   // Maximum waiting time between two retry attempts.
+    pub jitter: Jitter,                 // How we apply jitter to the calculated backoff intervals.
+    pub base: u32,                      // Base of the exponential.
+}
+----
+
+==== Implementation Details
+
+The retry mechanism is implemented at two levels:
+
+1. *Transport Level*: Each transport client maintains its own retry policy:
++
+[source,rust]
+----
+pub struct Web3TransportClient {
+  client: Arc<RwLock<Web3<Http>>>,
+  endpoint_manager: EndpointManager,
+  retry_policy: ExponentialBackoff,
+}
+
+pub struct StellarTransportClient {
+	pub client: Arc<RwLock<StellarHttpClient>>,
+	endpoint_manager: EndpointManager,
+	retry_policy: ExponentialBackoff,
+}
+----
+
+2. *Request Level*: The `EndpointManager` applies the retry policy through middleware:
++
+[source,rust]
+----
+let client = ClientBuilder::new(reqwest::Client::new())
+    .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+    .build();
+----
 
 This retry strategy ensures optimal handling of different types of failures while maintaining service availability.
 
@@ -185,69 +244,6 @@ graph TD
 * Configure multiple fallback endpoints
 * Consider geographic distribution of endpoints
 * Monitor endpoint reliability and adjust weights accordingly
-
-=== Error Handling
-
-==== Retry Mechanism
-
-The RPC client uses `reqwest_retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
-
-===== Configuration
-
-The retry mechanism is configured in the transport client with:
-
-[source,rust]
-----
-// Default retry policy with 2 retries (3 total attempts)
-let retry_policy = ExponentialBackoff::builder()
-    .build_with_max_retries(2);
-----
-
-===== Implementation Details
-
-The retry mechanism is implemented at two levels:
-
-1. *Transport Level*: Each transport client maintains its own retry policy:
-+
-[source,rust]
-----
-pub struct Web3TransportClient {
-  client: Arc<RwLock<Web3<Http>>>,
-  endpoint_manager: EndpointManager,
-  retry_policy: ExponentialBackoff,
-}
-
-pub struct StellarTransportClient {
-	pub client: Arc<RwLock<StellarHttpClient>>,
-	endpoint_manager: EndpointManager,
-	retry_policy: ExponentialBackoff,
-}
-----
-
-2. *Request Level*: The `EndpointManager` applies the retry policy through middleware:
-+
-[source,rust]
-----
-let client = ClientBuilder::new(reqwest::Client::new())
-    .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-    .build();
-----
-
-==== Retry vs Rotation
-
-The system handles failures at two levels:
-
-1. *Retry Mechanism*
-* Handles transient failures
-* Uses exponential backoff
-* Maximum of 2 retries per request
-* Same URL is used for retries
-
-2. *Endpoint Rotation*
-* Handles persistent failures (e.g., 429 rate limits)
-* Switches to different URLs in the fallback pool
-* Triggered by specific HTTP status codes
-* Maintains a pool of fallback URLs
 
 == Troubleshooting
 
