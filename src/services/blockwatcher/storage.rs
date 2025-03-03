@@ -281,3 +281,178 @@ impl BlockStorage for FileBlockStorage {
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use tempfile;
+
+	#[tokio::test]
+	async fn test_get_last_processed_block() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Test 1: Non-existent file
+		let result = storage.get_last_processed_block("non_existent").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), None);
+
+		// Test 2: Invalid content (not a number)
+		let invalid_file = temp_dir.path().join("invalid_last_block.txt");
+		tokio::fs::write(&invalid_file, "not a number")
+			.await
+			.unwrap();
+		let result = storage.get_last_processed_block("invalid").await;
+		assert!(matches!(
+			result,
+			Err(BlockWatcherError::StorageError { .. })
+		));
+
+		// Test 3: Valid block number
+		let valid_file = temp_dir.path().join("valid_last_block.txt");
+		tokio::fs::write(&valid_file, "123").await.unwrap();
+		let result = storage.get_last_processed_block("valid").await;
+		assert_eq!(result.unwrap(), Some(123));
+	}
+
+	#[tokio::test]
+	async fn test_save_last_processed_block() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Test 1: Normal save
+		let result = storage.save_last_processed_block("test", 100).await;
+		assert!(result.is_ok());
+
+		// Verify the content
+		let content = tokio::fs::read_to_string(temp_dir.path().join("test_last_block.txt"))
+			.await
+			.unwrap();
+		assert_eq!(content, "100");
+
+		// Test 2: Save with invalid path (create a readonly directory)
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::PermissionsExt;
+			let readonly_dir = temp_dir.path().join("readonly");
+			tokio::fs::create_dir(&readonly_dir).await.unwrap();
+			let mut perms = std::fs::metadata(&readonly_dir).unwrap().permissions();
+			perms.set_mode(0o444); // Read-only
+			std::fs::set_permissions(&readonly_dir, perms).unwrap();
+
+			let readonly_storage = FileBlockStorage::new(readonly_dir);
+			let result = readonly_storage
+				.save_last_processed_block("test", 100)
+				.await;
+			assert!(matches!(
+				result,
+				Err(BlockWatcherError::StorageError { .. })
+			));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_save_blocks() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Test 1: Save empty blocks array
+		let result = storage.save_blocks("test", &[]).await;
+		assert!(result.is_ok());
+
+		// Test 2: Save with invalid path
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::PermissionsExt;
+			let readonly_dir = temp_dir.path().join("readonly");
+			tokio::fs::create_dir(&readonly_dir).await.unwrap();
+			let mut perms = std::fs::metadata(&readonly_dir).unwrap().permissions();
+			perms.set_mode(0o444); // Read-only
+			std::fs::set_permissions(&readonly_dir, perms).unwrap();
+
+			let readonly_storage = FileBlockStorage::new(readonly_dir);
+			let result = readonly_storage.save_blocks("test", &[]).await;
+			assert!(matches!(
+				result,
+				Err(BlockWatcherError::StorageError { .. })
+			));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_delete_blocks() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Create some test block files
+		tokio::fs::write(temp_dir.path().join("test_blocks_1.json"), "[]")
+			.await
+			.unwrap();
+		tokio::fs::write(temp_dir.path().join("test_blocks_2.json"), "[]")
+			.await
+			.unwrap();
+
+		// Test 1: Normal delete
+		let result = storage.delete_blocks("test").await;
+		assert!(result.is_ok());
+
+		// Test 2: Delete with invalid path
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::PermissionsExt;
+			let readonly_dir = temp_dir.path().join("readonly");
+			tokio::fs::create_dir(&readonly_dir).await.unwrap();
+
+			// Create test files first
+			tokio::fs::write(readonly_dir.join("test_blocks_1.json"), "[]")
+				.await
+				.unwrap();
+
+			// Then make directory readonly
+			let mut perms = std::fs::metadata(&readonly_dir).unwrap().permissions();
+			perms.set_mode(0o444); // Read-only
+			std::fs::set_permissions(&readonly_dir, perms).unwrap();
+
+			let readonly_storage = FileBlockStorage::new(readonly_dir);
+			let result = readonly_storage.delete_blocks("test").await;
+			assert!(matches!(
+				result,
+				Err(BlockWatcherError::StorageError { .. })
+			));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_save_missed_block() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Test 1: Normal save
+		let result = storage.save_missed_block("test", 100).await;
+		assert!(result.is_ok());
+
+		// Verify the content
+		let content = tokio::fs::read_to_string(temp_dir.path().join("test_missed_blocks.txt"))
+			.await
+			.unwrap();
+		assert_eq!(content, "100\n");
+
+		// Test 2: Save with invalid path
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::PermissionsExt;
+			let readonly_dir = temp_dir.path().join("readonly");
+			tokio::fs::create_dir(&readonly_dir).await.unwrap();
+			let mut perms = std::fs::metadata(&readonly_dir).unwrap().permissions();
+			perms.set_mode(0o444); // Read-only
+			std::fs::set_permissions(&readonly_dir, perms).unwrap();
+
+			let readonly_storage = FileBlockStorage::new(readonly_dir);
+			let result = readonly_storage.save_missed_block("test", 100).await;
+			assert!(matches!(
+				result,
+				Err(BlockWatcherError::StorageError { .. })
+			));
+		}
+	}
+}
