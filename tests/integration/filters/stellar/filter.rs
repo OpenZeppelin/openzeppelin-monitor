@@ -15,7 +15,7 @@ use openzeppelin_monitor::{
 
 use crate::integration::{
 	filters::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
-	mocks::MockStellarClientTrait,
+	mocks::{MockStellarClientTrait, MockStellarTransportClient},
 };
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
@@ -84,7 +84,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), FilterError> {
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
@@ -153,7 +153,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), FilterError> {
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
@@ -254,7 +254,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), FilterError>
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
@@ -322,7 +322,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), FilterError> {
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
@@ -413,7 +413,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), FilterError>
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
@@ -481,7 +481,7 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), FilterErr
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
@@ -544,7 +544,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), FilterError> {
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))
@@ -638,7 +638,7 @@ async fn test_monitor_error_cases() -> Result<(), FilterError> {
 
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let mock_client = MockStellarClientTrait::new();
+	let mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 
 	// Create an invalid block type
 	let invalid_block = BlockType::EVM(Box::default());
@@ -675,7 +675,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
-	let mut mock_client = MockStellarClientTrait::new();
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
 		.map(|tx| StellarTransaction::from(tx.clone()))

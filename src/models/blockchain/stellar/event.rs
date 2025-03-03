@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This structure represents the response from the Stellar RPC endpoint
 /// and matches the format defined in the stellar-rpc repository.
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Event {
 	/// Type of the event
 	#[serde(rename = "type")]

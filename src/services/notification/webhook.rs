@@ -158,7 +158,7 @@ impl Notifier for WebhookNotifier {
 		};
 
 		let method = if let Some(ref m) = self.method {
-			Method::from_bytes(m.as_bytes()).unwrap()
+			Method::from_bytes(m.as_bytes()).unwrap_or(Method::POST)
 		} else {
 			Method::POST
 		};
@@ -167,22 +167,49 @@ impl Notifier for WebhookNotifier {
 
 		if let Some(secret) = &self.secret {
 			let (signature, timestamp) = self.sign_request(secret, &payload)?;
-			headers.insert(
-				HeaderName::from_bytes(b"X-Signature").unwrap(),
-				HeaderValue::from_str(&signature).unwrap(),
-			);
-			headers.insert(
-				HeaderName::from_bytes(b"X-Timestamp").unwrap(),
-				HeaderValue::from_str(&timestamp).unwrap(),
-			);
+
+			// Handle X-Signature header
+			if let Ok(header_name) = HeaderName::from_bytes(b"X-Signature") {
+				if let Ok(header_value) = HeaderValue::from_str(&signature) {
+					headers.insert(header_name, header_value);
+				} else {
+					return Err(NotificationError::config_error("Invalid signature value"));
+				}
+			} else {
+				return Err(NotificationError::config_error(
+					"Invalid signature header name",
+				));
+			}
+
+			// Handle X-Timestamp header
+			if let Ok(header_name) = HeaderName::from_bytes(b"X-Timestamp") {
+				if let Ok(header_value) = HeaderValue::from_str(&timestamp) {
+					headers.insert(header_name, header_value);
+				} else {
+					return Err(NotificationError::config_error("Invalid timestamp value"));
+				}
+			} else {
+				return Err(NotificationError::config_error(
+					"Invalid timestamp header name",
+				));
+			}
 		}
 
 		if let Some(headers_map) = &self.headers {
 			for (key, value) in headers_map {
-				headers.insert(
-					HeaderName::from_bytes(key.as_bytes()).unwrap(),
-					HeaderValue::from_str(value).unwrap(),
-				);
+				let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
+					return Err(NotificationError::config_error(format!(
+						"Invalid header name: {}",
+						key
+					)));
+				};
+				let Ok(header_value) = HeaderValue::from_str(value) else {
+					return Err(NotificationError::config_error(format!(
+						"Invalid header value for key: {}",
+						key
+					)));
+				};
+				headers.insert(header_name, header_value);
 			}
 		}
 
@@ -371,5 +398,133 @@ mod tests {
 		assert!(response.is_ok());
 
 		mock.assert();
+	}
+
+	////////////////////////////////////////////////////////////
+	// notify header validation tests
+	////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_notify_with_invalid_header_name() {
+		let server = mockito::Server::new_async().await;
+		let invalid_headers =
+			HashMap::from([("Invalid Header!@#".to_string(), "value".to_string())]);
+
+		let notifier = create_test_notifier(
+			server.url().as_str(),
+			"Test message",
+			None,
+			Some(invalid_headers),
+		);
+
+		let result = notifier.notify("Test message").await;
+		assert!(result.is_err());
+		assert!(matches!(result, Err(NotificationError::ConfigError(_))));
+		if let Err(NotificationError::ConfigError(msg)) = result {
+			assert!(msg.contains("Invalid header name"));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_invalid_header_value() {
+		let server = mockito::Server::new_async().await;
+		let invalid_headers =
+			HashMap::from([("X-Custom-Header".to_string(), "Invalid\nValue".to_string())]);
+
+		let notifier = create_test_notifier(
+			server.url().as_str(),
+			"Test message",
+			None,
+			Some(invalid_headers),
+		);
+
+		let result = notifier.notify("Test message").await;
+		assert!(result.is_err());
+		assert!(matches!(result, Err(NotificationError::ConfigError(_))));
+		if let Err(NotificationError::ConfigError(msg)) = result {
+			assert!(msg.contains("Invalid header value"));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_valid_headers() {
+		let mut server = mockito::Server::new_async().await;
+		let valid_headers = HashMap::from([
+			("X-Custom-Header".to_string(), "valid-value".to_string()),
+			("Accept".to_string(), "application/json".to_string()),
+		]);
+
+		let mock = server
+			.mock("POST", "/")
+			.match_header("X-Custom-Header", "valid-value")
+			.match_header("Accept", "application/json")
+			.with_status(200)
+			.create_async()
+			.await;
+
+		let notifier = create_test_notifier(
+			server.url().as_str(),
+			"Test message",
+			None,
+			Some(valid_headers),
+		);
+
+		let result = notifier.notify("Test message").await;
+		assert!(result.is_ok());
+		mock.assert();
+	}
+
+	#[tokio::test]
+	async fn test_notify_signature_header_cases() {
+		let mut server = mockito::Server::new_async().await;
+
+		let mock = server
+			.mock("POST", "/")
+			.match_header("X-Signature", Matcher::Any)
+			.match_header("X-Timestamp", Matcher::Any)
+			.with_status(200)
+			.create_async()
+			.await;
+
+		let notifier = create_test_notifier(
+			server.url().as_str(),
+			"Test message",
+			Some("test-secret"),
+			None,
+		);
+
+		let result = notifier.notify("Test message").await;
+		assert!(result.is_ok());
+		mock.assert();
+	}
+
+	#[test]
+	fn test_sign_request_validation() {
+		let notifier = create_test_notifier(
+			"https://webhook.example.com",
+			"Test message",
+			Some("test-secret"),
+			None,
+		);
+
+		let payload = WebhookMessage {
+			title: "Test Title".to_string(),
+			body: "Test message".to_string(),
+		};
+
+		let result = notifier.sign_request("test-secret", &payload).unwrap();
+		let (signature, timestamp) = result;
+
+		// Validate signature format (should be a hex string)
+		assert!(
+			hex::decode(&signature).is_ok(),
+			"Signature should be valid hex"
+		);
+
+		// Validate timestamp format (should be a valid i64)
+		assert!(
+			timestamp.parse::<i64>().is_ok(),
+			"Timestamp should be valid i64"
+		);
 	}
 }

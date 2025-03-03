@@ -9,7 +9,7 @@ use openzeppelin_monitor::{
 		TransactionCondition, TransactionStatus,
 	},
 	services::{
-		blockchain::StellarClient,
+		blockchain::{StellarClient, StellarTransportClient},
 		filter::{
 			stellar_helpers::{
 				are_same_address, are_same_signature, normalize_address, normalize_signature,
@@ -396,7 +396,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -428,7 +428,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -462,7 +462,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -503,7 +503,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -544,7 +544,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -582,7 +582,7 @@ proptest! {
 			}
 		];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -608,7 +608,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -660,7 +660,7 @@ proptest! {
 			}
 		];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -693,7 +693,7 @@ proptest! {
 			}
 		];
 
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -722,7 +722,7 @@ proptest! {
 		monitor in generate_monitor_with_transaction(),
 	) {
 		let mut matched_transactions = Vec::new();
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -772,7 +772,7 @@ proptest! {
 		tx in generate_transaction()
 
 	) {
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let mut matched_transactions = Vec::new();
@@ -806,7 +806,7 @@ proptest! {
 		envelope in generate_envelope(),
 		tx in generate_transaction(),
 	) {
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let mut matched_functions = Vec::new();
@@ -907,7 +907,7 @@ proptest! {
 		bool_value in any::<bool>(),
 		string_value in "[a-zA-Z0-9]*",
 	) {
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -955,7 +955,7 @@ proptest! {
 	fn test_convert_array_arguments(
 		values in prop::collection::vec(any::<i64>(), 1..5),
 	) {
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let arguments = vec![json!(values)];
@@ -978,7 +978,7 @@ proptest! {
 		key in "[a-zA-Z][a-zA-Z0-9_]*",
 		value in any::<i64>(),
 	) {
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -1017,7 +1017,7 @@ proptest! {
 	// Verifies proper handling of empty argument lists
 	#[test]
 	fn test_convert_empty_arguments(_ in prop::collection::vec(any::<i64>(), 0..1)) {
-		let filter = StellarBlockFilter::<StellarClient> {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
 			_client: PhantomData,
 		};
 		let arguments = Vec::new();

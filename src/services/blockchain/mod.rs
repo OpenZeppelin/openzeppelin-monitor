@@ -19,4 +19,7 @@ pub use client::{BlockChainClient, BlockFilterFactory};
 pub use clients::{EvmClient, EvmClientTrait, StellarClient, StellarClientTrait};
 pub use error::BlockChainError;
 pub use pool::{ClientPool, ClientPoolTrait};
-pub use transports::{HorizonTransportClient, Web3TransportClient};
+pub use transports::{
+	BlockchainTransport, EndpointManager, HorizonTransportClient, RotatingTransport,
+	StellarTransportClient, Web3TransportClient,
+};

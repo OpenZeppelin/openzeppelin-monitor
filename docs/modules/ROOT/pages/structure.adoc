@@ -1,11 +1,11 @@
 = Project Structure
-:description: Detailed information about the OpenZeppelin Monitor project structure
+:description: Detailed information about the OpenZeppelin Monitor project structure.
 
 This document provides detailed information about each directory in the OpenZeppelin Monitor project.
 
-== Source Code Organization
+== Source Code Organization:
 
-=== `src/` Directory
+=== `src/` Directory:
 The main source code directory contains the core implementation files organized into several modules:
 
 * `bootstrap/`: Application initialization and setup for `main.rs`
@@ -33,11 +33,10 @@ The main source code directory contains the core implementation files organized 
 * `utils/`: Helper functions
 ** `cron_utils/`: Cron schedule utilities
 ** `expression/`: Expression evaluation
-** `retry/`: Async operation retry mechanisms
 
-== Configuration and Data
+== Configuration and Data:
 
-=== `config/` Directory
+=== `config/` Directory:
 Contains JSON configuration files for:
 
 * Network configurations (`networks/`)
@@ -52,7 +51,7 @@ Contains JSON configuration files for:
 ** Notification settings
 ** Action definitions
 
-=== `data/` Directory
+=== `data/` Directory:
 Runtime data storage:
 
 * Block processing state
@@ -64,9 +63,9 @@ Runtime data storage:
 The `data/` and `config/` directories are gitignored except for example files. This directory is typically mounted as a Docker volume in production.
 ====
 
-== Testing and Documentation
+== Testing and Documentation:
 
-=== `tests/` Directory
+=== `tests/` Directory:
 Contains comprehensive test suites:
 
 * Integration tests
@@ -74,7 +73,7 @@ Contains comprehensive test suites:
 * Mock implementations
 * Test utilities and helpers
 
-=== `docs/` Directory
+=== `docs/` Directory:
 Project documentation:
 
 * User guides
@@ -82,7 +81,7 @@ Project documentation:
 * Configuration examples
 * Architecture diagrams
 
-=== `scripts/` Directory
+=== `scripts/` Directory:
 Utility scripts for:
 
 * Development workflows
@@ -90,23 +89,23 @@ Utility scripts for:
 * Build processes
 * Deployment helpers
 
-== Development Tools
+== Development Tools:
 
-=== Pre-commit Hooks
+=== Pre-commit Hooks:
 Located in the project root:
 
 * Code formatting checks
 * Linting rules
 * Commit message validation
 
-=== Build Configuration
+=== Build Configuration:
 Core build files:
 
 * `Cargo.toml`: Project dependencies and metadata
 * `rustfmt.toml`: Code formatting rules
 * `rust-toolchain.toml`: Rust version and components
 
-== Docker Support
+== Docker Support:
 
 The project includes Docker configurations for different environments:
 

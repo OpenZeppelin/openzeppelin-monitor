@@ -14,7 +14,7 @@ use crate::{
 	models::{BlockChainType, Network},
 	services::blockchain::{
 		BlockChainClient, BlockChainError, BlockFilterFactory, EvmClient, EvmClientTrait,
-		StellarClient, StellarClientTrait,
+		StellarClient, StellarClientTrait, StellarTransportClient, Web3TransportClient,
 	},
 };
 use async_trait::async_trait;
@@ -76,8 +76,8 @@ impl ClientPool {
 		};
 
 		// Register client types
-		pool.register_client_type::<EvmClient>(BlockChainType::EVM);
-		pool.register_client_type::<StellarClient>(BlockChainType::Stellar);
+		pool.register_client_type::<EvmClient<Web3TransportClient>>(BlockChainType::EVM);
+		pool.register_client_type::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar);
 
 		pool
 	}
@@ -134,17 +134,20 @@ impl ClientPool {
 
 #[async_trait]
 impl ClientPoolTrait for ClientPool {
-	type EvmClient = EvmClient;
-	type StellarClient = StellarClient;
+	type EvmClient = EvmClient<Web3TransportClient>;
+	type StellarClient = StellarClient<StellarTransportClient>;
 
 	/// Gets or creates an EVM client for the given network.
 	///
 	/// First checks the cache for an existing client. If none exists,
 	/// creates a new client under a write lock.
-	async fn get_evm_client(&self, network: &Network) -> Result<Arc<EvmClient>, BlockChainError> {
+	async fn get_evm_client(
+		&self,
+		network: &Network,
+	) -> Result<Arc<Self::EvmClient>, BlockChainError> {
 		self.get_or_create_client(BlockChainType::EVM, network, |n| {
 			let network = n.clone();
-			Box::pin(async move { EvmClient::new(&network).await })
+			Box::pin(async move { Self::EvmClient::new(&network).await })
 		})
 		.await
 		.map_err(|e| BlockChainError::client_pool_error(e.to_string()))
@@ -157,10 +160,10 @@ impl ClientPoolTrait for ClientPool {
 	async fn get_stellar_client(
 		&self,
 		network: &Network,
-	) -> Result<Arc<StellarClient>, BlockChainError> {
+	) -> Result<Arc<Self::StellarClient>, BlockChainError> {
 		self.get_or_create_client(BlockChainType::Stellar, network, |n| {
 			let network = n.clone();
-			Box::pin(async move { StellarClient::new(&network).await })
+			Box::pin(async move { Self::StellarClient::new(&network).await })
 		})
 		.await
 		.map_err(|e| BlockChainError::client_pool_error(e.to_string()))

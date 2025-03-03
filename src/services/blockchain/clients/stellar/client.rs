@@ -17,26 +17,30 @@ use crate::{
 		blockchain::{
 			client::{BlockChainClient, BlockFilterFactory},
 			transports::StellarTransportClient,
-			BlockChainError,
+			BlockChainError, BlockchainTransport,
 		},
 		filter::StellarBlockFilter,
 	},
-	utils::WithRetry,
 };
 
 /// Client implementation for the Stellar blockchain
 ///
 /// Provides high-level access to Stellar blockchain data and operations through
 /// both Stellar Core RPC and Horizon API endpoints.
-#[derive(Clone, Debug)]
-pub struct StellarClient {
+#[derive(Clone)]
+pub struct StellarClient<T: Send + Sync + Clone> {
 	/// The underlying Stellar transport client for RPC communication
-	stellar_client: StellarTransportClient,
-	/// Network configuration for this client instance
-	_network: Network,
+	stellar_client: T,
 }
 
-impl StellarClient {
+impl<T: Send + Sync + Clone> StellarClient<T> {
+	/// Creates a new Stellar client instance with a specific transport client
+	pub fn new_with_transport(stellar_client: T) -> Self {
+		Self { stellar_client }
+	}
+}
+
+impl StellarClient<StellarTransportClient> {
 	/// Creates a new Stellar client instance
 	///
 	/// # Arguments
@@ -46,10 +50,7 @@ impl StellarClient {
 	/// * `Result<Self, BlockChainError>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
 		let stellar_client: StellarTransportClient = StellarTransportClient::new(network).await?;
-		Ok(Self {
-			stellar_client,
-			_network: network.clone(),
-		})
+		Ok(Self::new_with_transport(stellar_client))
 	}
 }
 
@@ -86,7 +87,7 @@ pub trait StellarClientTrait {
 }
 
 #[async_trait]
-impl StellarClientTrait for StellarClient {
+impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for StellarClient<T> {
 	/// Retrieves transactions within a sequence range with pagination
 	///
 	/// # Errors
@@ -106,60 +107,56 @@ impl StellarClientTrait for StellarClient {
 			}
 		}
 
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				// max limit for the RPC endpoint is 200
-				const PAGE_LIMIT: u32 = 200;
-				let mut transactions = Vec::new();
-				let target_sequence = end_sequence.unwrap_or(start_sequence);
-				let mut cursor = None;
+		// max limit for the RPC endpoint is 200
+		const PAGE_LIMIT: u32 = 200;
+		let mut transactions = Vec::new();
+		let target_sequence = end_sequence.unwrap_or(start_sequence);
+		let mut cursor = None;
 
-				while cursor.unwrap_or(start_sequence) <= target_sequence {
-					let params = json!({
-						"startLedger": cursor.unwrap_or(start_sequence),
-						"pagination": {
-							"limit": PAGE_LIMIT
-						}
-					});
-
-					let response = self
-						.stellar_client
-						.send_raw_request("getTransactions", params)
-						.await?;
-
-					let ledger_transactions: Vec<StellarTransactionInfo> =
-						serde_json::from_value(response["result"]["transactions"].clone())
-							.map_err(|e| {
-								BlockChainError::request_error(format!(
-									"Failed to parse transaction response: {}",
-									e
-								))
-							})?;
-
-					if ledger_transactions.is_empty() {
-						break;
-					}
-
-					for transaction in ledger_transactions {
-						let sequence = transaction.ledger;
-						if sequence > target_sequence {
-							return Ok(transactions);
-						}
-						transactions.push(StellarTransaction::from(transaction));
-					}
-
-					cursor = response["result"]["cursor"]
-						.as_str()
-						.and_then(|s| s.parse::<u32>().ok());
-
-					if cursor.is_none() {
-						break;
-					}
+		while cursor.unwrap_or(start_sequence) <= target_sequence {
+			let params = json!({
+				"startLedger": cursor.unwrap_or(start_sequence),
+				"pagination": {
+					"limit": PAGE_LIMIT
 				}
-				Ok(transactions)
-			})
-			.await
+			});
+
+			let response = self
+				.stellar_client
+				.send_raw_request("getTransactions", Some(params))
+				.await?;
+
+			let ledger_transactions: Vec<StellarTransactionInfo> = serde_json::from_value(
+				response["result"]["transactions"].clone(),
+			)
+			.map_err(|e| {
+				BlockChainError::request_error(format!(
+					"Failed to parse transaction response: {}",
+					e
+				))
+			})?;
+
+			if ledger_transactions.is_empty() {
+				break;
+			}
+
+			for transaction in ledger_transactions {
+				let sequence = transaction.ledger;
+				if sequence > target_sequence {
+					return Ok(transactions);
+				}
+				transactions.push(StellarTransaction::from(transaction));
+			}
+
+			cursor = response["result"]["cursor"]
+				.as_str()
+				.and_then(|s| s.parse::<u32>().ok());
+
+			if cursor.is_none() {
+				break;
+			}
+		}
+		Ok(transactions)
 	}
 
 	/// Retrieves events within a sequence range with pagination
@@ -181,68 +178,58 @@ impl StellarClientTrait for StellarClient {
 			}
 		}
 
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				// max limit for the RPC endpoint is 200
-				const PAGE_LIMIT: u32 = 200;
-				let mut events = Vec::new();
-				let target_sequence = end_sequence.unwrap_or(start_sequence);
-				let mut cursor = None;
+		// max limit for the RPC endpoint is 200
+		const PAGE_LIMIT: u32 = 200;
+		let mut events = Vec::new();
+		let target_sequence = end_sequence.unwrap_or(start_sequence);
+		let mut cursor = None;
 
-				while cursor.unwrap_or(start_sequence) <= target_sequence {
-					let params = json!({
-						"startLedger": cursor.unwrap_or(start_sequence),
-						"filters": [{
-							"type": "contract",
-						}],
-						"pagination": {
-							"limit": PAGE_LIMIT
-						}
-					});
-
-					let response = self
-						.stellar_client
-						.send_raw_request("getEvents", params)
-						.await?;
-
-					let ledger_events: Vec<StellarEvent> = serde_json::from_value(
-						response["result"]["events"].clone(),
-					)
-					.map_err(|e| {
-						BlockChainError::request_error(format!(
-							"Failed to parse event response: {}",
-							e
-						))
-					})?;
-
-					if ledger_events.is_empty() {
-						break;
-					}
-
-					for event in ledger_events {
-						let sequence = event.ledger;
-						if sequence > target_sequence {
-							return Ok(events);
-						}
-						events.push(event);
-					}
-
-					cursor = response["result"]["cursor"]
-						.as_str()
-						.and_then(|s| s.parse::<u32>().ok());
-
-					if cursor.is_none() {
-						break;
-					}
+		while cursor.unwrap_or(start_sequence) <= target_sequence {
+			let params = json!({
+				"startLedger": cursor.unwrap_or(start_sequence),
+				"filters": [{
+					"type": "contract",
+				}],
+				"pagination": {
+					"limit": PAGE_LIMIT
 				}
-				Ok(events)
-			})
-			.await
+			});
+
+			let response = self
+				.stellar_client
+				.send_raw_request("getEvents", Some(params))
+				.await?;
+
+			let ledger_events: Vec<StellarEvent> =
+				serde_json::from_value(response["result"]["events"].clone()).map_err(|e| {
+					BlockChainError::request_error(format!("Failed to parse event response: {}", e))
+				})?;
+
+			if ledger_events.is_empty() {
+				break;
+			}
+
+			for event in ledger_events {
+				let sequence = event.ledger;
+				if sequence > target_sequence {
+					return Ok(events);
+				}
+				events.push(event);
+			}
+
+			cursor = response["result"]["cursor"]
+				.as_str()
+				.and_then(|s| s.parse::<u32>().ok());
+
+			if cursor.is_none() {
+				break;
+			}
+		}
+		Ok(events)
 	}
 }
 
-impl BlockFilterFactory<StellarClient> for StellarClient {
+impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for StellarClient<T> {
 	type Filter = StellarBlockFilter<Self>;
 
 	fn filter() -> Self::Filter {
@@ -253,22 +240,19 @@ impl BlockFilterFactory<StellarClient> for StellarClient {
 }
 
 #[async_trait]
-impl BlockChainClient for StellarClient {
+impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarClient<T> {
 	/// Retrieves the latest block number with retry functionality
 	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				let response = self
-					.stellar_client
-					.client
-					.get_latest_ledger()
-					.await
-					.map_err(|e| BlockChainError::request_error(e.to_string()))?;
+		let response = self
+			.stellar_client
+			.send_raw_request::<serde_json::Value>("getLatestLedger", None)
+			.await?;
 
-				Ok(response.sequence as u64)
-			})
-			.await
+		let sequence = response["result"]["sequence"]
+			.as_u64()
+			.ok_or_else(|| BlockChainError::request_error("Invalid sequence number".to_string()))?;
+
+		Ok(sequence)
 	}
 
 	/// Retrieves blocks within the specified range with retry functionality
@@ -296,59 +280,52 @@ impl BlockChainClient for StellarClient {
 			}
 		}
 
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				let mut blocks = Vec::new();
-				let target_block = end_block.unwrap_or(start_block);
-				let mut cursor = None;
+		let mut blocks = Vec::new();
+		let target_block = end_block.unwrap_or(start_block);
+		let mut cursor = None;
 
-				while cursor.unwrap_or(start_block) <= target_block {
-					let params = json!({
-						"startLedger": cursor.unwrap_or(start_block),
-						"pagination": {
-							"limit": PAGE_LIMIT
-						}
-					});
-
-					// TODO: Replace this once the SDK is updated with `get_ledgers`
-					let response = self
-						.stellar_client
-						.send_raw_request("getLedgers", params)
-						.await?;
-
-					let ledgers: Vec<StellarBlock> = serde_json::from_value(
-						response["result"]["ledgers"].clone(),
-					)
-					.map_err(|e| {
-						BlockChainError::request_error(format!(
-							"Failed to parse ledger response: {}",
-							e
-						))
-					})?;
-
-					if ledgers.is_empty() {
-						break;
-					}
-
-					for ledger in ledgers {
-						let sequence = ledger.sequence;
-						if (sequence as u64) > target_block {
-							return Ok(blocks);
-						}
-						blocks.push(BlockType::Stellar(Box::new(ledger)));
-					}
-
-					cursor = response["result"]["cursor"]
-						.as_str()
-						.and_then(|s| s.parse::<u64>().ok());
-
-					if cursor.is_none() {
-						break;
-					}
+		while cursor.unwrap_or(start_block) <= target_block {
+			let params = json!({
+				"startLedger": cursor.unwrap_or(start_block),
+				"pagination": {
+					"limit": PAGE_LIMIT
 				}
-				Ok(blocks)
-			})
-			.await
+			});
+
+			// TODO: Replace this once the SDK is updated with `get_ledgers`
+			let response = self
+				.stellar_client
+				.send_raw_request("getLedgers", Some(params))
+				.await?;
+
+			let ledgers: Vec<StellarBlock> =
+				serde_json::from_value(response["result"]["ledgers"].clone()).map_err(|e| {
+					BlockChainError::request_error(format!(
+						"Failed to parse ledger response: {}",
+						e
+					))
+				})?;
+
+			if ledgers.is_empty() {
+				break;
+			}
+
+			for ledger in ledgers {
+				let sequence = ledger.sequence;
+				if (sequence as u64) > target_block {
+					return Ok(blocks);
+				}
+				blocks.push(BlockType::Stellar(Box::new(ledger)));
+			}
+
+			cursor = response["result"]["cursor"]
+				.as_str()
+				.and_then(|s| s.parse::<u64>().ok());
+
+			if cursor.is_none() {
+				break;
+			}
+		}
+		Ok(blocks)
 	}
 }

@@ -28,14 +28,34 @@ mod properties {
 }
 
 mod integration {
+	mod blockchain {
+		mod pool;
+		mod clients {
+			mod evm {
+				mod client;
+			}
+			mod stellar {
+				mod client;
+			}
+		}
+		mod transports {
+			mod evm {
+				mod transport;
+				mod web3;
+			}
+			mod stellar {
+				mod horizon;
+				mod soroban;
+				mod transport;
+			}
+			mod endpoint_manager;
+		}
+	}
 	mod bootstrap {
 		mod main;
 	}
 	mod mocks;
 
-	mod blockchain {
-		mod pool;
-	}
 	mod blockwatcher {
 		mod service;
 	}
