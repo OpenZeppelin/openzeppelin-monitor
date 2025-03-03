@@ -117,7 +117,8 @@ async fn main() -> Result<()> {
 						.await;
 				}
 			}
-			_ => unimplemented!("Unsupported network type: {:?}", network.network_type),
+			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),
+			BlockChainType::Solana => unimplemented!("Solana not implemented"),
 		}
 	}
 
