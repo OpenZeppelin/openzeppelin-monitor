@@ -40,9 +40,9 @@ impl EndpointManager {
 	/// * `fallback_urls` - A list of fallback URLs to rotate to
 	///
 	/// # Returns
-	pub fn new(active_url: String, fallback_urls: Vec<String>) -> Self {
+	pub fn new(active_url: &str, fallback_urls: Vec<String>) -> Self {
 		Self {
-			active_url: Arc::new(RwLock::new(active_url)),
+			active_url: Arc::new(RwLock::new(active_url.to_string())),
 			fallback_urls: Arc::new(RwLock::new(fallback_urls)),
 			rotation_lock: Arc::new(tokio::sync::Mutex::new(())),
 		}

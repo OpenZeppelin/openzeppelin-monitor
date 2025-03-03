@@ -67,7 +67,7 @@ impl Web3TransportClient {
 							return Ok(Self {
 								client: Arc::new(RwLock::new(client)),
 								endpoint_manager: EndpointManager::new(
-									rpc_url.url.clone(),
+									rpc_url.url.as_ref(),
 									fallback_urls,
 								),
 								retry_policy,

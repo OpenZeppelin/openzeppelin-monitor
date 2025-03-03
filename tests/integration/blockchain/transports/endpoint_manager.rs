@@ -100,7 +100,7 @@ async fn test_endpoint_rotation() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server1.url(), vec![server2.url(), server3.url()]);
+	let manager = EndpointManager::new(server1.url().as_ref(), vec![server2.url(), server3.url()]);
 	let transport = MockTransport::new();
 
 	// Test initial state
@@ -130,7 +130,7 @@ async fn test_send_raw_request() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server.url(), vec![]);
+	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -165,7 +165,7 @@ async fn test_rotation_on_error() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(primary_server.url(), vec![fallback_server.url()]);
+	let manager = EndpointManager::new(primary_server.url().as_ref(), vec![fallback_server.url()]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -193,7 +193,7 @@ async fn test_no_fallback_urls_available() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server.url(), vec![]);
+	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -244,7 +244,7 @@ async fn test_rotate_url_no_fallbacks() {
 	let server = Server::new_async().await;
 
 	// Create manager with no fallback URLs
-	let manager = EndpointManager::new(server.url(), vec![]);
+	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate
@@ -267,7 +267,7 @@ async fn test_rotate_url_all_urls_match_active() {
 	// Create manager with fallback URLs that are identical to the active URL
 	let active_url = server.url();
 	let manager = EndpointManager::new(
-		active_url.clone(),
+		active_url.as_ref(),
 		vec![active_url.clone(), active_url.clone()],
 	);
 	let transport = MockTransport::new();
@@ -297,7 +297,7 @@ async fn test_rotate_url_connection_failure() {
 
 	// Create manager with an invalid fallback URL that will fail to connect
 	let invalid_url = "http://invalid-domain-that-does-not-exist:12345";
-	let manager = EndpointManager::new(server.url(), vec![invalid_url.to_string()]);
+	let manager = EndpointManager::new(server.url().as_ref(), vec![invalid_url.to_string()]);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate
