@@ -292,12 +292,19 @@ mod tests {
 		let temp_dir = tempfile::tempdir().unwrap();
 		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
 
-		// Test 1: Non-existent file
+		// Test 1: existing file
+		let existing_file = temp_dir.path().join("existing_last_block.txt");
+		tokio::fs::write(&existing_file, "100").await.unwrap();
+		let result = storage.get_last_processed_block("existing").await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), Some(100));
+
+		// Test 2: Non-existent file
 		let result = storage.get_last_processed_block("non_existent").await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), None);
 
-		// Test 2: Invalid content (not a number)
+		// Test 3: Invalid content (not a number)
 		let invalid_file = temp_dir.path().join("invalid_last_block.txt");
 		tokio::fs::write(&invalid_file, "not a number")
 			.await
