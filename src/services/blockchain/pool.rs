@@ -11,7 +11,7 @@
 //! creating new ones, optimizing performance while maintaining safety.
 
 use crate::{
-	models::Network,
+	models::{BlockChainType, Network},
 	services::blockchain::{
 		BlockChainClient, BlockChainError, BlockFilterFactory, EvmClient, EvmClientTrait,
 		StellarClient, StellarClientTrait,
@@ -19,7 +19,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use std::{collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 /// Trait for the client pool.
@@ -40,16 +40,23 @@ pub trait ClientPoolTrait: Send + Sync {
 	) -> Result<Arc<Self::StellarClient>, BlockChainError>;
 }
 
+/// Generic client storage that can hold any type of blockchain client
+pub struct ClientStorage<T> {
+	clients: Arc<RwLock<HashMap<String, Arc<T>>>>,
+}
+
+impl<T> ClientStorage<T> {
+	pub fn new() -> Self {
+		Self {
+			clients: Arc::new(RwLock::new(HashMap::new())),
+		}
+	}
+}
+
 /// Main client pool manager that handles multiple blockchain types.
-///
-/// Provides type-safe access to cached blockchain clients. Clients are created
-/// on demand when first requested and then cached for future use. Uses RwLock
-/// for thread-safe access and Arc for shared ownership.
 pub struct ClientPool {
-	/// Thread-safe map of EVM clients indexed by network slug
-	pub evm_clients: Arc<RwLock<HashMap<String, Arc<EvmClient>>>>,
-	/// Thread-safe map of Stellar clients indexed by network slug
-	pub stellar_clients: Arc<RwLock<HashMap<String, Arc<StellarClient>>>>,
+	/// Map of client storages indexed by client type
+	pub storages: HashMap<BlockChainType, Box<dyn Any + Send + Sync>>,
 }
 
 impl ClientPool {
@@ -57,10 +64,20 @@ impl ClientPool {
 	///
 	/// Initializes empty hashmaps for both EVM and Stellar clients.
 	pub fn new() -> Self {
-		Self {
-			evm_clients: Arc::new(RwLock::new(HashMap::new())),
-			stellar_clients: Arc::new(RwLock::new(HashMap::new())),
-		}
+		let mut pool = Self {
+			storages: HashMap::new(),
+		};
+
+		// Register client types
+		pool.register_client_type::<EvmClient>(BlockChainType::EVM);
+		pool.register_client_type::<StellarClient>(BlockChainType::Stellar);
+
+		pool
+	}
+
+	fn register_client_type<T: 'static + Send + Sync>(&mut self, client_type: BlockChainType) {
+		self.storages
+			.insert(client_type, Box::new(ClientStorage::<T>::new()));
 	}
 
 	/// Internal helper method to get or create a client of any type.
@@ -71,22 +88,40 @@ impl ClientPool {
 	///
 	/// This ensures thread-safety while maintaining good performance
 	/// for the common case of accessing existing clients.
-	async fn get_or_create_client<T: BlockChainClient>(
+	async fn get_or_create_client<T: BlockChainClient + 'static>(
 		&self,
-		clients: &Arc<RwLock<HashMap<String, Arc<T>>>>,
+		client_type: BlockChainType,
 		network: &Network,
 		create_fn: impl Fn(&Network) -> BoxFuture<'static, Result<T, BlockChainError>>,
 	) -> Result<Arc<T>, BlockChainError> {
+		let storage = self
+			.storages
+			.get(&client_type)
+			.and_then(|s| s.downcast_ref::<ClientStorage<T>>())
+			.ok_or_else(|| BlockChainError::client_pool_error("Invalid client type".to_string()))?;
+
 		// Fast path: check if client exists
-		if let Some(client) = clients.read().await.get(&network.slug) {
+		if let Some(client) = storage.clients.read().await.get(&network.slug) {
 			return Ok(client.clone());
 		}
 
 		// Slow path: create new client
-		let mut clients = clients.write().await;
+		let mut clients = storage.clients.write().await;
 		let client = Arc::new(create_fn(network).await?);
 		clients.insert(network.slug.clone(), client.clone());
 		Ok(client)
+	}
+
+	/// Get the number of clients for a given client type.
+	pub async fn get_client_count<T: 'static>(&self, client_type: BlockChainType) -> usize {
+		match self
+			.storages
+			.get(&client_type)
+			.and_then(|s| s.downcast_ref::<ClientStorage<T>>())
+		{
+			Some(storage) => storage.clients.read().await.len(),
+			None => 0,
+		}
 	}
 }
 
@@ -100,7 +135,7 @@ impl ClientPoolTrait for ClientPool {
 	/// First checks the cache for an existing client. If none exists,
 	/// creates a new client under a write lock.
 	async fn get_evm_client(&self, network: &Network) -> Result<Arc<EvmClient>, BlockChainError> {
-		self.get_or_create_client(&self.evm_clients, network, |n| {
+		self.get_or_create_client(BlockChainType::EVM, network, |n| {
 			let network = n.clone();
 			Box::pin(async move { EvmClient::new(&network).await })
 		})
@@ -116,7 +151,7 @@ impl ClientPoolTrait for ClientPool {
 		&self,
 		network: &Network,
 	) -> Result<Arc<StellarClient>, BlockChainError> {
-		self.get_or_create_client(&self.stellar_clients, network, |n| {
+		self.get_or_create_client(BlockChainType::Stellar, network, |n| {
 			let network = n.clone();
 			Box::pin(async move { StellarClient::new(&network).await })
 		})

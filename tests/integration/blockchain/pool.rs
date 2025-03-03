@@ -1,6 +1,8 @@
 use openzeppelin_monitor::{
 	models::{BlockChainType, Network, RpcUrl},
-	services::blockchain::{BlockChainError, ClientPool, ClientPoolTrait, EvmClient},
+	services::blockchain::{
+		BlockChainError, ClientPool, ClientPoolTrait, EvmClient, StellarClient,
+	},
 };
 
 use std::sync::Arc;
@@ -14,29 +16,50 @@ use crate::integration::mocks::{
 async fn test_new_pool_is_empty() {
 	let pool = ClientPool::new();
 
-	let clients = pool.evm_clients.read().await;
-	assert!(clients.is_empty());
+	// Test EVM clients
+	let result = pool
+		.get_evm_client(&create_evm_test_network_with_urls(vec!["http://dummy"]))
+		.await;
+	assert!(result.is_err()); // Should error since no client exists yet
 
-	let stellar_clients = pool.stellar_clients.read().await;
-	assert!(stellar_clients.is_empty());
+	// Test Stellar clients
+	let result = pool
+		.get_stellar_client(&create_stellar_test_network_with_urls(
+			vec!["http://dummy"],
+			"rpc",
+		))
+		.await;
+	assert!(result.is_err()); // Should error since no client exists yet
 }
 
 #[tokio::test]
 async fn test_get_evm_client_creates_and_caches() {
 	let mut mock_server = mockito::Server::new_async().await;
-
 	let mock = create_evm_valid_server_mock_network_response(&mut mock_server);
-
 	let pool = ClientPool::new();
 	let network = create_evm_test_network_with_urls(vec![&mock_server.url()]);
 
 	// First request should create new client
 	let client1 = pool.get_evm_client(&network).await.unwrap();
-	assert_eq!(pool.evm_clients.read().await.len(), 1);
+	assert_eq!(pool.storages.len(), 2); // We have both EVM and Stellar storage types
+	assert_eq!(
+		pool.get_client_count::<EvmClient>(BlockChainType::EVM)
+			.await,
+		1
+	); // But only one EVM client
+	assert_eq!(
+		pool.get_client_count::<StellarClient>(BlockChainType::Stellar)
+			.await,
+		0
+	); // And no Stellar clients
 
 	// Second request should return cached client
 	let client2 = pool.get_evm_client(&network).await.unwrap();
-	assert_eq!(pool.evm_clients.read().await.len(), 1);
+	assert_eq!(
+		pool.get_client_count::<EvmClient>(BlockChainType::EVM)
+			.await,
+		1
+	); // Still only one EVM client
 
 	// Clients should be the same instance
 	assert!(Arc::ptr_eq(&client1, &client2));
@@ -55,11 +78,21 @@ async fn test_get_stellar_client_creates_and_caches() {
 
 	// First request should create new client
 	let client1 = pool.get_stellar_client(&network).await.unwrap();
-	assert_eq!(pool.stellar_clients.read().await.len(), 1);
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<StellarClient>(BlockChainType::Stellar)
+			.await,
+		1
+	);
 
 	// Second request should return cached client
 	let client2 = pool.get_stellar_client(&network).await.unwrap();
-	assert_eq!(pool.stellar_clients.read().await.len(), 1);
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<StellarClient>(BlockChainType::Stellar)
+			.await,
+		1
+	);
 
 	// Clients should be the same instance
 	assert!(Arc::ptr_eq(&client1, &client2));
@@ -99,7 +132,12 @@ async fn test_different_evm_networks_get_different_clients() {
 	let client2 = pool.get_evm_client(&network2).await.unwrap();
 
 	// Should have two different clients
-	assert_eq!(pool.evm_clients.read().await.len(), 2);
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<EvmClient>(BlockChainType::EVM)
+			.await,
+		2
+	);
 	assert!(!Arc::ptr_eq(&client1, &client2));
 
 	mock.assert();
@@ -138,7 +176,12 @@ async fn test_different_stellar_networks_get_different_clients() {
 	let client2 = pool.get_stellar_client(&network2).await.unwrap();
 
 	// Should have two different clients
-	assert_eq!(pool.stellar_clients.read().await.len(), 2);
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<StellarClient>(BlockChainType::Stellar)
+			.await,
+		2
+	);
 	assert!(!Arc::ptr_eq(&client1, &client2));
 
 	mock.assert();
@@ -172,7 +215,12 @@ async fn test_concurrent_access() {
 		.collect();
 
 	// Should only have created one client
-	assert_eq!(pool.evm_clients.read().await.len(), 1);
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<EvmClient>(BlockChainType::EVM)
+			.await,
+		1
+	);
 
 	// All clients should be the same instance
 	let first = &clients[0];
@@ -187,11 +235,17 @@ async fn test_concurrent_access() {
 async fn test_default_creates_empty_pool() {
 	let pool: ClientPool = Default::default();
 
-	let clients = pool.evm_clients.read().await;
-	assert!(clients.is_empty());
-
-	let stellar_clients = pool.stellar_clients.read().await;
-	assert!(stellar_clients.is_empty());
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<EvmClient>(BlockChainType::EVM)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<StellarClient>(BlockChainType::Stellar)
+			.await,
+		0
+	);
 }
 
 #[tokio::test]
@@ -222,8 +276,17 @@ async fn test_get_evm_client_handles_errors() {
 	}
 
 	// Pool should remain empty after failed client creation
-	assert_eq!(pool.evm_clients.read().await.len(), 0);
-
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<EvmClient>(BlockChainType::EVM)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<StellarClient>(BlockChainType::Stellar)
+			.await,
+		0
+	);
 	mock.assert();
 }
 
@@ -255,7 +318,16 @@ async fn test_get_stellar_client_handles_errors() {
 	}
 
 	// Pool should remain empty after failed client creation
-	assert_eq!(pool.stellar_clients.read().await.len(), 0);
-
+	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(
+		pool.get_client_count::<EvmClient>(BlockChainType::EVM)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<StellarClient>(BlockChainType::Stellar)
+			.await,
+		0
+	);
 	mock.assert();
 }
