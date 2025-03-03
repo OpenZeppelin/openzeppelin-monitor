@@ -180,7 +180,8 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 								Err(_) => None,
 							}
 						}
-						_ => None,
+						BlockChainType::Midnight => None,
+						BlockChainType::Solana => None,
 					};
 
 					processed_block.processing_results = matches.unwrap_or_default();
