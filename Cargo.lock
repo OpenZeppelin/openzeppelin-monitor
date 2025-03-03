@@ -2577,7 +2577,7 @@ dependencies = [
  "sha2 0.10.8",
  "stellar-horizon",
  "stellar-rpc-client",
- "stellar-strkey 0.0.11",
+ "stellar-strkey 0.0.12",
  "stellar-xdr",
  "tempfile",
  "tokio",
@@ -3896,9 +3896,9 @@ dependencies = [
 
 [[package]]
 name = "stellar-strkey"
-version = "0.0.11"
+version = "0.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0989c9a05eccbd08b60e603a1c7e3ed3ec92c0de73b8681fc964d272ab2b2697"
+checksum = "1e27545061c1c74d595a18bfd885f1dda489d079e6316db98b4867525510ea3e"
 dependencies = [
  "crate-git-revision",
  "data-encoding",
