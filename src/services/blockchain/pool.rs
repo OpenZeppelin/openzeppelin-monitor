@@ -41,6 +41,9 @@ pub trait ClientPoolTrait: Send + Sync {
 }
 
 /// Generic client storage that can hold any type of blockchain client
+///
+/// Clients are stored in a thread-safe way using a HashMap and an RwLock.
+/// The HashMap is indexed by the network slug and the value is an Arc of the client.
 pub struct ClientStorage<T> {
 	clients: Arc<RwLock<HashMap<String, Arc<T>>>>,
 }
@@ -54,6 +57,10 @@ impl<T> ClientStorage<T> {
 }
 
 /// Main client pool manager that handles multiple blockchain types.
+///
+/// Provides type-safe access to cached blockchain clients. Clients are created
+/// on demand when first requested and then cached for future use. Uses RwLock
+/// for thread-safe access and Arc for shared ownership.
 pub struct ClientPool {
 	/// Map of client storages indexed by client type
 	pub storages: HashMap<BlockChainType, Box<dyn Any + Send + Sync>>,
