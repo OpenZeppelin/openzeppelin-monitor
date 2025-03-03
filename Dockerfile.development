@@ -18,7 +18,7 @@ FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base
 
 ARG version=3.12
 
-RUN apk add bash python-${version} py${version}-pip
+RUN apk add bash python-${version} py${version}-pip nodejs
 
 WORKDIR /app
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor

@@ -4,17 +4,18 @@
 //! used for testing. It includes:
 //! - [`MockEvmClientTrait`] - Mock implementation of EVM blockchain client
 //! - [`MockStellarClientTrait`] - Mock implementation of Stellar blockchain client
+//! - [`MockClientPool`] - Mock implementation of the client pool
 //!
 //! These mocks allow testing blockchain-related functionality without actual
 //! network connections.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use openzeppelin_monitor::{
 	models::{BlockType, Network, StellarEvent, StellarTransaction},
 	services::{
 		blockchain::{
-			BlockChainClient, BlockChainError, BlockFilterFactory, EvmClientTrait,
+			BlockChainClient, BlockChainError, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
 			StellarClientTrait,
 		},
 		filter::{EVMBlockFilter, StellarBlockFilter},
@@ -23,6 +24,8 @@ use openzeppelin_monitor::{
 
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
+
+use super::{MockStellarTransportClient, MockWeb3TransportClient};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -124,5 +127,22 @@ impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockEvmClientTrait<T>>
 		EVMBlockFilter {
 			_client: PhantomData,
 		}
+	}
+}
+
+mock! {
+	#[derive(Debug)]
+	pub ClientPool {}
+
+	#[async_trait]
+	impl ClientPoolTrait for ClientPool {
+		type EvmClient = MockEvmClientTrait<MockWeb3TransportClient>;
+		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
+		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockWeb3TransportClient>>, BlockChainError>;
+		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>, BlockChainError>;
+	}
+
+	impl Clone for ClientPool {
+		fn clone(&self) -> Self;
 	}
 }

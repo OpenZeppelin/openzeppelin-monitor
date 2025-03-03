@@ -27,7 +27,7 @@ use crate::{
 		RepositoryError, TriggerRepositoryTrait, TriggerService,
 	},
 	services::{
-		blockchain::{BlockChainClient, BlockFilterFactory, EvmClient, StellarClient},
+		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
@@ -121,18 +121,21 @@ where
 /// * `shutdown_tx` - Watch channel for shutdown signals
 /// * `filter_service` - Service for filtering blockchain data
 /// * `active_monitors` - List of active monitors
+/// * `client_pools` - Client pools for accessing blockchain clients
 ///
 /// # Returns
 /// Returns a function that handles incoming blocks
-pub fn create_block_handler(
+pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 	shutdown_tx: watch::Sender<bool>,
 	filter_service: Arc<FilterService>,
 	active_monitors: Vec<Monitor>,
+	client_pools: Arc<P>,
 ) -> Arc<impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync> {
 	Arc::new(
 		move |block: BlockType, network: Network| -> BoxFuture<'static, ProcessedBlock> {
 			let filter_service = filter_service.clone();
 			let active_monitors = active_monitors.clone();
+			let client_pools = client_pools.clone();
 			let shutdown_tx = shutdown_tx.clone();
 			Box::pin(async move {
 				let applicable_monitors = filter_network_monitors(&active_monitors, &network.slug);
@@ -147,10 +150,10 @@ pub fn create_block_handler(
 					let mut shutdown_rx = shutdown_tx.subscribe();
 
 					let matches = match network.network_type {
-						BlockChainType::EVM => {
-							if let Ok(client) = EvmClient::new(&network).await {
+						BlockChainType::EVM => match client_pools.get_evm_client(&network).await {
+							Ok(client) => {
 								process_block(
-									&client,
+									client.as_ref(),
 									&network,
 									&block,
 									&applicable_monitors,
@@ -158,32 +161,30 @@ pub fn create_block_handler(
 									&mut shutdown_rx,
 								)
 								.await
-								.unwrap_or_default()
-							} else {
-								Vec::new()
 							}
-						}
+							Err(_) => None,
+						},
 						BlockChainType::Stellar => {
-							if let Ok(client) = StellarClient::new(&network).await {
-								process_block(
-									&client,
-									&network,
-									&block,
-									&applicable_monitors,
-									&filter_service,
-									&mut shutdown_rx,
-								)
-								.await
-								.unwrap_or_default()
-							} else {
-								Vec::new()
+							match client_pools.get_stellar_client(&network).await {
+								Ok(client) => {
+									process_block(
+										client.as_ref(),
+										&network,
+										&block,
+										&applicable_monitors,
+										&filter_service,
+										&mut shutdown_rx,
+									)
+									.await
+								}
+								Err(_) => None,
 							}
 						}
-						BlockChainType::Midnight => Vec::new(), // unimplemented
-						BlockChainType::Solana => Vec::new(),   // unimplemented
+						BlockChainType::Midnight => None,
+						BlockChainType::Solana => None,
 					};
 
-					processed_block.processing_results = matches;
+					processed_block.processing_results = matches.unwrap_or_default();
 				}
 
 				processed_block
@@ -195,11 +196,11 @@ pub fn create_block_handler(
 /// Processes a single block for all applicable monitors.
 ///
 /// # Arguments
+/// * `client` - The client to use to process the block
 /// * `network` - The network the block belongs to
 /// * `block` - The block to process
 /// * `applicable_monitors` - List of monitors that apply to this network
 /// * `filter_service` - Service for filtering blockchain data
-/// * `trigger_service` - Service for executing triggers
 /// * `shutdown_rx` - Receiver for shutdown signals
 pub async fn process_block<T>(
 	client: &T,

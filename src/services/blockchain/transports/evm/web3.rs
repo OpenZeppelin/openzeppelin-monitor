@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// A client for interacting with EVM-compatible blockchain nodes via Web3
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Web3TransportClient {
 	/// The underlying Web3 client for RPC requests
 	pub client: Arc<RwLock<Web3<Http>>>,

@@ -20,7 +20,7 @@ use stellar_rpc_client::Client as StellarHttpClient;
 use tokio::sync::RwLock;
 
 /// A client for interacting with Stellar Core RPC endpoints
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StellarTransportClient {
 	/// The underlying HTTP client for Stellar RPC requests
 	pub client: Arc<RwLock<StellarHttpClient>>,

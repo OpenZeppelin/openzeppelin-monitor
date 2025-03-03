@@ -29,10 +29,10 @@ use crate::{
 		create_block_handler, create_trigger_handler, has_active_monitors, initialize_services,
 		Result,
 	},
-	models::{BlockChainType, Network},
+	models::Network,
 	repositories::{MonitorRepository, NetworkRepository, TriggerRepository},
 	services::{
-		blockchain::{EvmClient, StellarClient},
+		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
 };
@@ -40,6 +40,7 @@ use crate::{
 use clap::Command;
 use dotenvy::dotenv;
 use log::{error, info};
+use models::BlockChainType;
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -82,7 +83,13 @@ async fn main() -> Result<()> {
 
 	let (shutdown_tx, _) = watch::channel(false);
 
-	let block_handler = create_block_handler(shutdown_tx.clone(), filter_service, active_monitors);
+	let client_pool = Arc::new(ClientPool::new());
+	let block_handler = create_block_handler(
+		shutdown_tx.clone(),
+		filter_service,
+		active_monitors,
+		client_pool.clone(),
+	);
 	let trigger_handler = create_trigger_handler(shutdown_tx.clone(), trigger_execution_service);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
@@ -97,13 +104,18 @@ async fn main() -> Result<()> {
 	for network in networks_with_monitors {
 		match network.network_type {
 			BlockChainType::EVM => {
-				let client = EvmClient::new(&network).await?;
-				let _ = block_watcher.start_network_watcher(&network, client).await;
+				if let Ok(client) = client_pool.get_evm_client(&network).await {
+					let _ = block_watcher
+						.start_network_watcher(&network, (*client).clone())
+						.await;
+				}
 			}
-
 			BlockChainType::Stellar => {
-				let client = StellarClient::new(&network).await?;
-				let _ = block_watcher.start_network_watcher(&network, client).await;
+				if let Ok(client) = client_pool.get_stellar_client(&network).await {
+					let _ = block_watcher
+						.start_network_watcher(&network, (*client).clone())
+						.await;
+				}
 			}
 			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),
 			BlockChainType::Solana => unimplemented!("Solana not implemented"),

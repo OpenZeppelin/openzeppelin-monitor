@@ -26,6 +26,9 @@ pub enum BlockChainError {
 
 	/// Internal errors within the blockchain client
 	InternalError(String),
+
+	/// Errors related to client pool operations
+	ClientPoolError(String),
 }
 
 impl BlockChainError {
@@ -37,6 +40,7 @@ impl BlockChainError {
 			Self::BlockNotFound(number) => format!("Block not found: {}", number),
 			Self::TransactionError(msg) => format!("Transaction error: {}", msg),
 			Self::InternalError(msg) => format!("Internal error: {}", msg),
+			Self::ClientPoolError(msg) => format!("Client pool error: {}", msg),
 		}
 	}
 
@@ -71,6 +75,13 @@ impl BlockChainError {
 	/// Creates a new internal error with logging
 	pub fn internal_error(msg: impl Into<String>) -> Self {
 		let error = Self::InternalError(msg.into());
+		error!("{}", error.format_message());
+		error
+	}
+
+	/// Creates a new client pool error with logging
+	pub fn client_pool_error(msg: impl Into<String>) -> Self {
+		let error = Self::ClientPoolError(msg.into());
 		error!("{}", error.format_message());
 		error
 	}

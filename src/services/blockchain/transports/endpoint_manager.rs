@@ -25,7 +25,7 @@ use crate::services::blockchain::{
 /// * `active_url` - The current active URL
 /// * `fallback_urls` - A list of fallback URLs to rotate to
 /// * `rotation_lock` - A lock for managing the rotation process
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EndpointManager {
 	pub active_url: Arc<RwLock<String>>,
 	pub fallback_urls: Arc<RwLock<Vec<String>>>,

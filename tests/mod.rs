@@ -26,6 +26,7 @@ mod properties {
 
 mod integration {
 	mod blockchain {
+		mod pool;
 		mod clients {
 			mod evm {
 				mod client;
