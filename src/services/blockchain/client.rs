@@ -15,7 +15,7 @@ use crate::{
 /// This trait must be implemented by all blockchain-specific clients to provide
 /// standardized access to blockchain data and operations.
 #[async_trait]
-pub trait BlockChainClient: Send + Sync {
+pub trait BlockChainClient: Send + Sync + Clone {
 	/// Retrieves the latest block number from the blockchain
 	///
 	/// # Returns
@@ -46,6 +46,6 @@ pub trait BlockChainClient: Send + Sync {
 /// This trait must be implemented by all blockchain-specific clients to provide
 /// a way to create block filters.
 pub trait BlockFilterFactory<T> {
-	type Filter: BlockFilter<Client = T>;
+	type Filter: BlockFilter<Client = T> + Send;
 	fn filter() -> Self::Filter;
 }

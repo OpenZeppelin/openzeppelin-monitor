@@ -28,7 +28,7 @@ use crate::{
 ///
 /// Provides high-level access to Stellar blockchain data and operations through
 /// both Stellar Core RPC and Horizon API endpoints.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StellarClient {
 	/// The underlying Stellar transport client for RPC communication
 	stellar_client: StellarTransportClient,
