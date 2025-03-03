@@ -24,39 +24,91 @@ use crate::{
 	},
 };
 
+/// Trait for job scheduler
+///
+/// This trait is used to abstract the job scheduler implementation.
+/// It is used to allow the block watcher service to be used with different job scheduler
+/// implementations.
+#[async_trait::async_trait]
+pub trait JobSchedulerTrait: Send + Sync + Sized {
+	async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>>;
+	async fn add(&self, job: Job) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+	async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+	async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+}
+
+/// Implementation of the job scheduler trait for the JobScheduler struct
+#[async_trait::async_trait]
+impl JobSchedulerTrait for JobScheduler {
+	async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+		Self::new().await.map_err(Into::into)
+	}
+
+	async fn add(&self, job: Job) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		self.add(job).await.map(|_| ()).map_err(Into::into)
+	}
+
+	async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		self.start().await.map(|_| ()).map_err(Into::into)
+	}
+
+	async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		self.shutdown().await.map(|_| ()).map_err(Into::into)
+	}
+}
+
 /// Watcher implementation for a single network
 ///
 /// Manages block watching and processing for a specific blockchain network,
 /// including scheduling and block handling.
-pub struct NetworkBlockWatcher<S, H, T> {
+///
+/// # Type Parameters
+/// * `S` - Storage implementation for blocks
+/// * `H` - Handler function for processed blocks
+/// * `T` - Trigger handler function for processed blocks
+/// * `J` - Job scheduler implementation (must implement JobSchedulerTrait)
+pub struct NetworkBlockWatcher<S, H, T, J>
+where
+	J: JobSchedulerTrait,
+{
 	pub network: Network,
 	pub block_storage: Arc<S>,
 	pub block_handler: Arc<H>,
 	pub trigger_handler: Arc<T>,
-	pub scheduler: JobScheduler,
+	pub scheduler: J,
 	pub block_tracker: Arc<BlockTracker<S>>,
 }
 
 /// Map of active block watchers
-type BlockWatchersMap<S, H, T> = HashMap<String, NetworkBlockWatcher<S, H, T>>;
+type BlockWatchersMap<S, H, T, J> = HashMap<String, NetworkBlockWatcher<S, H, T, J>>;
 
 /// Service for managing multiple network watchers
 ///
 /// Coordinates block watching across multiple networks, managing individual
 /// watchers and their lifecycles.
-pub struct BlockWatcherService<S, H, T> {
+///
+/// # Type Parameters
+/// * `S` - Storage implementation for blocks
+/// * `H` - Handler function for processed blocks
+/// * `T` - Trigger handler function for processed blocks
+/// * `J` - Job scheduler implementation (must implement JobSchedulerTrait)
+pub struct BlockWatcherService<S, H, T, J>
+where
+	J: JobSchedulerTrait,
+{
 	pub block_storage: Arc<S>,
 	pub block_handler: Arc<H>,
 	pub trigger_handler: Arc<T>,
-	pub active_watchers: Arc<RwLock<BlockWatchersMap<S, H, T>>>,
+	pub active_watchers: Arc<RwLock<BlockWatchersMap<S, H, T, J>>>,
 	pub block_tracker: Arc<BlockTracker<S>>,
 }
 
-impl<S, H, T> NetworkBlockWatcher<S, H, T>
+impl<S, H, T, J> NetworkBlockWatcher<S, H, T, J>
 where
 	S: BlockStorage + Send + Sync + 'static,
 	H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
 	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static,
+	J: JobSchedulerTrait,
 {
 	/// Creates a new network watcher instance
 	///
@@ -74,7 +126,7 @@ where
 		trigger_handler: Arc<T>,
 		block_tracker: Arc<BlockTracker<S>>,
 	) -> Result<Self, BlockWatcherError> {
-		let scheduler = JobScheduler::new().await.map_err(|e| {
+		let scheduler = J::new().await.map_err(|e| {
 			BlockWatcherError::scheduler_error(
 				e.to_string(),
 				Some(HashMap::from([(
@@ -188,11 +240,12 @@ where
 	}
 }
 
-impl<S, H, T> BlockWatcherService<S, H, T>
+impl<S, H, T, J> BlockWatcherService<S, H, T, J>
 where
 	S: BlockStorage + Send + Sync + 'static,
 	H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
 	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static,
+	J: JobSchedulerTrait,
 {
 	/// Creates a new block watcher service
 	///

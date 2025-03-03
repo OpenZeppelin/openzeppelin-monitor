@@ -7,7 +7,7 @@ use openzeppelin_monitor::{
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
 		blockchain::BlockFilterFactory,
-		blockwatcher::{BlockStorage, BlockTrackerTrait, BlockWatcherError},
+		blockwatcher::{BlockStorage, BlockTrackerTrait, BlockWatcherError, JobSchedulerTrait},
 		filter::FilterError,
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionServiceTrait},
@@ -69,5 +69,28 @@ mock! {
 		 fn new(history_size: usize, storage: Option<std::sync::Arc<S> >) -> Self;
 		 async fn record_block(&self, network: &Network, block_number: u64);
 		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
+	}
+}
+
+mock! {
+	pub JobScheduler {}
+
+	#[async_trait]
+	impl JobSchedulerTrait for JobScheduler {
+		async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+			Ok(Self::default())
+		}
+
+		async fn add(&self, _job: tokio_cron_scheduler::Job) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+			Ok(())
+		}
+
+		async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+			Ok(())
+		}
+
+		async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+			Ok(())
+		}
 	}
 }

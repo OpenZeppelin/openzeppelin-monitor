@@ -1,9 +1,11 @@
 use futures::future::BoxFuture;
 use mockall::predicate;
 use std::sync::Arc;
+use tokio_cron_scheduler::JobScheduler;
 
 use crate::integration::mocks::{
 	create_test_block, create_test_network, MockBlockStorage, MockBlockTracker, MockEvmClientTrait,
+	MockJobScheduler,
 };
 use openzeppelin_monitor::{
 	models::{BlockChainType, BlockType, Network, ProcessedBlock},
@@ -1103,7 +1105,7 @@ async fn test_network_block_watcher_new() {
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
 	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
 
-	let watcher = NetworkBlockWatcher::new(
+	let watcher = NetworkBlockWatcher::<_, _, _, JobScheduler>::new(
 		network,
 		block_storage,
 		block_handler,
@@ -1138,7 +1140,7 @@ async fn test_network_block_watcher_start_stop() {
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
 	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
 
-	let watcher = NetworkBlockWatcher::new(
+	let watcher = NetworkBlockWatcher::<_, _, _, JobScheduler>::new(
 		network.clone(),
 		block_storage.clone(),
 		block_handler,
@@ -1181,7 +1183,7 @@ async fn test_block_watcher_service_start_stop_network() {
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
 	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
 
-	let service = BlockWatcherService::new(
+	let service = BlockWatcherService::<_, _, _, JobScheduler>::new(
 		block_storage.clone(),
 		block_handler,
 		trigger_handler,
@@ -1251,7 +1253,7 @@ async fn test_block_watcher_service_new() {
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
 	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
 
-	let service = BlockWatcherService::new(
+	let service = BlockWatcherService::<_, _, _, JobScheduler>::new(
 		block_storage.clone(),
 		block_handler,
 		trigger_handler,
@@ -1318,5 +1320,155 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 	assert!(result.is_err());
 	if let Err(e) = result {
 		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
+	}
+}
+
+#[tokio::test]
+async fn test_scheduler_errors() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	let block_storage = Arc::new(MockBlockStorage::new());
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+
+	// Test case 1: Scheduler fails to initialize
+	{
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect()
+			.returning(|| Err("Failed to initialize scheduler".into()));
+
+		let service = BlockWatcherService::<_, _, _, MockJobScheduler>::new(
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::new();
+		rpc_client.expect_clone().returning(MockEvmClientTrait::new);
+
+		let result = service.start_network_watcher(&network, rpc_client).await;
+
+		assert!(matches!(
+			result.unwrap_err(),
+			BlockWatcherError::SchedulerError { .. }
+		));
+	}
+
+	// Test case 2: Scheduler fails to add job
+	{
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			scheduler
+				.expect_add()
+				.returning(|_| Err("Failed to add job".into()));
+			Ok(scheduler)
+		});
+
+		let service = BlockWatcherService::<_, _, _, MockJobScheduler>::new(
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::new();
+		rpc_client.expect_clone().returning(MockEvmClientTrait::new);
+
+		let result = service.start_network_watcher(&network, rpc_client).await;
+
+		assert!(matches!(
+			result.unwrap_err(),
+			BlockWatcherError::SchedulerError { .. }
+		));
+	}
+
+	// Test case 3: Scheduler fails to start
+	{
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			scheduler.expect_add().returning(|_| Ok(()));
+
+			scheduler
+				.expect_start()
+				.times(1)
+				.returning(|| Err("Failed to start scheduler".into()));
+			Ok(scheduler)
+		});
+
+		let service = BlockWatcherService::<_, _, _, MockJobScheduler>::new(
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::new();
+		rpc_client.expect_clone().returning(MockEvmClientTrait::new);
+
+		let result = service.start_network_watcher(&network, rpc_client).await;
+
+		assert!(matches!(
+			result.unwrap_err(),
+			BlockWatcherError::SchedulerError { .. }
+		));
+	}
+
+	// Test case 4: Scheduler fails to shutdown
+	{
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+
+			scheduler.expect_add().returning(|_| Ok(()));
+			scheduler.expect_start().returning(|| Ok(()));
+			scheduler
+				.expect_shutdown()
+				.returning(|| Err("Failed to shutdown scheduler".into()));
+			Ok(scheduler)
+		});
+
+		let service = BlockWatcherService::<_, _, _, MockJobScheduler>::new(
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::new();
+		rpc_client.expect_clone().returning(MockEvmClientTrait::new);
+
+		let _ = service.start_network_watcher(&network, rpc_client).await;
+
+		assert!(service
+			.active_watchers
+			.read()
+			.await
+			.contains_key(&network.slug));
+
+		let result = service.stop_network_watcher(&network.slug).await;
+
+		assert!(matches!(
+			result.unwrap_err(),
+			BlockWatcherError::SchedulerError { .. }
+		));
 	}
 }

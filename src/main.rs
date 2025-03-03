@@ -42,6 +42,7 @@ use dotenvy::dotenv;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::watch;
+use tokio_cron_scheduler::JobScheduler;
 
 /// Main entry point for the blockchain monitoring service.
 ///
@@ -86,7 +87,7 @@ async fn main() -> Result<()> {
 	let trigger_handler = create_trigger_handler(shutdown_tx.clone(), trigger_execution_service);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
-	let block_watcher = BlockWatcherService::new(
+	let block_watcher = BlockWatcherService::<FileBlockStorage, _, _, JobScheduler>::new(
 		file_block_storage.clone(),
 		block_handler,
 		trigger_handler,
