@@ -1262,3 +1262,61 @@ async fn test_block_watcher_service_new() {
 	assert!(service.is_ok());
 	assert!(service.unwrap().active_watchers.read().await.is_empty());
 }
+
+#[tokio::test]
+async fn test_process_new_blocks_get_blocks_error_fresh_start() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	// Setup mock block storage that returns 0 as last processed block
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(0)))
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	// Setup mock RPC client that succeeds for latest block but fails for get_blocks
+	let mut rpc_client = MockEvmClientTrait::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(100))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.with(predicate::eq(99), predicate::eq(None))
+		.returning(|_, _| {
+			Err(BlockChainError::request_error(
+				"Failed to fetch block",
+				None,
+				Some("test_error"),
+			))
+		})
+		.times(1);
+
+	let block_handler = Arc::new(|_: BlockType, network: Network| {
+		Box::pin(async move {
+			ProcessedBlock {
+				block_number: 0,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(MockBlockTracker::default()),
+	)
+	.await;
+
+	assert!(result.is_err());
+	if let Err(e) = result {
+		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
+	}
+}
