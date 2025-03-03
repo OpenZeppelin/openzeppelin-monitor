@@ -303,7 +303,7 @@ async fn test_create_block_handler_stellar() {
 	mock_pool.expect_get_stellar_client().returning(move |_| {
 		let mut mock_client = MockStellarClientTrait::new();
 		// Stellar does an additional call to get the transactions as opposed to EVM where
-		// transactions is already in the block
+		// transactions are already in the block
 		mock_client
 			.expect_get_transactions()
 			.times(1)
