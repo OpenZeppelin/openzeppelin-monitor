@@ -188,8 +188,6 @@ graph TD
 
 === Error Handling
 
-Configure appropriate retry settings:
-
 ==== Retry Mechanism
 
 The RPC client uses `reqwest_retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
