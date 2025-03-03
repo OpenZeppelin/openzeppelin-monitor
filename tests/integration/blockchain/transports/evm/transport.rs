@@ -1,34 +1,11 @@
 use mockall::predicate;
-use openzeppelin_monitor::{
-	models::{BlockChainType, Network, RpcUrl},
-	services::blockchain::{BlockChainClient, BlockChainError, EvmClient, EvmClientTrait},
+use openzeppelin_monitor::services::blockchain::{
+	BlockChainClient, BlockChainError, EvmClient, EvmClientTrait,
 };
 use serde_json::{json, Value};
 use web3::types::H160;
 
 use crate::integration::mocks::MockWeb3TransportClient;
-
-fn create_mock_network() -> Network {
-	Network {
-		name: "mock".to_string(),
-		slug: "mock".to_string(),
-		network_type: BlockChainType::EVM,
-		rpc_urls: vec![RpcUrl {
-			url: "http://localhost:8545".to_string(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: Some(1),
-		network_passphrase: None,
-		block_time_ms: 1000,
-		max_past_blocks: None,
-	}
-}
-
-// ... existing code ...
 
 fn create_mock_block(number: u64) -> Value {
 	json!({
@@ -91,8 +68,7 @@ async fn test_get_logs_for_blocks_implementation() {
 		)
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_ok());
@@ -121,8 +97,7 @@ async fn test_get_logs_for_blocks_missing_result() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
@@ -147,8 +122,7 @@ async fn test_get_logs_for_blocks_invalid_format() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
@@ -168,8 +142,7 @@ async fn test_get_logs_for_blocks_web3_error() {
 			Err(BlockChainError::RequestError("Web3 error".into()))
 		});
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
@@ -211,8 +184,7 @@ async fn test_get_transaction_receipt_success() {
 		)
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -238,8 +210,7 @@ async fn test_get_transaction_receipt_not_found() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -260,8 +231,7 @@ async fn test_get_transaction_receipt_invalid_hash() {
 	let mock_web3 = MockWeb3TransportClient::new();
 	// We don't need to mock any response since the validation will fail before making the
 	// request
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
 	// Test with an invalid hash format
 	let result = client
@@ -292,8 +262,7 @@ async fn test_get_transaction_receipt_missing_result() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -326,8 +295,7 @@ async fn test_get_transaction_receipt_parse_failure() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -357,8 +325,7 @@ async fn test_get_latest_block_number_success() {
 		.with(predicate::eq("eth_blockNumber"), predicate::always())
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_ok());
@@ -378,8 +345,7 @@ async fn test_get_latest_block_number_invalid_response() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -404,8 +370,7 @@ async fn test_get_latest_block_number_missing_result() {
 		.with(predicate::eq("eth_blockNumber"), predicate::always())
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -439,8 +404,7 @@ async fn test_get_single_block() {
 		)
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_ok());
@@ -470,8 +434,7 @@ async fn test_get_multiple_blocks() {
 		},
 	);
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
 	let result = client.get_blocks(1, Some(3)).await;
 	assert!(result.is_ok());
@@ -493,8 +456,7 @@ async fn test_get_blocks_missing_result() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
@@ -521,8 +483,7 @@ async fn test_get_blocks_null_result() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
@@ -553,8 +514,7 @@ async fn test_get_blocks_parse_failure() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client =
-		EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3, &create_mock_network());
+	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());

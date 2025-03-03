@@ -1,5 +1,3 @@
-// ... existing code ...
-
 use crate::integration::mocks::{
 	create_evm_test_network_with_urls, create_evm_valid_server_mock_network_response,
 	MockEvmClientTrait, MockWeb3TransportClient,

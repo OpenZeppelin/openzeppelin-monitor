@@ -947,7 +947,6 @@ docker run \
 
 === Notification Considerations:
 
-* Email notification port defaults to 465 if not specified.
 * Template variables are context-dependent:
 ** Event-triggered notifications only populate event variables.
 ** Function-triggered notifications only populate function variables.

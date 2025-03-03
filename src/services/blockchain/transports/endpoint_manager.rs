@@ -3,6 +3,8 @@
 //! Provides methods for rotating between multiple URLs and sending requests to the active endpoint
 //! with automatic fallback to other URLs on failure.
 use log::debug;
+use reqwest_middleware::ClientBuilder;
+use reqwest_retry::RetryTransientMiddleware;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -135,7 +137,11 @@ impl EndpointManager {
 		method: &str,
 		params: Option<P>,
 	) -> Result<Value, BlockChainError> {
-		let client = reqwest::Client::new();
+		// TODO: initialise this outside of the function
+		let retry_policy = transport.get_retry_policy()?;
+		let client = ClientBuilder::new(reqwest::Client::new())
+			.with(RetryTransientMiddleware::new_with_policy(retry_policy))
+			.build();
 
 		loop {
 			let current_url = self.active_url.read().await.clone();
@@ -144,7 +150,10 @@ impl EndpointManager {
 			let response = client
 				.post(current_url.as_str())
 				.header("Content-Type", "application/json")
-				.json(&request_body)
+				.body(
+					serde_json::to_string(&request_body)
+						.map_err(|e| BlockChainError::request_error(e.to_string()))?,
+				)
 				.send()
 				.await
 				.map_err(|e| BlockChainError::request_error(e.to_string()))?;

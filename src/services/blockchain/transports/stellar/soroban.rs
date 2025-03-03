@@ -12,6 +12,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
+use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -25,6 +26,8 @@ pub struct StellarTransportClient {
 	pub client: Arc<RwLock<StellarHttpClient>>,
 	/// Manages RPC endpoint rotation and request handling
 	endpoint_manager: EndpointManager,
+	/// The retry policy for the transport
+	retry_policy: ExponentialBackoff,
 }
 
 impl StellarTransportClient {
@@ -44,6 +47,9 @@ impl StellarTransportClient {
 
 		stellar_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
+		// Default retry policy for Stellar transport
+		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+
 		for rpc_url in stellar_urls.iter() {
 			match StellarHttpClient::new(rpc_url.url.as_str()) {
 				Ok(client) => match client.get_network().await {
@@ -60,6 +66,7 @@ impl StellarTransportClient {
 								rpc_url.url.clone(),
 								fallback_urls,
 							),
+							retry_policy,
 						});
 					}
 					Err(_) => continue,
@@ -103,6 +110,29 @@ impl BlockchainTransport for StellarTransportClient {
 		self.endpoint_manager
 			.send_raw_request(self, method, params)
 			.await
+	}
+
+	/// Gets the retry policy for the transport
+	///
+	/// # Returns
+	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+		Ok(self.retry_policy)
+	}
+
+	/// Sets the retry policy for the transport
+	///
+	/// # Arguments
+	/// * `retry_policy` - The retry policy to set
+	///
+	/// # Returns
+	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
+	fn set_retry_policy(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+	) -> Result<(), BlockChainError> {
+		self.retry_policy = retry_policy;
+		Ok(())
 	}
 }
 

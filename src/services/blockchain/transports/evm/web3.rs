@@ -3,6 +3,7 @@
 //! This module provides a client implementation for interacting with EVM-compatible nodes
 //! via Web3, supporting connection management and raw JSON-RPC request functionality.
 
+use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -24,6 +25,8 @@ pub struct Web3TransportClient {
 	pub client: Arc<RwLock<Web3<Http>>>,
 	/// Manages RPC endpoint rotation and request handling
 	endpoint_manager: EndpointManager,
+	/// The retry policy for the transport
+	retry_policy: ExponentialBackoff,
 }
 
 impl Web3TransportClient {
@@ -46,6 +49,9 @@ impl Web3TransportClient {
 
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
+		// Default retry policy for Web3 transport
+		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+
 		for rpc_url in rpc_urls.iter() {
 			match Http::new(&rpc_url.url) {
 				Ok(transport) => {
@@ -64,6 +70,7 @@ impl Web3TransportClient {
 									rpc_url.url.clone(),
 									fallback_urls,
 								),
+								retry_policy,
 							});
 						}
 						Err(_) => continue,
@@ -111,6 +118,29 @@ impl BlockchainTransport for Web3TransportClient {
 		self.endpoint_manager
 			.send_raw_request(self, method, params)
 			.await
+	}
+
+	/// Gets the retry policy for the transport
+	///
+	/// # Returns
+	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+		Ok(self.retry_policy)
+	}
+
+	/// Sets the retry policy for the transport
+	///
+	/// # Arguments
+	/// * `retry_policy` - The retry policy to set
+	///
+	/// # Returns
+	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
+	fn set_retry_policy(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+	) -> Result<(), BlockChainError> {
+		self.retry_policy = retry_policy;
+		Ok(())
 	}
 }
 

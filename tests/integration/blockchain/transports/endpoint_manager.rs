@@ -1,4 +1,5 @@
 use mockito::Server;
+use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use openzeppelin_monitor::services::blockchain::{
 struct MockTransport {
 	client: reqwest::Client,
 	current_url: Arc<RwLock<String>>,
+	retry_policy: ExponentialBackoff,
 }
 
 impl MockTransport {
@@ -20,6 +22,7 @@ impl MockTransport {
 		Self {
 			client: reqwest::Client::new(),
 			current_url: Arc::new(RwLock::new(String::new())),
+			retry_policy: ExponentialBackoff::builder().build_with_max_retries(2),
 		}
 	}
 }
@@ -53,6 +56,18 @@ impl BlockchainTransport for MockTransport {
 			"method": method,
 			"params": params
 		})
+	}
+
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+		Ok(self.retry_policy)
+	}
+
+	fn set_retry_policy(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+	) -> Result<(), BlockChainError> {
+		self.retry_policy = retry_policy;
+		Ok(())
 	}
 }
 
@@ -137,6 +152,7 @@ async fn test_rotation_on_error() {
 		.mock("POST", "/")
 		.with_status(429)
 		.with_body("Rate limited")
+		.expect(3) // Expect 3 requests due to default retry policy
 		.create_async()
 		.await;
 
@@ -173,6 +189,7 @@ async fn test_no_fallback_urls_available() {
 		.mock("POST", "/")
 		.with_status(429)
 		.with_body("Rate limited")
+		.expect(3) // Expect 3 requests due to default retry policy
 		.create_async()
 		.await;
 

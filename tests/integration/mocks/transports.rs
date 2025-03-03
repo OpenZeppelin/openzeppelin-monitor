@@ -1,4 +1,5 @@
 use mockall::mock;
+use reqwest_retry::policies::ExponentialBackoff;
 use serde_json::Value;
 
 use openzeppelin_monitor::services::blockchain::{
@@ -36,6 +37,14 @@ impl BlockchainTransport for MockWeb3TransportClient {
 		let params_value = params.map(|p| p.into());
 		self.send_raw_request(method, params_value.and_then(|v| v.as_array().cloned()))
 			.await
+	}
+
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
+	}
+
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+		Ok(())
 	}
 }
 
@@ -81,6 +90,14 @@ impl BlockchainTransport for MockStellarTransportClient {
 		self.send_raw_request(method, params.map(|p| p.into()))
 			.await
 	}
+
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
+	}
+
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+		Ok(())
+	}
 }
 
 #[async_trait::async_trait]
@@ -124,6 +141,14 @@ impl BlockchainTransport for MockHorizonTransportClient {
 	{
 		self.send_raw_request(method, params.map(|p| p.into()))
 			.await
+	}
+
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
+	}
+
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+		Ok(())
 	}
 }
 

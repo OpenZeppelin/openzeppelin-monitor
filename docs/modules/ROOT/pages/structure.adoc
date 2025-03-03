@@ -33,7 +33,6 @@ The main source code directory contains the core implementation files organized 
 * `utils/`: Helper functions
 ** `cron_utils/`: Cron schedule utilities
 ** `expression/`: Expression evaluation
-** `retry/`: Async operation retry mechanisms
 
 == Configuration and Data:
 

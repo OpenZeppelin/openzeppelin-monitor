@@ -16,6 +16,7 @@ mod endpoint_manager;
 use crate::services::blockchain::BlockChainError;
 pub use endpoint_manager::EndpointManager;
 pub use evm::web3::Web3TransportClient;
+use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 pub use stellar::{horizon::HorizonTransportClient, soroban::StellarTransportClient};
 
@@ -53,6 +54,13 @@ pub trait BlockchainTransport: Send + Sync {
 			"params": params.map(|p| p.into())
 		})
 	}
+
+	/// Sets the retry policy for the transport
+	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff)
+		-> Result<(), BlockChainError>;
+
+	/// Gets the retry policy for the transport
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError>;
 }
 
 /// Extension trait for transports that support URL rotation

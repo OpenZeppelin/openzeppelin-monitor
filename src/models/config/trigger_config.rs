@@ -244,11 +244,20 @@ impl ConfigLoader for Trigger {
 					if token.trim().is_empty() {
 						return Err(ConfigError::validation_error("Token cannot be empty"));
 					}
-					if !regex::Regex::new(r"^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$")
-						.unwrap()
-						.is_match(token)
-					{
-						return Err(ConfigError::validation_error("Invalid token format"));
+
+					// Safely compile and use the regex
+					match regex::Regex::new(r"^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$") {
+						Ok(re) => {
+							if !re.is_match(token) {
+								return Err(ConfigError::validation_error("Invalid token format"));
+							}
+						}
+						Err(e) => {
+							return Err(ConfigError::validation_error(format!(
+								"Failed to validate token format: {}",
+								e
+							)));
+						}
 					}
 
 					// Validate chat ID

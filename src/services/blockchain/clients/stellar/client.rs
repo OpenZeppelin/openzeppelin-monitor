@@ -21,7 +21,6 @@ use crate::{
 		},
 		filter::StellarBlockFilter,
 	},
-	utils::WithRetry,
 };
 
 /// Client implementation for the Stellar blockchain
@@ -32,17 +31,12 @@ use crate::{
 pub struct StellarClient<T: Send + Sync + Clone> {
 	/// The underlying Stellar transport client for RPC communication
 	stellar_client: T,
-	/// Network configuration for this client instance
-	_network: Network,
 }
 
 impl<T: Send + Sync + Clone> StellarClient<T> {
 	/// Creates a new Stellar client instance with a specific transport client
-	pub fn new_with_transport(stellar_client: T, network: &Network) -> Self {
-		Self {
-			stellar_client,
-			_network: network.clone(),
-		}
+	pub fn new_with_transport(stellar_client: T) -> Self {
+		Self { stellar_client }
 	}
 }
 
@@ -56,7 +50,7 @@ impl StellarClient<StellarTransportClient> {
 	/// * `Result<Self, BlockChainError>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
 		let stellar_client: StellarTransportClient = StellarTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(stellar_client, network))
+		Ok(Self::new_with_transport(stellar_client))
 	}
 }
 
@@ -113,60 +107,56 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 			}
 		}
 
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				// max limit for the RPC endpoint is 200
-				const PAGE_LIMIT: u32 = 200;
-				let mut transactions = Vec::new();
-				let target_sequence = end_sequence.unwrap_or(start_sequence);
-				let mut cursor = None;
+		// max limit for the RPC endpoint is 200
+		const PAGE_LIMIT: u32 = 200;
+		let mut transactions = Vec::new();
+		let target_sequence = end_sequence.unwrap_or(start_sequence);
+		let mut cursor = None;
 
-				while cursor.unwrap_or(start_sequence) <= target_sequence {
-					let params = json!({
-						"startLedger": cursor.unwrap_or(start_sequence),
-						"pagination": {
-							"limit": PAGE_LIMIT
-						}
-					});
-
-					let response = self
-						.stellar_client
-						.send_raw_request("getTransactions", Some(params))
-						.await?;
-
-					let ledger_transactions: Vec<StellarTransactionInfo> =
-						serde_json::from_value(response["result"]["transactions"].clone())
-							.map_err(|e| {
-								BlockChainError::request_error(format!(
-									"Failed to parse transaction response: {}",
-									e
-								))
-							})?;
-
-					if ledger_transactions.is_empty() {
-						break;
-					}
-
-					for transaction in ledger_transactions {
-						let sequence = transaction.ledger;
-						if sequence > target_sequence {
-							return Ok(transactions);
-						}
-						transactions.push(StellarTransaction::from(transaction));
-					}
-
-					cursor = response["result"]["cursor"]
-						.as_str()
-						.and_then(|s| s.parse::<u32>().ok());
-
-					if cursor.is_none() {
-						break;
-					}
+		while cursor.unwrap_or(start_sequence) <= target_sequence {
+			let params = json!({
+				"startLedger": cursor.unwrap_or(start_sequence),
+				"pagination": {
+					"limit": PAGE_LIMIT
 				}
-				Ok(transactions)
-			})
-			.await
+			});
+
+			let response = self
+				.stellar_client
+				.send_raw_request("getTransactions", Some(params))
+				.await?;
+
+			let ledger_transactions: Vec<StellarTransactionInfo> = serde_json::from_value(
+				response["result"]["transactions"].clone(),
+			)
+			.map_err(|e| {
+				BlockChainError::request_error(format!(
+					"Failed to parse transaction response: {}",
+					e
+				))
+			})?;
+
+			if ledger_transactions.is_empty() {
+				break;
+			}
+
+			for transaction in ledger_transactions {
+				let sequence = transaction.ledger;
+				if sequence > target_sequence {
+					return Ok(transactions);
+				}
+				transactions.push(StellarTransaction::from(transaction));
+			}
+
+			cursor = response["result"]["cursor"]
+				.as_str()
+				.and_then(|s| s.parse::<u32>().ok());
+
+			if cursor.is_none() {
+				break;
+			}
+		}
+		Ok(transactions)
 	}
 
 	/// Retrieves events within a sequence range with pagination
@@ -188,64 +178,54 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 			}
 		}
 
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				// max limit for the RPC endpoint is 200
-				const PAGE_LIMIT: u32 = 200;
-				let mut events = Vec::new();
-				let target_sequence = end_sequence.unwrap_or(start_sequence);
-				let mut cursor = None;
+		// max limit for the RPC endpoint is 200
+		const PAGE_LIMIT: u32 = 200;
+		let mut events = Vec::new();
+		let target_sequence = end_sequence.unwrap_or(start_sequence);
+		let mut cursor = None;
 
-				while cursor.unwrap_or(start_sequence) <= target_sequence {
-					let params = json!({
-						"startLedger": cursor.unwrap_or(start_sequence),
-						"filters": [{
-							"type": "contract",
-						}],
-						"pagination": {
-							"limit": PAGE_LIMIT
-						}
-					});
-
-					let response = self
-						.stellar_client
-						.send_raw_request("getEvents", Some(params))
-						.await?;
-
-					let ledger_events: Vec<StellarEvent> = serde_json::from_value(
-						response["result"]["events"].clone(),
-					)
-					.map_err(|e| {
-						BlockChainError::request_error(format!(
-							"Failed to parse event response: {}",
-							e
-						))
-					})?;
-
-					if ledger_events.is_empty() {
-						break;
-					}
-
-					for event in ledger_events {
-						let sequence = event.ledger;
-						if sequence > target_sequence {
-							return Ok(events);
-						}
-						events.push(event);
-					}
-
-					cursor = response["result"]["cursor"]
-						.as_str()
-						.and_then(|s| s.parse::<u32>().ok());
-
-					if cursor.is_none() {
-						break;
-					}
+		while cursor.unwrap_or(start_sequence) <= target_sequence {
+			let params = json!({
+				"startLedger": cursor.unwrap_or(start_sequence),
+				"filters": [{
+					"type": "contract",
+				}],
+				"pagination": {
+					"limit": PAGE_LIMIT
 				}
-				Ok(events)
-			})
-			.await
+			});
+
+			let response = self
+				.stellar_client
+				.send_raw_request("getEvents", Some(params))
+				.await?;
+
+			let ledger_events: Vec<StellarEvent> =
+				serde_json::from_value(response["result"]["events"].clone()).map_err(|e| {
+					BlockChainError::request_error(format!("Failed to parse event response: {}", e))
+				})?;
+
+			if ledger_events.is_empty() {
+				break;
+			}
+
+			for event in ledger_events {
+				let sequence = event.ledger;
+				if sequence > target_sequence {
+					return Ok(events);
+				}
+				events.push(event);
+			}
+
+			cursor = response["result"]["cursor"]
+				.as_str()
+				.and_then(|s| s.parse::<u32>().ok());
+
+			if cursor.is_none() {
+				break;
+			}
+		}
+		Ok(events)
 	}
 }
 
@@ -263,21 +243,16 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for 
 impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarClient<T> {
 	/// Retrieves the latest block number with retry functionality
 	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				let response = self
-					.stellar_client
-					.send_raw_request::<serde_json::Value>("getLatestLedger", None)
-					.await?;
+		let response = self
+			.stellar_client
+			.send_raw_request::<serde_json::Value>("getLatestLedger", None)
+			.await?;
 
-				let sequence = response["result"]["sequence"].as_u64().ok_or_else(|| {
-					BlockChainError::request_error("Invalid sequence number".to_string())
-				})?;
+		let sequence = response["result"]["sequence"]
+			.as_u64()
+			.ok_or_else(|| BlockChainError::request_error("Invalid sequence number".to_string()))?;
 
-				Ok(sequence)
-			})
-			.await
+		Ok(sequence)
 	}
 
 	/// Retrieves blocks within the specified range with retry functionality
@@ -305,59 +280,52 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 			}
 		}
 
-		let with_retry = WithRetry::with_default_config();
-		with_retry
-			.attempt(|| async {
-				let mut blocks = Vec::new();
-				let target_block = end_block.unwrap_or(start_block);
-				let mut cursor = None;
+		let mut blocks = Vec::new();
+		let target_block = end_block.unwrap_or(start_block);
+		let mut cursor = None;
 
-				while cursor.unwrap_or(start_block) <= target_block {
-					let params = json!({
-						"startLedger": cursor.unwrap_or(start_block),
-						"pagination": {
-							"limit": PAGE_LIMIT
-						}
-					});
-
-					// TODO: Replace this once the SDK is updated with `get_ledgers`
-					let response = self
-						.stellar_client
-						.send_raw_request("getLedgers", Some(params))
-						.await?;
-
-					let ledgers: Vec<StellarBlock> = serde_json::from_value(
-						response["result"]["ledgers"].clone(),
-					)
-					.map_err(|e| {
-						BlockChainError::request_error(format!(
-							"Failed to parse ledger response: {}",
-							e
-						))
-					})?;
-
-					if ledgers.is_empty() {
-						break;
-					}
-
-					for ledger in ledgers {
-						let sequence = ledger.sequence;
-						if (sequence as u64) > target_block {
-							return Ok(blocks);
-						}
-						blocks.push(BlockType::Stellar(Box::new(ledger)));
-					}
-
-					cursor = response["result"]["cursor"]
-						.as_str()
-						.and_then(|s| s.parse::<u64>().ok());
-
-					if cursor.is_none() {
-						break;
-					}
+		while cursor.unwrap_or(start_block) <= target_block {
+			let params = json!({
+				"startLedger": cursor.unwrap_or(start_block),
+				"pagination": {
+					"limit": PAGE_LIMIT
 				}
-				Ok(blocks)
-			})
-			.await
+			});
+
+			// TODO: Replace this once the SDK is updated with `get_ledgers`
+			let response = self
+				.stellar_client
+				.send_raw_request("getLedgers", Some(params))
+				.await?;
+
+			let ledgers: Vec<StellarBlock> =
+				serde_json::from_value(response["result"]["ledgers"].clone()).map_err(|e| {
+					BlockChainError::request_error(format!(
+						"Failed to parse ledger response: {}",
+						e
+					))
+				})?;
+
+			if ledgers.is_empty() {
+				break;
+			}
+
+			for ledger in ledgers {
+				let sequence = ledger.sequence;
+				if (sequence as u64) > target_block {
+					return Ok(blocks);
+				}
+				blocks.push(BlockType::Stellar(Box::new(ledger)));
+			}
+
+			cursor = response["result"]["cursor"]
+				.as_str()
+				.and_then(|s| s.parse::<u64>().ok());
+
+			if cursor.is_none() {
+				break;
+			}
+		}
+		Ok(blocks)
 	}
 }

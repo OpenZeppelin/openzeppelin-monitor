@@ -12,6 +12,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
+use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -28,6 +29,8 @@ pub struct HorizonTransportClient {
 	pub client: Arc<RwLock<HorizonHttpClient>>,
 	/// Manages RPC endpoint rotation and request handling
 	endpoint_manager: EndpointManager,
+	/// The retry policy for the transport
+	retry_policy: ExponentialBackoff,
 }
 
 impl HorizonTransportClient {
@@ -47,6 +50,9 @@ impl HorizonTransportClient {
 
 		horizon_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
+		// Default retry policy for Horizon transport
+		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+
 		for rpc_url in horizon_urls.iter() {
 			match HorizonHttpClient::new_from_str(&rpc_url.url) {
 				Ok(client) => {
@@ -65,6 +71,7 @@ impl HorizonTransportClient {
 									rpc_url.url.clone(),
 									fallback_urls,
 								),
+								retry_policy,
 							});
 						}
 						Err(_) => {
@@ -113,6 +120,29 @@ impl BlockchainTransport for HorizonTransportClient {
 		self.endpoint_manager
 			.send_raw_request(self, method, params)
 			.await
+	}
+
+	/// Gets the retry policy for the transport
+	///
+	/// # Returns
+	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+		Ok(self.retry_policy)
+	}
+
+	/// Sets the retry policy for the transport
+	///
+	/// # Arguments
+	/// * `retry_policy` - The retry policy to set
+	///
+	/// # Returns
+	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
+	fn set_retry_policy(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+	) -> Result<(), BlockChainError> {
+		self.retry_policy = retry_policy;
+		Ok(())
 	}
 }
 

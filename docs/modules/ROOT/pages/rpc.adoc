@@ -190,23 +190,66 @@ graph TD
 
 Configure appropriate retry settings:
 
+==== Retry Mechanism
+
+The RPC client uses `reqwest_retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
+
+===== Configuration
+
+The retry mechanism is configured in the transport client with:
+
 [source,rust]
 ----
-#[derive(Clone, Debug)]
-pub struct RetryConfig {
-    /// Maximum number of retry attempts before giving up
-	pub max_retries: u32,
+// Default retry policy with 2 retries (3 total attempts)
+let retry_policy = ExponentialBackoff::builder()
+    .build_with_max_retries(2);
+----
 
-	/// Initial delay between retry attempts
-	/// This delay will be exponentially increased with each retry
-	pub initial_delay: Duration,
+===== Implementation Details
 
-	/// Maximum delay between retry attempts
-	/// The exponential backoff will not exceed this delay
-	pub max_delay: Duration,
+The retry mechanism is implemented at two levels:
+
+1. *Transport Level*: Each transport client maintains its own retry policy:
++
+[source,rust]
+----
+pub struct Web3TransportClient {
+  client: Arc<RwLock<Web3<Http>>>,
+  endpoint_manager: EndpointManager,
+  retry_policy: ExponentialBackoff,
+}
+
+pub struct StellarTransportClient {
+	pub client: Arc<RwLock<StellarHttpClient>>,
+	endpoint_manager: EndpointManager,
+	retry_policy: ExponentialBackoff,
 }
 ----
 
+2. *Request Level*: The `EndpointManager` applies the retry policy through middleware:
++
+[source,rust]
+----
+let client = ClientBuilder::new(reqwest::Client::new())
+    .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+    .build();
+----
+
+==== Retry vs Rotation
+
+The system handles failures at two levels:
+
+1. *Retry Mechanism*
+* Handles transient failures
+* Uses exponential backoff
+* Maximum of 2 retries per request
+* Same URL is used for retries
+
+2. *Endpoint Rotation*
+* Handles persistent failures (e.g., 429 rate limits)
+* Switches to different URLs in the fallback pool
+* Triggered by specific HTTP status codes
+* Maintains a pool of fallback URLs
 
 == Troubleshooting
 

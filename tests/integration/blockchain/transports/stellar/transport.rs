@@ -1,31 +1,11 @@
 use mockall::predicate;
 use openzeppelin_monitor::{
-	models::{BlockChainType, BlockType, Network, RpcUrl},
+	models::BlockType,
 	services::blockchain::{BlockChainClient, BlockChainError, StellarClient, StellarClientTrait},
 };
 use serde_json::{json, Value};
 
 use crate::integration::mocks::MockStellarTransportClient;
-
-fn create_mock_network() -> Network {
-	Network {
-		name: "mock".to_string(),
-		slug: "mock".to_string(),
-		network_type: BlockChainType::Stellar,
-		rpc_urls: vec![RpcUrl {
-			url: "http://localhost:8000".to_string(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: None,
-		network_passphrase: Some("Test SDF Network ; September 2015".to_string()),
-		block_time_ms: 5000,
-		max_past_blocks: None,
-	}
-}
 
 #[tokio::test]
 async fn test_get_transactions_success() {
@@ -74,7 +54,7 @@ async fn test_get_transactions_success() {
 		.times(1)
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_transactions(1, Some(2)).await;
 
 	assert!(result.is_ok());
@@ -89,7 +69,7 @@ async fn test_get_transactions_success() {
 #[tokio::test]
 async fn test_get_transactions_invalid_sequence_range() {
 	let mock_stellar = MockStellarTransportClient::new();
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 
 	let result = client.get_transactions(2, Some(1)).await;
 	assert!(result.is_err());
@@ -122,10 +102,10 @@ async fn test_get_transactions_failed_to_parse_transaction() {
 	mock_stellar
 		.expect_send_raw_request()
 		.with(predicate::eq("getTransactions"), predicate::always())
-		.times(2) // Called twice because of the with_retry mechanism
+		.times(1)
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_transactions(1, Some(2)).await;
 
 	assert!(result.is_err());
@@ -187,7 +167,7 @@ async fn test_get_events_success() {
 		)
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_events(1, Some(2)).await;
 
 	assert!(result.is_ok());
@@ -202,7 +182,7 @@ async fn test_get_events_success() {
 #[tokio::test]
 async fn test_get_events_invalid_sequence_range() {
 	let mock_stellar = MockStellarTransportClient::new();
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 
 	let result = client.get_events(2, Some(1)).await;
 	assert!(result.is_err());
@@ -231,14 +211,11 @@ async fn test_get_events_failed_to_parse_event() {
 
 	mock_stellar
 		.expect_send_raw_request()
-		.with(
-			predicate::eq("getEvents"),
-			predicate::always()
-		)
-		.times(2)  // Called twice due to retry mechanism
+		.with(predicate::eq("getEvents"), predicate::always())
+		.times(1)
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_events(1, Some(2)).await;
 
 	assert!(result.is_err());
@@ -266,7 +243,7 @@ async fn test_get_latest_block_number() {
 		.with(predicate::eq("getLatestLedger"), predicate::eq(None))
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_ok());
@@ -286,14 +263,11 @@ async fn test_get_latest_block_number_invalid_sequence() {
 
 	mock_stellar
 		.expect_send_raw_request()
-		.with(
-			predicate::eq("getLatestLedger"),
-			predicate::eq(None)
-		)
-		.times(2)  // Called twice due to retry mechanism
+		.with(predicate::eq("getLatestLedger"), predicate::eq(None))
+		.times(1)
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -341,7 +315,7 @@ async fn test_get_blocks_success() {
 		)
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_blocks(1, Some(2)).await;
 
 	assert!(result.is_ok());
@@ -375,14 +349,11 @@ async fn test_get_blocks_failed_to_parse() {
 
 	mock_stellar
 		.expect_send_raw_request()
-		.with(
-			predicate::eq("getLedgers"),
-			predicate::always()
-		)
-		.times(2)  // Called twice due to retry mechanism
+		.with(predicate::eq("getLedgers"), predicate::always())
+		.times(1)
 		.returning(move |_, _| Ok(mock_response.clone()));
 
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 	let result = client.get_blocks(1, Some(2)).await;
 
 	assert!(result.is_err());
@@ -397,7 +368,7 @@ async fn test_get_blocks_failed_to_parse() {
 #[tokio::test]
 async fn test_get_blocks_invalid_sequence_range() {
 	let mock_stellar = MockStellarTransportClient::new();
-	let client = StellarClient::new_with_transport(mock_stellar, &create_mock_network());
+	let client = StellarClient::new_with_transport(mock_stellar);
 
 	let result = client.get_blocks(2, Some(1)).await;
 	assert!(result.is_err());
