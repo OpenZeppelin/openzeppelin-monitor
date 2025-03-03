@@ -86,31 +86,28 @@ impl EndpointManager {
 			}
 		};
 
-		match transport.try_connect(&new_url).await {
-			Ok(_) => {
-				transport.update_client(&new_url).await?;
+		if transport.try_connect(&new_url).await.is_ok() {
+			transport.update_client(&new_url).await?;
 
-				// Update URLs
-				{
-					let mut active_url = self.active_url.write().await;
-					let mut fallback_urls = self.fallback_urls.write().await;
-					debug!(
-						"Successful rotation - from: {}, to: {}",
-						current_active, new_url
-					);
-					fallback_urls.push(current_active);
-					*active_url = new_url;
-				}
-				Ok(())
-			}
-			Err(_) => {
-				// Re-acquire lock to push back the failed URL
+			// Update URLs
+			{
+				let mut active_url = self.active_url.write().await;
 				let mut fallback_urls = self.fallback_urls.write().await;
-				fallback_urls.push(new_url);
-				Err(BlockChainError::connection_error(
-					"Failed to connect to fallback URL".to_string(),
-				))
+				debug!(
+					"Successful rotation - from: {}, to: {}",
+					current_active, new_url
+				);
+				fallback_urls.push(current_active);
+				*active_url = new_url;
 			}
+			Ok(())
+		} else {
+			// Re-acquire lock to push back the failed URL
+			let mut fallback_urls = self.fallback_urls.write().await;
+			fallback_urls.push(new_url);
+			Err(BlockChainError::connection_error(
+				"Failed to connect to fallback URL".to_string(),
+			))
 		}
 	}
 

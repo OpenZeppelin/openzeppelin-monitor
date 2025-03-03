@@ -197,25 +197,19 @@ impl Notifier for WebhookNotifier {
 
 		if let Some(headers_map) = &self.headers {
 			for (key, value) in headers_map {
-				match HeaderName::from_bytes(key.as_bytes()) {
-					Ok(header_name) => match HeaderValue::from_str(value) {
-						Ok(header_value) => {
-							headers.insert(header_name, header_value);
-						}
-						Err(_) => {
-							return Err(NotificationError::config_error(format!(
-								"Invalid header value for key: {}",
-								key
-							)));
-						}
-					},
-					Err(_) => {
-						return Err(NotificationError::config_error(format!(
-							"Invalid header name: {}",
-							key
-						)));
-					}
-				}
+				let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
+					return Err(NotificationError::config_error(format!(
+						"Invalid header name: {}",
+						key
+					)));
+				};
+				let Ok(header_value) = HeaderValue::from_str(value) else {
+					return Err(NotificationError::config_error(format!(
+						"Invalid header value for key: {}",
+						key
+					)));
+				};
+				headers.insert(header_name, header_value);
 			}
 		}
 
