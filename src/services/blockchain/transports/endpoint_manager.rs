@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing_core::Level;
 
 use crate::services::blockchain::{
 	transports::{RotatingTransport, ROTATE_ON_ERROR_CODES},
@@ -140,7 +141,10 @@ impl EndpointManager {
 		// TODO: initialise this outside of the function
 		let retry_policy = transport.get_retry_policy()?;
 		let client = ClientBuilder::new(reqwest::Client::new())
-			.with(RetryTransientMiddleware::new_with_policy(retry_policy))
+			.with(
+				RetryTransientMiddleware::new_with_policy(retry_policy)
+					.with_retry_log_level(Level::WARN),
+			)
 			.build();
 
 		loop {
