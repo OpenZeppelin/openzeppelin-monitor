@@ -1,0 +1,269 @@
+= RPC Client
+:description: Documentation for the RPC client implementation and endpoint management features.
+
+The OpenZeppelin Monitor includes a robust RPC client implementation with automatic endpoint rotation and fallback capabilities. This ensures reliable blockchain monitoring even when individual RPC endpoints experience issues.
+
+== Features:
+
+* Multiple RPC endpoint support with weighted load balancing
+* Automatic fallback on endpoint failures
+* Rate limit handling (429 responses)
+* Connection health checks
+* Thread-safe endpoint rotation
+
+== Configuration:
+
+=== RPC URLs:
+
+RPC endpoints are configured in the network configuration files with weights for load balancing:
+
+[source,json]
+----
+{
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": "https://primary-endpoint.example.com",
+      "weight": 100
+    },
+    {
+      "type_": "rpc",
+      "url": "https://backup-endpoint.example.com",
+      "weight": 50
+    }
+  ]
+}
+----
+
+[TIP]
+====
+For high-availability setups, configure at least 3 RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
+====
+
+=== Configuration Fields:
+
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|type_
+|String
+|Type of endpoint (currently only "rpc" is supported)
+
+|url
+|String
+|The RPC endpoint URL
+
+|weight
+|Number
+|Load balancing weight (0-100)
+|===
+
+== Endpoint Management:
+
+The endpoint manager handles:
+
+* Initial endpoint selection based on weights
+* Automatic rotation on failures
+* Connection health checks
+* Thread-safe endpoint updates
+
+=== Retry and Rotation Behavior:
+
+The RPC client includes an automatic retry mechanism for handling failures:
+
+* For 429 (Too Many Requests) responses:
+** Immediately rotates to a fallback URL
+** Retries the request with the new endpoint
+** Continues this process until successful or all endpoints are exhausted
+
+* For connection failures:
+** Immediately attempts to rotate to a fallback URL
+** If the new connection fails, returns the URL to the fallback pool
+** Continues until a successful connection is made or all URLs have been tried
+
+* For other errors:
+** Uses `reqwest-retry` middleware with exponential backoff strategy
+** Retries up to 2 times (configurable via `ExponentialBackoff` builder)
+** Automatically handles transient HTTP errors and network failures
+** Applies exponential backoff between retry attempts
+** Returns the final error if all retry attempts fail
+** Maintains the same URL throughout the retry process
+** Independent from the endpoint rotation mechanism
+
+==== Retry Strategy
+
+Each transport client implements `reqwest-retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
+
+===== Configuration Options
+
+The retry policy can be customized using the `ExponentialBackoff` builder in the respective transport client. The default retry policy is:
+
+[source,rust]
+----
+let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+----
+
+The retry policy can be customized with the following options:
+
+[source,rust]
+----
+pub struct ExponentialBackoff {
+    pub max_n_retries: Option<u32>,     // Maximum number of allowed retries attempts.
+    pub min_retry_interval: Duration,   // Minimum waiting time between two retry attempts (it can end up being lower when using full jitter).
+    pub max_retry_interval: Duration,   // Maximum waiting time between two retry attempts.
+    pub jitter: Jitter,                 // How we apply jitter to the calculated backoff intervals.
+    pub base: u32,                      // Base of the exponential.
+}
+----
+
+==== Implementation Details
+
+The retry mechanism is implemented at two levels:
+
+1. *Transport Level*: Each transport client maintains its own retry policy:
++
+[source,rust]
+----
+pub struct Web3TransportClient {
+  client: Arc<RwLock<Web3<Http>>>,
+  endpoint_manager: EndpointManager,
+  retry_policy: ExponentialBackoff,
+}
+
+pub struct StellarTransportClient {
+	pub client: Arc<RwLock<StellarHttpClient>>,
+	endpoint_manager: EndpointManager,
+	retry_policy: ExponentialBackoff,
+}
+----
+
+2. *Request Level*: The `EndpointManager` applies the retry policy through middleware:
++
+[source,rust]
+----
+let client = ClientBuilder::new(reqwest::Client::new())
+    .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+    .build();
+----
+
+This retry strategy ensures optimal handling of different types of failures while maintaining service availability.
+
+[mermaid,width=100%]
+....
+sequenceDiagram
+    participant M as Monitor
+    participant EM as Endpoint Manager
+    participant P as Primary RPC
+    participant F as Fallback RPC
+
+    rect rgb(240, 240, 240)
+        Note over M,F: Case 1: Rate Limit (429)
+        M->>EM: Send Request
+        EM->>P: Try Primary
+        P-->>EM: 429 Response
+        EM->>EM: Rotate URL
+        EM->>F: Try Fallback
+        F-->>EM: Success
+        EM-->>M: Return Response
+    end
+
+    rect rgb(240, 240, 240)
+        Note over M,F: Case 2: Connection Failure
+        M->>EM: Send Request
+        EM->>P: Try Primary
+        P--xEM: Connection Failed
+        EM->>EM: Rotate URL
+        EM->>F: Try Fallback
+        F-->>EM: Success
+        EM-->>M: Return Response
+    end
+
+    rect rgb(240, 240, 240)
+        Note over M,F: Case 3: Other Errors
+        M->>EM: Send Request
+        EM->>P: Try Primary
+        P-->>EM: Error Response
+        Note over EM: Wait with backoff
+        EM->>P: Retry #1
+        P-->>EM: Error Response
+        Note over EM: Wait with backoff
+        EM->>P: Retry #2
+        P-->>EM: Success
+        EM-->>M: Return Response
+    end
+....
+
+== List of RPC Calls
+
+Below is a list of RPC calls made by the monitor for each network type for each iteration of the cron schedule.
+As the number of blocks being processed increases, the number of RPC calls grows, potentially leading to rate limiting issues or increased costs if not properly managed.
+
+[mermaid,width=100%]
+....
+graph TD
+    A[Main] -->|EVM| B[Network #1]
+    A[Main] -->|Stellar| C[Network #2]
+    B -->|net_version| D[Process New Blocks]
+    C -->|getNetwork| D
+    D -->|eth_blockNumber| E[For every block in range]
+    D -->|getLatestLedger| F[In batches of 200 blocks]
+    E -->|eth_getBlockByNumber| G[Create Block Handler]
+    F -->|getLedgers| G
+    G -->|net_version| H[Filter Block]
+    G -->|getNetwork| H
+    H -->|EVM| J[For every transaction in block]
+    J -->|eth_getTransactionReceipt| I[Complete]
+    H -->|Stellar| K[In batches of 200 transactions and events]
+    K -->|getTransactions| L[Complete]
+    K -->|getEvents| L[Complete]
+
+....
+
+*EVM*
+
+* RPC Client initialization (per active network): `net_version`
+* Fetching the latest block number (per cron iteration): `eth_blockNumber`
+* Fetching block data (per block): `eth_getBlockByNumber`
+* RPC Client initialization (per block): `net_version`
+* Fetching transaction receipt (per transaction in block): `eth_getTransactionReceipt`
+
+*Stellar*
+
+* RPC Client initialization (per active network): `getNetwork`
+* Fetching the latest ledger (per cron iteration): `getLatestLedger`
+* Fetching ledger data (batched up to 200 in a single request): `getLedgers`
+* RPC Client initialization (per ledger): `getNetwork`
+* Fetching transactions (batched up to 200 in a single request): `getTransactions`
+* Fetching events (batched up to 200 in a single request): `getEvents`
+
+
+== Best Practices
+
+* Use private RPC providers when possible
+* Configure multiple fallback endpoints
+* Consider geographic distribution of endpoints
+* Monitor endpoint reliability and adjust weights accordingly
+
+== Troubleshooting
+
+=== Common Issues
+
+* *429 Too Many Requests*: Increase the number of fallback URLs or reduce monitoring frequency
+* *Connection Timeouts*: Check endpoint health and network connectivity
+* *Invalid Responses*: Verify RPC endpoint compatibility with your network type
+
+=== Logging
+
+Enable debug logging for detailed RPC client information:
+
+[source,bash]
+----
+RUST_LOG=debug
+----
+
+This will show:
+
+* Endpoint rotations
+* Connection attempts
+* Request/response details

@@ -7,19 +7,19 @@ CAUTION: This software is in alpha stage. Use in production environments at your
 
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
-**Features**
+**Features:**
 
 - Multi-chain support
 - Configurable monitoring schedules
 - Flexible trigger conditions
 - Extensible architecture for adding new chains
 
-**Supported Networks (OOTB)**
+**Supported Networks (OOTB):**
 
 - EVM
 - Stellar
 
-**Supported Triggers (OOTB)**
+**Supported Triggers (OOTB):**
 
 - Slack notifications
 - Email notifications
@@ -685,15 +685,15 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 Transaction-related variables (`transaction_from`, `transaction_to`, `transaction_value`) are not available for Stellar networks.
 ====
 
-==== Important Considerations
+==== Important Considerations:
 
-* Email notification port defaults to 465 if not specified
+* Email notification port defaults to 465 if not specified.
 * Template variables are context-dependent:
-** Event-triggered notifications only populate event variables
-** Function-triggered notifications only populate function variables
-** Mixing contexts results in empty values
-* Credentials in configuration files should be properly secured
-* Consider using environment variables for sensitive information
+** Event-triggered notifications only populate event variables.
+** Function-triggered notifications only populate function variables.
+** Mixing contexts results in empty values.
+* Credentials in configuration files should be properly secured.
+* Consider using environment variables for sensitive information.
 
 === Monitor Configuration
 
@@ -860,15 +860,15 @@ For Stellar function `transfer(Address,Address,I128)`:
 }
 ----
 
-==== Important Considerations
+==== Important Considerations:
 
-* Network slugs in the monitor must match valid network configurations
-* Trigger IDs must match configured triggers
-* Expression syntax and available variables differ between EVM and Stellar networks
-* ABIs are only relevant for EVM networks
-* The monitoring frequency is controlled by the network's `cron_schedule`
-* Each monitor can watch multiple networks and addresses simultaneously
-* Monitors can be paused without removing their configuration
+* Network slugs in the monitor must match valid network configurations.
+* Trigger IDs must match configured triggers.
+* Expression syntax and available variables differ between EVM and Stellar networks.
+* ABIs are only relevant for EVM networks.
+* The monitoring frequency is controlled by the network's `cron_schedule`.
+* Each monitor can watch multiple networks and addresses simultaneously.
+* Monitors can be paused without removing their configuration.
 
 == Running the Monitor
 
@@ -934,71 +934,23 @@ docker run \
   <your_image_tag>
 ----
 
-== Important Considerations
+== Important Considerations:
 
-=== Performance Considerations
+=== Performance Considerations:
 
-* Monitor performance depends on network congestion and RPC endpoint reliability
+* Monitor performance depends on network congestion and RPC endpoint reliability.
+** View the xref:rpc.adoc#list_of_rpc_calls[list of RPC calls] made by the monitor.
 * The `max_past_blocks` configuration is critical:
-** Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified)
-** Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`
-** Too low settings may result in missed blocks
+** Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
+** Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
+** Too low settings may result in missed blocks.
 
-==== List of RPC Calls
+=== Notification Considerations:
 
-Below is a list of RPC calls made by the monitor for each network type for each iteration of the cron schedule.
-As the number of blocks being processed increases, the number of RPC calls grows, potentially leading to rate limiting issues or increased costs if not properly managed.
-
-[NOTE]
-====
-It is recommended to use private RPC providers to avoid rate limiting and improve reliability as well as configure multiple RPC endpoints to load balance the requests.
-====
-
-[mermaid,width=100%]
-....
-graph TD
-    A[Main] -->|EVM| B[Network #1]
-    A[Main] -->|Stellar| C[Network #2]
-    B -->|net_version| D[Process New Blocks]
-    C -->|getNetwork| D
-    D -->|eth_blockNumber| E[For every block in range]
-    D -->|getLatestLedger| F[In batches of 200 blocks]
-    E -->|eth_getBlockByNumber| G[Create Block Handler]
-    F -->|getLedgers| G
-    G -->|net_version| H[Filter Block]
-    G -->|getNetwork| H
-    H -->|EVM| J[For every transaction in block]
-    J -->|eth_getTransactionReceipt| I[Complete]
-    H -->|Stellar| K[In batches of 200 transactions and events]
-    K -->|getTransactions| L[Complete]
-    K -->|getEvents| L[Complete]
-
-....
-
-*EVM*
-
-* RPC Client initialization (per active network): `net_version`
-* Fetching the latest block number (per cron iteration): `eth_blockNumber`
-* Fetching block data (per block): `eth_getBlockByNumber`
-* RPC Client initialization (per block): `net_version`
-* Fetching transaction receipt (per transaction in block): `eth_getTransactionReceipt`
-
-*Stellar*
-
-* RPC Client initialization (per active network): `getNetwork`
-* Fetching the latest ledger (per cron iteration): `getLatestLedger`
-* Fetching ledger data (batched up to 200 in a single request): `getLedgers`
-* RPC Client initialization (per ledger): `getNetwork`
-* Fetching transactions (batched up to 200 in a single request): `getTransactions`
-* Fetching events (batched up to 200 in a single request): `getEvents`
-
-=== Notification Considerations
-
-* Email notification port defaults to 465 if not specified
 * Template variables are context-dependent:
-** Event-triggered notifications only populate event variables
-** Function-triggered notifications only populate function variables
-** Mixing contexts results in empty values
+** Event-triggered notifications only populate event variables.
+** Function-triggered notifications only populate function variables.
+** Mixing contexts results in empty values.
 
 == Testing
 

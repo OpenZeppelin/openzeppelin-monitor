@@ -26,6 +26,9 @@ pub enum BlockChainError {
 
 	/// Internal errors within the blockchain client
 	InternalError(ErrorContext<String>),
+
+	/// Errors related to client pool
+	ClientPoolError(ErrorContext<String>),
 }
 
 impl ErrorContextProvider for BlockChainError {
@@ -36,6 +39,7 @@ impl ErrorContextProvider for BlockChainError {
 			Self::BlockNotFound(ctx) => Some(ctx),
 			Self::TransactionError(ctx) => Some(ctx),
 			Self::InternalError(ctx) => Some(ctx),
+			Self::ClientPoolError(ctx) => Some(ctx),
 		}
 	}
 }
@@ -215,6 +219,39 @@ impl BlockChainError {
 			.with_target(Self::format_target(target)),
 		)
 	}
+
+	/// Creates a new client pool error with logging
+	pub fn client_pool_error(
+		msg: impl Into<String>,
+		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
+	) -> Self {
+		Self::ClientPoolError(
+			ErrorContext::new(
+				"Client Pool Error",
+				msg.into(),
+				EnhancedContext::new(None).with_metadata(metadata),
+			)
+			.with_target(Self::format_target(target)),
+		)
+	}
+
+	/// Creates a new client pool error with logging and source error
+	pub fn client_pool_error_with_source(
+		msg: impl Into<String>,
+		source: impl ErrorContextProvider + 'static,
+		metadata: Option<HashMap<String, String>>,
+		target: Option<&str>,
+	) -> Self {
+		Self::ClientPoolError(
+			ErrorContext::new(
+				"Client Pool Error",
+				msg.into(),
+				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
+			)
+			.with_target(Self::format_target(target)),
+		)
+	}
 }
 
 impl std::error::Error for BlockChainError {}
@@ -228,6 +265,7 @@ impl std::fmt::Display for BlockChainError {
 			Self::BlockNotFound(ctx) => ctx.fmt(f),
 			Self::TransactionError(ctx) => ctx.fmt(f),
 			Self::InternalError(ctx) => ctx.fmt(f),
+			Self::ClientPoolError(ctx) => ctx.fmt(f),
 		}
 	}
 }
@@ -345,6 +383,28 @@ mod tests {
 		assert_eq!(error.to_string(), "test error (test source)");
 
 		let error = BlockChainError::internal_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+			None,
+		);
+		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+	}
+
+	#[test]
+	fn test_client_pool_error_formatting() {
+		let error = BlockChainError::client_pool_error("test error", None, None);
+		assert_eq!(error.to_string(), "test error");
+
+		let error = BlockChainError::client_pool_error_with_source(
+			"test error",
+			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			None,
+			None,
+		);
+		assert_eq!(error.to_string(), "test error (test source)");
+
+		let error = BlockChainError::client_pool_error_with_source(
 			"test error",
 			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
