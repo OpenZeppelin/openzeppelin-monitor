@@ -16,11 +16,17 @@ overflow-checks = true
 panic = 'unwind'
 
 [dependencies]
+actix-web = "4"
+actix-rt = "2.0.0"
 async-trait = "0.1"
 base64 = "0.22"
 chrono = "0.4"
 clap = { version = "4.5", features = ["cargo"] }
 cron = "0.15.0"
+simplelog = "0.12"
+prometheus = "0.13"
+lazy_static = "1.5"
+sysinfo = "0.33"
 dotenvy = "0.15.7"
 email_address = "0.2.9"
 env_logger = "0.11.5"

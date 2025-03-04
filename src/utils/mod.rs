@@ -8,6 +8,10 @@
 
 mod cron_utils;
 mod expression;
+mod logging;
+mod metrics;
 
 pub use cron_utils::*;
 pub use expression::*;
+pub use logging::*;
+pub use metrics::*;
