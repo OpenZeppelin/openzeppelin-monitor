@@ -91,7 +91,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 		// Write the input_json to stdin
 		cmd.stdin
 			.take()
-			.unwrap()
+			.ok_or_else(|| ScriptError::parse_error("Failed to get stdin handle".to_string()))?
 			.write_all(input_json.as_bytes())
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
@@ -149,7 +149,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		// Write the input_json to stdin
 		cmd.stdin
 			.take()
-			.unwrap()
+			.ok_or_else(|| ScriptError::execution_error("Failed to get stdin handle".to_string()))?
 			.write_all(input_json.as_bytes())
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
@@ -208,7 +208,7 @@ impl ScriptExecutor for BashScriptExecutor {
 		// Write the combined input_json to stdin
 		cmd.stdin
 			.take()
-			.unwrap()
+			.ok_or_else(|| ScriptError::execution_error("Failed to get stdin handle".to_string()))?
 			.write_all(input_json.as_bytes())
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
