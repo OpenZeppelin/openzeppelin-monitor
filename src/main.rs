@@ -35,6 +35,7 @@ use crate::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
+	utils::logging::setup_logging,
 };
 
 use clap::Command;
@@ -61,7 +62,8 @@ async fn main() -> Result<()> {
 
 	// Load environment variables from .env file
 	dotenv().ok();
-	env_logger::init();
+	//env_logger::init();
+	setup_logging();
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
 		initialize_services::<

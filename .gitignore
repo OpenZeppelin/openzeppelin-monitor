@@ -45,3 +45,6 @@ rust_docs
 
 # Ignore node_modules
 node_modules
+
+# Ignore logs dir
+logs/

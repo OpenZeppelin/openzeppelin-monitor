@@ -22,9 +22,6 @@ RUN apk add bash python-${version} py${version}-pip nodejs
 
 WORKDIR /app
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
-COPY --chown=nonroot:nonroot config /app/config
-COPY --chown=nonroot:nonroot data /app/data
-COPY --chown=nonroot:nonroot env_dev /app/.env
 
 ENV APP_PORT=8080
 ENV METRICS_PORT=8081

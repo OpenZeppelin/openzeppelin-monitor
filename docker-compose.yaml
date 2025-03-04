@@ -36,7 +36,7 @@ services:
       #- ${MONITOR_DATA_DIR:-./data}:/app/data
       # Uncomment to persist logs
       # Default: writes to stdout/console
-      #- ${LOGS_DATA_DIR:-./logs}:/app/logs
+      - ${LOGS_DATA_DIR:-./logs}:/app/logs
     networks:
       - monitor-network
       - metrics-network
