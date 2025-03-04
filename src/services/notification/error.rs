@@ -3,7 +3,7 @@
 //! Provides error types for notification-related operations,
 //! including network issues and configuration problems.
 
-use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
+use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
 use std::collections::HashMap;
 /// Represents possible errors during notification operations
 #[derive(Debug)]
@@ -17,6 +17,9 @@ pub enum NotificationError {
 }
 
 impl ErrorContextProvider for NotificationError {
+	fn target() -> &'static str {
+		"notification"
+	}
 	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 		match self {
 			Self::NetworkError(ctx) => Some(ctx),
@@ -27,28 +30,18 @@ impl ErrorContextProvider for NotificationError {
 }
 
 impl NotificationError {
-	const TARGET: &str = "notification";
-
-	fn format_target(target: Option<&str>) -> String {
-		if let Some(target) = target {
-			format!("{}::{}", Self::TARGET, target)
-		} else {
-			Self::TARGET.to_string()
-		}
-	}
 	/// Creates a new network error with logging
 	pub fn network_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::NetworkError(
-			ErrorContext::new(
-				"NotificationNetworkError",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::NetworkError,
+			"NotificationNetworkError",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -59,13 +52,13 @@ impl NotificationError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::NetworkError(
-			ErrorContext::new(
-				"NotificationNetworkError",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::NetworkError,
+			"NotificationNetworkError",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -75,13 +68,12 @@ impl NotificationError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ConfigError(
-			ErrorContext::new(
-				"NotificationConfigError",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::ConfigError,
+			"NotificationConfigError",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -92,13 +84,13 @@ impl NotificationError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ConfigError(
-			ErrorContext::new(
-				"NotificationConfigError",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::ConfigError,
+			"NotificationConfigError",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -108,13 +100,12 @@ impl NotificationError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::InternalError(
-			ErrorContext::new(
-				"NotificationInternalError",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::InternalError,
+			"NotificationInternalError",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -125,13 +116,13 @@ impl NotificationError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::InternalError(
-			ErrorContext::new(
-				"NotificationInternalError",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::InternalError,
+			"NotificationInternalError",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 }

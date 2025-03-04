@@ -24,11 +24,11 @@ use crate::{
 	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
-		RepositoryError, TriggerRepositoryTrait, TriggerService,
+		TriggerRepositoryTrait, TriggerService,
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
-		filter::{handle_match, FilterError, FilterService},
+		filter::{handle_match, FilterService},
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
@@ -67,14 +67,7 @@ where
 	let network_service = match network_service {
 		Some(service) => service,
 		None => {
-			let repository = N::new(None).map_err(|e| match &e {
-				RepositoryError::ValidationError(ctx)
-				| RepositoryError::LoadError(ctx)
-				| RepositoryError::InternalError(ctx) => {
-					ctx.log_once();
-					e
-				}
-			})?;
+			let repository = N::new(None)?;
 			NetworkService::<N>::new_with_repository(repository)?
 		}
 	};
@@ -82,14 +75,7 @@ where
 	let trigger_service = match trigger_service {
 		Some(service) => service,
 		None => {
-			let repository = T::new(None).map_err(|e| match &e {
-				RepositoryError::ValidationError(ctx)
-				| RepositoryError::LoadError(ctx)
-				| RepositoryError::InternalError(ctx) => {
-					ctx.log_once();
-					e
-				}
-			})?;
+			let repository = T::new(None)?;
 			TriggerService::<T>::new_with_repository(repository)?
 		}
 	};
@@ -101,15 +87,7 @@ where
 				None,
 				Some(network_service.clone()),
 				Some(trigger_service.clone()),
-			)
-			.map_err(|e| match &e {
-				RepositoryError::ValidationError(ctx)
-				| RepositoryError::LoadError(ctx)
-				| RepositoryError::InternalError(ctx) => {
-					ctx.log_once();
-					e
-				}
-			})?;
+			)?;
 			MonitorService::<M, N, T>::new_with_repository(repository)?
 		}
 	};
@@ -236,14 +214,7 @@ where
 		result = filter_service.filter_block(client, network, block, applicable_monitors) => {
 			match result {
 				Ok(matches) => Some(matches),
-				Err(e) => {
-					match &e {
-						FilterError::NetworkError(ctx) |
-						FilterError::BlockTypeMismatch(ctx) |
-						FilterError::InternalError(ctx) => {
-							ctx.log_once();
-						}
-					}
+				Err(_) => {
 					None
 				}
 			}
@@ -276,15 +247,7 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 			tokio::select! {
 				_ = async {
 					for monitor_match in &block.processing_results {
-						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
-							match &e {
-								FilterError::NetworkError(ctx) |
-								FilterError::BlockTypeMismatch(ctx) |
-								FilterError::InternalError(ctx) => {
-									ctx.log_once();
-								}
-							}
-						}
+						let _ = handle_match(monitor_match.clone(), &*trigger_service).await;
 					}
 				} => {}
 				_ = shutdown_rx.changed() => {

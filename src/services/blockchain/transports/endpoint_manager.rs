@@ -11,9 +11,12 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing_core::Level;
 
-use crate::services::blockchain::{
-	transports::{RotatingTransport, ROTATE_ON_ERROR_CODES},
-	BlockChainError,
+use crate::{
+	services::blockchain::{
+		transports::{RotatingTransport, ROTATE_ON_ERROR_CODES},
+		BlockChainError,
+	},
+	utils::ErrorContext,
 };
 
 /// Manages the rotation of blockchain RPC endpoints
@@ -158,12 +161,22 @@ impl EndpointManager {
 				.post(current_url.as_str())
 				.header("Content-Type", "application/json")
 				.body(serde_json::to_string(&request_body).map_err(|e| {
-					BlockChainError::request_error(e.to_string(), None, Some("send_raw_request"))
+					BlockChainError::request_error::<ErrorContext<String>>(
+						e.to_string(),
+						None,
+						None,
+						Some("send_raw_request"),
+					)
 				})?)
 				.send()
 				.await
 				.map_err(|e| {
-					BlockChainError::request_error(e.to_string(), None, Some("send_raw_request"))
+					BlockChainError::request_error::<ErrorContext<String>>(
+						e.to_string(),
+						None,
+						None,
+						Some("send_raw_request"),
+					)
 				})?;
 
 			let status = response.status();
@@ -180,15 +193,21 @@ impl EndpointManager {
 					continue;
 				}
 
-				return Err(BlockChainError::request_error(
+				return Err(BlockChainError::request_error::<ErrorContext<String>>(
 					format!("HTTP error {}: {}", status, error_body),
+					None,
 					None,
 					Some("send_raw_request"),
 				))?;
 			}
 
 			let json: Value = response.json().await.map_err(|e| {
-				BlockChainError::request_error(e.to_string(), None, Some("send_raw_request"))
+				BlockChainError::request_error::<ErrorContext<String>>(
+					e.to_string(),
+					None,
+					None,
+					Some("send_raw_request"),
+				)
 			})?;
 
 			return Ok(json);

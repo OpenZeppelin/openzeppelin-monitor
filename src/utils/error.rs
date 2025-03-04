@@ -14,17 +14,136 @@ use std::{
 };
 use uuid::Uuid;
 
+/// Helper function to format the target of the error
+///
+/// # Arguments
+/// * `target` - The target of the error
+///
+/// # Returns
+/// * `String` - The formatted target
+fn format_target<T: ErrorContextProvider>(target: Option<&str>) -> String {
+	if let Some(target) = target {
+		format!("{}::{}", T::target(), target)
+	} else {
+		T::target().to_string()
+	}
+}
+
+/// Helper function to format the target of the error with the source
+///
+/// # Arguments
+/// * `target` - The target of the error
+/// * `context` - The context of the error
+///
+/// # Returns
+/// * `String` - The formatted target
+pub fn format_target_with_source(
+	target: Option<&str>,
+	context: Option<&ErrorContext<String>>,
+) -> String {
+	match (target, context) {
+		(Some(target), Some(ctx)) => {
+			let source_target = ctx.get_recursive_source_target();
+			if source_target.is_empty() {
+				target.to_string()
+			} else {
+				format!("{}::{}", target, source_target)
+			}
+		}
+		(Some(target), None) => target.to_string(),
+		(None, Some(ctx)) => ctx.get_recursive_source_target(),
+		(None, None) => String::new(),
+	}
+}
+
+/// Helper function to create a new error of the specified type
+///
+/// # Arguments
+/// * `error_type` - The type of the error
+/// * `error_name` - The name of the error
+/// * `msg` - The message of the error
+/// * `metadata` - The metadata of the error
+/// * `target` - The target of the error
+///
+/// # Returns
+/// * `T` - The new error of the specified type
+pub fn new_error<T: ErrorContextProvider>(
+	error_type: fn(ErrorContext<String>) -> T,
+	error_name: &str,
+	msg: impl Into<String>,
+	metadata: Option<HashMap<String, String>>,
+	target: Option<&str>,
+) -> T {
+	let message = msg.into();
+	let target = format_target::<T>(target);
+	let context = ErrorContext::new(
+		error_name,
+		message,
+		EnhancedContext::new(None).with_metadata(metadata),
+	)
+	.with_target(target);
+
+	// Don't log here, we log in at higher level with `new_error_with_source`
+	// context.log_once();
+
+	error_type(context)
+}
+
+/// Helper function to create a new error with source of the specified type
+///
+/// # Arguments
+/// * `error_type` - The type of the error
+/// * `error_name` - The name of the error
+/// * `msg` - The message of the error
+/// * `source` - The source of the error
+/// * `metadata` - The metadata of the error
+/// * `target` - The target of the error
+///
+/// # Returns
+/// * `T` - The new error of the specified type
+pub fn new_error_with_source<T: ErrorContextProvider>(
+	error_type: fn(ErrorContext<String>) -> T,
+	error_name: &str,
+	msg: impl Into<String>,
+	source: impl ErrorContextProvider + 'static,
+	metadata: Option<HashMap<String, String>>,
+	target: Option<&str>,
+) -> T {
+	let message = msg.into();
+	let target = format_target::<T>(target);
+	let context = ErrorContext::new(
+		error_name,
+		message,
+		EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
+	)
+	.with_target(target);
+
+	context.log_once();
+
+	error_type(context)
+}
+
 /// A trait for types that can provide error context and serve as an error source
 pub trait ErrorContextProvider: std::error::Error + Send + Sync {
+	fn target() -> &'static str
+	where
+		Self: Sized;
 	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 		None
 	}
 }
 
-impl ErrorContextProvider for std::io::Error {}
+impl ErrorContextProvider for std::io::Error {
+	fn target() -> &'static str {
+		"std::io::Error"
+	}
+}
 impl<T: std::fmt::Display + std::fmt::Debug + Send + Sync> ErrorContextProvider
 	for ErrorContext<T>
 {
+	fn target() -> &'static str {
+		""
+	}
 	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 		None
 	}
@@ -174,15 +293,7 @@ impl<T: std::fmt::Display> ErrorContext<T> {
 	///
 	/// # Returns
 	pub fn with_target(mut self, target: impl Into<String>) -> Self {
-		let base_target = target.into();
-		let source_target = self.get_recursive_source_target();
-
-		self.target = if source_target.is_empty() {
-			Some(base_target)
-		} else {
-			Some(format!("{}{}", base_target, source_target))
-		};
-
+		self.target = Some(target.into());
 		self
 	}
 
@@ -192,6 +303,18 @@ impl<T: std::fmt::Display> ErrorContext<T> {
 	pub fn format_message(&self) -> String {
 		let mut message = format!("{}", self.message);
 
+		// Remove HTML tags and their content using a regex in case of server response errors
+		if message.contains('<') {
+			let re = regex::Regex::new(r"<[^>]*>.*?</[^>]*>|<[^>]*>").unwrap();
+			message = re
+				.replace_all(&message, "")
+				.to_string()
+				.replace('\n', " ")
+				.split_whitespace()
+				.collect::<Vec<&str>>()
+				.join(" ");
+		}
+
 		// Get the context formatting
 		let context = self.context.format();
 		if !context.is_empty() {
@@ -200,18 +323,24 @@ impl<T: std::fmt::Display> ErrorContext<T> {
 
 		message
 	}
+
 	/// Log the error if it hasn't been logged yet
 	pub fn log_once(&self) {
 		if !self.logged.swap(true, Ordering::SeqCst) {
-			if let Some(target) = &self.target {
-				error!(
-					target: format!("openzeppelin_monitor::{}", target).as_str(),
-					"{}",
-					self.format_message()
-				);
+			let full_target = if self.target.is_some() {
+				format!(
+					"openzeppelin_monitor::{}",
+					self.get_recursive_source_target()
+				)
 			} else {
-				error!("{}", self.format_message());
-			}
+				"openzeppelin_monitor".to_string()
+			};
+
+			error!(
+				target: &full_target,
+				"{}",
+				self.format_message()
+			);
 		}
 	}
 
@@ -225,8 +354,16 @@ impl<T: std::fmt::Display> ErrorContext<T> {
 	/// * `source` - The source of the error
 	///
 	/// # Returns
-	fn get_recursive_source_target(&self) -> String {
-		let mut target = String::new();
+	pub fn get_recursive_source_target(&self) -> String {
+		// Start with the current target if it exists
+		let mut parts = Vec::new();
+		if let Some(target) = &self.target {
+			if !target.is_empty() {
+				parts.push(target.to_string());
+			}
+		}
+
+		// Get source targets
 		let mut current_error = self.context.source.as_ref();
 		let mut depth = 0;
 		const MAX_DEPTH: usize = 8;
@@ -237,20 +374,10 @@ impl<T: std::fmt::Display> ErrorContext<T> {
 			}
 
 			if let Some(err_ctx) = err.provide_error_context() {
-				// First check if we have a next source
-				if err_ctx.context.source.is_none() {
-					// Add the final target if it exists
-					if let Some(ctx_target) = err_ctx.target() {
-						target.push_str("::");
-						target.push_str(&ctx_target);
+				if let Some(target) = err_ctx.target() {
+					if !target.is_empty() {
+						parts.push(target.to_string());
 					}
-					break;
-				}
-
-				// Add target and continue if we have more sources
-				if let Some(ctx_target) = err_ctx.target() {
-					target.push_str("::");
-					target.push_str(&ctx_target);
 				}
 				current_error = err_ctx.context.source.as_ref();
 			} else {
@@ -259,7 +386,8 @@ impl<T: std::fmt::Display> ErrorContext<T> {
 			depth += 1;
 		}
 
-		target
+		// Join non-empty parts with "::"
+		parts.join("::")
 	}
 }
 
@@ -429,6 +557,9 @@ mod tests {
 	impl std::error::Error for MockError {}
 
 	impl ErrorContextProvider for MockError {
+		fn target() -> &'static str {
+			"MockError"
+		}
 		fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 			self.context.as_ref()
 		}
@@ -473,7 +604,24 @@ mod tests {
 			error3.get_recursive_source_target(),
 			// Double entry for target1 as we use with_target which recursively adds the target as
 			// well
-			"::target2::target1::target1"
+			"target2::target1"
 		);
+	}
+
+	#[test]
+	fn test_error_context_html_stripping() {
+		let html_error = r#"Failed to get transaction receipts: HTTP error 429 Too Many Requests: <html>
+	<head><title>429 Too Many Requests</title></head>
+    <body>
+    <center><h1>429 Too Many Requests</h1></center>
+    <hr><center>nginx</center>
+    </body>
+    </html>"#;
+		let error = ErrorContext::new("test type", html_error, EnhancedContext::new(None));
+		let formatted = error.format_message();
+		assert!(!formatted.contains('<'));
+		assert!(!formatted.contains('>'));
+		assert!(formatted
+			.contains("Failed to get transaction receipts: HTTP error 429 Too Many Requests"));
 	}
 }

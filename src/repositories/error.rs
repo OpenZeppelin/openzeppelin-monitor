@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
+use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
 
 /// Errors that can occur during repository operations
 #[derive(Debug)]
@@ -22,6 +22,9 @@ pub enum RepositoryError {
 }
 
 impl ErrorContextProvider for RepositoryError {
+	fn target() -> &'static str {
+		"repository"
+	}
 	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 		match self {
 			Self::ValidationError(ctx) => Some(ctx),
@@ -32,29 +35,18 @@ impl ErrorContextProvider for RepositoryError {
 }
 
 impl RepositoryError {
-	const TARGET: &str = "repository";
-
-	fn format_target(target: Option<&str>) -> String {
-		if let Some(target) = target {
-			format!("{}::{}", Self::TARGET, target)
-		} else {
-			Self::TARGET.to_string()
-		}
-	}
-
 	/// Create a new validation error with logging
 	pub fn validation_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ValidationError(
-			ErrorContext::new(
-				"Validation Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::ValidationError,
+			"Validation Error",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -65,13 +57,13 @@ impl RepositoryError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ValidationError(
-			ErrorContext::new(
-				"Validation Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::ValidationError,
+			"Validation Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -81,14 +73,7 @@ impl RepositoryError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::LoadError(
-			ErrorContext::new(
-				"Load Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error(Self::LoadError, "Load Error", msg, metadata, target)
 	}
 
 	/// Create a new load error with source
@@ -98,14 +83,7 @@ impl RepositoryError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::LoadError(
-			ErrorContext::new(
-				"Load Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error_with_source(Self::LoadError, "Load Error", msg, source, metadata, target)
 	}
 
 	/// Create a new internal error with logging
@@ -114,14 +92,7 @@ impl RepositoryError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::InternalError(
-			ErrorContext::new(
-				"Internal Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error(Self::InternalError, "Internal Error", msg, metadata, target)
 	}
 
 	/// Create a new internal error with source
@@ -131,13 +102,13 @@ impl RepositoryError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::InternalError(
-			ErrorContext::new(
-				"Internal Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::InternalError,
+			"Internal Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 }

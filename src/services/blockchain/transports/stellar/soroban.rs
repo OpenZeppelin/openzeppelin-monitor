@@ -12,10 +12,10 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::{policies::ExponentialBackoff, Jitter};
 use serde::Serialize;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use stellar_rpc_client::Client as StellarHttpClient;
 use tokio::sync::RwLock;
 
@@ -48,7 +48,11 @@ impl StellarTransportClient {
 		stellar_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
 		// Default retry policy for Stellar transport
-		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+		let retry_policy = ExponentialBackoff::builder()
+			.base(2)
+			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+			.jitter(Jitter::None)
+			.build_with_max_retries(2);
 
 		for rpc_url in stellar_urls.iter() {
 			match StellarHttpClient::new(rpc_url.url.as_str()) {
@@ -115,14 +119,7 @@ impl BlockchainTransport for StellarTransportClient {
 		let response = self
 			.endpoint_manager
 			.send_raw_request(self, method, params)
-			.await
-			.map_err(|e| {
-				BlockChainError::request_error(
-					e.to_string(),
-					Some(HashMap::from([("method".to_string(), method.to_string())])),
-					Some("send_raw_request"),
-				)
-			})?;
+			.await?;
 
 		Ok(response)
 	}

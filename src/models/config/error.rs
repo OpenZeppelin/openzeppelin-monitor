@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
+use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
 
 /// Errors that can occur during configuration operations
 #[derive(Debug)]
@@ -22,6 +22,9 @@ pub enum ConfigError {
 }
 
 impl ErrorContextProvider for ConfigError {
+	fn target() -> &'static str {
+		"config"
+	}
 	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 		match self {
 			Self::ValidationError(ctx) => Some(ctx),
@@ -32,29 +35,18 @@ impl ErrorContextProvider for ConfigError {
 }
 
 impl ConfigError {
-	const TARGET: &str = "config";
-
-	fn format_target(target: Option<&str>) -> String {
-		if let Some(target) = target {
-			format!("{}::{}", Self::TARGET, target)
-		} else {
-			Self::TARGET.to_string()
-		}
-	}
-
 	/// Create a new validation error with logging
 	pub fn validation_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ValidationError(
-			ErrorContext::new(
-				"Validation Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::ValidationError,
+			"Validation Error",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -65,13 +57,13 @@ impl ConfigError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ValidationError(
-			ErrorContext::new(
-				"Validation Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::ValidationError,
+			"Validation Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -81,14 +73,7 @@ impl ConfigError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ParseError(
-			ErrorContext::new(
-				"Parse Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error(Self::ParseError, "Parse Error", msg, metadata, target)
 	}
 
 	/// Create a new parse error with source
@@ -98,13 +83,13 @@ impl ConfigError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ParseError(
-			ErrorContext::new(
-				"Parse Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::ParseError,
+			"Parse Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -114,14 +99,7 @@ impl ConfigError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::FileError(
-			ErrorContext::new(
-				"File Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error(Self::FileError, "File Error", msg, metadata, target)
 	}
 
 	/// Create a new file error with source
@@ -131,14 +109,7 @@ impl ConfigError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::FileError(
-			ErrorContext::new(
-				"File Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error_with_source(Self::FileError, "File Error", msg, source, metadata, target)
 	}
 }
 

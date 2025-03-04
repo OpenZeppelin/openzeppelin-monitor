@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
+use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
 
 /// Represents possible errors that can occur during block watching operations
 #[derive(Debug)]
@@ -52,6 +52,9 @@ pub enum BlockWatcherError {
 }
 
 impl ErrorContextProvider for BlockWatcherError {
+	fn target() -> &'static str {
+		"blockwatcher"
+	}
 	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 		match self {
 			Self::SchedulerError(ctx) => Some(ctx),
@@ -64,28 +67,18 @@ impl ErrorContextProvider for BlockWatcherError {
 }
 
 impl BlockWatcherError {
-	const TARGET: &str = "blockwatcher";
-
-	fn format_target(target: Option<&str>) -> String {
-		if let Some(target) = target {
-			format!("{}::{}", Self::TARGET, target)
-		} else {
-			Self::TARGET.to_string()
-		}
-	}
 	/// Creates a new scheduler error with logging
 	pub fn scheduler_error(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::SchedulerError(
-			ErrorContext::new(
-				"Scheduler Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::SchedulerError,
+			"Scheduler Error",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -96,13 +89,13 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::SchedulerError(
-			ErrorContext::new(
-				"Scheduler Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::SchedulerError,
+			"Scheduler Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -112,14 +105,7 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::NetworkError(
-			ErrorContext::new(
-				"Network Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error(Self::NetworkError, "Network Error", msg, metadata, target)
 	}
 
 	/// Creates a new network error with source
@@ -129,13 +115,13 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::NetworkError(
-			ErrorContext::new(
-				"Network Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::NetworkError,
+			"Network Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -145,13 +131,12 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ProcessingError(
-			ErrorContext::new(
-				"Processing Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::ProcessingError,
+			"Processing Error",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -162,13 +147,13 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::ProcessingError(
-			ErrorContext::new(
-				"Processing Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::ProcessingError,
+			"Processing Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -178,14 +163,7 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::StorageError(
-			ErrorContext::new(
-				"Storage Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error(Self::StorageError, "Storage Error", msg, metadata, target)
 	}
 
 	/// Creates a new storage error with source
@@ -195,13 +173,13 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::StorageError(
-			ErrorContext::new(
-				"Storage Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::StorageError,
+			"Storage Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -211,13 +189,12 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::BlockTrackerError(
-			ErrorContext::new(
-				"Block Tracker Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::BlockTrackerError,
+			"Block Tracker Error",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -228,13 +205,13 @@ impl BlockWatcherError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::BlockTrackerError(
-			ErrorContext::new(
-				"Block Tracker Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::BlockTrackerError,
+			"Block Tracker Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 }

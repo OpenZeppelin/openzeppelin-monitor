@@ -22,7 +22,7 @@ use crate::{
 		TransactionStatus,
 	},
 	services::{
-		blockchain::{BlockChainClient, StellarClientTrait},
+		blockchain::{BlockChainClient, BlockChainError, StellarClientTrait},
 		filter::{
 			stellar_helpers::{
 				are_same_signature, compare_json_values, compare_json_values_vs_string,
@@ -1055,9 +1055,9 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 			.get_transactions(stellar_block.sequence, None)
 			.await
 			.map_err(|e| {
-				FilterError::network_error_with_source(
+				FilterError::network_error::<BlockChainError>(
 					"Failed to get transactions",
-					e,
+					Some(e),
 					Some(context.clone()),
 					Some("filter_block"),
 				)
@@ -1074,9 +1074,9 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 			.get_events(stellar_block.sequence, None)
 			.await
 			.map_err(|e| {
-				FilterError::network_error_with_source(
+				FilterError::network_error::<BlockChainError>(
 					"Failed to get events",
-					e,
+					Some(e),
 					Some(context.clone()),
 					Some("filter_block"),
 				)

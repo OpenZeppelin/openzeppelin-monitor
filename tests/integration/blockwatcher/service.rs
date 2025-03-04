@@ -16,7 +16,7 @@ use openzeppelin_monitor::{
 			BlockWatcherService, NetworkBlockWatcher,
 		},
 	},
-	utils::get_cron_interval_ms,
+	utils::{get_cron_interval_ms, ErrorContext},
 };
 
 #[derive(Clone, Default)]
@@ -117,7 +117,7 @@ fn setup_mocks(
 			.withf(move |network: &Network, num: &u64| {
 				network.network_type == BlockChainType::EVM && *num == block_num
 			})
-			.returning(|_, _| ())
+			.returning(|_, _| Ok(()))
 			.times(1);
 	}
 
@@ -156,7 +156,7 @@ async fn test_normal_block_range() {
 			.withf(move |network: &Network, num: &u64| {
 				network.network_type == BlockChainType::EVM && *num == block_num
 			})
-			.returning(|_, _| ());
+			.returning(|_, _| Ok(()));
 	}
 
 	// Create block processing handler that returns a ProcessedBlock
@@ -780,8 +780,9 @@ async fn test_process_new_blocks_network_errors() {
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| {
-			Err(BlockChainError::request_error(
+			Err(BlockChainError::request_error::<ErrorContext<String>>(
 				"RPC error",
+				None,
 				None,
 				Some("test_error"),
 			))
@@ -838,8 +839,9 @@ async fn test_process_new_blocks_get_blocks_error() {
 	rpc_client
 		.expect_get_blocks()
 		.returning(|_, _| {
-			Err(BlockChainError::request_error(
+			Err(BlockChainError::request_error::<ErrorContext<String>>(
 				"Failed to fetch blocks",
+				None,
 				None,
 				Some("test_error"),
 			))
@@ -906,7 +908,7 @@ async fn test_process_new_blocks_storage_save_error() {
 	block_tracker
 		.expect_record_block()
 		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| ())
+		.returning(|_, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -975,7 +977,7 @@ async fn test_process_new_blocks_save_last_processed_error() {
 	block_tracker
 		.expect_record_block()
 		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| ())
+		.returning(|_, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -1047,7 +1049,7 @@ async fn test_process_new_blocks_storage_delete_error() {
 	block_tracker
 		.expect_record_block()
 		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| ())
+		.returning(|_, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -1287,8 +1289,9 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 		.expect_get_blocks()
 		.with(predicate::eq(99), predicate::eq(None))
 		.returning(|_, _| {
-			Err(BlockChainError::request_error(
+			Err(BlockChainError::request_error::<ErrorContext<String>>(
 				"Failed to fetch block",
+				None,
 				None,
 				Some("test_error"),
 			))

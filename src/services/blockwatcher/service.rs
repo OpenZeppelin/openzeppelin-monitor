@@ -169,7 +169,7 @@ where
 			let rpc_client = rpc_client.clone();
 			let trigger_handler = trigger_handler.clone();
 			Box::pin(async move {
-				match process_new_blocks(
+				let _ = process_new_blocks(
 					&network,
 					&rpc_client,
 					block_storage,
@@ -177,19 +177,7 @@ where
 					trigger_handler,
 					block_tracker,
 				)
-				.await
-				{
-					Ok(_) => (),
-					Err(e) => match e {
-						BlockWatcherError::NetworkError(e)
-						| BlockWatcherError::StorageError(e)
-						| BlockWatcherError::ProcessingError(e)
-						| BlockWatcherError::SchedulerError(e)
-						| BlockWatcherError::BlockTrackerError(e) => {
-							e.log_once();
-						}
-					},
-				}
+				.await;
 			})
 		})
 		.map_err(|e| {
@@ -517,7 +505,7 @@ pub async fn process_new_blocks<
 			let block_number = block.number().unwrap_or(0);
 
 			// Record block in tracker
-			block_tracker.record_block(&network, block_number).await;
+			block_tracker.record_block(&network, block_number).await?;
 
 			// Send block to processing pipeline
 			process_tx
@@ -527,14 +515,24 @@ pub async fn process_new_blocks<
 					BlockWatcherError::processing_error(
 						format!("Failed to send block to pipeline: {}", e),
 						None,
-						Some("process_new_blocks"),
+						Some("send"),
 					)
-				})
+				})?;
+
+			Ok::<(), BlockWatcherError>(())
 		}
 	}))
 	.await
 	.into_iter()
-	.collect::<Result<Vec<_>, _>>()?;
+	.collect::<Result<Vec<_>, _>>()
+	.map_err(|e| {
+		BlockWatcherError::processing_error_with_source(
+			"Failed to process new blocks",
+			e,
+			None,
+			Some("process_new_blocks"),
+		)
+	})?;
 
 	// Drop the sender after all blocks are sent
 	drop(process_tx);

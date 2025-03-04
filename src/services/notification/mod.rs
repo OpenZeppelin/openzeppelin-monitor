@@ -70,10 +70,7 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await
-						.map_err(|e| {
-							NotificationError::config_error(e.to_string(), None, Some("execute"))
-						})?;
+						.await?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid slack configuration",
@@ -87,10 +84,7 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await
-						.map_err(|e| {
-							NotificationError::config_error(e.to_string(), None, Some("execute"))
-						})?;
+						.await?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid email configuration",
@@ -104,10 +98,7 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await
-						.map_err(|e| {
-							NotificationError::config_error(e.to_string(), None, Some("execute"))
-						})?;
+						.await?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid webhook configuration",
@@ -122,10 +113,7 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await
-						.map_err(|e| {
-							NotificationError::config_error(e.to_string(), None, Some("execute"))
-						})?;
+						.await?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid discord configuration",

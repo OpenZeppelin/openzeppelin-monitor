@@ -21,6 +21,7 @@ use crate::{
 		},
 		filter::StellarBlockFilter,
 	},
+	utils::{format_target_with_source, ErrorContext, ErrorContextProvider},
 };
 
 /// Client implementation for the Stellar blockchain
@@ -101,11 +102,12 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error(
-					format!(
+				return Err(BlockChainError::request_error::<ErrorContext<String>>(
+					&format!(
 						"start_sequence {} cannot be greater than end_sequence {}",
 						start_sequence, end_sequence
 					),
+					None,
 					None,
 					Some("get_transactions"),
 				));
@@ -136,10 +138,14 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 				.send_raw_request("getTransactions", Some(params))
 				.await
 				.map_err(|e| {
-					BlockChainError::request_error(
-						e.to_string(),
+					let err_msg = e.to_string();
+					let err_ctx = e.provide_error_context();
+					let target = format_target_with_source(Some("get_transactions"), err_ctx);
+					BlockChainError::request_error::<BlockChainError>(
+						&err_msg,
+						None,
 						Some(context.clone()),
-						Some("get_transactions"),
+						Some(&target),
 					)
 				})?;
 
@@ -147,8 +153,9 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 				response["result"]["transactions"].clone(),
 			)
 			.map_err(|e| {
-				BlockChainError::request_error(
-					format!("Failed to parse transaction response: {}", e),
+				BlockChainError::request_error::<ErrorContext<String>>(
+					&format!("Failed to parse transaction response: {}", e),
+					None,
 					Some(context.clone()),
 					Some("get_transactions"),
 				)
@@ -190,11 +197,12 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error(
-					format!(
+				return Err(BlockChainError::request_error::<ErrorContext<String>>(
+					&format!(
 						"start_sequence {} cannot be greater than end_sequence {}",
 						start_sequence, end_sequence
 					),
+					None,
 					None,
 					Some("get_events"),
 				));
@@ -228,17 +236,22 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 				.send_raw_request("getEvents", Some(params))
 				.await
 				.map_err(|e| {
-					BlockChainError::request_error(
-						e.to_string(),
+					let err_msg = e.to_string();
+					let err_ctx = e.provide_error_context();
+					let target = format_target_with_source(Some("get_events"), err_ctx);
+					BlockChainError::request_error::<BlockChainError>(
+						&err_msg,
+						None,
 						Some(context.clone()),
-						Some("get_events"),
+						Some(&target),
 					)
 				})?;
 
 			let ledger_events: Vec<StellarEvent> =
 				serde_json::from_value(response["result"]["events"].clone()).map_err(|e| {
-					BlockChainError::request_error(
-						format!("Failed to parse event response: {}", e),
+					BlockChainError::request_error::<ErrorContext<String>>(
+						&format!("Failed to parse event response: {}", e),
+						None,
 						Some(context.clone()),
 						Some("get_events"),
 					)
@@ -287,12 +300,21 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 			.send_raw_request::<serde_json::Value>("getLatestLedger", None)
 			.await
 			.map_err(|e| {
-				BlockChainError::request_error(e.to_string(), None, Some("get_latest_block_number"))
+				let err_msg = e.to_string();
+				let err_ctx = e.provide_error_context();
+				let target = format_target_with_source(Some("get_latest_block_number"), err_ctx);
+				BlockChainError::request_error::<BlockChainError>(
+					&err_msg,
+					None,
+					None,
+					Some(&target),
+				)
 			})?;
 
 		let sequence = response["result"]["sequence"].as_u64().ok_or_else(|| {
-			BlockChainError::request_error(
-				"Invalid sequence number".to_string(),
+			BlockChainError::request_error::<ErrorContext<String>>(
+				"Invalid sequence number",
+				None,
 				None,
 				Some("get_latest_block_number"),
 			)
@@ -320,11 +342,12 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 		// Validate input parameters
 		if let Some(end_block) = end_block {
 			if start_block > end_block {
-				return Err(BlockChainError::request_error(
-					format!(
+				return Err(BlockChainError::request_error::<ErrorContext<String>>(
+					&format!(
 						"start_block {} cannot be greater than end_block {}",
 						start_block, end_block
 					),
+					None,
 					None,
 					Some("get_blocks"),
 				));
@@ -353,17 +376,22 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 				.send_raw_request("getLedgers", Some(params))
 				.await
 				.map_err(|e| {
-					BlockChainError::request_error(
-						e.to_string(),
+					let err_msg = e.to_string();
+					let err_ctx = e.provide_error_context();
+					let target = format_target_with_source(Some("get_blocks"), err_ctx);
+					BlockChainError::request_error::<BlockChainError>(
+						&err_msg,
+						None,
 						Some(context.clone()),
-						Some("get_blocks"),
+						Some(&target),
 					)
 				})?;
 
 			let ledgers: Vec<StellarBlock> =
 				serde_json::from_value(response["result"]["ledgers"].clone()).map_err(|e| {
-					BlockChainError::request_error(
-						format!("Failed to parse ledger response: {}", e),
+					BlockChainError::request_error::<ErrorContext<String>>(
+						&format!("Failed to parse ledger response: {}", e),
+						None,
 						Some(context.clone()),
 						Some("get_blocks"),
 					)

@@ -67,7 +67,7 @@ mock! {
 	#[async_trait]
 	impl<S: BlockStorage + 'static> BlockTrackerTrait<S> for BlockTracker<S> {
 		 fn new(history_size: usize, storage: Option<std::sync::Arc<S> >) -> Self;
-		 async fn record_block(&self, network: &Network, block_number: u64);
+		 async fn record_block(&self, network: &Network, block_number: u64) -> Result<(), BlockWatcherError>;
 		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
 	}
 }

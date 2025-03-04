@@ -118,25 +118,15 @@ graph TD
 The project follows a standard Rust project layout:
 
 * `src/`: Source code
-** Core implementation files
-* `models/`: Data structures and types
-** Type definitions and data models
-* `repositories/`: Configuration storage
-** Storage implementations
-* `services/`: Core business logic
-** Main service implementations
-* `utils/`: Helper functions
-** Utility and helper functions
-* `config/`: Configuration files
-** Network, monitor, and trigger configs
+** `models/`: Data structures and types
+** `repositories/`: Configuration storage
+** `services/`: Core business logic
+** `utils/`: Helper functions
+** `config/`: Configuration files
 * `tests/`: Integration tests
-** Test suites and fixtures
 * `data/`: Runtime data storage
-** Block data and operational state
 * `docs/`: Documentation
-** User guides and API docs
 * `scripts/`: Utility scripts
-** Development and deployment helpers
 
 For detailed information about each directory and its contents, see xref:structure.adoc[Project Structure Details].
 

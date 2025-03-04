@@ -3,10 +3,10 @@
 //! This module provides a client implementation for interacting with EVM-compatible nodes
 //! via Web3, supporting connection management and raw JSON-RPC request functionality.
 
-use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::{policies::ExponentialBackoff, Jitter};
 use serde::Serialize;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use web3::{transports::Http, Web3};
 
@@ -50,7 +50,11 @@ impl Web3TransportClient {
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
 		// Default retry policy for Web3 transport
-		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+		let retry_policy = ExponentialBackoff::builder()
+			.base(2)
+			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+			.jitter(Jitter::None)
+			.build_with_max_retries(2);
 
 		for rpc_url in rpc_urls.iter() {
 			match Http::new(&rpc_url.url) {
@@ -123,14 +127,7 @@ impl BlockchainTransport for Web3TransportClient {
 		let response = self
 			.endpoint_manager
 			.send_raw_request(self, method, params)
-			.await
-			.map_err(|e| {
-				BlockChainError::connection_error(
-					e.to_string(),
-					Some(HashMap::from([("method".to_string(), method.to_string())])),
-					Some("send_raw_request"),
-				)
-			})?;
+			.await?;
 
 		Ok(response)
 	}

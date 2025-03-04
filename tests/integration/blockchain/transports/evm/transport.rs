@@ -1,6 +1,7 @@
 use mockall::predicate;
-use openzeppelin_monitor::services::blockchain::{
-	BlockChainClient, BlockChainError, EvmClient, EvmClientTrait,
+use openzeppelin_monitor::{
+	services::blockchain::{BlockChainClient, BlockChainError, EvmClient, EvmClientTrait},
+	utils::ErrorContext,
 };
 use serde_json::{json, Value};
 use web3::types::H160;
@@ -143,8 +144,9 @@ async fn test_get_logs_for_blocks_web3_error() {
 	mock_web3
 		.expect_send_raw_request()
 		.returning(|_: &str, _: Option<Vec<Value>>| {
-			Err(BlockChainError::request_error(
+			Err(BlockChainError::request_error::<ErrorContext<String>>(
 				"Web3 error",
+				None,
 				None,
 				Some("get_logs_for_blocks"),
 			))
@@ -464,14 +466,22 @@ async fn test_get_blocks_missing_result() {
 	let mut mock_web3 = MockWeb3TransportClient::new();
 
 	// Mock response without result field
-	let mock_response = json!({
-		"jsonrpc": "2.0",
-		"id": 1
-	});
+	mock_web3.expect_clone().returning(|| {
+		let mut new_mock = MockWeb3TransportClient::new();
+		let mock_response = json!({
+			"jsonrpc": "2.0",
+			"id": 1
+		});
 
-	mock_web3
-		.expect_send_raw_request()
-		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+		new_mock
+			.expect_send_raw_request()
+			.times(1)
+			.returning(move |_, _| Ok(mock_response.clone()));
+		new_mock
+			.expect_clone()
+			.returning(MockWeb3TransportClient::new);
+		new_mock
+	});
 
 	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
@@ -489,16 +499,22 @@ async fn test_get_blocks_missing_result() {
 async fn test_get_blocks_null_result() {
 	let mut mock_web3 = MockWeb3TransportClient::new();
 
-	// Mock response with null result
-	let mock_response = json!({
-		"jsonrpc": "2.0",
-		"id": 1,
-		"result": null
+	mock_web3.expect_clone().returning(|| {
+		let mut new_mock = MockWeb3TransportClient::new();
+		// Mock response with null result
+		let mock_response = json!({
+			"jsonrpc": "2.0",
+			"id": 1,
+			"result": null
+		});
+		new_mock
+			.expect_send_raw_request()
+			.returning(move |_, _| Ok(mock_response.clone()));
+		new_mock
+			.expect_clone()
+			.returning(MockWeb3TransportClient::new);
+		new_mock
 	});
-
-	mock_web3
-		.expect_send_raw_request()
-		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
 	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
@@ -516,20 +532,26 @@ async fn test_get_blocks_null_result() {
 async fn test_get_blocks_parse_failure() {
 	let mut mock_web3 = MockWeb3TransportClient::new();
 
-	// Mock response with malformed block data
-	let mock_response = json!({
-		"jsonrpc": "2.0",
-		"id": 1,
-		"result": {
-			"number": "not_a_hex_number",
-			"hash": "invalid_hash",
-			// Missing required fields
-		}
+	mock_web3.expect_clone().returning(|| {
+		let mut new_mock = MockWeb3TransportClient::new();
+		// Mock response with malformed block data
+		let mock_response = json!({
+			"jsonrpc": "2.0",
+			"id": 1,
+			"result": {
+				"number": "not_a_hex_number",
+				"hash": "invalid_hash",
+				// Missing required fields
+			}
+		});
+		new_mock
+			.expect_send_raw_request()
+			.returning(move |_, _| Ok(mock_response.clone()));
+		new_mock
+			.expect_clone()
+			.returning(MockWeb3TransportClient::new);
+		new_mock
 	});
-
-	mock_web3
-		.expect_send_raw_request()
-		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
 	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 

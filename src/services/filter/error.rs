@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::{EnhancedContext, ErrorContext, ErrorContextProvider};
+use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
 
 /// Represents errors that can occur during filter operations
 #[derive(Debug)]
@@ -19,6 +19,9 @@ pub enum FilterError {
 }
 
 impl ErrorContextProvider for FilterError {
+	fn target() -> &'static str {
+		"filter"
+	}
 	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
 		match self {
 			Self::BlockTypeMismatch(ctx) => Some(ctx),
@@ -29,28 +32,18 @@ impl ErrorContextProvider for FilterError {
 }
 
 impl FilterError {
-	const TARGET: &str = "filter";
-
-	fn format_target(target: Option<&str>) -> String {
-		if let Some(target) = target {
-			format!("{}::{}", Self::TARGET, target)
-		} else {
-			Self::TARGET.to_string()
-		}
-	}
 	/// Creates a new block type mismatch error
 	pub fn block_type_mismatch(
 		msg: impl Into<String>,
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::BlockTypeMismatch(
-			ErrorContext::new(
-				"Block Type Mismatch Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error(
+			Self::BlockTypeMismatch,
+			"Block Type Mismatch Error",
+			msg,
+			metadata,
+			target,
 		)
 	}
 
@@ -61,30 +54,35 @@ impl FilterError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::BlockTypeMismatch(
-			ErrorContext::new(
-				"Block Type Mismatch Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::BlockTypeMismatch,
+			"Block Type Mismatch Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
-	/// Creates a new network error
-	pub fn network_error(
+	/// Creates a new network error with logging
+	pub fn network_error<T: ErrorContextProvider + 'static>(
 		msg: impl Into<String>,
+		source: Option<T>,
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::NetworkError(
-			ErrorContext::new(
+		if let Some(source) = source {
+			new_error_with_source(
+				Self::NetworkError,
 				"Network Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
+				msg,
+				source,
+				metadata,
+				target,
 			)
-			.with_target(Self::format_target(target)),
-		)
+		} else {
+			new_error(Self::NetworkError, "Network Error", msg, metadata, target)
+		}
 	}
 
 	/// Creates a new network error with source
@@ -94,13 +92,13 @@ impl FilterError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::NetworkError(
-			ErrorContext::new(
-				"Network Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::NetworkError,
+			"Network Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 
@@ -110,14 +108,7 @@ impl FilterError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::InternalError(
-			ErrorContext::new(
-				"Internal Error",
-				msg.into(),
-				EnhancedContext::new(None).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
-		)
+		new_error(Self::InternalError, "Internal Error", msg, metadata, target)
 	}
 
 	/// Creates a new internal error with source
@@ -127,13 +118,13 @@ impl FilterError {
 		metadata: Option<HashMap<String, String>>,
 		target: Option<&str>,
 	) -> Self {
-		Self::InternalError(
-			ErrorContext::new(
-				"Internal Error",
-				msg.into(),
-				EnhancedContext::new(Some(Box::new(source))).with_metadata(metadata),
-			)
-			.with_target(Self::format_target(target)),
+		new_error_with_source(
+			Self::InternalError,
+			"Internal Error",
+			msg,
+			source,
+			metadata,
+			target,
 		)
 	}
 }
@@ -179,7 +170,7 @@ mod tests {
 
 	#[test]
 	fn test_network_error_formatting() {
-		let error = FilterError::network_error("test error", None, None);
+		let error = FilterError::network_error::<FilterError>("test error", None, None, None);
 		assert_eq!(error.to_string(), "test error");
 
 		let error = FilterError::network_error_with_source(
