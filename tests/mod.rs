@@ -71,6 +71,7 @@ mod integration {
 	mod notifications {
 		mod discord;
 		mod email;
+		mod scripts;
 		mod slack;
 		mod webhook;
 	}
