@@ -328,10 +328,7 @@ async fn execute_trigger_condition(
 
 	let result = tokio::time::timeout(
 		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
-		executor.execute(
-			monitor_match.clone(),
-			trigger_condition.arguments.as_deref().unwrap_or(""),
-		),
+		executor.execute(monitor_match.clone(), &trigger_condition.arguments),
 	)
 	.await;
 
@@ -425,7 +422,7 @@ mod tests {
 				language: ScriptLanguage::Python,
 				script_path: script_path.unwrap_or("test.py").to_string(),
 				timeout_ms: 1000,
-				arguments: None,
+				arguments: vec![],
 			}],
 			..Default::default()
 		}
@@ -667,7 +664,7 @@ print(False)  # Script returns false
 			language: ScriptLanguage::Python,
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
-			arguments: None,
+			arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
 		let script_content = (ScriptLanguage::Python, script_content.to_string());
@@ -687,7 +684,7 @@ raise Exception("Test error")  # Raise an error
 			language: ScriptLanguage::Python,
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
-			arguments: None,
+			arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
 		let script_content = (ScriptLanguage::Python, script_content.to_string());
@@ -703,7 +700,7 @@ raise Exception("Test error")  # Raise an error
 			language: ScriptLanguage::Python,
 			script_path: "non_existent_script.py".to_string(),
 			timeout_ms: 1000,
-			arguments: None,
+			arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match(Some("non_existent_script.py"));
 		let script_content = (ScriptLanguage::Python, "invalid script content".to_string());
@@ -725,13 +722,13 @@ raise Exception("Test error")  # Raise an error
 					language: ScriptLanguage::Python,
 					script_path: "test1.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "test2.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 			],
 			..Default::default()
@@ -801,13 +798,13 @@ print(True)
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 			],
 			..Default::default()
@@ -853,13 +850,13 @@ print(True)
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 			],
 			..Default::default()
@@ -904,13 +901,13 @@ print(True)
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 			],
 			..Default::default()
@@ -955,19 +952,19 @@ print(True)
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition3.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 			],
 			..Default::default()
@@ -1016,19 +1013,19 @@ print(True)
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition3.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 			],
 			..Default::default()
@@ -1130,13 +1127,13 @@ print(result)
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
 					timeout_ms: 1000,
-					arguments: None,
+					arguments: vec![],
 				},
 			],
 			..Default::default()
