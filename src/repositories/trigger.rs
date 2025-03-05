@@ -26,9 +26,8 @@ impl TriggerRepository {
 	/// Loads all trigger configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
 	pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path).map_err(|e| {
-			RepositoryError::load_error_with_source("Failed to load triggers", e, None, Some("new"))
-		})?;
+		let triggers = Self::load_all(path)
+			.map_err(|_| RepositoryError::load_error("Failed to load triggers", None, None))?;
 		Ok(TriggerRepository { triggers })
 	}
 }
@@ -62,15 +61,13 @@ pub trait TriggerRepositoryTrait: Clone {
 
 impl TriggerRepositoryTrait for TriggerRepository {
 	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path).map_err(|e| {
-			RepositoryError::load_error_with_source("Failed to load triggers", e, None, Some("new"))
-		})?;
+		let triggers = Self::load_all(path)
+			.map_err(|_| RepositoryError::load_error("Failed to load triggers", None, None))?;
 		Ok(TriggerRepository { triggers })
 	}
 
 	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
-		Trigger::load_all(path)
-			.map_err(|e| RepositoryError::load_error(e.to_string(), None, Some("load_all")))
+		Trigger::load_all(path).map_err(|e| RepositoryError::load_error(e.to_string(), None, None))
 	}
 
 	fn get(&self, trigger_id: &str) -> Option<Trigger> {

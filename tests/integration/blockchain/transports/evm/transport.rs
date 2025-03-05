@@ -1,8 +1,5 @@
 use mockall::predicate;
-use openzeppelin_monitor::{
-	services::blockchain::{BlockChainClient, BlockChainError, EvmClient, EvmClientTrait},
-	utils::ErrorContext,
-};
+use openzeppelin_monitor::services::blockchain::{BlockChainClient, EvmClient, EvmClientTrait};
 use serde_json::{json, Value};
 use web3::types::H160;
 
@@ -102,12 +99,8 @@ async fn test_get_logs_for_blocks_missing_result() {
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg.format_message().contains("Missing 'result' field"))
-		}
-		_ => panic!("Expected RequestError"),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Missing 'result' field"));
 }
 
 #[tokio::test]
@@ -129,12 +122,8 @@ async fn test_get_logs_for_blocks_invalid_format() {
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg.format_message().contains("Failed to parse logs"))
-		}
-		_ => panic!("Expected RequestError"),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Failed to parse logs"));
 }
 
 #[tokio::test]
@@ -143,14 +132,7 @@ async fn test_get_logs_for_blocks_web3_error() {
 
 	mock_web3
 		.expect_send_raw_request()
-		.returning(|_: &str, _: Option<Vec<Value>>| {
-			Err(BlockChainError::request_error::<ErrorContext<String>>(
-				"Web3 error",
-				None,
-				None,
-				Some("get_logs_for_blocks"),
-			))
-		});
+		.returning(|_: &str, _: Option<Vec<Value>>| Err(anyhow::anyhow!("Web3 error")));
 
 	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 	let result = client.get_logs_for_blocks(1, 10).await;
@@ -228,14 +210,8 @@ async fn test_get_transaction_receipt_not_found() {
 		.await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("Transaction receipt not found"))
-		}
-		_ => panic!("Expected RequestError"),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Transaction receipt not found"));
 }
 
 #[tokio::test]
@@ -251,13 +227,9 @@ async fn test_get_transaction_receipt_invalid_hash() {
 		.await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::InternalError(msg) => {
-			assert!(msg.format_message().contains("Invalid transaction hash"));
-			assert!(msg.format_message().contains("invalid_hash"));
-		}
-		err => panic!("Expected InternalError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Invalid transaction hash"));
+	assert!(err.to_string().contains("invalid_hash"));
 }
 
 #[tokio::test]
@@ -282,12 +254,8 @@ async fn test_get_transaction_receipt_missing_result() {
 		.await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg.format_message().contains("Missing 'result' field"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Missing 'result' field"));
 }
 
 #[tokio::test]
@@ -316,14 +284,10 @@ async fn test_get_transaction_receipt_parse_failure() {
 
 	assert!(result.is_err());
 
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("Failed to parse transaction receipt"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(err
+		.to_string()
+		.contains("Failed to parse transaction receipt"));
 }
 
 #[tokio::test]
@@ -364,14 +328,8 @@ async fn test_get_latest_block_number_invalid_response() {
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("Failed to parse block number"))
-		}
-		_ => panic!("Expected RequestError"),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Failed to parse block number"));
 }
 
 #[tokio::test]
@@ -393,12 +351,8 @@ async fn test_get_latest_block_number_missing_result() {
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg.format_message().contains("Missing 'result' field"))
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Missing 'result' field"));
 }
 
 #[tokio::test]
@@ -487,12 +441,8 @@ async fn test_get_blocks_missing_result() {
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg.format_message().contains("Missing 'result' field"))
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Missing 'result' field"));
 }
 
 #[tokio::test]
@@ -520,12 +470,8 @@ async fn test_get_blocks_null_result() {
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::BlockNotFound(block_num) => {
-			assert!(block_num.format_message().contains("1"));
-		}
-		err => panic!("Expected BlockNotFound, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("1"));
 }
 
 #[tokio::test]
@@ -557,10 +503,6 @@ async fn test_get_blocks_parse_failure() {
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg.format_message().contains("Failed to parse block"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Failed to parse block"));
 }

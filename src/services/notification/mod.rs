@@ -75,7 +75,7 @@ impl NotificationService {
 					return Err(NotificationError::config_error(
 						"Invalid slack configuration",
 						None,
-						Some("execute"),
+						None,
 					));
 				}
 			}
@@ -89,7 +89,7 @@ impl NotificationService {
 					return Err(NotificationError::config_error(
 						"Invalid email configuration",
 						None,
-						Some("execute"),
+						None,
 					));
 				}
 			}
@@ -103,7 +103,7 @@ impl NotificationService {
 					return Err(NotificationError::config_error(
 						"Invalid webhook configuration",
 						None,
-						Some("execute"),
+						None,
 					));
 				}
 			}
@@ -118,7 +118,7 @@ impl NotificationService {
 					return Err(NotificationError::config_error(
 						"Invalid discord configuration",
 						None,
-						Some("execute"),
+						None,
 					));
 				}
 			}
@@ -128,14 +128,12 @@ impl NotificationService {
 					notifier
 						.notify(&notifier.format_message(&variables))
 						.await
-						.map_err(|e| {
-							NotificationError::config_error(e.to_string(), None, Some("execute"))
-						})?;
+						.map_err(|e| NotificationError::config_error(e.to_string(), None, None))?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid telegram configuration",
 						None,
-						Some("execute"),
+						None,
 					));
 				}
 			}

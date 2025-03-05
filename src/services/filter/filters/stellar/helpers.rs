@@ -5,7 +5,6 @@
 //! operation processing.
 
 use hex::encode;
-use log::debug;
 use serde_json::{json, Value};
 use stellar_strkey::{ed25519::PublicKey as StrkeyPublicKey, Contract};
 use stellar_xdr::curr::{
@@ -408,7 +407,7 @@ pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedPara
 	match ReadXdr::from_xdr(bytes, Limits::none()) {
 		Ok(scval) => parse_sc_val(&scval, indexed),
 		Err(e) => {
-			debug!("Failed to parse XDR bytes: {}", e);
+			tracing::debug!("Failed to parse XDR bytes: {}", e);
 			None
 		}
 	}
@@ -420,7 +419,7 @@ pub fn parse_json_safe(input: &str) -> Option<Value> {
 	match serde_json::from_str::<Value>(input) {
 		Ok(val) => Some(val),
 		Err(e) => {
-			debug!("Failed to parse JSON: {}, error: {}", input, e);
+			tracing::debug!("Failed to parse JSON: {}, error: {}", input, e);
 			None
 		}
 	}
@@ -445,7 +444,7 @@ pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -
 		"==" => param_value.trim_matches('"') == compare_value.trim_matches('"'),
 		"!=" => param_value.trim_matches('"') != compare_value.trim_matches('"'),
 		_ => {
-			debug!("Unsupported operator for string comparison: {operator}");
+			tracing::debug!("Unsupported operator for string comparison: {operator}");
 			false
 		}
 	}
@@ -460,7 +459,9 @@ pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_valu
 		"==" => value.to_string().trim_matches('"') == compare_value,
 		"!=" => value.to_string().trim_matches('"') != compare_value,
 		_ => {
-			debug!("Unsupported operator for JSON-value vs. string comparison: {operator}");
+			tracing::debug!(
+				"Unsupported operator for JSON-value vs. string comparison: {operator}"
+			);
 			false
 		}
 	}
@@ -488,12 +489,14 @@ pub fn compare_json_values(param_val: &Value, operator: &str, compare_val: &Valu
 				_ => unreachable!(),
 			},
 			_ => {
-				debug!("Numeric comparison operator {operator} requires numeric JSON values");
+				tracing::debug!(
+					"Numeric comparison operator {operator} requires numeric JSON values"
+				);
 				false
 			}
 		},
 		_ => {
-			debug!("Unsupported operator for JSON-to-JSON comparison: {operator}");
+			tracing::debug!("Unsupported operator for JSON-to-JSON comparison: {operator}");
 			false
 		}
 	}

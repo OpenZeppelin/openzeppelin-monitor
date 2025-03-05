@@ -3,212 +3,128 @@
 //! Defines the error cases that can occur during block filtering
 //! and provides helper methods for error creation and formatting.
 
+use crate::utils::ErrorContext;
 use std::collections::HashMap;
-
-use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
+use thiserror::Error as ThisError;
 
 /// Represents errors that can occur during filter operations
-#[derive(Debug)]
+#[derive(ThisError, Debug)]
 pub enum FilterError {
-	/// Error when block type doesn't match expected chain
-	BlockTypeMismatch(ErrorContext<String>),
-	/// Error during network operations
-	NetworkError(ErrorContext<String>),
-	/// Internal processing errors
-	InternalError(ErrorContext<String>),
-}
+	/// Errors related to network connectivity issues
+	#[error("Block type mismatch error: {0}")]
+	BlockTypeMismatch(ErrorContext),
 
-impl ErrorContextProvider for FilterError {
-	fn target() -> &'static str {
-		"filter"
-	}
-	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
-		match self {
-			Self::BlockTypeMismatch(ctx) => Some(ctx),
-			Self::NetworkError(ctx) => Some(ctx),
-			Self::InternalError(ctx) => Some(ctx),
-		}
-	}
+	/// Errors related to malformed requests or invalid responses
+	#[error("Network error: {0}")]
+	NetworkError(ErrorContext),
+
+	/// Errors related to internal processing errors
+	#[error("Internal error: {0}")]
+	InternalError(ErrorContext),
+
+	/// Other errors that don't fit into the categories above
+	#[error(transparent)]
+	Other(#[from] anyhow::Error),
 }
 
 impl FilterError {
-	/// Creates a new block type mismatch error
+	// Block type mismatch error
 	pub fn block_type_mismatch(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(
-			Self::BlockTypeMismatch,
-			"Block Type Mismatch Error",
-			msg,
-			metadata,
-			target,
-		)
+		Self::BlockTypeMismatch(ErrorContext::new(msg.into(), source, metadata))
 	}
 
-	/// Creates a new block type mismatch error with source
-	pub fn block_type_mismatch_with_source(
+	// Network error
+	pub fn network_error(
 		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error_with_source(
-			Self::BlockTypeMismatch,
-			"Block Type Mismatch Error",
-			msg,
-			source,
-			metadata,
-			target,
-		)
+		Self::NetworkError(ErrorContext::new(msg.into(), source, metadata))
 	}
 
-	/// Creates a new network error with logging
-	pub fn network_error<T: ErrorContextProvider + 'static>(
-		msg: impl Into<String>,
-		source: Option<T>,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		if let Some(source) = source {
-			new_error_with_source(
-				Self::NetworkError,
-				"Network Error",
-				msg,
-				source,
-				metadata,
-				target,
-			)
-		} else {
-			new_error(Self::NetworkError, "Network Error", msg, metadata, target)
-		}
-	}
-
-	/// Creates a new network error with source
-	pub fn network_error_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(
-			Self::NetworkError,
-			"Network Error",
-			msg,
-			source,
-			metadata,
-			target,
-		)
-	}
-
-	/// Creates a new internal error
+	// Internal error
 	pub fn internal_error(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(Self::InternalError, "Internal Error", msg, metadata, target)
-	}
-
-	/// Creates a new internal error with source
-	pub fn internal_error_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(
-			Self::InternalError,
-			"Internal Error",
-			msg,
-			source,
-			metadata,
-			target,
-		)
-	}
-}
-
-impl std::error::Error for FilterError {}
-
-// Standard error trait implementations
-impl std::fmt::Display for FilterError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::BlockTypeMismatch(ctx) => ctx.fmt(f),
-			Self::NetworkError(ctx) => ctx.fmt(f),
-			Self::InternalError(ctx) => ctx.fmt(f),
-		}
+		Self::InternalError(ErrorContext::new(msg.into(), source, metadata))
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::io::{Error as IoError, ErrorKind};
 
 	#[test]
 	fn test_block_type_mismatch_error_formatting() {
 		let error = FilterError::block_type_mismatch("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
+		assert_eq!(error.to_string(), "Block type mismatch error: test error");
 
-		let error = FilterError::block_type_mismatch_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = FilterError::block_type_mismatch(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-
-		let error = FilterError::block_type_mismatch_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
-			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+		assert_eq!(error.to_string(), "Block type mismatch error: test error");
 	}
 
 	#[test]
 	fn test_network_error_formatting() {
-		let error = FilterError::network_error::<FilterError>("test error", None, None, None);
-		assert_eq!(error.to_string(), "test error");
+		let error = FilterError::network_error("test error", None, None);
+		assert_eq!(error.to_string(), "Network error: test error");
 
-		let error = FilterError::network_error_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = FilterError::network_error(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-
-		let error = FilterError::network_error_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
-			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+		assert_eq!(error.to_string(), "Network error: test error");
 	}
 
 	#[test]
 	fn test_internal_error_formatting() {
 		let error = FilterError::internal_error("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
+		assert_eq!(error.to_string(), "Internal error: test error");
 
-		let error = FilterError::internal_error_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = FilterError::internal_error(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-
-		let error = FilterError::internal_error_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(error.to_string(), "Internal error: test error");
+	}
+
+	#[test]
+	fn test_from_anyhow_error() {
+		let anyhow_error = anyhow::anyhow!("test anyhow error");
+		let filter_error: FilterError = anyhow_error.into();
+		assert!(matches!(filter_error, FilterError::Other(_)));
+		assert_eq!(filter_error.to_string(), "test anyhow error");
+	}
+
+	#[test]
+	fn test_error_source_chain() {
+		use std::error::Error;
+		let middle_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+
+		let outer_error = FilterError::block_type_mismatch(
+			"Failed to initialize",
+			Some(Box::new(middle_error) as Box<dyn std::error::Error + Send + Sync>),
 			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+
+		// Test the source chain
+		let source = outer_error.source();
+		assert!(source.is_some());
+		assert_eq!(source.unwrap().to_string(), "while reading config");
 	}
 }

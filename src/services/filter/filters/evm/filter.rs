@@ -7,9 +7,9 @@
 //! - Event log processing and filtering
 //! - ABI-based decoding of function calls and events
 
+use anyhow::Context;
 use async_trait::async_trait;
 use ethabi::Contract;
-use log::{debug, warn};
 use serde_json::Value;
 use std::{collections::HashMap, marker::PhantomData, str::FromStr};
 use web3::types::{Log, Transaction, TransactionReceipt, U64};
@@ -152,7 +152,7 @@ impl<T> EVMBlockFilter<T> {
 							FilterError::internal_error(
 								format!("Failed to parse ABI: {}", e),
 								None,
-								Some("find_matching_functions_for_transaction"),
+								None,
 							);
 							return;
 						}
@@ -190,7 +190,7 @@ impl<T> EVMBlockFilter<T> {
 											FilterError::internal_error(
 												format!("Failed to decode function input: {}", e),
 												None,
-												Some("find_matching_functions_for_transaction"),
+												None,
 											);
 											vec![]
 										});
@@ -375,12 +375,12 @@ impl<T> EVMBlockFilter<T> {
 				{
 					vec![left, operator, right]
 				} else {
-					warn!("Invalid expression format: {}", clean_condition);
+					tracing::warn!("Invalid expression format: {}", clean_condition);
 					return false;
 				};
 
 				if parts.len() != 3 {
-					warn!("Invalid expression format: {}", clean_condition);
+					tracing::warn!("Invalid expression format: {}", clean_condition);
 					return false;
 				}
 
@@ -388,7 +388,7 @@ impl<T> EVMBlockFilter<T> {
 
 				// Find the parameter in args
 				let Some(param) = args.iter().find(|p| p.name == param_name) else {
-					warn!("Parameter {} not found in event args", param_name);
+					tracing::warn!("Parameter {} not found in event args", param_name);
 					return false;
 				};
 
@@ -396,11 +396,11 @@ impl<T> EVMBlockFilter<T> {
 				match param.kind.as_str() {
 					"uint256" | "uint" => {
 						let Ok(param_value) = u128::from_str(&param.value) else {
-							warn!("Failed to parse parameter value: {}", param.value);
+							tracing::warn!("Failed to parse parameter value: {}", param.value);
 							return false;
 						};
 						let Ok(compare_value) = u128::from_str(value) else {
-							warn!("Failed to parse comparison value: {}", value);
+							tracing::warn!("Failed to parse comparison value: {}", value);
 							return false;
 						};
 
@@ -412,7 +412,7 @@ impl<T> EVMBlockFilter<T> {
 							"==" => param_value == compare_value,
 							"!=" => param_value != compare_value,
 							_ => {
-								warn!("Unsupported operator: {}", operator);
+								tracing::warn!("Unsupported operator: {}", operator);
 								false
 							}
 						}
@@ -421,12 +421,12 @@ impl<T> EVMBlockFilter<T> {
 						"==" => are_same_address(&param.value, value),
 						"!=" => !are_same_address(&param.value, value),
 						_ => {
-							warn!("Unsupported operator for address type: {}", operator);
+							tracing::warn!("Unsupported operator for address type: {}", operator);
 							false
 						}
 					},
 					_ => {
-						warn!("Unsupported parameter type: {}", param.kind);
+						tracing::warn!("Unsupported parameter type: {}", param.kind);
 						false
 					}
 				}
@@ -453,13 +453,7 @@ impl<T> EVMBlockFilter<T> {
 	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = Contract::load(abi.to_string().as_bytes())
-			.map_err(|e| {
-				FilterError::internal_error(
-					format!("Failed to parse ABI: {}", e),
-					None,
-					Some("decode_events"),
-				)
-			})
+			.with_context(|| "Failed to parse ABI")
 			.ok()?;
 
 		let decoded_log = contract
@@ -536,8 +530,8 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			_ => {
 				return Err(FilterError::block_type_mismatch(
 					"Expected EVM block".to_string(),
+					None,
 					Some(context),
-					Some("filter_block"),
 				))
 			}
 		};
@@ -547,7 +541,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			evm_block.number.unwrap_or(U64::from(0)).to_string(),
 		);
 
-		debug!(
+		tracing::debug!(
 			"Processing block {}",
 			evm_block.number.unwrap_or(U64::from(0))
 		);
@@ -558,25 +552,42 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			.iter()
 			.map(|transaction| {
 				let tx_hash = h256_to_string(transaction.hash);
-				client.get_transaction_receipt(tx_hash)
+				// Capture transaction hash in the closure for better error context
+				async move {
+					client
+						.get_transaction_receipt(tx_hash.clone())
+						.await
+						.with_context(|| {
+							format!("Failed to get receipt for transaction {}", tx_hash)
+						})
+				}
 			})
 			.collect();
 
-		let receipts: Vec<_> = futures::future::join_all(receipt_futures)
+		let receipts = match futures::future::join_all(receipt_futures)
 			.await
 			.into_iter()
 			.collect::<Result<Vec<_>, _>>()
-			.map_err(|e| {
-				FilterError::internal_error_with_source(
+		{
+			Ok(receipts) => receipts,
+			Err(e) => {
+				tracing::error!(
+					error.chain = %format_error_chain(&e),
+					block_number = %evm_block.number.unwrap_or(U64::from(0)),
+					network = %_network.slug,
+					"Failed to get transaction receipts"
+				);
+
+				return Err(FilterError::network_error(
 					"Failed to get transaction receipts",
-					e,
-					Some(context.clone()),
-					Some("filter_block"),
-				)
-			})?;
+					Some(e.into()),
+					Some(context),
+				));
+			}
+		};
 
 		if receipts.is_empty() {
-			debug!(
+			tracing::debug!(
 				"No transactions found for block {}",
 				evm_block.number.unwrap_or(U64::from(0))
 			);
@@ -585,17 +596,17 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 		let mut matching_results = Vec::new();
 
-		debug!("Processing {} monitor(s)", monitors.len());
+		tracing::debug!("Processing {} monitor(s)", monitors.len());
 
 		for monitor in monitors {
-			debug!("Processing monitor: {:?}", monitor.name);
+			tracing::debug!("Processing monitor: {:?}", monitor.name);
 			let monitored_addresses: Vec<String> = monitor
 				.addresses
 				.iter()
 				.map(|a| a.address.clone())
 				.collect();
 			// Check each receipt and transaction for matches
-			debug!("Processing {} receipt(s)", receipts.len());
+			tracing::debug!("Processing {} receipt(s)", receipts.len());
 			for receipt in &receipts {
 				let matching_transaction = evm_block
 					.transactions
@@ -751,6 +762,19 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 		Ok(matching_results)
 	}
+}
+
+// Helper function to format the complete error chain
+fn format_error_chain(err: &anyhow::Error) -> String {
+	let mut result = err.to_string();
+	let mut source = err.source();
+
+	while let Some(err) = source {
+		result.push_str(&format!("\n  Caused by: {}", err));
+		source = err.source();
+	}
+
+	result
 }
 
 #[cfg(test)]

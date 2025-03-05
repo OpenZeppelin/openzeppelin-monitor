@@ -107,13 +107,13 @@ impl Notifier for SlackNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| NotificationError::network_error(e.to_string(), None, Some("notify")))?;
+			.map_err(|e| NotificationError::network_error(e.to_string(), None, None))?;
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(
 				format!("Slack webhook returned error status: {}", response.status()),
 				None,
-				Some("notify"),
+				None,
 			));
 		}
 

@@ -4,8 +4,9 @@
 //! blockchains, supporting operations like block retrieval, transaction receipt lookup,
 //! and log filtering.
 
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use futures;
 use serde_json::json;
@@ -20,7 +21,6 @@ use crate::{
 		},
 		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
 	},
-	utils::{format_target_with_source, ErrorContext, ErrorContextProvider},
 };
 
 /// Client implementation for Ethereum Virtual Machine (EVM) compatible blockchains
@@ -72,11 +72,11 @@ pub trait EvmClientTrait {
 	/// * `transaction_hash` - The hash of the transaction to look up
 	///
 	/// # Returns
-	/// * `Result<TransactionReceipt, BlockChainError>` - Transaction receipt or error
+	/// * `Result<TransactionReceipt, anyhow::Error>` - Transaction receipt or error
 	async fn get_transaction_receipt(
 		&self,
 		transaction_hash: String,
-	) -> Result<web3::types::TransactionReceipt, BlockChainError>;
+	) -> Result<web3::types::TransactionReceipt, anyhow::Error>;
 
 	/// Retrieves logs for a range of blocks
 	///
@@ -85,12 +85,12 @@ pub trait EvmClientTrait {
 	/// * `to_block` - Ending block number
 	///
 	/// # Returns
-	/// * `Result<Vec<Log>, BlockChainError>` - Collection of matching logs or error
+	/// * `Result<Vec<Log>, anyhow::Error>` - Collection of matching logs or error
 	async fn get_logs_for_blocks(
 		&self,
 		from_block: u64,
 		to_block: u64,
-	) -> Result<Vec<web3::types::Log>, BlockChainError>;
+	) -> Result<Vec<web3::types::Log>, anyhow::Error>;
 }
 
 #[async_trait]
@@ -103,25 +103,13 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 	async fn get_transaction_receipt(
 		&self,
 		transaction_hash: String,
-	) -> Result<web3::types::TransactionReceipt, BlockChainError> {
-		let context = HashMap::from([("hash".to_string(), transaction_hash.clone())]);
-		let hash = string_to_h256(&transaction_hash).map_err(|_| {
-			BlockChainError::internal_error(
-				"Invalid transaction hash".to_string(),
-				Some(context.clone()),
-				Some("get_transaction_receipt"),
-			)
-		})?;
+	) -> Result<web3::types::TransactionReceipt, anyhow::Error> {
+		let hash = string_to_h256(&transaction_hash)
+			.map_err(|e| anyhow::anyhow!("Invalid transaction hash: {}", e))?;
 
 		let params = json!([format!("0x{:x}", hash)])
 			.as_array()
-			.ok_or_else(|| {
-				BlockChainError::internal_error(
-					"Failed to create JSON-RPC params array".to_string(),
-					Some(context.clone()),
-					Some("get_transaction_receipt"),
-				)
-			})?
+			.with_context(|| "Failed to create JSON-RPC params array")?
 			.to_vec();
 
 		let response = self
@@ -131,156 +119,90 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 				Some(serde_json::Value::Array(params)),
 			)
 			.await
-			.map_err(|e| {
-				let err_msg = e.to_string();
-				let err_ctx = e.provide_error_context();
-				let target = format_target_with_source(Some("get_transaction_receipt"), err_ctx);
-				BlockChainError::request_error::<BlockChainError>(
-					&err_msg,
-					None,
-					Some(context.clone()),
-					Some(&target),
-				)
-			})?;
+			.with_context(|| format!("Failed to get transaction receipt: {}", transaction_hash))?;
 
 		// Extract the "result" field from the JSON-RPC response
-		let receipt_data = response.get("result").ok_or_else(|| {
-			BlockChainError::request_error::<ErrorContext<String>>(
-				"Missing 'result' field".to_string(),
-				None,
-				Some(context.clone()),
-				Some("get_transaction_receipt"),
-			)
-		})?;
+		let receipt_data = response
+			.get("result")
+			.with_context(|| "Missing 'result' field")?;
 
 		// Handle null response case
 		if receipt_data.is_null() {
-			return Err(BlockChainError::request_error::<ErrorContext<String>>(
-				"Transaction receipt not found".to_string(),
-				None,
-				Some(context.clone()),
-				Some("get_transaction_receipt"),
-			));
+			return Err(anyhow::anyhow!("Transaction receipt not found"));
 		}
 
-		Ok(serde_json::from_value(receipt_data.clone()).map_err(|e| {
-			BlockChainError::request_error::<ErrorContext<String>>(
-				format!("Failed to parse transaction receipt: {}", e),
-				None,
-				Some(context.clone()),
-				Some("get_transaction_receipt"),
-			)
-		})?)
+		Ok(serde_json::from_value(receipt_data.clone())
+			.with_context(|| "Failed to parse transaction receipt")?)
 	}
 
 	/// Retrieves logs within the specified block range
 	///
 	/// Uses Web3's filter builder to construct the log filter query
+	///
+	/// # Arguments
+	/// * `from_block` - Starting block number
+	/// * `to_block` - Ending block number
+	///
+	/// # Returns
+	/// * `Result<Vec<web3::types::Log>, anyhow::Error>` - Collection of matching logs or error
+	///
+	/// # Errors
+	/// - Returns `BlockChainError::InternalError` if the JSON-RPC params array is invalid
+	/// - Returns `BlockChainError::RequestError` if the logs are not found
 	async fn get_logs_for_blocks(
 		&self,
 		from_block: u64,
 		to_block: u64,
-	) -> Result<Vec<web3::types::Log>, BlockChainError> {
-		let context = HashMap::from([
-			("from_block".to_string(), from_block.to_string()),
-			("to_block".to_string(), to_block.to_string()),
-		]);
-
+	) -> Result<Vec<web3::types::Log>, anyhow::Error> {
 		// Convert parameters to JSON-RPC format
 		let params = json!([{
 			"fromBlock": format!("0x{:x}", from_block),
 			"toBlock": format!("0x{:x}", to_block)
 		}])
 		.as_array()
-		.ok_or_else(|| {
-			BlockChainError::internal_error(
-				"Failed to create JSON-RPC params array".to_string(),
-				Some(context.clone()),
-				Some("get_logs_for_blocks"),
-			)
-		})?
+		.with_context(|| "Failed to create JSON-RPC params array")?
 		.to_vec();
 
 		let response = self
 			.web3_client
 			.send_raw_request("eth_getLogs", Some(params))
 			.await
-			.map_err(|e| {
-				let err_msg = e.to_string();
-				let err_ctx = e.provide_error_context();
-				let target = format_target_with_source(Some("get_logs_for_blocks"), err_ctx);
-				BlockChainError::request_error::<BlockChainError>(
-					&err_msg,
-					None,
-					Some(context.clone()),
-					Some(&target),
+			.with_context(|| {
+				format!(
+					"Failed to get logs for blocks: {} - {}",
+					from_block, to_block
 				)
 			})?;
 
 		// Extract the "result" field from the JSON-RPC response
-		let logs_data = response.get("result").ok_or_else(|| {
-			BlockChainError::request_error::<ErrorContext<String>>(
-				"Missing 'result' field".to_string(),
-				None,
-				Some(context.clone()),
-				Some("get_logs_for_blocks"),
-			)
-		})?;
+		let logs_data = response
+			.get("result")
+			.with_context(|| "Missing 'result' field")?;
 
 		// Parse the response into the expected type
-		Ok(serde_json::from_value(logs_data.clone()).map_err(|e| {
-			BlockChainError::request_error::<ErrorContext<String>>(
-				format!("Failed to parse logs: {}", e),
-				None,
-				Some(context.clone()),
-				Some("get_logs_for_blocks"),
-			)
-		})?)
+		Ok(serde_json::from_value(logs_data.clone()).with_context(|| "Failed to parse logs")?)
 	}
 }
 
 #[async_trait]
 impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClient<T> {
 	/// Retrieves the latest block number with retry functionality
-	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
+	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
 			.web3_client
 			.send_raw_request::<serde_json::Value>("eth_blockNumber", None)
 			.await
-			.map_err(|e| {
-				let err_msg = e.to_string();
-				let err_ctx = e.provide_error_context();
-				let target = format_target_with_source(Some("get_latest_block_number"), err_ctx);
-				BlockChainError::request_error::<BlockChainError>(
-					&err_msg,
-					None,
-					None,
-					Some(&target),
-				)
-			})?;
+			.with_context(|| "Failed to get latest block number")?;
 
 		// Extract the "result" field from the JSON-RPC response
 		let hex_str = response
 			.get("result")
 			.and_then(|v| v.as_str())
-			.ok_or_else(|| {
-				BlockChainError::request_error::<ErrorContext<String>>(
-					"Missing 'result' field".to_string(),
-					None,
-					None,
-					Some("get_latest_block_number"),
-				)
-			})?;
+			.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
 
 		// Parse hex string to u64
-		u64::from_str_radix(hex_str.trim_start_matches("0x"), 16).map_err(|e| {
-			BlockChainError::request_error::<ErrorContext<String>>(
-				format!("Failed to parse block number: {}", e),
-				None,
-				None,
-				Some("get_latest_block_number"),
-			)
-		})
+		u64::from_str_radix(hex_str.trim_start_matches("0x"), 16)
+			.map_err(|e| anyhow::anyhow!("Failed to parse block number: {}", e))
 	}
 
 	/// Retrieves blocks within the specified range with retry functionality
@@ -291,15 +213,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 		&self,
 		start_block: u64,
 		end_block: Option<u64>,
-	) -> Result<Vec<BlockType>, BlockChainError> {
-		let context = HashMap::from([
-			("start_block".to_string(), start_block.to_string()),
-			(
-				"end_block".to_string(),
-				end_block.unwrap_or(start_block).to_string(),
-			),
-		]);
-
+	) -> Result<Vec<BlockType>, anyhow::Error> {
 		let block_futures: Vec<_> = (start_block..=end_block.unwrap_or(start_block))
 			.map(|block_number| {
 				let params = json!([
@@ -307,52 +221,24 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 					true // include full transaction objects
 				]);
 				let client = self.web3_client.clone();
-				let mut context = context.clone();
 
 				async move {
-					context.insert("block_number".to_string(), block_number.to_string());
-
 					let response = client
 						.send_raw_request("eth_getBlockByNumber", Some(params))
 						.await
-						.map_err(|e| {
-							let err_msg = e.to_string();
-							let err_ctx = e.provide_error_context();
-							let target = format_target_with_source(Some("get_blocks"), err_ctx);
-							BlockChainError::request_error::<BlockChainError>(
-								&err_msg,
-								None,
-								Some(context.clone()),
-								Some(&target),
-							)
-						})?;
+						.with_context(|| format!("Failed to get block: {}", block_number))?;
 
-					let block_data = response.get("result").ok_or_else(|| {
-						BlockChainError::request_error::<ErrorContext<String>>(
-							"Missing 'result' field".to_string(),
-							None,
-							Some(context.clone()),
-							Some("get_blocks"),
-						)
-					})?;
+					let block_data = response
+						.get("result")
+						.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
 
 					if block_data.is_null() {
-						return Err(BlockChainError::block_not_found(
-							block_number,
-							None,
-							Some("get_blocks"),
-						));
+						return Err(anyhow::anyhow!("Block not found"));
 					}
 
 					let block: web3::types::Block<web3::types::Transaction> =
-						serde_json::from_value(block_data.clone()).map_err(|e| {
-							BlockChainError::request_error::<ErrorContext<String>>(
-								format!("Failed to parse block: {}", e),
-								None,
-								Some(context.clone()),
-								Some("get_blocks"),
-							)
-						})?;
+						serde_json::from_value(block_data.clone())
+							.map_err(|e| anyhow::anyhow!("Failed to parse block: {}", e))?;
 
 					Ok(BlockType::EVM(Box::new(EVMBlock::from(block))))
 				}

@@ -90,12 +90,12 @@ impl HorizonTransportClient {
 		}
 
 		Err(BlockChainError::connection_error(
-			"All Horizon RPC URLs failed to connect".to_string(),
+			"All RPC URLs failed to connect".to_string(),
+			None,
 			Some(HashMap::from([(
 				"network".to_string(),
 				network.name.clone(),
 			)])),
-			Some("new"),
 		))
 	}
 }
@@ -117,12 +117,12 @@ impl BlockchainTransport for HorizonTransportClient {
 	/// * `params` - Parameters to pass to the method
 	///
 	/// # Returns
-	/// * `Result<Value, BlockChainError>` - JSON response or error
+	/// * `Result<Value, anyhow::Error>` - JSON response or error
 	async fn send_raw_request<P>(
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
@@ -170,15 +170,15 @@ impl RotatingTransport for HorizonTransportClient {
 				} else {
 					Err(BlockChainError::connection_error(
 						"Failed to connect".to_string(),
+						None,
 						Some(context.clone()),
-						Some("try_connect"),
 					))
 				}
 			}
-			Err(_) => Err(BlockChainError::connection_error(
+			Err(e) => Err(BlockChainError::connection_error(
 				"Invalid URL".to_string(),
+				Some(Box::new(e)),
 				Some(context.clone()),
-				Some("try_connect"),
 			)),
 		}
 	}
@@ -196,8 +196,8 @@ impl RotatingTransport for HorizonTransportClient {
 		} else {
 			Err(BlockChainError::connection_error(
 				"Failed to create client".to_string(),
+				None,
 				Some(HashMap::from([("url".to_string(), url.to_string())])),
-				Some("update_client"),
 			))
 		}
 	}

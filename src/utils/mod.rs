@@ -6,11 +6,14 @@
 //! - cron_utils: Utilities for working with cron schedules and time intervals
 //! - error: Custom error type for more structured error handling
 //! - expression: Utilities for working with cron expressions
+//! - logging: Logging utilities
 
 mod cron_utils;
 mod error;
 mod expression;
+mod logging;
 
 pub use cron_utils::*;
 pub use error::*;
 pub use expression::*;
+pub use logging::*;

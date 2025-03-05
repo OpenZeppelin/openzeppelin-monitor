@@ -23,15 +23,14 @@ impl ConfigLoader for Monitor {
 			return Err(ConfigError::file_error(
 				"monitors directory not found",
 				None,
-				Some("load_all"),
+				None,
 			));
 		}
 
 		for entry in fs::read_dir(monitor_dir)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?
 		{
-			let entry = entry
-				.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
+			let entry = entry.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 			let path = entry.path();
 
 			if !Self::is_json_file(&path) {
@@ -56,9 +55,9 @@ impl ConfigLoader for Monitor {
 	/// Reads and parses a single JSON file as a monitor configuration.
 	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_from_path")))?;
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 		let config: Monitor = serde_json::from_reader(file)
-			.map_err(|e| ConfigError::parse_error(e.to_string(), None, Some("load_from_path")))?;
+			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -73,7 +72,7 @@ impl ConfigLoader for Monitor {
 			return Err(ConfigError::validation_error(
 				"Monitor name is required",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -82,7 +81,7 @@ impl ConfigLoader for Monitor {
 			return Err(ConfigError::validation_error(
 				"At least one network must be specified",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -92,7 +91,7 @@ impl ConfigLoader for Monitor {
 				return Err(ConfigError::validation_error(
 					format!("Invalid function signature format: {}", func.signature),
 					None,
-					Some("validate"),
+					None,
 				));
 			}
 		}
@@ -103,7 +102,7 @@ impl ConfigLoader for Monitor {
 				return Err(ConfigError::validation_error(
 					format!("Invalid event signature format: {}", event.signature),
 					None,
-					Some("validate"),
+					None,
 				));
 			}
 		}

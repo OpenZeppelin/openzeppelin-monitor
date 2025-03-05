@@ -9,14 +9,11 @@ use crate::integration::mocks::{
 };
 use openzeppelin_monitor::{
 	models::{BlockChainType, BlockType, Network, ProcessedBlock},
-	services::{
-		blockchain::BlockChainError,
-		blockwatcher::{
-			process_new_blocks, BlockTracker, BlockTrackerTrait, BlockWatcherError,
-			BlockWatcherService, NetworkBlockWatcher,
-		},
+	services::blockwatcher::{
+		process_new_blocks, BlockTracker, BlockTrackerTrait, BlockWatcherError,
+		BlockWatcherService, NetworkBlockWatcher,
 	},
-	utils::{get_cron_interval_ms, ErrorContext},
+	utils::get_cron_interval_ms,
 };
 
 #[derive(Clone, Default)]
@@ -715,13 +712,7 @@ async fn test_process_new_blocks_storage_error() {
 	block_storage
 		.expect_get_last_processed_block()
 		.with(predicate::always())
-		.returning(|_| {
-			Err(BlockWatcherError::storage_error(
-				"Storage error",
-				None,
-				Some("test_error"),
-			))
-		})
+		.returning(|_| Err(anyhow::anyhow!("Storage error")))
 		.times(1);
 
 	let block_storage = Arc::new(block_storage);
@@ -779,14 +770,7 @@ async fn test_process_new_blocks_network_errors() {
 	let mut rpc_client = MockEvmClientTrait::<MockWeb3TransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
-		.returning(|| {
-			Err(BlockChainError::request_error::<ErrorContext<String>>(
-				"RPC error",
-				None,
-				None,
-				Some("test_error"),
-			))
-		})
+		.returning(|| Err(anyhow::anyhow!("RPC error")))
 		.times(1);
 
 	let block_handler = Arc::new(|_: BlockType, network: Network| {
@@ -838,14 +822,7 @@ async fn test_process_new_blocks_get_blocks_error() {
 		.times(1);
 	rpc_client
 		.expect_get_blocks()
-		.returning(|_, _| {
-			Err(BlockChainError::request_error::<ErrorContext<String>>(
-				"Failed to fetch blocks",
-				None,
-				None,
-				Some("test_error"),
-			))
-		})
+		.returning(|_, _| Err(anyhow::anyhow!("Failed to fetch blocks")))
 		.times(1);
 
 	let block_handler = Arc::new(|_: BlockType, network: Network| {
@@ -893,13 +870,7 @@ async fn test_process_new_blocks_storage_save_error() {
 		.times(1);
 	block_storage
 		.expect_save_blocks()
-		.returning(|_, _| {
-			Err(BlockWatcherError::storage_error(
-				"Failed to save blocks",
-				None,
-				Some("test_error"),
-			))
-		})
+		.returning(|_, _| Err(anyhow::anyhow!("Failed to save blocks")))
 		.times(1);
 	let block_storage = Arc::new(block_storage);
 
@@ -962,13 +933,7 @@ async fn test_process_new_blocks_save_last_processed_error() {
 		.times(1);
 	block_storage
 		.expect_save_last_processed_block()
-		.returning(|_, _| {
-			Err(BlockWatcherError::storage_error(
-				"Failed to save last processed block",
-				None,
-				Some("test_error"),
-			))
-		})
+		.returning(|_, _| Err(anyhow::anyhow!("Failed to save last processed block")))
 		.times(1);
 	let block_storage = Arc::new(block_storage);
 
@@ -1032,13 +997,7 @@ async fn test_process_new_blocks_storage_delete_error() {
 		.times(1);
 	block_storage
 		.expect_delete_blocks()
-		.returning(|_| {
-			Err(BlockWatcherError::storage_error(
-				"Failed to delete blocks",
-				None,
-				Some("test_error"),
-			))
-		})
+		.returning(|_| Err(anyhow::anyhow!("Failed to delete blocks")))
 		.times(1);
 	// save_blocks should not be called if delete fails
 	block_storage.expect_save_blocks().times(0);
@@ -1288,14 +1247,7 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 	rpc_client
 		.expect_get_blocks()
 		.with(predicate::eq(99), predicate::eq(None))
-		.returning(|_, _| {
-			Err(BlockChainError::request_error::<ErrorContext<String>>(
-				"Failed to fetch block",
-				None,
-				None,
-				Some("test_error"),
-			))
-		})
+		.returning(|_, _| Err(anyhow::anyhow!("Failed to fetch block")))
 		.times(1);
 
 	let block_handler = Arc::new(|_: BlockType, network: Network| {

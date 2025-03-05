@@ -35,9 +35,7 @@ async fn test_client_creation() {
 
 	match Web3TransportClient::new(&network).await {
 		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg
-				.format_message()
-				.contains("All RPC URLs failed to connect"));
+			assert!(msg.to_string().contains("All RPC URLs failed to connect"));
 		}
 		_ => panic!("Transport creation should fail"),
 	}
@@ -92,7 +90,7 @@ async fn test_client_update_client() {
 	assert!(result.is_err(), "Update with invalid URL should fail");
 	match result {
 		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg.format_message().contains("Failed to create client"));
+			assert!(msg.to_string().contains("Failed to create client"));
 		}
 		_ => panic!("Expected ConnectionError"),
 	}
@@ -118,7 +116,7 @@ async fn test_client_try_connect() {
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
 	match result {
 		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg.format_message().contains("Invalid URL"));
+			assert!(msg.to_string().contains("Invalid URL"));
 		}
 		_ => panic!("Expected ConnectionError"),
 	}
@@ -127,7 +125,7 @@ async fn test_client_try_connect() {
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
 	match result {
 		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg.format_message().contains("Failed to connect"));
+			assert!(msg.to_string().contains("Failed to connect"));
 		}
 		_ => panic!("Expected ConnectionError"),
 	}

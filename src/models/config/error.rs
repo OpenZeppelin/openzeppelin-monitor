@@ -3,126 +3,56 @@
 //! This module defines the error types that can occur during configuration
 //! loading and validation.
 
+use crate::utils::ErrorContext;
 use std::collections::HashMap;
+use thiserror::Error as ThisError;
 
-use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
-
-/// Errors that can occur during configuration operations
-#[derive(Debug)]
-#[allow(clippy::enum_variant_names)]
+/// Represents errors that can occur during configuration operations
+#[derive(ThisError, Debug)]
 pub enum ConfigError {
-	/// Configuration validation failed
-	ValidationError(ErrorContext<String>),
+	/// Errors related to validation failures
+	#[error("Validation error: {0}")]
+	ValidationError(ErrorContext),
 
-	/// Failed to parse configuration file
-	ParseError(ErrorContext<String>),
+	/// Errors related to parsing failures
+	#[error("Parse error: {0}")]
+	ParseError(ErrorContext),
 
-	/// File system error during configuration loading
-	FileError(ErrorContext<String>),
-}
+	/// Errors related to file system errors
+	#[error("File error: {0}")]
+	FileError(ErrorContext),
 
-impl ErrorContextProvider for ConfigError {
-	fn target() -> &'static str {
-		"config"
-	}
-	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
-		match self {
-			Self::ValidationError(ctx) => Some(ctx),
-			Self::ParseError(ctx) => Some(ctx),
-			Self::FileError(ctx) => Some(ctx),
-		}
-	}
+	/// Other errors that don't fit into the categories above
+	#[error(transparent)]
+	Other(#[from] anyhow::Error),
 }
 
 impl ConfigError {
-	/// Create a new validation error with logging
+	// Validation error
 	pub fn validation_error(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(
-			Self::ValidationError,
-			"Validation Error",
-			msg,
-			metadata,
-			target,
-		)
+		Self::ValidationError(ErrorContext::new(msg.into(), source, metadata))
 	}
 
-	/// Create a new validation error with source
-	pub fn validation_error_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(
-			Self::ValidationError,
-			"Validation Error",
-			msg,
-			source,
-			metadata,
-			target,
-		)
-	}
-
-	/// Create a new parse error with logging
+	// Parse error
 	pub fn parse_error(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(Self::ParseError, "Parse Error", msg, metadata, target)
+		Self::ParseError(ErrorContext::new(msg.into(), source, metadata))
 	}
 
-	/// Create a new parse error with source
-	pub fn parse_error_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(
-			Self::ParseError,
-			"Parse Error",
-			msg,
-			source,
-			metadata,
-			target,
-		)
-	}
-
-	/// Create a new file error with logging
+	// File error
 	pub fn file_error(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(Self::FileError, "File Error", msg, metadata, target)
-	}
-
-	/// Create a new file error with source
-	pub fn file_error_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(Self::FileError, "File Error", msg, source, metadata, target)
-	}
-}
-
-impl std::error::Error for ConfigError {}
-
-// Standard error trait implementations
-impl std::fmt::Display for ConfigError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::ValidationError(ctx) => ctx.fmt(f),
-			Self::ParseError(ctx) => ctx.fmt(f),
-			Self::FileError(ctx) => ctx.fmt(f),
-		}
+		Self::FileError(ErrorContext::new(msg.into(), source, metadata))
 	}
 }
 
@@ -141,71 +71,73 @@ impl From<serde_json::Error> for ConfigError {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::io::{Error as IoError, ErrorKind};
 
 	#[test]
 	fn test_validation_error_formatting() {
 		let error = ConfigError::validation_error("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
-		let error = ConfigError::validation_error_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
+		assert_eq!(error.to_string(), "Validation error: test error");
 
-		let error = ConfigError::validation_error_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = ConfigError::validation_error(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
-			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+		assert_eq!(error.to_string(), "Validation error: test error");
 	}
 
 	#[test]
-	fn test_parse_error_formatting() {
+	fn test_execution_error_formatting() {
 		let error = ConfigError::parse_error("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
+		assert_eq!(error.to_string(), "Parse error: test error");
 
-		let error = ConfigError::parse_error_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = ConfigError::parse_error(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-
-		let error = ConfigError::parse_error_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
-			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+		assert_eq!(error.to_string(), "Parse error: test error");
 	}
 
 	#[test]
-	fn test_file_error_formatting() {
+	fn test_internal_error_formatting() {
 		let error = ConfigError::file_error("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
+		assert_eq!(error.to_string(), "File error: test error");
 
-		let error = ConfigError::file_error_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = ConfigError::file_error(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-
-		let error = ConfigError::file_error_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(error.to_string(), "File error: test error");
+	}
+
+	#[test]
+	fn test_from_anyhow_error() {
+		let anyhow_error = anyhow::anyhow!("test anyhow error");
+		let config_error: ConfigError = anyhow_error.into();
+		assert!(matches!(config_error, ConfigError::Other(_)));
+		assert_eq!(config_error.to_string(), "test anyhow error");
+	}
+
+	#[test]
+	fn test_error_source_chain() {
+		use std::error::Error;
+		let middle_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+
+		let outer_error = ConfigError::file_error(
+			"Failed to initialize",
+			Some(Box::new(middle_error) as Box<dyn std::error::Error + Send + Sync>),
 			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
-		assert!(error.to_string().contains("[key1=value1"));
+
+		// Test the source chain
+		let source = outer_error.source();
+		assert!(source.is_some());
+		assert_eq!(source.unwrap().to_string(), "while reading config");
 	}
 
 	#[test]

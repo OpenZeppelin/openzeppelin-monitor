@@ -93,7 +93,7 @@ impl EmailNotifier<SmtpTransport> {
 				NotificationError::internal_error(
 					format!("Failed to create SMTP relay: {}", e),
 					None,
-					Some("new"),
+					None,
 				)
 			})?
 			.port(smtp_config.port)
@@ -185,25 +185,30 @@ where
 
 		let mailboxes: Mailboxes = recipients_str
 			.parse::<Mailboxes>()
-			.map_err(|e| NotificationError::internal_error(e.to_string(), None, Some("notify")))?;
+			.map_err(|e| NotificationError::internal_error(e.to_string(), None, None))?;
 		let recipients_header: header::To = mailboxes.into();
 
-		let email = Message::builder()
-			.mailbox(recipients_header)
-			.from(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
-				NotificationError::internal_error(e.to_string(), None, Some("notify"))
-			})?)
-			.reply_to(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
-				NotificationError::internal_error(e.to_string(), None, Some("notify"))
-			})?)
-			.subject(&self.subject)
-			.header(ContentType::TEXT_PLAIN)
-			.body(message.to_owned())
-			.map_err(|e| NotificationError::internal_error(e.to_string(), None, Some("notify")))?;
+		let email =
+			Message::builder()
+				.mailbox(recipients_header)
+				.from(
+					self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+						NotificationError::internal_error(e.to_string(), None, None)
+					})?,
+				)
+				.reply_to(
+					self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+						NotificationError::internal_error(e.to_string(), None, None)
+					})?,
+				)
+				.subject(&self.subject)
+				.header(ContentType::TEXT_PLAIN)
+				.body(message.to_owned())
+				.map_err(|e| NotificationError::internal_error(e.to_string(), None, None))?;
 
 		self.client
 			.send(&email)
-			.map_err(|e| NotificationError::network_error(e.to_string(), None, Some("notify")))?;
+			.map_err(|e| NotificationError::network_error(e.to_string(), None, None))?;
 
 		Ok(())
 	}

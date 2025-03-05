@@ -11,7 +11,7 @@ use openzeppelin_monitor::services::blockchain::{
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
 	pub Web3TransportClient {
-		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, BlockChainError>;
+		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
 	}
 
@@ -30,7 +30,7 @@ impl BlockchainTransport for MockWeb3TransportClient {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone,
 	{
@@ -64,7 +64,7 @@ impl RotatingTransport for MockWeb3TransportClient {
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
 	pub StellarTransportClient {
-		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, BlockChainError>;
+		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
 	}
 
@@ -83,7 +83,7 @@ impl BlockchainTransport for MockStellarTransportClient {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone,
 	{
@@ -116,7 +116,7 @@ impl RotatingTransport for MockStellarTransportClient {
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
 	pub HorizonTransportClient {
-		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, BlockChainError>;
+		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
 	}
 
@@ -135,7 +135,7 @@ impl BlockchainTransport for MockHorizonTransportClient {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone,
 	{

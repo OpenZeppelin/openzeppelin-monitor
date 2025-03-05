@@ -28,11 +28,8 @@ use crate::{
 #[async_trait]
 pub trait BlockTrackerTrait<S: BlockStorage> {
 	fn new(history_size: usize, storage: Option<Arc<S>>) -> Self;
-	async fn record_block(
-		&self,
-		network: &Network,
-		block_number: u64,
-	) -> Result<(), BlockWatcherError>;
+	async fn record_block(&self, network: &Network, block_number: u64)
+		-> Result<(), anyhow::Error>;
 	async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
 }
 
@@ -95,7 +92,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 		&self,
 		network: &Network,
 		block_number: u64,
-	) -> Result<(), BlockWatcherError> {
+	) -> Result<(), anyhow::Error> {
 		let context = HashMap::from([
 			("network".to_string(), network.slug.clone()),
 			("block_number".to_string(), block_number.to_string()),
@@ -113,19 +110,18 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 				for missed in (last_block + 1)..block_number {
 					BlockWatcherError::block_tracker_error(
 						format!("Missed block {}", missed),
+						None,
 						Some(context.clone()),
-						Some("record_block"),
 					);
 
 					if network.store_blocks.unwrap_or(false) {
 						if let Some(storage) = &self.storage {
 							// Store the missed block info
-							if let Err(e) = storage.save_missed_block(&network.slug, missed).await {
-								BlockWatcherError::storage_error_with_source(
+							if (storage.save_missed_block(&network.slug, missed).await).is_err() {
+								BlockWatcherError::storage_error(
 									format!("Failed to store missed block {}", missed),
-									e,
+									None,
 									Some(context.clone()),
-									Some("record_block"),
 								);
 							}
 						}
@@ -137,8 +133,8 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 						"Out of order or duplicate block detected: received {} after {}",
 						block_number, last_block
 					),
-					Some(context.clone()),
-					Some("record_block"),
+					None,
+					Some(context),
 				);
 			}
 		}
@@ -184,11 +180,11 @@ mod tests {
 		pub BlockStorage {}
 		#[async_trait::async_trait]
 		impl BlockStorage for BlockStorage {
-			async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
-			async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
-			async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, BlockWatcherError>;
-			async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), BlockWatcherError>;
-			async fn delete_blocks(&self, network_slug: &str) -> Result<(), BlockWatcherError>;
+			async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
+			async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
+			async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, anyhow::Error>;
+			async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), anyhow::Error>;
+			async fn delete_blocks(&self, network_slug: &str) -> Result<(), anyhow::Error>;
 		}
 
 		impl Clone for BlockStorage {

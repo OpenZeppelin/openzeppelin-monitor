@@ -15,7 +15,7 @@ use openzeppelin_monitor::{
 		NotificationMessage, ProcessedBlock, StellarBlock, StellarMonitorMatch, StellarTransaction,
 		StellarTransactionInfo, Trigger, TriggerType, TriggerTypeConfig,
 	},
-	services::{blockchain::BlockChainError, filter::FilterService},
+	services::filter::FilterService,
 };
 
 use std::{collections::HashMap, sync::Arc};
@@ -338,13 +338,9 @@ async fn test_create_block_handler_evm_client_error() {
 
 	// Create a mock client pool that returns an error
 	let mut mock_pool = MockClientPool::new();
-	mock_pool.expect_get_evm_client().return_once(move |_| {
-		Err(BlockChainError::client_pool_error(
-			"Failed to get EVM client".to_string(),
-			None,
-			Some("get_evm_client"),
-		))
-	});
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Err(anyhow::anyhow!("Failed to get EVM client")));
 	let client_pool = Arc::new(mock_pool);
 
 	let block_handler =
@@ -371,13 +367,9 @@ async fn test_create_block_handler_stellar_client_error() {
 
 	// Create a mock client pool that returns an error
 	let mut mock_pool = MockClientPool::new();
-	mock_pool.expect_get_stellar_client().return_once(move |_| {
-		Err(BlockChainError::client_pool_error(
-			"Failed to get Stellar client".to_string(),
-			None,
-			Some("get_stellar_client"),
-		))
-	});
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Err(anyhow::anyhow!("Failed to get Stellar client")));
 	let client_pool = Arc::new(mock_pool);
 
 	let block_handler =

@@ -3,210 +3,128 @@
 //! Provides error types for trigger-related operations,
 //! including execution failures and configuration issues.
 
-use crate::utils::{new_error, new_error_with_source, ErrorContext, ErrorContextProvider};
+use crate::utils::ErrorContext;
 use std::collections::HashMap;
+use thiserror::Error as ThisError;
 
-/// Represents possible errors during trigger operations
-#[derive(Debug)]
+/// Represents errors that can occur during trigger operations
+#[derive(ThisError, Debug)]
 pub enum TriggerError {
-	/// When a requested trigger cannot be found
-	NotFound(ErrorContext<String>),
-	/// When trigger execution fails
-	ExecutionError(ErrorContext<String>),
-	/// When trigger configuration is invalid
-	ConfigurationError(ErrorContext<String>),
-}
+	/// Errors related to not found errors
+	#[error("Not found error: {0}")]
+	NotFound(ErrorContext),
 
-impl ErrorContextProvider for TriggerError {
-	fn target() -> &'static str {
-		"trigger"
-	}
-	fn provide_error_context(&self) -> Option<&ErrorContext<String>> {
-		match self {
-			Self::NotFound(ctx) => Some(ctx),
-			Self::ExecutionError(ctx) => Some(ctx),
-			Self::ConfigurationError(ctx) => Some(ctx),
-		}
-	}
+	/// Errors related to execution failures
+	#[error("Execution error: {0}")]
+	ExecutionError(ErrorContext),
+
+	/// Errors related to configuration errors
+	#[error("Configuration error: {0}")]
+	ConfigurationError(ErrorContext),
+
+	/// Other errors that don't fit into the categories above
+	#[error(transparent)]
+	Other(#[from] anyhow::Error),
 }
 
 impl TriggerError {
-	/// Creates a new not found error with logging
+	// Not found error
 	pub fn not_found(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(
-			Self::NotFound,
-			"TriggerNotFoundError",
-			msg,
-			metadata,
-			target,
-		)
+		Self::NotFound(ErrorContext::new(msg.into(), source, metadata))
 	}
 
-	/// Creates a new not found error with source
-	pub fn not_found_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(
-			Self::NotFound,
-			"TriggerNotFoundError",
-			msg,
-			source,
-			metadata,
-			target,
-		)
-	}
-
-	/// Creates a new execution error with logging
+	// Execution error
 	pub fn execution_error(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(
-			Self::ExecutionError,
-			"TriggerExecutionError",
-			msg,
-			metadata,
-			target,
-		)
+		Self::ExecutionError(ErrorContext::new(msg.into(), source, metadata))
 	}
 
-	/// Creates a new execution error with source
-	pub fn execution_error_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(
-			Self::ExecutionError,
-			"TriggerExecutionError",
-			msg,
-			source,
-			metadata,
-			target,
-		)
-	}
-
-	/// Creates a new configuration error with logging
+	// Configuration error
 	pub fn configuration_error(
 		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
 	) -> Self {
-		new_error(
-			Self::ConfigurationError,
-			"TriggerConfigurationError",
-			msg,
-			metadata,
-			target,
-		)
-	}
-
-	/// Creates a new configuration error with source
-	pub fn configuration_error_with_source(
-		msg: impl Into<String>,
-		source: impl ErrorContextProvider + 'static,
-		metadata: Option<HashMap<String, String>>,
-		target: Option<&str>,
-	) -> Self {
-		new_error_with_source(
-			Self::ConfigurationError,
-			"TriggerConfigurationError",
-			msg,
-			source,
-			metadata,
-			target,
-		)
-	}
-}
-
-impl std::error::Error for TriggerError {}
-
-// Standard error trait implementations
-impl std::fmt::Display for TriggerError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::NotFound(ctx) => ctx.fmt(f),
-			Self::ExecutionError(ctx) => ctx.fmt(f),
-			Self::ConfigurationError(ctx) => ctx.fmt(f),
-		}
+		Self::ConfigurationError(ErrorContext::new(msg.into(), source, metadata))
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::io::{Error as IoError, ErrorKind};
 
 	#[test]
 	fn test_not_found_error_formatting() {
 		let error = TriggerError::not_found("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
+		assert_eq!(error.to_string(), "Not found error: test error");
 
-		let error = TriggerError::not_found_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = TriggerError::not_found(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-		let error = TriggerError::not_found_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
-			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+		assert_eq!(error.to_string(), "Not found error: test error");
 	}
 
 	#[test]
 	fn test_execution_error_formatting() {
 		let error = TriggerError::execution_error("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
+		assert_eq!(error.to_string(), "Execution error: test error");
 
-		let error = TriggerError::execution_error_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = TriggerError::execution_error(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-
-		let error = TriggerError::execution_error_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
-			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+		assert_eq!(error.to_string(), "Execution error: test error");
 	}
 
 	#[test]
-	fn test_configuration_error_formatting() {
+	fn test_internal_error_formatting() {
 		let error = TriggerError::configuration_error("test error", None, None);
-		assert_eq!(error.to_string(), "test error");
+		assert_eq!(error.to_string(), "Configuration error: test error");
 
-		let error = TriggerError::configuration_error_with_source(
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = TriggerError::configuration_error(
 			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
-			None,
-			None,
-		);
-		assert_eq!(error.to_string(), "test error (test source)");
-
-		let error = TriggerError::configuration_error_with_source(
-			"test error",
-			std::io::Error::new(std::io::ErrorKind::NotFound, "test source"),
+			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(error.to_string(), "Configuration error: test error");
+	}
+
+	#[test]
+	fn test_from_anyhow_error() {
+		let anyhow_error = anyhow::anyhow!("test anyhow error");
+		let trigger_error: TriggerError = anyhow_error.into();
+		assert!(matches!(trigger_error, TriggerError::Other(_)));
+		assert_eq!(trigger_error.to_string(), "test anyhow error");
+	}
+
+	#[test]
+	fn test_error_source_chain() {
+		use std::error::Error;
+		let middle_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+
+		let outer_error = TriggerError::configuration_error(
+			"Failed to initialize",
+			Some(Box::new(middle_error) as Box<dyn std::error::Error + Send + Sync>),
 			None,
 		);
-		assert_eq!(error.to_string(), "test error (test source [key1=value1])");
+
+		// Test the source chain
+		let source = outer_error.source();
+		assert!(source.is_some());
+		assert_eq!(source.unwrap().to_string(), "while reading config");
 	}
 }

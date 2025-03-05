@@ -30,17 +30,16 @@ impl ConfigLoader for Trigger {
 	{
 		let config_dir = path.unwrap_or(Path::new("config/triggers"));
 		let entries = fs::read_dir(config_dir)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 
 		let mut trigger_pairs = Vec::new();
 		for entry in entries {
-			let entry = entry
-				.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
+			let entry = entry.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 			if Self::is_json_file(&entry.path()) {
 				let content = fs::read_to_string(entry.path())
-					.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
+					.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 				let file_triggers: TriggerConfigFile = serde_json::from_str(&content)
-					.map_err(|e| ConfigError::parse_error(e.to_string(), None, Some("load_all")))?;
+					.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
 
 				// Validate each trigger before adding it
 				for (name, trigger) in file_triggers.triggers {
@@ -51,7 +50,7 @@ impl ConfigLoader for Trigger {
 								name, validation_error
 							),
 							None,
-							Some("load_all"),
+							None,
 						));
 					}
 					trigger_pairs.push((name, trigger));
@@ -66,9 +65,9 @@ impl ConfigLoader for Trigger {
 	/// Reads and parses a single JSON file as a trigger configuration.
 	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_from_path")))?;
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 		let config: Trigger = serde_json::from_reader(file)
-			.map_err(|e| ConfigError::parse_error(e.to_string(), None, Some("load_from_path")))?;
+			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -90,7 +89,7 @@ impl ConfigLoader for Trigger {
 			return Err(ConfigError::validation_error(
 				"Trigger cannot be empty",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -102,7 +101,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Invalid Slack webhook URL format",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate message
@@ -110,7 +109,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate template is not empty
@@ -118,7 +117,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 				}
@@ -139,7 +138,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Host cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate host format
@@ -151,7 +150,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Invalid SMTP host format",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 
@@ -160,14 +159,14 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"SMTP username cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					if username.chars().any(|c| c.is_control()) {
 						return Err(ConfigError::validation_error(
 							"SMTP username contains invalid control characters",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate password
@@ -175,7 +174,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Password cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate message
@@ -183,14 +182,14 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					if message.body.trim().is_empty() {
 						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate subject according to RFC 5322
@@ -199,7 +198,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Subject exceeds maximum length of 998 characters",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					if message
@@ -210,7 +209,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Subject contains invalid control characters",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Add minimum length check after trim
@@ -218,7 +217,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Subject must contain at least 1 character",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 
@@ -232,7 +231,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Body contains invalid control characters",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 
@@ -241,7 +240,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							format!("Invalid sender email address: {}", sender),
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 
@@ -250,7 +249,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Recipients cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					for recipient in recipients {
@@ -258,7 +257,7 @@ impl ConfigLoader for Trigger {
 							return Err(ConfigError::validation_error(
 								format!("Invalid recipient email address: {}", recipient),
 								None,
-								Some("validate"),
+								None,
 							));
 						}
 					}
@@ -277,7 +276,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Invalid webhook URL format",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate HTTP method
@@ -288,7 +287,7 @@ impl ConfigLoader for Trigger {
 								return Err(ConfigError::validation_error(
 									"Invalid HTTP method",
 									None,
-									Some("validate"),
+									None,
 								));
 							}
 						}
@@ -298,14 +297,14 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					if message.body.trim().is_empty() {
 						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 				}
@@ -324,7 +323,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Token cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 
@@ -335,7 +334,7 @@ impl ConfigLoader for Trigger {
 								return Err(ConfigError::validation_error(
 									"Invalid token format",
 									None,
-									Some("validate"),
+									None,
 								));
 							}
 						}
@@ -343,7 +342,7 @@ impl ConfigLoader for Trigger {
 							return Err(ConfigError::validation_error(
 								format!("Failed to validate token format: {}", e),
 								None,
-								Some("validate"),
+								None,
 							));
 						}
 					}
@@ -353,7 +352,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Chat ID cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate message
@@ -361,14 +360,14 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					if message.body.trim().is_empty() {
 						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 				}
@@ -385,7 +384,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Invalid Discord webhook URL format",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					// Validate message
@@ -393,14 +392,14 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							"Title cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 					if message.body.trim().is_empty() {
 						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 				}
@@ -412,7 +411,7 @@ impl ConfigLoader for Trigger {
 						return Err(ConfigError::validation_error(
 							format!("Script path does not exist: {}", path),
 							None,
-							Some("validate"),
+							None,
 						));
 					}
 				}

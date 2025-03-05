@@ -1,7 +1,7 @@
 use mockall::predicate;
 use openzeppelin_monitor::{
 	models::BlockType,
-	services::blockchain::{BlockChainClient, BlockChainError, StellarClient, StellarClientTrait},
+	services::blockchain::{BlockChainClient, StellarClient, StellarClientTrait},
 };
 use serde_json::{json, Value};
 
@@ -73,14 +73,13 @@ async fn test_get_transactions_invalid_sequence_range() {
 
 	let result = client.get_transactions(2, Some(1)).await;
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("start_sequence 2 cannot be greater than end_sequence 1"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(
+		err.to_string()
+			.contains("start_sequence 2 cannot be greater than end_sequence 1"),
+		"Expected RequestError, got: {}",
+		err
+	);
 }
 
 #[tokio::test]
@@ -111,14 +110,13 @@ async fn test_get_transactions_failed_to_parse_transaction() {
 	let result = client.get_transactions(1, Some(2)).await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("Failed to parse transaction response:"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(
+		err.to_string()
+			.contains("Failed to parse transaction response:"),
+		"Expected RequestError, got: {}",
+		err
+	);
 }
 
 #[tokio::test]
@@ -190,14 +188,13 @@ async fn test_get_events_invalid_sequence_range() {
 
 	let result = client.get_events(2, Some(1)).await;
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("start_sequence 2 cannot be greater than end_sequence 1"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(
+		err.to_string()
+			.contains("start_sequence 2 cannot be greater than end_sequence 1"),
+		"Expected RequestError, got: {}",
+		err
+	);
 }
 
 #[tokio::test]
@@ -225,14 +222,12 @@ async fn test_get_events_failed_to_parse_event() {
 	let result = client.get_events(1, Some(2)).await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("Failed to parse event response:"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(
+		err.to_string().contains("Failed to parse event response:"),
+		"Expected RequestError, got: {}",
+		err
+	);
 }
 
 #[tokio::test]
@@ -279,12 +274,12 @@ async fn test_get_latest_block_number_invalid_sequence() {
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg.format_message().contains("Invalid sequence number"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(
+		err.to_string().contains("Invalid sequence number"),
+		"Expected RequestError, got: {}",
+		err
+	);
 }
 
 #[tokio::test]
@@ -365,14 +360,12 @@ async fn test_get_blocks_failed_to_parse() {
 	let result = client.get_blocks(1, Some(2)).await;
 
 	assert!(result.is_err());
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("Failed to parse ledger response:"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(
+		err.to_string().contains("Failed to parse ledger response:"),
+		"Expected RequestError, got: {}",
+		err
+	);
 }
 
 #[tokio::test]
@@ -383,12 +376,11 @@ async fn test_get_blocks_invalid_sequence_range() {
 	let result = client.get_blocks(2, Some(1)).await;
 	assert!(result.is_err());
 
-	match result.unwrap_err() {
-		BlockChainError::RequestError(msg) => {
-			assert!(msg
-				.format_message()
-				.contains("start_block 2 cannot be greater than end_block 1"));
-		}
-		err => panic!("Expected RequestError, got {:?}", err),
-	}
+	let err = result.unwrap_err();
+	assert!(
+		err.to_string()
+			.contains("start_block 2 cannot be greater than end_block 1"),
+		"Expected RequestError, got: {}",
+		err
+	);
 }

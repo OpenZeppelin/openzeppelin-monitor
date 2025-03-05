@@ -37,7 +37,7 @@ pub trait BlockchainTransport: Send + Sync {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone + Serialize;
 

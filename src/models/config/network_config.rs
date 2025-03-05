@@ -3,7 +3,6 @@
 //! This module implements the ConfigLoader trait for Network configurations,
 //! allowing network definitions to be loaded from JSON files.
 
-use log::warn;
 use std::{path::Path, str::FromStr};
 
 use crate::{
@@ -50,15 +49,14 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::file_error(
 				"networks directory not found",
 				None,
-				Some("load_all"),
+				None,
 			));
 		}
 
 		for entry in std::fs::read_dir(network_dir)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?
 		{
-			let entry = entry
-				.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_all")))?;
+			let entry = entry.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 			let path = entry.path();
 
 			if !Self::is_json_file(&path) {
@@ -83,9 +81,9 @@ impl ConfigLoader for Network {
 	/// Reads and parses a single JSON file as a network configuration.
 	fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, Some("load_from_path")))?;
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
 		let config: Network = serde_json::from_reader(file)
-			.map_err(|e| ConfigError::parse_error(e.to_string(), None, Some("load_from_path")))?;
+			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -106,7 +104,7 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"Network name is required",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -117,7 +115,7 @@ impl ConfigLoader for Network {
 				return Err(ConfigError::validation_error(
 					"Invalid network_type",
 					None,
-					Some("validate"),
+					None,
 				));
 			}
 		}
@@ -131,7 +129,7 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"Slug must contain only lowercase letters, numbers, and underscores",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -148,7 +146,7 @@ impl ConfigLoader for Network {
 					supported_types.join(", ")
 				),
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -159,7 +157,7 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"All RPC URLs must start with http:// or https://",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -168,7 +166,7 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"All RPC URL weights must be between 0 and 100",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -177,7 +175,7 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"Block time must be at least 100ms",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -186,7 +184,7 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"Confirmation blocks must be greater than 0",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
@@ -195,17 +193,13 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(
 				"Cron schedule must be provided",
 				None,
-				Some("validate"),
+				None,
 			));
 		}
 
 		// Add cron schedule format validation
 		if let Err(e) = cron::Schedule::from_str(&self.cron_schedule) {
-			return Err(ConfigError::validation_error(
-				e.to_string(),
-				None,
-				Some("validate"),
-			));
+			return Err(ConfigError::validation_error(e.to_string(), None, None));
 		}
 
 		// Validate max_past_blocks
@@ -214,17 +208,19 @@ impl ConfigLoader for Network {
 				return Err(ConfigError::validation_error(
 					"max_past_blocks must be greater than 0",
 					None,
-					Some("validate"),
+					None,
 				));
 			}
 
 			let recommended_blocks = self.get_recommended_past_blocks();
 
 			if max_blocks < recommended_blocks {
-				warn!(
+				tracing::warn!(
 					"Network '{}' max_past_blocks ({}) below recommended {} \
 					 (cron_interval/block_time + confirmations + 1)",
-					self.slug, max_blocks, recommended_blocks
+					self.slug,
+					max_blocks,
+					recommended_blocks
 				);
 			}
 		}

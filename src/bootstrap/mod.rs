@@ -16,7 +16,6 @@
 //!   from the block processing pipeline
 
 use futures::future::BoxFuture;
-use log::info;
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::watch;
 
@@ -220,7 +219,7 @@ where
 			}
 		}
 		_ = shutdown_rx.changed() => {
-			info!("Shutting down block processing task");
+			tracing::info!("Shutting down block processing task");
 			None
 		}
 	}
@@ -251,7 +250,7 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 					}
 				} => {}
 				_ = shutdown_rx.changed() => {
-					info!("Shutting down trigger handling task");
+					tracing::info!("Shutting down trigger handling task");
 				}
 			}
 		})

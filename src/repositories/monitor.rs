@@ -38,9 +38,8 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<Self, RepositoryError> {
-		let monitors = Self::load_all(path, network_service, trigger_service).map_err(|e| {
-			RepositoryError::load_error_with_source("Failed to load monitors", e, None, Some("new"))
-		})?;
+		let monitors = Self::load_all(path, network_service, trigger_service)
+			.map_err(|_| RepositoryError::load_error("Failed to load monitors", None, None))?;
 		Ok(MonitorRepository {
 			monitors,
 			_network_repository: PhantomData,
@@ -93,7 +92,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 					validation_errors.join("\n"),
 				),
 				None,
-				Some("validate_monitor_references"),
+				None,
 			));
 		}
 
@@ -156,7 +155,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<HashMap<String, Monitor>, RepositoryError> {
 		let monitors = Monitor::load_all(path)
-			.map_err(|e| RepositoryError::load_error(e.to_string(), None, Some("load_all")))?;
+			.map_err(|e| RepositoryError::load_error(e.to_string(), None, None))?;
 
 		let networks = match network_service {
 			Some(service) => service.get_all(),

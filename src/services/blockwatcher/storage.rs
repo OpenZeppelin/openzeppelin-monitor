@@ -8,9 +8,9 @@
 
 use async_trait::async_trait;
 use glob::glob;
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
-use crate::{models::BlockType, services::blockwatcher::error::BlockWatcherError};
+use crate::models::BlockType;
 
 /// Interface for block storage implementations
 ///
@@ -29,7 +29,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	async fn get_last_processed_block(
 		&self,
 		network_id: &str,
-	) -> Result<Option<u64>, BlockWatcherError>;
+	) -> Result<Option<u64>, anyhow::Error>;
 
 	/// Saves the last processed block number for a network
 	///
@@ -43,7 +43,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 		&self,
 		network_id: &str,
 		block: u64,
-	) -> Result<(), BlockWatcherError>;
+	) -> Result<(), anyhow::Error>;
 
 	/// Saves a collection of blocks for a network
 	///
@@ -57,7 +57,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 		&self,
 		network_id: &str,
 		blocks: &[BlockType],
-	) -> Result<(), BlockWatcherError>;
+	) -> Result<(), anyhow::Error>;
 
 	/// Deletes all stored blocks for a network
 	///
@@ -66,7 +66,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	///
 	/// # Returns
 	/// * `Result<(), BlockWatcherError>` - Success or error
-	async fn delete_blocks(&self, network_id: &str) -> Result<(), BlockWatcherError>;
+	async fn delete_blocks(&self, network_id: &str) -> Result<(), anyhow::Error>;
 
 	/// Saves a missed block for a network
 	///
@@ -76,11 +76,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	///
 	/// # Returns
 	/// * `Result<(), BlockWatcherError>` - Success or error
-	async fn save_missed_block(
-		&self,
-		network_id: &str,
-		block: u64,
-	) -> Result<(), BlockWatcherError>;
+	async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), anyhow::Error>;
 }
 
 /// File-based implementation of block storage
@@ -119,7 +115,7 @@ impl BlockStorage for FileBlockStorage {
 	async fn get_last_processed_block(
 		&self,
 		network_id: &str,
-	) -> Result<Option<u64>, BlockWatcherError> {
+	) -> Result<Option<u64>, anyhow::Error> {
 		let file_path = self
 			.storage_path
 			.join(format!("{}_last_block.txt", network_id));
@@ -128,12 +124,13 @@ impl BlockStorage for FileBlockStorage {
 			return Ok(None);
 		}
 
-		let content = tokio::fs::read_to_string(file_path).await.map_err(|e| {
-			BlockWatcherError::storage_error(e.to_string(), None, Some("get_last_processed_block"))
-		})?;
-		let block_number = content.trim().parse::<u64>().map_err(|e| {
-			BlockWatcherError::storage_error(e.to_string(), None, Some("get_last_processed_block"))
-		})?;
+		let content = tokio::fs::read_to_string(file_path)
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to read last processed block: {}", e))?;
+		let block_number = content
+			.trim()
+			.parse::<u64>()
+			.map_err(|e| anyhow::anyhow!("Failed to parse last processed block: {}", e))?;
 		Ok(Some(block_number))
 	}
 
@@ -145,23 +142,13 @@ impl BlockStorage for FileBlockStorage {
 		&self,
 		network_id: &str,
 		block: u64,
-	) -> Result<(), BlockWatcherError> {
-		let context = HashMap::from([
-			("network".to_string(), network_id.to_string()),
-			("block".to_string(), block.to_string()),
-		]);
+	) -> Result<(), anyhow::Error> {
 		let file_path = self
 			.storage_path
 			.join(format!("{}_last_block.txt", network_id));
 		tokio::fs::write(file_path, block.to_string())
 			.await
-			.map_err(|e| {
-				BlockWatcherError::storage_error(
-					e.to_string(),
-					Some(context),
-					Some("save_last_processed_block"),
-				)
-			})?;
+			.map_err(|e| anyhow::anyhow!("Failed to save last processed block: {}", e))?;
 		Ok(())
 	}
 
@@ -174,27 +161,17 @@ impl BlockStorage for FileBlockStorage {
 		&self,
 		network_slug: &str,
 		blocks: &[BlockType],
-	) -> Result<(), BlockWatcherError> {
-		let context = HashMap::from([("network".to_string(), network_slug.to_string())]);
+	) -> Result<(), anyhow::Error> {
 		let file_path = self.storage_path.join(format!(
 			"{}_blocks_{}.json",
 			network_slug,
 			chrono::Utc::now().timestamp()
 		));
-		let json = serde_json::to_string(blocks).map_err(|e| {
-			BlockWatcherError::storage_error(
-				e.to_string(),
-				Some(context.clone()),
-				Some("save_blocks"),
-			)
-		})?;
-		tokio::fs::write(file_path, json).await.map_err(|e| {
-			BlockWatcherError::storage_error(
-				e.to_string(),
-				Some(context.clone()),
-				Some("save_blocks"),
-			)
-		})?;
+		let json = serde_json::to_string(blocks)
+			.map_err(|e| anyhow::anyhow!("Failed to serialize blocks: {}", e))?;
+		tokio::fs::write(file_path, json)
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to save blocks: {}", e))?;
 		Ok(())
 	}
 
@@ -203,8 +180,7 @@ impl BlockStorage for FileBlockStorage {
 	/// # Note
 	/// Uses glob pattern matching to find and delete all files matching:
 	/// "{network_id}_blocks_*.json"
-	async fn delete_blocks(&self, network_slug: &str) -> Result<(), BlockWatcherError> {
-		let context = HashMap::from([("network".to_string(), network_slug.to_string())]);
+	async fn delete_blocks(&self, network_slug: &str) -> Result<(), anyhow::Error> {
 		let pattern = self
 			.storage_path
 			.join(format!("{}_blocks_*.json", network_slug))
@@ -212,22 +188,12 @@ impl BlockStorage for FileBlockStorage {
 			.to_string();
 
 		for entry in glob(&pattern)
-			.map_err(|e| {
-				BlockWatcherError::storage_error(
-					e.to_string(),
-					Some(context.clone()),
-					Some("delete_blocks"),
-				)
-			})?
+			.map_err(|e| anyhow::anyhow!("Failed to parse blocks: {}", e))?
 			.flatten()
 		{
-			tokio::fs::remove_file(entry).await.map_err(|e| {
-				BlockWatcherError::storage_error(
-					e.to_string(),
-					Some(context.clone()),
-					Some("delete_blocks"),
-				)
-			})?;
+			tokio::fs::remove_file(entry)
+				.await
+				.map_err(|e| anyhow::anyhow!("Failed to delete blocks: {}", e))?;
 		}
 		Ok(())
 	}
@@ -240,15 +206,7 @@ impl BlockStorage for FileBlockStorage {
 	///
 	/// # Returns
 	/// * `Result<(), BlockWatcherError>` - Success or error
-	async fn save_missed_block(
-		&self,
-		network_id: &str,
-		block: u64,
-	) -> Result<(), BlockWatcherError> {
-		let context = HashMap::from([
-			("network_id".to_string(), network_id.to_string()),
-			("block".to_string(), block.to_string()),
-		]);
+	async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), anyhow::Error> {
 		let file_path = self
 			.storage_path
 			.join(format!("{}_missed_blocks.txt", network_id));
@@ -259,24 +217,12 @@ impl BlockStorage for FileBlockStorage {
 			.append(true)
 			.open(file_path)
 			.await
-			.map_err(|e| {
-				BlockWatcherError::storage_error(
-					e.to_string(),
-					Some(context.clone()),
-					Some("save_missed_block"),
-				)
-			})?;
+			.map_err(|e| anyhow::anyhow!("Failed to create missed block file: {}", e))?;
 
 		// Write the block number followed by a newline
 		tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", block).as_bytes())
 			.await
-			.map_err(|e| {
-				BlockWatcherError::storage_error(
-					e.to_string(),
-					Some(context.clone()),
-					Some("save_missed_block"),
-				)
-			})?;
+			.map_err(|e| anyhow::anyhow!("Failed to save missed block: {}", e))?;
 
 		Ok(())
 	}
@@ -310,12 +256,14 @@ mod tests {
 			.await
 			.unwrap();
 		let result = storage.get_last_processed_block("invalid").await;
-		assert!(matches!(
-			result,
-			Err(BlockWatcherError::StorageError { .. })
-		));
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(err
+			.to_string()
+			.contains("Failed to parse last processed block"));
+		assert!(err.to_string().contains("invalid"));
 
-		// Test 3: Valid block number
+		// Test 4: Valid block number
 		let valid_file = temp_dir.path().join("valid_last_block.txt");
 		tokio::fs::write(&valid_file, "123").await.unwrap();
 		let result = storage.get_last_processed_block("valid").await;
@@ -351,10 +299,12 @@ mod tests {
 			let result = readonly_storage
 				.save_last_processed_block("test", 100)
 				.await;
-			assert!(matches!(
-				result,
-				Err(BlockWatcherError::StorageError { .. })
-			));
+			assert!(result.is_err());
+			let err = result.unwrap_err();
+			assert!(err
+				.to_string()
+				.contains("Failed to save last processed block"));
+			assert!(err.to_string().contains("test"));
 		}
 	}
 
@@ -379,10 +329,10 @@ mod tests {
 
 			let readonly_storage = FileBlockStorage::new(readonly_dir);
 			let result = readonly_storage.save_blocks("test", &[]).await;
-			assert!(matches!(
-				result,
-				Err(BlockWatcherError::StorageError { .. })
-			));
+			assert!(result.is_err());
+			let err = result.unwrap_err();
+			assert!(err.to_string().contains("Failed to save blocks"));
+			assert!(err.to_string().contains("test"));
 		}
 	}
 
@@ -417,15 +367,15 @@ mod tests {
 
 			// Then make directory readonly
 			let mut perms = std::fs::metadata(&readonly_dir).unwrap().permissions();
-			perms.set_mode(0o444); // Read-only
+			perms.set_mode(0o555); // Read-only directory with execute permission
 			std::fs::set_permissions(&readonly_dir, perms).unwrap();
 
 			let readonly_storage = FileBlockStorage::new(readonly_dir);
 			let result = readonly_storage.delete_blocks("test").await;
-			assert!(matches!(
-				result,
-				Err(BlockWatcherError::StorageError { .. })
-			));
+			assert!(result.is_err());
+			let err = result.unwrap_err();
+			assert!(err.to_string().contains("Failed to delete blocks"));
+			assert!(err.to_string().contains("test"));
 		}
 	}
 
@@ -456,10 +406,12 @@ mod tests {
 
 			let readonly_storage = FileBlockStorage::new(readonly_dir);
 			let result = readonly_storage.save_missed_block("test", 100).await;
-			assert!(matches!(
-				result,
-				Err(BlockWatcherError::StorageError { .. })
-			));
+			assert!(result.is_err());
+			let err = result.unwrap_err();
+			assert!(err
+				.to_string()
+				.contains("Failed to create missed block file"));
+			assert!(err.to_string().contains("test"));
 		}
 	}
 }

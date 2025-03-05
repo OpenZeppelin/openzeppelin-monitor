@@ -17,6 +17,7 @@ use crate::{
 		StellarClient, StellarClientTrait, StellarTransportClient, Web3TransportClient,
 	},
 };
+use anyhow::Context;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use std::{any::Any, collections::HashMap, sync::Arc};
@@ -33,11 +34,11 @@ pub trait ClientPoolTrait: Send + Sync {
 	async fn get_evm_client(
 		&self,
 		network: &Network,
-	) -> Result<Arc<Self::EvmClient>, BlockChainError>;
+	) -> Result<Arc<Self::EvmClient>, anyhow::Error>;
 	async fn get_stellar_client(
 		&self,
 		network: &Network,
-	) -> Result<Arc<Self::StellarClient>, BlockChainError>;
+	) -> Result<Arc<Self::StellarClient>, anyhow::Error>;
 }
 
 /// Generic client storage that can hold any type of blockchain client
@@ -105,13 +106,7 @@ impl ClientPool {
 			.storages
 			.get(&client_type)
 			.and_then(|s| s.downcast_ref::<ClientStorage<T>>())
-			.ok_or_else(|| {
-				BlockChainError::client_pool_error(
-					"Invalid client type".to_string(),
-					None,
-					Some("get_or_create_client"),
-				)
-			})?;
+			.with_context(|| "Invalid client type")?;
 
 		// Fast path: check if client exists
 		if let Some(client) = storage.clients.read().await.get(&network.slug) {
@@ -150,15 +145,13 @@ impl ClientPoolTrait for ClientPool {
 	async fn get_evm_client(
 		&self,
 		network: &Network,
-	) -> Result<Arc<Self::EvmClient>, BlockChainError> {
+	) -> Result<Arc<Self::EvmClient>, anyhow::Error> {
 		self.get_or_create_client(BlockChainType::EVM, network, |n| {
 			let network = n.clone();
 			Box::pin(async move { Self::EvmClient::new(&network).await })
 		})
 		.await
-		.map_err(|e| {
-			BlockChainError::client_pool_error(e.to_string(), None, Some("get_evm_client"))
-		})
+		.with_context(|| "Failed to get or create EVM client")
 	}
 
 	/// Gets or creates a Stellar client for the given network.
@@ -168,15 +161,13 @@ impl ClientPoolTrait for ClientPool {
 	async fn get_stellar_client(
 		&self,
 		network: &Network,
-	) -> Result<Arc<Self::StellarClient>, BlockChainError> {
+	) -> Result<Arc<Self::StellarClient>, anyhow::Error> {
 		self.get_or_create_client(BlockChainType::Stellar, network, |n| {
 			let network = n.clone();
 			Box::pin(async move { Self::StellarClient::new(&network).await })
 		})
 		.await
-		.map_err(|e| {
-			BlockChainError::client_pool_error(e.to_string(), None, Some("get_stellar_client"))
-		})
+		.with_context(|| "Failed to get or create Stellar client")
 	}
 }
 

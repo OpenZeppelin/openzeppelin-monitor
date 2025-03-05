@@ -4,8 +4,9 @@
 //! supporting operations like block retrieval, transaction lookup, and event filtering.
 //! It works with both Stellar Core nodes and Horizon API endpoints.
 
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -21,7 +22,6 @@ use crate::{
 		},
 		filter::StellarBlockFilter,
 	},
-	utils::{format_target_with_source, ErrorContext, ErrorContextProvider},
 };
 
 /// Client implementation for the Stellar blockchain
@@ -65,12 +65,12 @@ pub trait StellarClientTrait {
 	/// * `end_sequence` - Optional ending sequence number. If None, only fetches start_sequence
 	///
 	/// # Returns
-	/// * `Result<Vec<StellarTransaction>, BlockChainError>` - Collection of transactions or error
+	/// * `Result<Vec<StellarTransaction>, anyhow::Error>` - Collection of transactions or error
 	async fn get_transactions(
 		&self,
 		start_sequence: u32,
 		end_sequence: Option<u32>,
-	) -> Result<Vec<StellarTransaction>, BlockChainError>;
+	) -> Result<Vec<StellarTransaction>, anyhow::Error>;
 
 	/// Retrieves events within a sequence range
 	///
@@ -79,12 +79,12 @@ pub trait StellarClientTrait {
 	/// * `end_sequence` - Optional ending sequence number. If None, only fetches start_sequence
 	///
 	/// # Returns
-	/// * `Result<Vec<StellarEvent>, BlockChainError>` - Collection of events or error
+	/// * `Result<Vec<StellarEvent>, anyhow::Error>` - Collection of events or error
 	async fn get_events(
 		&self,
 		start_sequence: u32,
 		end_sequence: Option<u32>,
-	) -> Result<Vec<StellarEvent>, BlockChainError>;
+	) -> Result<Vec<StellarEvent>, anyhow::Error>;
 }
 
 #[async_trait]
@@ -92,24 +92,20 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 	/// Retrieves transactions within a sequence range with pagination
 	///
 	/// # Errors
-	/// - Returns `BlockChainError::RequestError` if start_sequence > end_sequence
-	/// - Returns `BlockChainError::RequestError` if transaction parsing fails
+	/// - Returns `anyhow::Error` if start_sequence > end_sequence
+	/// - Returns `anyhow::Error` if transaction parsing fails
 	async fn get_transactions(
 		&self,
 		start_sequence: u32,
 		end_sequence: Option<u32>,
-	) -> Result<Vec<StellarTransaction>, BlockChainError> {
+	) -> Result<Vec<StellarTransaction>, anyhow::Error> {
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error::<ErrorContext<String>>(
-					&format!(
-						"start_sequence {} cannot be greater than end_sequence {}",
-						start_sequence, end_sequence
-					),
-					None,
-					None,
-					Some("get_transactions"),
+				return Err(anyhow::anyhow!(
+					"start_sequence {} cannot be greater than end_sequence {}",
+					start_sequence,
+					end_sequence
 				));
 			}
 		}
@@ -119,11 +115,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 		let mut transactions = Vec::new();
 		let target_sequence = end_sequence.unwrap_or(start_sequence);
 		let mut cursor = None;
-
-		let context = HashMap::from([
-			("start_sequence".to_string(), start_sequence.to_string()),
-			("end_sequence".to_string(), target_sequence.to_string()),
-		]);
 
 		while cursor.unwrap_or(start_sequence) <= target_sequence {
 			let params = json!({
@@ -137,29 +128,17 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 				.stellar_client
 				.send_raw_request("getTransactions", Some(params))
 				.await
-				.map_err(|e| {
-					let err_msg = e.to_string();
-					let err_ctx = e.provide_error_context();
-					let target = format_target_with_source(Some("get_transactions"), err_ctx);
-					BlockChainError::request_error::<BlockChainError>(
-						&err_msg,
-						None,
-						Some(context.clone()),
-						Some(&target),
+				.with_context(|| {
+					format!(
+						"Failed to fetch transactions for ledger range {}-{}",
+						cursor.unwrap_or(start_sequence),
+						target_sequence
 					)
 				})?;
 
-			let ledger_transactions: Vec<StellarTransactionInfo> = serde_json::from_value(
-				response["result"]["transactions"].clone(),
-			)
-			.map_err(|e| {
-				BlockChainError::request_error::<ErrorContext<String>>(
-					&format!("Failed to parse transaction response: {}", e),
-					None,
-					Some(context.clone()),
-					Some("get_transactions"),
-				)
-			})?;
+			let ledger_transactions: Vec<StellarTransactionInfo> =
+				serde_json::from_value(response["result"]["transactions"].clone())
+					.with_context(|| "Failed to parse transaction response")?;
 
 			if ledger_transactions.is_empty() {
 				break;
@@ -187,24 +166,20 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 	/// Retrieves events within a sequence range with pagination
 	///
 	/// # Errors
-	/// - Returns `BlockChainError::RequestError` if start_sequence > end_sequence
-	/// - Returns `BlockChainError::RequestError` if event parsing fails
+	/// - Returns `anyhow::Error` if start_sequence > end_sequence
+	/// - Returns `anyhow::Error` if event parsing fails
 	async fn get_events(
 		&self,
 		start_sequence: u32,
 		end_sequence: Option<u32>,
-	) -> Result<Vec<StellarEvent>, BlockChainError> {
+	) -> Result<Vec<StellarEvent>, anyhow::Error> {
 		// Validate input parameters
 		if let Some(end_sequence) = end_sequence {
 			if start_sequence > end_sequence {
-				return Err(BlockChainError::request_error::<ErrorContext<String>>(
-					&format!(
-						"start_sequence {} cannot be greater than end_sequence {}",
-						start_sequence, end_sequence
-					),
-					None,
-					None,
-					Some("get_events"),
+				return Err(anyhow::anyhow!(
+					"start_sequence {} cannot be greater than end_sequence {}",
+					start_sequence,
+					end_sequence
 				));
 			}
 		}
@@ -214,11 +189,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 		let mut events = Vec::new();
 		let target_sequence = end_sequence.unwrap_or(start_sequence);
 		let mut cursor = None;
-
-		let context = HashMap::from([
-			("start_sequence".to_string(), start_sequence.to_string()),
-			("end_sequence".to_string(), target_sequence.to_string()),
-		]);
 
 		while cursor.unwrap_or(start_sequence) <= target_sequence {
 			let params = json!({
@@ -235,27 +205,17 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 				.stellar_client
 				.send_raw_request("getEvents", Some(params))
 				.await
-				.map_err(|e| {
-					let err_msg = e.to_string();
-					let err_ctx = e.provide_error_context();
-					let target = format_target_with_source(Some("get_events"), err_ctx);
-					BlockChainError::request_error::<BlockChainError>(
-						&err_msg,
-						None,
-						Some(context.clone()),
-						Some(&target),
+				.with_context(|| {
+					format!(
+						"Failed to fetch events for ledger range {}-{}",
+						cursor.unwrap_or(start_sequence),
+						target_sequence
 					)
 				})?;
 
 			let ledger_events: Vec<StellarEvent> =
-				serde_json::from_value(response["result"]["events"].clone()).map_err(|e| {
-					BlockChainError::request_error::<ErrorContext<String>>(
-						&format!("Failed to parse event response: {}", e),
-						None,
-						Some(context.clone()),
-						Some("get_events"),
-					)
-				})?;
+				serde_json::from_value(response["result"]["events"].clone())
+					.with_context(|| "Failed to parse event response")?;
 
 			if ledger_events.is_empty() {
 				break;
@@ -294,31 +254,16 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for 
 #[async_trait]
 impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarClient<T> {
 	/// Retrieves the latest block number with retry functionality
-	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError> {
+	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
 			.stellar_client
 			.send_raw_request::<serde_json::Value>("getLatestLedger", None)
 			.await
-			.map_err(|e| {
-				let err_msg = e.to_string();
-				let err_ctx = e.provide_error_context();
-				let target = format_target_with_source(Some("get_latest_block_number"), err_ctx);
-				BlockChainError::request_error::<BlockChainError>(
-					&err_msg,
-					None,
-					None,
-					Some(&target),
-				)
-			})?;
+			.with_context(|| "Failed to get latest ledger")?;
 
-		let sequence = response["result"]["sequence"].as_u64().ok_or_else(|| {
-			BlockChainError::request_error::<ErrorContext<String>>(
-				"Invalid sequence number",
-				None,
-				None,
-				Some("get_latest_block_number"),
-			)
-		})?;
+		let sequence = response["result"]["sequence"]
+			.as_u64()
+			.ok_or_else(|| anyhow::anyhow!("Invalid sequence number"))?;
 
 		Ok(sequence)
 	}
@@ -335,21 +280,17 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 		&self,
 		start_block: u64,
 		end_block: Option<u64>,
-	) -> Result<Vec<BlockType>, BlockChainError> {
+	) -> Result<Vec<BlockType>, anyhow::Error> {
 		// max limit for the RPC endpoint is 200
 		const PAGE_LIMIT: u32 = 200;
 
 		// Validate input parameters
 		if let Some(end_block) = end_block {
 			if start_block > end_block {
-				return Err(BlockChainError::request_error::<ErrorContext<String>>(
-					&format!(
-						"start_block {} cannot be greater than end_block {}",
-						start_block, end_block
-					),
-					None,
-					None,
-					Some("get_blocks"),
+				return Err(anyhow::anyhow!(
+					"start_block {} cannot be greater than end_block {}",
+					start_block,
+					end_block
 				));
 			}
 		}
@@ -357,11 +298,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 		let mut blocks = Vec::new();
 		let target_block = end_block.unwrap_or(start_block);
 		let mut cursor = None;
-
-		let context = HashMap::from([
-			("start_block".to_string(), start_block.to_string()),
-			("end_block".to_string(), target_block.to_string()),
-		]);
 
 		while cursor.unwrap_or(start_block) <= target_block {
 			let params = json!({
@@ -375,27 +311,17 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 				.stellar_client
 				.send_raw_request("getLedgers", Some(params))
 				.await
-				.map_err(|e| {
-					let err_msg = e.to_string();
-					let err_ctx = e.provide_error_context();
-					let target = format_target_with_source(Some("get_blocks"), err_ctx);
-					BlockChainError::request_error::<BlockChainError>(
-						&err_msg,
-						None,
-						Some(context.clone()),
-						Some(&target),
+				.with_context(|| {
+					format!(
+						"Failed to fetch ledgers for range {}-{}",
+						cursor.unwrap_or(start_block),
+						target_block
 					)
 				})?;
 
 			let ledgers: Vec<StellarBlock> =
-				serde_json::from_value(response["result"]["ledgers"].clone()).map_err(|e| {
-					BlockChainError::request_error::<ErrorContext<String>>(
-						&format!("Failed to parse ledger response: {}", e),
-						None,
-						Some(context.clone()),
-						Some("get_blocks"),
-					)
-				})?;
+				serde_json::from_value(response["result"]["ledgers"].clone())
+					.with_context(|| "Failed to parse ledger response")?;
 
 			if ledgers.is_empty() {
 				break;

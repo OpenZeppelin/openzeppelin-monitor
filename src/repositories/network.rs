@@ -26,9 +26,8 @@ impl NetworkRepository {
 	/// Loads all network configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
 	pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let networks = Self::load_all(path).map_err(|e| {
-			RepositoryError::load_error_with_source("Failed to load networks", e, None, Some("new"))
-		})?;
+		let networks = Self::load_all(path)
+			.map_err(|_| RepositoryError::load_error("Failed to load networks", None, None))?;
 		Ok(NetworkRepository { networks })
 	}
 }
@@ -66,8 +65,7 @@ impl NetworkRepositoryTrait for NetworkRepository {
 	}
 
 	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
-		Network::load_all(path)
-			.map_err(|e| RepositoryError::load_error(e.to_string(), None, Some("load_all")))
+		Network::load_all(path).map_err(|e| RepositoryError::load_error(e.to_string(), None, None))
 	}
 
 	fn get(&self, network_id: &str) -> Option<Network> {
