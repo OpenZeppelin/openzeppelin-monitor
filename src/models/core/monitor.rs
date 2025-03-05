@@ -100,10 +100,6 @@ pub enum TransactionStatus {
 /// Conditions that should be met prior to triggering notifications
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TriggerConditions {
-	/// The order of the execution of the script
-	#[serde(default)]
-	pub execution_order: Option<u32>,
-
 	/// The path to the script
 	pub script_path: String,
 

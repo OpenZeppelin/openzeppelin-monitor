@@ -320,7 +320,6 @@ mod tests {
 			name: "test_monitor".to_string(),
 			match_conditions: MatchConditions::default(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
@@ -341,7 +340,6 @@ mod tests {
 		let monitor_bad_path = Monitor {
 			name: "test_monitor_bad_path".to_string(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: "non_existent_script.py".to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
@@ -365,7 +363,6 @@ mod tests {
 		let monitor_wrong_ext = Monitor {
 			name: "test_monitor_wrong_ext".to_string(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: wrong_ext_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
@@ -391,7 +388,6 @@ mod tests {
 			name: "test_monitor_zero_timeout".to_string(),
 			match_conditions: MatchConditions::default(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 0,

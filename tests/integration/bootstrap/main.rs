@@ -312,7 +312,6 @@ print(True)  # Always return true for test
 	// Create a monitor with trigger conditions
 	let mut monitor = create_test_monitor("test_trigger", vec!["ethereum_mainnet"], false, vec![]);
 	monitor.trigger_conditions = vec![TriggerConditions {
-		execution_order: Some(1),
 		script_path: "test_script.py".to_string(),
 		language: ScriptLanguage::Python,
 		timeout_ms: 1000,
@@ -431,7 +430,6 @@ async fn test_load_scripts() {
 	let monitors = vec![Monitor {
 		name: "test_monitor".to_string(),
 		trigger_conditions: vec![TriggerConditions {
-			execution_order: Some(1),
 			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
@@ -472,7 +470,6 @@ async fn test_load_scripts_error() {
 	let monitors = vec![Monitor {
 		name: "test_monitor".to_string(),
 		trigger_conditions: vec![TriggerConditions {
-			execution_order: Some(1),
 			script_path: "non_existent_script.py".to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,

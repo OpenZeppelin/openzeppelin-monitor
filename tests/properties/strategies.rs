@@ -279,12 +279,11 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 	]);
 
 	(
-		1u32..=100u32,
 		script_paths,
 		"[a-zA-Z0-9_]+".prop_map(|s| s.to_string()),
 		Just(1000u32),
 	)
-		.prop_map(|(execution_order, script_path, arguments, timeout_ms)| {
+		.prop_map(|(script_path, arguments, timeout_ms)| {
 			let language = match script_path.split('.').last() {
 				Some("py") => ScriptLanguage::Python,
 				Some("js") => ScriptLanguage::JavaScript,
@@ -293,7 +292,6 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 			};
 
 			vec![TriggerConditions {
-				execution_order: Some(execution_order),
 				script_path,
 				arguments: Some(arguments),
 				language,

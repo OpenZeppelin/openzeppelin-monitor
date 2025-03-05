@@ -363,10 +363,7 @@ async fn run_trigger_filters(
 			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
 		};
 
-		let mut sorted_conditions = trigger_conditions.clone();
-		sorted_conditions.sort_by_key(|condition| condition.execution_order);
-
-		for trigger_condition in sorted_conditions {
+		for trigger_condition in trigger_conditions {
 			let monitor_name = match monitor_match {
 				MonitorMatch::EVM(evm_match) => evm_match.monitor.name.clone(),
 				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
@@ -427,7 +424,6 @@ mod tests {
 			trigger_conditions: vec![TriggerConditions {
 				language: ScriptLanguage::Python,
 				script_path: script_path.unwrap_or("test.py").to_string(),
-				execution_order: Some(0),
 				timeout_ms: 1000,
 				arguments: None,
 			}],
@@ -670,7 +666,6 @@ print(False)  # Script returns false
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
 			script_path: temp_file.path().to_str().unwrap().to_string(),
-			execution_order: Some(0),
 			timeout_ms: 1000,
 			arguments: None,
 		};
@@ -691,7 +686,6 @@ raise Exception("Test error")  # Raise an error
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
 			script_path: temp_file.path().to_str().unwrap().to_string(),
-			execution_order: Some(0),
 			timeout_ms: 1000,
 			arguments: None,
 		};
@@ -708,7 +702,6 @@ raise Exception("Test error")  # Raise an error
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
 			script_path: "non_existent_script.py".to_string(),
-			execution_order: Some(0),
 			timeout_ms: 1000,
 			arguments: None,
 		};
@@ -731,14 +724,12 @@ raise Exception("Test error")  # Raise an error
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "test1.py".to_string(),
-					execution_order: Some(1),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "test2.py".to_string(),
-					execution_order: Some(2),
 					timeout_ms: 1000,
 					arguments: None,
 				},
@@ -762,7 +753,7 @@ raise Exception("Test error")  # Raise an error
 		// Set up trigger scripts - first one returns false, second returns true
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
-			"monitor_test-test1.py".to_string(),
+			"monitor_test|test1.py".to_string(),
 			(
 				ScriptLanguage::Python,
 				r#"
@@ -777,7 +768,7 @@ print(True)
 			),
 		);
 		trigger_scripts.insert(
-			"monitor_test-test2.py".to_string(),
+			"monitor_test|test2.py".to_string(),
 			(
 				ScriptLanguage::Python,
 				r#"
@@ -795,9 +786,7 @@ print(True)
 		let matches = vec![match_item.clone()];
 		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
 
-		// Since the first condition returns false and second returns true,
-		// the match should be filtered out (not kept)
-		assert_eq!(filtered.len(), 1);
+		assert_eq!(filtered.len(), 0);
 	}
 
 	#[tokio::test]
@@ -811,14 +800,12 @@ print(True)
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
-					execution_order: Some(2),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
-					execution_order: Some(1),
 					timeout_ms: 1000,
 					arguments: None,
 				},
@@ -865,14 +852,12 @@ print(True)
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
-					execution_order: Some(2),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
-					execution_order: Some(1),
 					timeout_ms: 1000,
 					arguments: None,
 				},
@@ -918,14 +903,12 @@ print(True)
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
-					execution_order: Some(2),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
-					execution_order: Some(1),
 					timeout_ms: 1000,
 					arguments: None,
 				},
@@ -971,21 +954,18 @@ print(True)
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
-					execution_order: Some(2),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
-					execution_order: Some(1),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition3.py".to_string(),
-					execution_order: Some(3),
 					timeout_ms: 1000,
 					arguments: None,
 				},
@@ -1035,21 +1015,18 @@ print(True)
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
-					execution_order: Some(2),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
-					execution_order: Some(1),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition3.py".to_string(),
-					execution_order: Some(3),
 					timeout_ms: 1000,
 					arguments: None,
 				},
@@ -1152,14 +1129,12 @@ print(result)
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition1.py".to_string(),
-					execution_order: Some(1),
 					timeout_ms: 1000,
 					arguments: None,
 				},
 				TriggerConditions {
 					language: ScriptLanguage::Python,
 					script_path: "condition2.py".to_string(),
-					execution_order: Some(2),
 					timeout_ms: 1000,
 					arguments: None,
 				},
