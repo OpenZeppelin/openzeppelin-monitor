@@ -7,9 +7,9 @@ use email_address::EmailAddress;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
 
-use crate::models::{
-	config::error::ConfigError, ConfigLoader, ScriptLanguage, Trigger, TriggerType,
-	TriggerTypeConfig,
+use crate::{
+	models::{config::error::ConfigError, ConfigLoader, Trigger, TriggerType, TriggerTypeConfig},
+	utils::validate_script_config,
 };
 
 /// File structure for trigger configuration files
@@ -304,40 +304,7 @@ impl ConfigLoader for Trigger {
 					..
 				} = &self.config
 				{
-					// Validate script path exists
-					if !Path::new(script_path).exists() {
-						return Err(ConfigError::validation_error(format!(
-							"Script path does not exist: {}",
-							script_path
-						)));
-					}
-					let script_path_instance = Path::new(&script_path);
-					// Validate file extension matches language
-					let extension = script_path_instance
-						.extension()
-						.and_then(|ext| ext.to_str())
-						.unwrap_or("");
-
-					let valid_extension = match &language {
-						ScriptLanguage::Python => extension == "py",
-						ScriptLanguage::JavaScript => extension == "js",
-						ScriptLanguage::Bash => extension == "sh",
-					};
-
-					if !valid_extension {
-						return Err(ConfigError::validation_error(format!(
-							"Script file extension does not match specified language {:?}: {}",
-							language,
-							script_path.as_str()
-						)));
-					}
-
-					// Validate timeout
-					if *timeout_ms == 0 {
-						return Err(ConfigError::validation_error(
-							"Timeout must be greater than 0",
-						));
-					}
+					validate_script_config(script_path, language, timeout_ms)?;
 				}
 			}
 		}
@@ -803,7 +770,6 @@ mod tests {
 				timeout_ms: 1000,
 			},
 		};
-		println!("valid_trigger ==>: {:?}", valid_trigger);
 		assert!(valid_trigger.validate().is_ok());
 
 		// Test non-existent script

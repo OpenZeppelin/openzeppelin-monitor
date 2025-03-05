@@ -111,6 +111,6 @@ pub enum TriggerTypeConfig {
 		#[serde(default)]
 		arguments: Vec<String>,
 		/// Timeout in milliseconds
-		timeout_ms: u64,
+		timeout_ms: u32,
 	},
 }
