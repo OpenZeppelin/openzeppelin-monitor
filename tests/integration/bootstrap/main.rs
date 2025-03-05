@@ -4,11 +4,8 @@ use crate::integration::{
 		setup_trigger_service,
 	},
 	mocks::{
-		
-		create_test_block, create_test_network, MockClientPool, MockEvmClientTrait, MockTriggerExecutionService,
-		MockTriggerRepository,
-	,
-		MockStellarClientTrait, MockWeb3TransportClient,
+		create_test_block, create_test_network, MockClientPool, MockEvmClientTrait,
+		MockTriggerExecutionService, MockTriggerRepository, MockWeb3TransportClient,
 	},
 };
 use openzeppelin_monitor::{
@@ -21,15 +18,9 @@ use openzeppelin_monitor::{
 	},
 	services::{
 		blockchain::BlockChainError,
-		{
-		
-		blockchain::BlockChainError, filter::FilterService,
+		filter::FilterService,
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait},
-	},
-		notification::NotificationService,
-		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait,
-	},
 	},
 };
 
