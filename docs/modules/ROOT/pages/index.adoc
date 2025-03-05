@@ -740,7 +740,6 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
   },
   "trigger_conditions": [
     {
-      "execution_order": 1,
       "script_path": "./config/filters/evm_filter_block_number.sh",
       "language": "bash",
       "arguments": "--verbose",
@@ -892,13 +891,12 @@ Important considerations:
 * All filters against a monitor match must return `false` for it to be included
 * Scripts must exit with code 0 for their output to be considered valid
 * Invalid output or non-zero exit codes will cause the filter to fail and the match will be included by default
-* Multiple filters are executed in order defined by `execution_order`
+* Trigger conditions are executed sequentially based on their position in the trigger conditions array.
 
 .Example Trigger Conditions Configuration
 [source,json]
 ----
 {
-  "execution_order": 1,
   "script_path": "./config/filters/evm_custom_filter.py",
   "language": "Python",
   "arguments": "--verbose",
@@ -912,10 +910,6 @@ Important considerations:
 [cols="1,1,2"]
 |===
 |Field |Type |Description
-
-|execution_order
-|Number
-|The order of the execution of the script in case there are multiple trigger conditions
 
 |script_path
 |String
@@ -934,7 +928,7 @@ Important considerations:
 |The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default.
 |===
 
-==== Important Considerations
+==== Important Considerations:
 
 * Network slugs in the monitor must match valid network configurations.
 * Trigger IDs must match configured triggers.
@@ -1015,10 +1009,11 @@ docker run \
 * Monitor performance depends on network congestion and RPC endpoint reliability.
 ** View the xref:rpc.adoc#list_of_rpc_calls[list of RPC calls] made by the monitor.
 * The `max_past_blocks` configuration is critical:
-** Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified)
-** Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`
-** Too low settings may result in missed blocks
-* Trigger conditions are executed in the order defined by the `execution_order` field. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _**temporarily**_ increase it with `ulimit -n 2048`.
+** Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
+** Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
+** Too low settings may result in missed blocks.
+* Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _**temporarily**_ increase it with `ulimit -n 2048`.
+* Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
 * HTTP requests to RPC endpoints may consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
 
 ==== List of RPC Calls

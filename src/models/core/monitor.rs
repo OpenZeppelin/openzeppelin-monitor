@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 /// - Conditions to match (functions, events, transactions)
 /// - Triggers conditions refers to a custom filter script that being executed apply extra filters
 ///   to the matched transactions before triggering the notifications
+/// - Triggers conditions refers to a custom filter script that being executed apply extra filters
+///   to the matched transactions before triggering the notifications
 /// - Triggers to execute when conditions are met
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 pub struct Monitor {
@@ -100,10 +102,6 @@ pub enum TransactionStatus {
 /// Conditions that should be met prior to triggering notifications
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TriggerConditions {
-	/// The order of the execution of the script
-	#[serde(default)]
-	pub execution_order: Option<u32>,
-
 	/// The path to the script
 	pub script_path: String,
 

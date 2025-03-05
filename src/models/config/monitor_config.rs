@@ -359,7 +359,6 @@ mod tests {
 				}],
 			},
 			trigger_conditions: vec![TriggerConditions {
-				execution_order: Some(1),
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 1000,
 				arguments: None,
@@ -387,7 +386,6 @@ mod tests {
 				transactions: vec![],
 			},
 			trigger_conditions: vec![TriggerConditions {
-				execution_order: Some(1),
 				script_path: "non_existent_script.py".to_string(),
 				timeout_ms: 1000,
 				arguments: None,
@@ -420,7 +418,6 @@ mod tests {
 				transactions: vec![],
 			},
 			trigger_conditions: vec![TriggerConditions {
-				execution_order: Some(1),
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 0,
 				arguments: None,
@@ -469,7 +466,6 @@ mod tests {
 					transactions: vec![],
 				},
 				trigger_conditions: vec![TriggerConditions {
-					execution_order: Some(1),
 					script_path: script_path.to_string_lossy().into_owned(),
 					timeout_ms: 1000,
 					arguments: None,
@@ -487,7 +483,6 @@ mod tests {
 				trigger_conditions: vec![TriggerConditions {
 					script_path: wrong_path.to_string_lossy().into_owned(),
 					language,
-					execution_order: monitor.trigger_conditions[0].execution_order,
 					timeout_ms: monitor.trigger_conditions[0].timeout_ms,
 					arguments: monitor.trigger_conditions[0].arguments.clone(),
 				}],

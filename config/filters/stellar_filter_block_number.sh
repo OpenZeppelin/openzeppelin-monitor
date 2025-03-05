@@ -1,4 +1,23 @@
 #!/bin/bash
+################################################################################
+# Stellar Block Number Filter
+#
+# This script filters monitor matches based on the block number of the transaction.
+# It demonstrates a simple filter that only allows transactions from even-numbered blocks.
+#
+# Input: JSON object containing:
+#   - monitor_match: The monitor match data with transaction details
+#   - args: Additional arguments passed to the script
+#
+# Arguments:
+#   --verbose: Enables detailed logging of the filtering process
+#
+# Output:
+#   - Prints 'true' for transactions in even-numbered blocks
+#   - Prints 'false' for transactions in odd-numbered blocks or invalid input
+#   - Includes additional logging when verbose mode is enabled
+#
+################################################################################
 
 # Enable error handling
 set -e

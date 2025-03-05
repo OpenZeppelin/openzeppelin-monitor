@@ -99,11 +99,20 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 				}
 
 				// Validate file extension matches the specified language
-				let expected_extension = LANGUAGE_EXTENSIONS
+				let expected_extension = match LANGUAGE_EXTENSIONS
 					.iter()
 					.find(|(lang, _)| *lang == &condition.language)
 					.map(|(_, ext)| *ext)
-					.expect("All script languages should have an extension");
+				{
+					Some(ext) => ext,
+					None => {
+						validation_errors.push(format!(
+							"Monitor '{}' uses unsupported script language {:?}",
+							monitor_name, condition.language
+						));
+						continue;
+					}
+				};
 
 				match script_path.extension().and_then(|ext| ext.to_str()) {
 					Some(ext) if ext == expected_extension => (), // Valid extension
@@ -311,7 +320,6 @@ mod tests {
 			name: "test_monitor".to_string(),
 			match_conditions: MatchConditions::default(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
@@ -332,7 +340,6 @@ mod tests {
 		let monitor_bad_path = Monitor {
 			name: "test_monitor_bad_path".to_string(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: "non_existent_script.py".to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
@@ -356,7 +363,6 @@ mod tests {
 		let monitor_wrong_ext = Monitor {
 			name: "test_monitor_wrong_ext".to_string(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: wrong_ext_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
@@ -382,7 +388,6 @@ mod tests {
 			name: "test_monitor_zero_timeout".to_string(),
 			match_conditions: MatchConditions::default(),
 			trigger_conditions: vec![crate::models::TriggerConditions {
-				execution_order: Some(1),
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 0,

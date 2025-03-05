@@ -1,3 +1,17 @@
+/**
+ * Stellar Block Number Filter
+ * 
+ * This script filters monitor matches based on the block number of the transaction.
+ * It demonstrates a simple filter that only allows transactions from even-numbered blocks.
+ * 
+ * Input: JSON object containing:
+ *   - monitor_match: The monitor match data with transaction details
+ *   - args: Additional arguments passed to the script
+ * 
+ * Output:
+ *   - Prints 'true' for transactions in even-numbered blocks
+ *   - Prints 'false' for transactions in odd-numbered blocks or invalid input
+ */
 try {
     // Read from stdin
     let inputData = '';
@@ -17,13 +31,11 @@ try {
         }
 
         if (ledgerNumber === null) {
-            console.log("Ledger number is None");
             console.log('false');
             return;
         }
 
         const result = ledgerNumber % 2 === 0;
-        console.log(`Ledger number ${ledgerNumber} is ${result ? 'even' : 'odd'}`);
         console.log(result.toString());
     });
 
