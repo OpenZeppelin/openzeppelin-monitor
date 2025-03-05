@@ -799,10 +799,11 @@ mod tests {
 			config: TriggerTypeConfig::Script {
 				script_path: script_path.to_str().unwrap().to_string(),
 				arguments: Some("arg1".to_string()),
-				language: ScriptLanguage::Python,
+				language: ScriptLanguage::Bash,
 				timeout_ms: 1000,
 			},
 		};
+		println!("valid_trigger ==>: {:?}", valid_trigger);
 		assert!(valid_trigger.validate().is_ok());
 
 		// Test non-existent script
