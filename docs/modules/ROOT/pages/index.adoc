@@ -740,7 +740,6 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
   },
   "trigger_conditions": [
     {
-      "execution_order": 1,
       "script_path": "./config/filters/evm_filter_block_number.sh",
       "language": "bash",
       "arguments": "--verbose",
@@ -892,13 +891,12 @@ Important considerations:
 * All filters against a monitor match must return `false` for it to be included
 * Scripts must exit with code 0 for their output to be considered valid
 * Invalid output or non-zero exit codes will cause the filter to fail and the match will be included by default
-* Multiple filters are executed in order defined by `execution_order`
+* Trigger conditions are executed sequentially based on their position in the trigger conditions array.
 
 .Example Trigger Conditions Configuration
 [source,json]
 ----
 {
-  "execution_order": 1,
   "script_path": "./config/filters/evm_custom_filter.py",
   "language": "Python",
   "arguments": "--verbose",
@@ -912,10 +910,6 @@ Important considerations:
 [cols="1,1,2"]
 |===
 |Field |Type |Description
-
-|execution_order
-|Number
-|The order of the execution of the script in case there are multiple trigger conditions
 
 |script_path
 |String

@@ -25,7 +25,6 @@
     ]
   },
   "trigger_conditions": [{
-    "execution_order": 1,
     "script_path": "./config/filters/stellar_filter_block_number.sh",
     "language": "Bash",
     "timeout_ms": 1000

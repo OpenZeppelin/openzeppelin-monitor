@@ -171,7 +171,6 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
   },
   "trigger_conditions": [
     {
-      "execution_order": 1,
       "script_path": "./config/filters/evm_filter_block_number.sh",
       "language": "bash",
       "arguments": "--verbose",
@@ -353,7 +352,6 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
   },
   "trigger_conditions": [
     {
-      "execution_order": 1,
       "script_path": "./config/filters/stellar_filter_block_number.sh",
       "language": "bash",
       "arguments": "--verbose",
