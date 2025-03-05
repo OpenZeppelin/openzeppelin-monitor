@@ -13,10 +13,7 @@ use openzeppelin_monitor::{
 
 use crate::integration::{
 	filters::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
-	mocks::{
-		MockStellarClientTrait, MockStellarTransportClient, MockTriggerExecutionService,
-		MockTriggerRepository,
-	},
+	mocks::{MockStellarClientTrait, MockStellarTransportClient},
 };
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
