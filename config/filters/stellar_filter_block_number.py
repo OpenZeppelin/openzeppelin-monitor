@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+"""
+Stellar Block Number Filter
+
+This script filters monitor matches based on the block number of the transaction.
+It demonstrates a simple filter that only allows transactions from even-numbered blocks.
+
+Input: JSON object containing:
+    - monitor_match: The monitor match data with transaction details
+    - args: Additional arguments passed to the script
+
+Output:
+    - Prints 'true' for transactions in even-numbered blocks
+    - Prints 'false' for transactions in odd-numbered blocks or invalid input
+"""
 import sys
 import json
 import logging
@@ -28,12 +42,10 @@ def main():
                 ledger_number = int(ledger)
 
         if ledger_number is None:
-            print("Ledger number is None", flush=True)
             return False
 
         # Return True for even ledger numbers, False for odd
         result = ledger_number % 2 == 0
-        print(f"Ledger number {ledger_number} is {'even' if result else 'odd'}", flush=True)
         return result
 
     except Exception as e:
