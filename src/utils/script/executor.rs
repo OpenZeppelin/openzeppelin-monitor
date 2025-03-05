@@ -18,7 +18,7 @@ pub trait ScriptExecutor: Send + Sync + Any {
 	///
 	/// # Returns
 	/// * `Result<bool, ScriptError>` - Returns true/false based on script execution or an error
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError>;
+	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
@@ -58,7 +58,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError> {
 		let (open_fds, max_fds) = count_open_fds();
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -116,7 +116,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError> {
 		let (open_fds, max_fds) = count_open_fds();
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
@@ -173,7 +173,7 @@ impl ScriptExecutor for BashScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -217,7 +217,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-
+		println!("output ===>: {:?}", output);
 		process_script_output(output)
 	}
 }
@@ -350,7 +350,8 @@ print(result)
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -372,8 +373,8 @@ print(result)
 		};
 
 		let input = create_mock_monitor_match();
-
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -404,7 +405,8 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -424,7 +426,8 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -442,8 +445,8 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -467,10 +470,10 @@ echo "true"
 		};
 
 		let input = create_mock_monitor_match();
-
+		let args = vec![];
 		for _ in 0..3 {
 			// Retry logic for flaky tests
-			match executor.execute(input.clone(), "").await {
+			match executor.execute(input.clone(), &args).await {
 				Ok(result) => {
 					assert_eq!(result, true);
 					return;
@@ -499,10 +502,10 @@ echo "not a boolean"
 		};
 
 		let input = create_mock_monitor_match();
-
+		let args = vec![];
 		for _ in 0..3 {
 			// Retry logic for flaky tests
-			match executor.execute(input.clone(), "").await {
+			match executor.execute(input.clone(), &args).await {
 				Err(ScriptError::ParseError(msg)) => {
 					assert!(msg.contains("Last line of output is not a valid boolean"));
 					return;
@@ -530,7 +533,8 @@ echo "not a boolean"
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
@@ -553,7 +557,8 @@ print("     true    ")  # Should handle whitespace correctly
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -578,7 +583,8 @@ print("     true    ")  # Should handle whitespace correctly
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_err());
 	}
 
@@ -604,7 +610,8 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -635,7 +642,8 @@ else:
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "").await;
+		let args = vec![];
+		let result = executor.execute(input, &args).await;
 		assert_eq!(result.unwrap(), false);
 	}
 
@@ -655,7 +663,7 @@ if 'monitor_match' not in data or 'args' not in data:
 
 # Test args parsing
 args = data['args']
-if args == "--verbose":
+if "--verbose" in args:
     print("true")
 else:
     print("false")
@@ -668,12 +676,14 @@ else:
 		let input = create_mock_monitor_match();
 
 		// Test with matching argument
-		let result = executor.execute(input.clone(), "test_argument").await;
+		let args = vec![String::from("test_argument")];
+		let result = executor.execute(input.clone(), &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), false);
 
 		// Test with non-matching argument
-		let result = executor.execute(input, "--verbose").await;
+		let args = vec![String::from("--verbose"), String::from("--other-arg")];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 	}
@@ -691,8 +701,9 @@ monitor_match = data['monitor_match']
 args = data['args']
 
 # Test both monitor_match and args together
-if (monitor_match['EVM'] and 
-    args == "--verbose,--specific_arg,--test"):
+expected_args = ["--verbose", "--specific_arg", "--test"]
+if (monitor_match['EVM'] and
+    args == expected_args):
     print("true")
 else:
     print("false")
@@ -705,14 +716,18 @@ else:
 		let input = create_mock_monitor_match();
 
 		// Test with correct combination
-		let result = executor
-			.execute(input.clone(), "--verbose,--specific_arg,--test")
-			.await;
+		let args = vec![
+			String::from("--verbose"),
+			String::from("--specific_arg"),
+			String::from("--test"),
+		];
+		let result = executor.execute(input.clone(), &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
 
 		// Test with wrong argument
-		let result = executor.execute(input, "wrong_arg").await;
+		let args = vec![String::from("wrong_arg")];
+		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), false);
 	}
@@ -721,9 +736,9 @@ else:
 	async fn test_python_script_executor_with_verbose_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
 		let executor = PythonScriptExecutor { script_content };
-
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "--verbose").await;
+		let args = vec![String::from("--verbose")];
+		let result = executor.execute(input, &args).await;
 
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), true);
@@ -735,7 +750,8 @@ else:
 		let executor = PythonScriptExecutor { script_content };
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "--wrong_arg,--test").await;
+		let args = vec![String::from("--wrong_arg"), String::from("--test")];
+		let result = executor.execute(input, &args).await;
 
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), false);

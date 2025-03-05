@@ -166,8 +166,7 @@ impl NotificationService {
 						// Set timeout for script execution
 						let result = tokio::time::timeout(
 							Duration::from_millis(u64::from(*timeout_ms)),
-							executor
-								.execute(monitor_match.clone(), arguments.as_deref().unwrap_or("")),
+							executor.execute(monitor_match.clone(), &arguments),
 						)
 						.await;
 

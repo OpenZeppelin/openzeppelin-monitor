@@ -445,7 +445,7 @@ print(True)  # Always return true for test
 		script_path: "test_script.py".to_string(),
 		language: ScriptLanguage::Python,
 		timeout_ms: 1000,
-		arguments: None,
+		arguments: vec![],
 	}];
 
 	let processed_block = ProcessedBlock {
@@ -563,7 +563,7 @@ async fn test_load_scripts() {
 			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: None,
+			arguments: vec![],
 		}],
 		..Default::default()
 	}];
@@ -603,7 +603,7 @@ async fn test_load_scripts_error() {
 			script_path: "non_existent_script.py".to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: None,
+			arguments: vec![],
 		}],
 		..Default::default()
 	}];
