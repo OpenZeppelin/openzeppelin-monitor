@@ -3,7 +3,7 @@
 //! This module implements the ConfigLoader trait for Network configurations,
 //! allowing network definitions to be loaded from JSON files.
 
-use std::{path::Path, str::FromStr};
+use std::{collections::HashMap, path::Path, str::FromStr};
 
 use crate::{
 	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network},
@@ -49,14 +49,33 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::file_error(
 				"networks directory not found",
 				None,
-				None,
+				Some(HashMap::from([(
+					"path".to_string(),
+					network_dir.display().to_string(),
+				)])),
 			));
 		}
 
-		for entry in std::fs::read_dir(network_dir)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?
-		{
-			let entry = entry.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
+		for entry in std::fs::read_dir(network_dir).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to read networks directory: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					network_dir.display().to_string(),
+				)])),
+			)
+		})? {
+			let entry = entry.map_err(|e| {
+				ConfigError::file_error(
+					format!("failed to read directory entry: {}", e),
+					Some(Box::new(e)),
+					Some(HashMap::from([(
+						"path".to_string(),
+						network_dir.display().to_string(),
+					)])),
+				)
+			})?;
 			let path = entry.path();
 
 			if !Self::is_json_file(&path) {
@@ -80,10 +99,26 @@ impl ConfigLoader for Network {
 	///
 	/// Reads and parses a single JSON file as a network configuration.
 	fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigError> {
-		let file = std::fs::File::open(path)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
-		let config: Network = serde_json::from_reader(file)
-			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
+		let file = std::fs::File::open(path).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to open network config file: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.display().to_string(),
+				)])),
+			)
+		})?;
+		let config: Network = serde_json::from_reader(file).map_err(|e| {
+			ConfigError::parse_error(
+				format!("failed to parse network config: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.display().to_string(),
+				)])),
+			)
+		})?;
 
 		// Validate the config after loading
 		config.validate()?;

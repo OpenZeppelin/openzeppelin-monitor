@@ -6,12 +6,13 @@
 //! - Compare different types of parameter values
 //! - Evaluate complex matching expressions
 
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 
 use async_trait::async_trait;
 use base64::Engine;
 use serde_json::Value;
 use stellar_xdr::curr::{OperationBody, TransactionEnvelope};
+use tracing::instrument;
 
 use crate::{
 	models::{
@@ -31,7 +32,7 @@ use crate::{
 			BlockFilter, FilterError,
 		},
 	},
-	utils::{format_error_chain, split_expression},
+	utils::split_expression,
 };
 
 /// Represents a mapping between a Stellar event and its transaction hash
@@ -1023,6 +1024,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 	///
 	/// # Returns
 	/// Result containing vector of matching monitors or a filter error
+	#[instrument(skip_all, fields(network = %_network.slug))]
 	async fn filter_block(
 		&self,
 		client: &Self::Client,
@@ -1030,38 +1032,27 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 		block: &BlockType,
 		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
-		let mut context = HashMap::from([("network".to_string(), _network.slug.clone())]);
-
 		let stellar_block = match block {
 			BlockType::Stellar(block) => block,
 			_ => {
 				return Err(FilterError::block_type_mismatch(
 					"Expected Stellar block".to_string(),
 					None,
-					Some(context),
+					None,
 				));
 			}
 		};
 
-		context.insert(
-			"block_sequence".to_string(),
-			stellar_block.sequence.to_string(),
-		);
-
-		let mut matching_results = Vec::new();
-
 		let transactions = match client.get_transactions(stellar_block.sequence, None).await {
 			Ok(transactions) => transactions,
 			Err(e) => {
-				tracing::error!(
-					error.chain = %format_error_chain(&e),
-					"Failed to get transactions"
-				);
-
 				return Err(FilterError::network_error(
-					"Failed to get transactions",
+					format!(
+						"Failed to get transactions for block {}",
+						stellar_block.sequence
+					),
 					Some(e.into()),
-					Some(context),
+					None,
 				));
 			}
 		};
@@ -1076,22 +1067,19 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 		let events = match client.get_events(stellar_block.sequence, None).await {
 			Ok(events) => events,
 			Err(e) => {
-				tracing::error!(
-					error.chain = %format_error_chain(&e),
-					"Failed to get events"
-				);
-
 				return Err(FilterError::network_error(
-					"Failed to get events",
+					format!("Failed to get events for block {}", stellar_block.sequence),
 					Some(e.into()),
-					Some(context),
+					None,
 				));
 			}
 		};
 
 		tracing::debug!("Processing {} event(s)", events.len());
-
 		tracing::debug!("Processing {} monitor(s)", monitors.len());
+
+		let mut matching_results = Vec::new();
+
 		// Process each monitor first
 		for monitor in monitors {
 			tracing::debug!("Processing monitor: {}", monitor.name);

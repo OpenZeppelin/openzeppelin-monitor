@@ -750,7 +750,7 @@ async fn test_process_new_blocks_storage_error() {
 
 	assert!(result.is_err());
 	if let Err(e) = result {
-		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+		assert!(matches!(e, BlockWatcherError::Other { .. }));
 	}
 }
 
@@ -798,7 +798,7 @@ async fn test_process_new_blocks_network_errors() {
 
 	assert!(result.is_err());
 	if let Err(e) = result {
-		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
+		assert!(matches!(e, BlockWatcherError::Other { .. }));
 	}
 }
 
@@ -849,7 +849,7 @@ async fn test_process_new_blocks_get_blocks_error() {
 
 	assert!(result.is_err());
 	if let Err(e) = result {
-		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
+		assert!(matches!(e, BlockWatcherError::Other { .. }));
 	}
 }
 
@@ -917,7 +917,7 @@ async fn test_process_new_blocks_storage_save_error() {
 
 	assert!(result.is_err());
 	if let Err(e) = result {
-		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+		assert!(matches!(e, BlockWatcherError::Other { .. }));
 	}
 }
 
@@ -980,7 +980,7 @@ async fn test_process_new_blocks_save_last_processed_error() {
 
 	assert!(result.is_err());
 	if let Err(e) = result {
-		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+		assert!(matches!(e, BlockWatcherError::Other { .. }));
 	}
 }
 
@@ -1046,7 +1046,7 @@ async fn test_process_new_blocks_storage_delete_error() {
 
 	assert!(result.is_err());
 	if let Err(e) = result {
-		assert!(matches!(e, BlockWatcherError::StorageError { .. }));
+		assert!(matches!(e, BlockWatcherError::Other { .. }));
 	}
 }
 
@@ -1274,7 +1274,7 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 
 	assert!(result.is_err());
 	if let Err(e) = result {
-		assert!(matches!(e, BlockWatcherError::NetworkError { .. }));
+		assert!(matches!(e, BlockWatcherError::Other { .. }));
 	}
 }
 

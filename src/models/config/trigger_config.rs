@@ -29,17 +29,52 @@ impl ConfigLoader for Trigger {
 		T: FromIterator<(String, Self)>,
 	{
 		let config_dir = path.unwrap_or(Path::new("config/triggers"));
-		let entries = fs::read_dir(config_dir)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
+		let entries = fs::read_dir(config_dir).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to read triggers directory: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					config_dir.display().to_string(),
+				)])),
+			)
+		})?;
 
 		let mut trigger_pairs = Vec::new();
 		for entry in entries {
-			let entry = entry.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
+			let entry = entry.map_err(|e| {
+				ConfigError::file_error(
+					format!("failed to read directory entry: {}", e),
+					Some(Box::new(e)),
+					Some(HashMap::from([(
+						"path".to_string(),
+						config_dir.display().to_string(),
+					)])),
+				)
+			})?;
 			if Self::is_json_file(&entry.path()) {
-				let content = fs::read_to_string(entry.path())
-					.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
-				let file_triggers: TriggerConfigFile = serde_json::from_str(&content)
-					.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
+				let file_path = entry.path();
+				let content = fs::read_to_string(&file_path).map_err(|e| {
+					ConfigError::file_error(
+						format!("failed to read trigger config file: {}", e),
+						Some(Box::new(e)),
+						Some(HashMap::from([(
+							"path".to_string(),
+							file_path.display().to_string(),
+						)])),
+					)
+				})?;
+				let file_triggers: TriggerConfigFile =
+					serde_json::from_str(&content).map_err(|e| {
+						ConfigError::parse_error(
+							format!("failed to parse trigger config: {}", e),
+							Some(Box::new(e)),
+							Some(HashMap::from([(
+								"path".to_string(),
+								file_path.display().to_string(),
+							)])),
+						)
+					})?;
 
 				// Validate each trigger before adding it
 				for (name, trigger) in file_triggers.triggers {
@@ -49,8 +84,11 @@ impl ConfigLoader for Trigger {
 								"Validation failed for trigger '{}': {}",
 								name, validation_error
 							),
-							None,
-							None,
+							Some(Box::new(validation_error)),
+							Some(HashMap::from([
+								("path".to_string(), file_path.display().to_string()),
+								("trigger_name".to_string(), name.clone()),
+							])),
 						));
 					}
 					trigger_pairs.push((name, trigger));

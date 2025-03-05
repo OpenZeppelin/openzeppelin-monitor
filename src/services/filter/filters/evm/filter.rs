@@ -11,7 +11,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use ethabi::Contract;
 use serde_json::Value;
-use std::{collections::HashMap, marker::PhantomData, str::FromStr};
+use std::{marker::PhantomData, str::FromStr};
+use tracing::instrument;
 use web3::types::{Log, Transaction, TransactionReceipt, U64};
 
 use crate::{
@@ -516,6 +517,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 	///
 	/// # Returns
 	/// Vector of matches found in the block
+	#[instrument(skip_all, fields(network = %_network.slug))]
 	async fn filter_block(
 		&self,
 		client: &T,
@@ -523,23 +525,16 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		block: &BlockType,
 		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
-		let mut context = HashMap::from([("network".to_string(), _network.slug.clone())]);
-
 		let evm_block = match block {
 			BlockType::EVM(block) => block,
 			_ => {
 				return Err(FilterError::block_type_mismatch(
-					"Expected EVM block".to_string(),
+					"Expected EVM block",
 					None,
-					Some(context),
+					None,
 				))
 			}
 		};
-
-		context.insert(
-			"block_number".to_string(),
-			evm_block.number.unwrap_or(U64::from(0)).to_string(),
-		);
 
 		tracing::debug!(
 			"Processing block {}",
@@ -571,17 +566,13 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		{
 			Ok(receipts) => receipts,
 			Err(e) => {
-				tracing::error!(
-					error.chain = %format_error_chain(&e),
-					block_number = %evm_block.number.unwrap_or(U64::from(0)),
-					network = %_network.slug,
-					"Failed to get transaction receipts"
-				);
-
 				return Err(FilterError::network_error(
-					"Failed to get transaction receipts",
+					format!(
+						"Failed to get transaction receipts for block {}",
+						evm_block.number.unwrap_or(U64::from(0))
+					),
 					Some(e.into()),
-					Some(context),
+					None,
 				));
 			}
 		};
@@ -762,19 +753,6 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 		Ok(matching_results)
 	}
-}
-
-// Helper function to format the complete error chain
-fn format_error_chain(err: &anyhow::Error) -> String {
-	let mut result = err.to_string();
-	let mut source = err.source();
-
-	while let Some(err) = source {
-		result.push_str(&format!("\n  Caused by: {}", err));
-		source = err.source();
-	}
-
-	result
 }
 
 #[cfg(test)]

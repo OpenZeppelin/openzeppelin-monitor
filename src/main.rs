@@ -108,14 +108,24 @@ async fn main() -> Result<()> {
 				if let Ok(client) = client_pool.get_evm_client(&network).await {
 					let _ = block_watcher
 						.start_network_watcher(&network, (*client).clone())
-						.await;
+						.await
+						.inspect_err(|e| {
+							tracing::error!("Failed to start EVM network watcher: {}", e);
+						});
+				} else {
+					tracing::error!("Failed to get EVM client for network: {}", network.slug);
 				}
 			}
 			BlockChainType::Stellar => {
 				if let Ok(client) = client_pool.get_stellar_client(&network).await {
 					let _ = block_watcher
 						.start_network_watcher(&network, (*client).clone())
-						.await;
+						.await
+						.inspect_err(|e| {
+							tracing::error!("Failed to start Stellar network watcher: {}", e);
+						});
+				} else {
+					tracing::error!("Failed to get Stellar client for network: {}", network.slug);
 				}
 			}
 			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),

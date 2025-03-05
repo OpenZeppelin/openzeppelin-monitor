@@ -26,8 +26,7 @@ impl TriggerRepository {
 	/// Loads all trigger configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
 	pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path)
-			.map_err(|_| RepositoryError::load_error("Failed to load triggers", None, None))?;
+		let triggers = Self::load_all(path)?;
 		Ok(TriggerRepository { triggers })
 	}
 }
@@ -61,13 +60,20 @@ pub trait TriggerRepositoryTrait: Clone {
 
 impl TriggerRepositoryTrait for TriggerRepository {
 	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path)
-			.map_err(|_| RepositoryError::load_error("Failed to load triggers", None, None))?;
-		Ok(TriggerRepository { triggers })
+		TriggerRepository::new(path)
 	}
 
 	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
-		Trigger::load_all(path).map_err(|e| RepositoryError::load_error(e.to_string(), None, None))
+		Trigger::load_all(path).map_err(|e| {
+			RepositoryError::load_error(
+				"Failed to load triggers",
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.map_or_else(|| "default".to_string(), |p| p.display().to_string()),
+				)])),
+			)
+		})
 	}
 
 	fn get(&self, trigger_id: &str) -> Option<Trigger> {

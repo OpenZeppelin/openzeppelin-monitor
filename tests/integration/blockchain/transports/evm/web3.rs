@@ -35,7 +35,9 @@ async fn test_client_creation() {
 
 	match Web3TransportClient::new(&network).await {
 		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg.to_string().contains("All RPC URLs failed to connect"));
+			assert!(msg
+				.to_string()
+				.contains("All RPC URLs failed to connect [network=test]"));
 		}
 		_ => panic!("Transport creation should fail"),
 	}
@@ -88,12 +90,8 @@ async fn test_client_update_client() {
 	// Test invalid URL update
 	let result = client.update_client("invalid-url").await;
 	assert!(result.is_err(), "Update with invalid URL should fail");
-	match result {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg.to_string().contains("Failed to create client"));
-		}
-		_ => panic!("Expected ConnectionError"),
-	}
+	let e = result.unwrap_err();
+	assert!(e.to_string().contains("Failed to create client"));
 
 	mock1.assert();
 }
@@ -114,21 +112,13 @@ async fn test_client_try_connect() {
 
 	let result = client.try_connect("invalid-url").await;
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
-	match result {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg.to_string().contains("Invalid URL"));
-		}
-		_ => panic!("Expected ConnectionError"),
-	}
+	let e = result.unwrap_err();
+	assert!(e.to_string().contains("Invalid URL"));
 
 	let result = client.try_connect(&server3.url()).await;
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
-	match result {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg.to_string().contains("Failed to connect"));
-		}
-		_ => panic!("Expected ConnectionError"),
-	}
+	let e = result.unwrap_err();
+	assert!(e.to_string().contains("Failed to connect"));
 
 	mock.assert();
 	mock2.assert();

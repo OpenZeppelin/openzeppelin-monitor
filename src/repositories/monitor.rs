@@ -27,8 +27,6 @@ pub struct MonitorRepository<N: NetworkRepositoryTrait, T: TriggerRepositoryTrai
 }
 
 impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, T> {
-	/// Validate that all networks and triggers referenced by monitors exist
-	///
 	/// Create a new monitor repository from the given path
 	///
 	/// Loads all monitor configurations from JSON files in the specified directory
@@ -38,8 +36,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<Self, RepositoryError> {
-		let monitors = Self::load_all(path, network_service, trigger_service)
-			.map_err(|_| RepositoryError::load_error("Failed to load monitors", None, None))?;
+		let monitors = Self::load_all(path, network_service, trigger_service)?;
 		Ok(MonitorRepository {
 			monitors,
 			_network_repository: PhantomData,
@@ -62,6 +59,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		networks: &HashMap<String, Network>,
 	) -> Result<(), RepositoryError> {
 		let mut validation_errors = Vec::new();
+		let mut metadata = HashMap::new();
 
 		for (monitor_name, monitor) in monitors {
 			// Validate trigger references
@@ -71,6 +69,10 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 						"Monitor '{}' references non-existent trigger '{}'",
 						monitor_name, trigger_id
 					));
+					metadata.insert(
+						format!("monitor_{}_invalid_trigger", monitor_name),
+						trigger_id.clone(),
+					);
 				}
 			}
 
@@ -81,6 +83,10 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 						"Monitor '{}' references non-existent network '{}'",
 						monitor_name, network_slug
 					));
+					metadata.insert(
+						format!("monitor_{}_invalid_network", monitor_name),
+						network_slug.clone(),
+					);
 				}
 			}
 		}
@@ -92,7 +98,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 					validation_errors.join("\n"),
 				),
 				None,
-				None,
+				Some(metadata),
 			));
 		}
 
@@ -154,17 +160,45 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<HashMap<String, Monitor>, RepositoryError> {
-		let monitors = Monitor::load_all(path)
-			.map_err(|e| RepositoryError::load_error(e.to_string(), None, None))?;
+		let monitors = Monitor::load_all(path).map_err(|e| {
+			RepositoryError::load_error(
+				"Failed to load monitors",
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.map_or_else(|| "default".to_string(), |p| p.display().to_string()),
+				)])),
+			)
+		})?;
 
 		let networks = match network_service {
 			Some(service) => service.get_all(),
-			None => NetworkRepository::new(None)?.networks,
+			None => {
+				NetworkRepository::new(None)
+					.map_err(|e| {
+						RepositoryError::load_error(
+							"Failed to load networks for monitor validation",
+							Some(Box::new(e)),
+							None,
+						)
+					})?
+					.networks
+			}
 		};
 
 		let triggers = match trigger_service {
 			Some(service) => service.get_all(),
-			None => TriggerRepository::new(None)?.triggers,
+			None => {
+				TriggerRepository::new(None)
+					.map_err(|e| {
+						RepositoryError::load_error(
+							"Failed to load triggers for monitor validation",
+							Some(Box::new(e)),
+							None,
+						)
+					})?
+					.triggers
+			}
 		};
 
 		Self::validate_monitor_references(&monitors, &triggers, &networks)?;

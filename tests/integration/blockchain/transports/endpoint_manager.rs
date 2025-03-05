@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, BlockchainTransport, EndpointManager, RotatingTransport,
+	BlockchainTransport, EndpointManager, RotatingTransport,
 };
 
 // Mock transport implementation for testing
@@ -58,14 +58,11 @@ impl BlockchainTransport for MockTransport {
 		})
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(self.retry_policy)
 	}
 
-	fn set_retry_policy(
-		&mut self,
-		retry_policy: ExponentialBackoff,
-	) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		self.retry_policy = retry_policy;
 		Ok(())
 	}
@@ -73,15 +70,15 @@ impl BlockchainTransport for MockTransport {
 
 #[async_trait::async_trait]
 impl RotatingTransport for MockTransport {
-	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
 		// Simulate connection attempt
 		match self.client.get(url).send().await {
 			Ok(_) => Ok(()),
-			Err(e) => Err(BlockChainError::connection_error(e.to_string(), None, None)),
+			Err(e) => Err(anyhow::anyhow!("Failed to connect: {}", e)),
 		}
 	}
 
-	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
 		*self.current_url.write().await = url.to_string();
 		Ok(())
 	}

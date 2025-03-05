@@ -269,7 +269,8 @@ async fn test_get_evm_client_handles_errors() {
 	let result = pool.get_evm_client(&network).await;
 	if let Err(err) = result {
 		assert!(
-			err.to_string().contains("ClientPoolError"),
+			err.to_string()
+				.contains("Failed to get or create EVM client"),
 			"Expected ClientPoolError, got: {}",
 			err
 		);
@@ -312,7 +313,8 @@ async fn test_get_stellar_client_handles_errors() {
 	let result = pool.get_stellar_client(&network).await;
 	if let Err(err) = result {
 		assert!(
-			err.to_string().contains("ClientPoolError"),
+			err.to_string()
+				.contains("Failed to get or create Stellar client"),
 			"Expected ClientPoolError, got: {}",
 			err
 		);

@@ -3,7 +3,7 @@
 //! This module implements the ConfigLoader trait for Monitor configurations,
 //! allowing monitors to be loaded from JSON files.
 
-use std::{fs, path::Path};
+use std::{collections::HashMap, fs, path::Path};
 
 use crate::models::{config::error::ConfigError, ConfigLoader, Monitor};
 
@@ -23,14 +23,33 @@ impl ConfigLoader for Monitor {
 			return Err(ConfigError::file_error(
 				"monitors directory not found",
 				None,
-				None,
+				Some(HashMap::from([(
+					"path".to_string(),
+					monitor_dir.display().to_string(),
+				)])),
 			));
 		}
 
-		for entry in fs::read_dir(monitor_dir)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?
-		{
-			let entry = entry.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
+		for entry in fs::read_dir(monitor_dir).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to read monitors directory: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					monitor_dir.display().to_string(),
+				)])),
+			)
+		})? {
+			let entry = entry.map_err(|e| {
+				ConfigError::file_error(
+					format!("failed to read directory entry: {}", e),
+					Some(Box::new(e)),
+					Some(HashMap::from([(
+						"path".to_string(),
+						monitor_dir.display().to_string(),
+					)])),
+				)
+			})?;
 			let path = entry.path();
 
 			if !Self::is_json_file(&path) {
@@ -54,13 +73,38 @@ impl ConfigLoader for Monitor {
 	///
 	/// Reads and parses a single JSON file as a monitor configuration.
 	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
-		let file = std::fs::File::open(path)
-			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
-		let config: Monitor = serde_json::from_reader(file)
-			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
+		let file = std::fs::File::open(path).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to open monitor config file: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.display().to_string(),
+				)])),
+			)
+		})?;
+		let config: Monitor = serde_json::from_reader(file).map_err(|e| {
+			ConfigError::parse_error(
+				format!("failed to parse monitor config: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.display().to_string(),
+				)])),
+			)
+		})?;
 
 		// Validate the config after loading
-		config.validate()?;
+		config.validate().map_err(|e| {
+			ConfigError::validation_error(
+				format!("monitor validation failed: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([
+					("path".to_string(), path.display().to_string()),
+					("monitor_name".to_string(), config.name.clone()),
+				])),
+			)
+		})?;
 
 		Ok(config)
 	}

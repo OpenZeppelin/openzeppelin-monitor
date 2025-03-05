@@ -229,7 +229,7 @@ async fn test_get_transaction_receipt_invalid_hash() {
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(err.to_string().contains("Invalid transaction hash"));
-	assert!(err.to_string().contains("invalid_hash"));
+	assert!(err.to_string().contains("Invalid character"));
 }
 
 #[tokio::test]
@@ -359,23 +359,31 @@ async fn test_get_latest_block_number_missing_result() {
 async fn test_get_single_block() {
 	let mut mock_web3 = MockWeb3TransportClient::new();
 
-	// Mock successful block response
-	let mock_response = json!({
-		"jsonrpc": "2.0",
-		"id": 1,
-		"result": create_mock_block(1)
-	});
+	// Mock response without result field
+	mock_web3.expect_clone().times(1).returning(|| {
+		let mut new_mock = MockWeb3TransportClient::new();
+		// Mock successful block response
+		let mock_response = json!({
+			"jsonrpc": "2.0",
+			"id": 1,
+			"result": create_mock_block(1)
+		});
+		new_mock
+			.expect_send_raw_request()
+			.with(
+				predicate::eq("eth_getBlockByNumber"),
+				predicate::function(|params: &Option<Vec<Value>>| match params {
+					Some(p) => p == &vec![json!("0x1"), json!(true)],
+					None => false,
+				}),
+			)
+			.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	mock_web3
-		.expect_send_raw_request()
-		.with(
-			predicate::eq("eth_getBlockByNumber"),
-			predicate::function(|params: &Option<Vec<Value>>| match params {
-				Some(p) => p == &vec![json!("0x1"), json!(true)],
-				None => false,
-			}),
-		)
-		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+		new_mock
+			.expect_clone()
+			.returning(MockWeb3TransportClient::new);
+		new_mock
+	});
 
 	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
@@ -388,24 +396,33 @@ async fn test_get_single_block() {
 #[tokio::test]
 async fn test_get_multiple_blocks() {
 	let mut mock_web3 = MockWeb3TransportClient::new();
-	// Expect calls for blocks 1, 2, and 3
-	mock_web3.expect_send_raw_request().times(3).returning(
-		move |_: &str, params: Option<Vec<Value>>| {
-			let block_num = u64::from_str_radix(
-				params.as_ref().unwrap()[0]
-					.as_str()
-					.unwrap()
-					.trim_start_matches("0x"),
-				16,
-			)
-			.unwrap();
-			Ok(json!({
-				"jsonrpc": "2.0",
-				"id": 1,
-				"result": create_mock_block(block_num)
-			}))
-		},
-	);
+
+	// Mock response without result field
+	mock_web3.expect_clone().times(3).returning(|| {
+		let mut new_mock = MockWeb3TransportClient::new();
+		new_mock.expect_send_raw_request().times(1).returning(
+			move |_: &str, params: Option<Vec<Value>>| {
+				let block_num = u64::from_str_radix(
+					params.as_ref().unwrap()[0]
+						.as_str()
+						.unwrap()
+						.trim_start_matches("0x"),
+					16,
+				)
+				.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": create_mock_block(block_num)
+				}))
+			},
+		);
+
+		new_mock
+			.expect_clone()
+			.returning(MockWeb3TransportClient::new);
+		new_mock
+	});
 
 	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
 
@@ -471,7 +488,7 @@ async fn test_get_blocks_null_result() {
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
 	let err = result.unwrap_err();
-	assert!(err.to_string().contains("1"));
+	assert!(err.to_string().contains("Block not found"));
 }
 
 #[tokio::test]

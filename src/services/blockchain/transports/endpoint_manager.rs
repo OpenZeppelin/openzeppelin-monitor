@@ -2,6 +2,7 @@
 //!
 //! Provides methods for rotating between multiple URLs and sending requests to the active endpoint
 //! with automatic fallback to other URLs on failure.
+use anyhow::Context;
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::RetryTransientMiddleware;
 use serde::Serialize;
@@ -160,8 +161,15 @@ impl EndpointManager {
 					!fallback_urls.is_empty() && ROTATE_ON_ERROR_CODES.contains(&status.as_u16())
 				};
 
-				if should_rotate && self.rotate_url(transport).await.is_ok() {
-					continue;
+				if should_rotate {
+					let rotate_result = self
+						.rotate_url(transport)
+						.await
+						.with_context(|| "Failed to rotate URL");
+
+					if rotate_result.is_ok() {
+						continue;
+					}
 				}
 
 				return Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body));

@@ -304,7 +304,7 @@ mod tests {
 			assert!(err
 				.to_string()
 				.contains("Failed to save last processed block"));
-			assert!(err.to_string().contains("test"));
+			assert!(err.to_string().contains("Permission denied"));
 		}
 	}
 
@@ -332,7 +332,7 @@ mod tests {
 			assert!(result.is_err());
 			let err = result.unwrap_err();
 			assert!(err.to_string().contains("Failed to save blocks"));
-			assert!(err.to_string().contains("test"));
+			assert!(err.to_string().contains("Permission denied"));
 		}
 	}
 
@@ -375,7 +375,7 @@ mod tests {
 			assert!(result.is_err());
 			let err = result.unwrap_err();
 			assert!(err.to_string().contains("Failed to delete blocks"));
-			assert!(err.to_string().contains("test"));
+			assert!(err.to_string().contains("Permission denied"));
 		}
 	}
 
@@ -408,10 +408,11 @@ mod tests {
 			let result = readonly_storage.save_missed_block("test", 100).await;
 			assert!(result.is_err());
 			let err = result.unwrap_err();
+
 			assert!(err
 				.to_string()
 				.contains("Failed to create missed block file"));
-			assert!(err.to_string().contains("test"));
+			assert!(err.to_string().contains("Permission denied"));
 		}
 	}
 }

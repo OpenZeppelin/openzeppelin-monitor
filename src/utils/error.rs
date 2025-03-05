@@ -3,27 +3,6 @@
 //! This module provides a structured approach to error handling with context and metadata.
 //! The primary type is [`ErrorContext`], which wraps errors with additional information
 //! such as timestamps, trace IDs, and custom metadata.
-//!
-//! # Examples
-//!
-//! ```
-//! use std::collections::HashMap;
-//! use crate::utils::error::ErrorContext;
-//!
-//! // Create a basic error context
-//! let error = ErrorContext::new("Failed to process request", None, None);
-//!
-//! // Add metadata to provide more context
-//! let error_with_metadata = ErrorContext::new(
-//!     "Database connection failed",
-//!     None,
-//!     None
-//! ).with_metadata("db_host", "localhost")
-//!  .with_metadata("retry_count", "3");
-//!
-//! // Get formatted error message with metadata
-//! let message = error_with_metadata.format_with_metadata();
-//! ```
 
 use chrono::Utc;
 use std::{collections::HashMap, fmt};
@@ -82,6 +61,31 @@ impl ErrorContext {
 		}
 	}
 
+	/// Creates a new error context and logs it with the given message, source, and metadata.
+	///
+	/// # Arguments
+	///
+	/// * `message` - A descriptive error message
+	/// * `source` - An optional source error that caused this error
+	/// * `metadata` - Optional key-value pairs providing additional context
+	///
+	/// # Returns
+	///
+	/// A new `ErrorContext` instance with automatically generated timestamp and trace ID.
+	pub fn new_with_log(
+		message: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		// Create the error context
+		let error_context = Self::new(message, source, metadata);
+
+		// Log the error
+		log_error(&error_context);
+
+		error_context
+	}
+
 	/// Adds a single key-value metadata pair to the error context.
 	///
 	/// This method creates the metadata HashMap if it doesn't already exist.
@@ -136,22 +140,190 @@ impl ErrorContext {
 
 impl fmt::Display for ErrorContext {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		// TODO: Add metadata to the error message
-		write!(f, "{}", self.message)
+		write!(f, "{}", self.format_with_metadata())
 	}
 }
 
-impl std::error::Error for ErrorContext {}
+// Add this implementation with Send + Sync bounds
+impl std::error::Error for ErrorContext {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		self.source
+			.as_ref()
+			.map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+	}
+}
 
-// Helper function to format the complete error chain
-pub fn format_error_chain(err: &anyhow::Error) -> String {
+// Ensure ErrorContext is Send + Sync
+unsafe impl Send for ErrorContext {}
+unsafe impl Sync for ErrorContext {}
+
+/// Helper function to format the complete error chain
+fn format_error_chain(err: &dyn std::error::Error) -> String {
 	let mut result = err.to_string();
 	let mut source = err.source();
 
 	while let Some(err) = source {
-		result.push_str(&format!("\n  Caused by: {}", err));
+		result.push_str("\n  Caused by: ");
+		result.push_str(&err.to_string());
 		source = err.source();
 	}
 
 	result
+}
+
+/// Extract structured fields from metadata for tracing
+pub fn metadata_to_fields(metadata: &Option<HashMap<String, String>>) -> Vec<(&str, &str)> {
+	let mut fields = Vec::new();
+	if let Some(metadata) = metadata {
+		for (key, value) in metadata {
+			fields.push((key.as_str(), value.as_str()));
+		}
+	}
+	fields
+}
+
+/// Log the error with structured fields
+fn log_error(error: &ErrorContext) {
+	let fields = metadata_to_fields(&error.metadata);
+
+	// Record additional fields from metadata
+	for (key, value) in fields {
+		tracing::Span::current().record(key, value);
+	}
+
+	if let Some(err) = &error.source {
+		tracing::error!(
+			%error.message,
+			%error.trace_id,
+			%error.timestamp,
+			error.chain = %format_error_chain(&**err),
+			"Error occurred"
+		);
+	} else {
+		tracing::error!(
+			%error.message,
+			%error.trace_id,
+			%error.timestamp,
+			"Error occurred"
+		);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::io;
+
+	#[test]
+	fn test_new_error_context() {
+		let error = ErrorContext::new("Test error", None, None);
+
+		assert_eq!(error.message, "Test error");
+		assert!(error.source.is_none());
+		assert!(error.metadata.is_none());
+		assert!(!error.timestamp.is_empty());
+		assert!(!error.trace_id.is_empty());
+	}
+
+	#[test]
+	fn test_with_metadata() {
+		let error = ErrorContext::new("Test error", None, None)
+			.with_metadata("key1", "value1")
+			.with_metadata("key2", "value2");
+
+		let metadata = error.metadata.unwrap();
+		assert_eq!(metadata.get("key1"), Some(&"value1".to_string()));
+		assert_eq!(metadata.get("key2"), Some(&"value2".to_string()));
+	}
+
+	#[test]
+	fn test_format_with_metadata() {
+		let error = ErrorContext::new("Test error", None, None)
+			.with_metadata("a", "1")
+			.with_metadata("b", "2");
+
+		// Keys are sorted alphabetically in the output
+		assert_eq!(error.format_with_metadata(), "Test error [a=1, b=2]");
+	}
+
+	#[test]
+	fn test_display_implementation() {
+		let error = ErrorContext::new("Test error", None, None).with_metadata("key", "value");
+
+		assert_eq!(format!("{}", error), "Test error [key=value]");
+	}
+
+	#[test]
+	fn test_with_source_error() {
+		let source_error = io::Error::new(io::ErrorKind::NotFound, "File not found");
+		let boxed_source = Box::new(source_error) as Box<dyn std::error::Error + Send + Sync>;
+
+		let error = ErrorContext::new("Failed to read config", Some(boxed_source), None);
+
+		assert_eq!(error.message, "Failed to read config");
+		assert!(error.source.is_some());
+	}
+
+	#[test]
+	fn test_metadata_to_fields() {
+		let mut metadata = HashMap::new();
+		metadata.insert("key1".to_string(), "value1".to_string());
+		metadata.insert("key2".to_string(), "value2".to_string());
+
+		let metadata = Some(metadata);
+
+		let fields = metadata_to_fields(&metadata);
+
+		// Since HashMap doesn't guarantee order, we need to check contents without assuming order
+		assert_eq!(fields.len(), 2);
+		assert!(fields.contains(&("key1", "value1")));
+		assert!(fields.contains(&("key2", "value2")));
+	}
+
+	#[test]
+	fn test_format_error_chain() {
+		// Create a chain of errors
+		let inner_error = io::Error::new(io::ErrorKind::PermissionDenied, "Permission denied");
+		let middle_error =
+			ErrorContext::new("Failed to open file", Some(Box::new(inner_error)), None);
+		let outer_error =
+			ErrorContext::new("Config loading failed", Some(Box::new(middle_error)), None);
+
+		let formatted = format_error_chain(&outer_error);
+
+		assert!(formatted.contains("Config loading failed"));
+		assert!(formatted.contains("Caused by: Failed to open file"));
+		assert!(formatted.contains("Caused by: Permission denied"));
+	}
+
+	#[cfg(feature = "test-log")]
+	#[test]
+	fn test_log_error() {
+		use tracing_test::traced_test;
+
+		#[traced_test]
+		fn inner_test() {
+			let error = ErrorContext::new("Test log error", None, None)
+				.with_metadata("test_key", "test_value");
+
+			log_error(&error);
+
+			// Verify log contains our error information
+			assert!(logs_contain("Test log error"));
+			assert!(logs_contain(&error.trace_id));
+			assert!(logs_contain(&error.timestamp));
+
+			// Test with source error
+			let source_error = std::io::Error::new(std::io::ErrorKind::Other, "Source error");
+			let error_with_source =
+				ErrorContext::new("Parent error", Some(Box::new(source_error)), None);
+
+			log_error(&error_with_source);
+
+			assert!(logs_contain("Parent error"));
+			assert!(logs_contain("Source error"));
+		}
+
+		inner_test();
+	}
 }

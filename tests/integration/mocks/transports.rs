@@ -2,9 +2,7 @@ use mockall::mock;
 use reqwest_retry::policies::ExponentialBackoff;
 use serde_json::Value;
 
-use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, BlockchainTransport, RotatingTransport,
-};
+use openzeppelin_monitor::services::blockchain::{BlockchainTransport, RotatingTransport};
 
 // Mock implementation of a Web3 transport client.
 // Used for testing Ethereum/Web3-compatible blockchain interactions.
@@ -39,22 +37,22 @@ impl BlockchainTransport for MockWeb3TransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
 
 #[async_trait::async_trait]
 impl RotatingTransport for MockWeb3TransportClient {
-	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 
-	async fn update_client(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
@@ -91,22 +89,22 @@ impl BlockchainTransport for MockStellarTransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
 
 #[async_trait::async_trait]
 impl RotatingTransport for MockStellarTransportClient {
-	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 
-	async fn update_client(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
@@ -143,22 +141,22 @@ impl BlockchainTransport for MockHorizonTransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
 
 #[async_trait::async_trait]
 impl RotatingTransport for MockHorizonTransportClient {
-	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 
-	async fn update_client(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }

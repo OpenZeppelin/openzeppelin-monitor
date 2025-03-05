@@ -113,7 +113,7 @@ async fn test_get_transactions_failed_to_parse_transaction() {
 	let err = result.unwrap_err();
 	assert!(
 		err.to_string()
-			.contains("Failed to parse transaction response:"),
+			.contains("Failed to parse transaction response"),
 		"Expected RequestError, got: {}",
 		err
 	);
@@ -224,7 +224,7 @@ async fn test_get_events_failed_to_parse_event() {
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(
-		err.to_string().contains("Failed to parse event response:"),
+		err.to_string().contains("Failed to parse event response"),
 		"Expected RequestError, got: {}",
 		err
 	);
@@ -362,7 +362,7 @@ async fn test_get_blocks_failed_to_parse() {
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(
-		err.to_string().contains("Failed to parse ledger response:"),
+		err.to_string().contains("Failed to parse ledger response"),
 		"Expected RequestError, got: {}",
 		err
 	);

@@ -136,7 +136,7 @@ impl BlockchainTransport for Web3TransportClient {
 	///
 	/// # Returns
 	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(self.retry_policy)
 	}
 
@@ -147,10 +147,7 @@ impl BlockchainTransport for Web3TransportClient {
 	///
 	/// # Returns
 	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
-	fn set_retry_policy(
-		&mut self,
-		retry_policy: ExponentialBackoff,
-	) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		self.retry_policy = retry_policy;
 		Ok(())
 	}
@@ -158,30 +155,21 @@ impl BlockchainTransport for Web3TransportClient {
 
 #[async_trait::async_trait]
 impl RotatingTransport for Web3TransportClient {
-	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
-		let context = HashMap::from([("url".to_string(), url.to_string())]);
+	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
 		match Http::new(url) {
 			Ok(transport) => {
 				let client = Web3::new(transport);
 				if client.net().version().await.is_ok() {
 					Ok(())
 				} else {
-					Err(BlockChainError::connection_error(
-						"Failed to connect".to_string(),
-						None,
-						Some(context.clone()),
-					))
+					Err(anyhow::anyhow!("Failed to connect: {}", url))
 				}
 			}
-			Err(e) => Err(BlockChainError::connection_error(
-				"Invalid URL".to_string(),
-				Some(Box::new(e)),
-				Some(context.clone()),
-			)),
+			Err(e) => Err(anyhow::anyhow!("Invalid URL: {}", e)),
 		}
 	}
 
-	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
 		if let Ok(transport) = Http::new(url) {
 			let new_client = Web3::new(transport);
 			let mut client = self.client.write().await;
@@ -193,11 +181,7 @@ impl RotatingTransport for Web3TransportClient {
 
 			Ok(())
 		} else {
-			Err(BlockChainError::connection_error(
-				"Failed to create client".to_string(),
-				None,
-				Some(HashMap::from([("url".to_string(), url.to_string())])),
-			))
+			Err(anyhow::anyhow!("Failed to create client: {}", url))
 		}
 	}
 }
