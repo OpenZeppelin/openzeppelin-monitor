@@ -657,6 +657,63 @@ mod tests {
 		};
 		assert!(empty_title.validate().is_err());
 
+		// Test title has no control characters
+		let invalid_title = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "\0".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_title.validate().is_err());
+
+		// Test title has atleast one character
+		let invalid_title = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: " ".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_title.validate().is_err());
+
+		// Test body has no control characters
+		let invalid_body = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "\0".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_body.validate().is_err());
+
 		// Test empty body
 		let empty_body = Trigger {
 			name: "test_email".to_string(),
@@ -675,6 +732,63 @@ mod tests {
 			},
 		};
 		assert!(empty_body.validate().is_err());
+
+		// Test empty username
+		let empty_username = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(empty_username.validate().is_err());
+
+		// Test invalid control characters
+		let invalid_control_characters = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "\0".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_control_characters.validate().is_err());
+
+		// Test invalid email recipient
+		let invalid_recipient = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("invalid-email")],
+			},
+		};
+		assert!(invalid_recipient.validate().is_err());
 	}
 
 	#[test]
