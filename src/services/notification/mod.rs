@@ -8,20 +8,18 @@
 //! Supports variable substitution in message templates.
 
 use async_trait::async_trait;
+use script::ScriptNotifier;
 use std::collections::HashMap;
-use tokio::time::Duration;
 
 mod discord;
 mod email;
 mod error;
+mod script;
 mod slack;
 mod telegram;
 mod webhook;
 
-use crate::{
-	models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig},
-	utils::ScriptExecutorFactory,
-};
+use crate::models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType};
 
 pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
@@ -44,6 +42,22 @@ pub trait Notifier {
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), NotificationError>;
+
+	/// Executes the script and returns the result
+	///
+	/// # Arguments
+	/// * `monitor_match` - The monitor match to send
+	///
+	/// # Returns
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn script_notify(
+		&self,
+		_monitor_match: &MonitorMatch,
+		_trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
+	) -> Result<(), NotificationError> {
+		// Default implementation that does nothing
+		Ok(())
+	}
 }
 
 /// Service for managing notifications across different channels
@@ -138,55 +152,12 @@ impl NotificationService {
 				}
 			}
 			TriggerType::Script => {
-				match &trigger.config {
-					TriggerTypeConfig::Script {
-						language,
-						script_path,
-						arguments,
-						timeout_ms,
-					} => {
-						let monitor_name = match monitor_match {
-							MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
-							MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,
-						};
-						let script = trigger_scripts
-							.get(&format!("{}|{}", monitor_name, script_path))
-							.ok_or_else(|| {
-								NotificationError::execution_error(
-									"Script content not found".to_string(),
-								)
-							});
-						let script_content = match &script {
-							Ok(content) => content,
-							Err(e) => {
-								return Err(NotificationError::execution_error(e.to_string()))
-							}
-						};
-						let executor = ScriptExecutorFactory::create(language, &script_content.1);
-						// Set timeout for script execution
-						let result = tokio::time::timeout(
-							Duration::from_millis(u64::from(*timeout_ms)),
-							executor.execute(monitor_match.clone(), &arguments),
-						)
-						.await;
-
-						match result {
-							Ok(Ok(true)) => (),
-							Err(e) => {
-								return Err(NotificationError::execution_error(e.to_string()));
-							}
-							_ => {
-								return Err(NotificationError::execution_error(
-									"Trigger script execution error",
-								))
-							}
-						}
-					}
-					_ => {
-						return Err(NotificationError::config_error(
-							"Invalid trigger configuration",
-						))
-					}
+				let notifier = ScriptNotifier::from_config(&trigger.config);
+				if let Some(notifier) = notifier {
+					notifier
+						.script_notify(monitor_match, trigger_scripts)
+						.await
+						.map_err(|e| NotificationError::config_error(e.to_string()))?;
 				}
 			}
 		}
