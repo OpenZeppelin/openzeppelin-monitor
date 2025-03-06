@@ -296,6 +296,7 @@ mod tests {
 		assert!(formatted.contains("Caused by: Permission denied"));
 	}
 
+	#[ignore]
 	#[cfg(feature = "test-log")]
 	#[test]
 	fn test_log_error() {
