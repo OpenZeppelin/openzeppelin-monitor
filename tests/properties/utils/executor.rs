@@ -28,16 +28,19 @@ proptest! {
 			if let Err(err) = result {
 				match err {
 					ScriptError::ExecutionError(msg) => {
-						prop_assert_eq!(msg, String::from_utf8_lossy(&output.stderr).to_string());
+						prop_assert_eq!(msg.to_string(), String::from_utf8_lossy(&output.stderr).to_string());
 					},
 					ScriptError::ParseError(msg) => {
-						prop_assert!(msg.contains("Last line of output is not a valid boolean"));
+						prop_assert!(msg.to_string().contains("Last line of output is not a valid boolean"));
 					},
 					ScriptError::NotFound(msg) => {
-						prop_assert_eq!(msg, String::from_utf8_lossy(&output.stderr).to_string());
+						prop_assert_eq!(msg.to_string(), String::from_utf8_lossy(&output.stderr).to_string());
 					},
 					ScriptError::SystemError(msg) => {
-						prop_assert_eq!(msg, String::from_utf8_lossy(&output.stderr).to_string());
+						prop_assert_eq!(msg.to_string(), String::from_utf8_lossy(&output.stderr).to_string());
+					},
+					ScriptError::Other(_) => {
+						prop_assert!(false, "Expected Other error");
 					},
 				}
 			}
@@ -87,7 +90,7 @@ proptest! {
 		prop_assert!(result.is_err());
 
 		if let Err(ScriptError::ExecutionError(msg)) = result {
-			prop_assert_eq!(msg, error_msg);
+			prop_assert_eq!(msg.to_string(), error_msg);
 		} else {
 			prop_assert!(false, "Expected ExecutionError");
 		}

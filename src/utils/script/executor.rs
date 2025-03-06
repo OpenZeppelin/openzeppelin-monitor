@@ -65,7 +65,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 			"args": args
 		});
 		let input_json = serde_json::to_string(&combined_input)
-			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+			.map_err(|e| ScriptError::parse_error(e.to_string(), None, None))?;
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -86,20 +86,22 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.stderr(Stdio::piped())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		// Write the input_json to stdin
 		cmd.stdin
 			.take()
-			.ok_or_else(|| ScriptError::parse_error("Failed to get stdin handle".to_string()))?
+			.ok_or_else(|| {
+				ScriptError::parse_error("Failed to get stdin handle".to_string(), None, None)
+			})?
 			.write_all(input_json.as_bytes())
 			.await
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		let output = cmd
 			.wait_with_output()
 			.await
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		process_script_output(output)
 	}
@@ -124,7 +126,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			"args": args
 		});
 		let input_json = serde_json::to_string(&combined_input)
-			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+			.map_err(|e| ScriptError::parse_error(e.to_string(), None, None))?;
 
 		// Warning if open file descriptors exceed the maximum limit
 		if open_fds > max_fds as usize {
@@ -144,20 +146,22 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		// Write the input_json to stdin
 		cmd.stdin
 			.take()
-			.ok_or_else(|| ScriptError::execution_error("Failed to get stdin handle".to_string()))?
+			.ok_or_else(|| {
+				ScriptError::execution_error("Failed to get stdin handle".to_string(), None, None)
+			})?
 			.write_all(input_json.as_bytes())
 			.await
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		let output = cmd
 			.wait_with_output()
 			.await
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 		process_script_output(output)
 	}
 }
@@ -181,7 +185,7 @@ impl ScriptExecutor for BashScriptExecutor {
 		});
 
 		let input_json = serde_json::to_string(&combined_input)
-			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+			.map_err(|e| ScriptError::parse_error(e.to_string(), None, None))?;
 
 		let (open_fds, max_fds) = count_open_fds();
 
@@ -203,20 +207,22 @@ impl ScriptExecutor for BashScriptExecutor {
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		// Write the combined input_json to stdin
 		cmd.stdin
 			.take()
-			.ok_or_else(|| ScriptError::execution_error("Failed to get stdin handle".to_string()))?
+			.ok_or_else(|| {
+				ScriptError::execution_error("Failed to get stdin handle".to_string(), None, None)
+			})?
 			.write_all(input_json.as_bytes())
 			.await
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		let output = cmd
 			.wait_with_output()
 			.await
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.map_err(|e| ScriptError::execution_error(e.to_string(), None, None))?;
 
 		process_script_output(output)
 	}
@@ -235,10 +241,13 @@ impl ScriptExecutor for BashScriptExecutor {
 /// * The script execution was not successful (non-zero exit code)
 /// * The output cannot be parsed as a boolean
 /// * The script produced no output
+#[allow(clippy::result_large_err)]
 pub fn process_script_output(output: std::process::Output) -> Result<bool, ScriptError> {
 	if !output.status.success() {
 		return Err(ScriptError::execution_error(
 			String::from_utf8_lossy(&output.stderr).to_string(),
+			None,
+			None,
 		));
 	}
 
@@ -247,22 +256,25 @@ pub fn process_script_output(output: std::process::Output) -> Result<bool, Scrip
 	if stdout.trim().is_empty() {
 		return Err(ScriptError::parse_error(
 			"Script produced no output".to_string(),
+			None,
+			None,
 		));
 	}
 
 	let last_line = stdout
 		.lines()
 		.last()
-		.ok_or_else(|| ScriptError::parse_error("No output from script".to_string()))?
+		.ok_or_else(|| ScriptError::parse_error("No output from script".to_string(), None, None))?
 		.trim();
 
 	match last_line.to_lowercase().as_str() {
 		"true" => Ok(true),
 		"false" => Ok(false),
-		_ => Err(ScriptError::parse_error(format!(
-			"Last line of output is not a valid boolean: {}",
-			last_line
-		))),
+		_ => Err(ScriptError::parse_error(
+			format!("Last line of output is not a valid boolean: {}", last_line),
+			None,
+			None,
+		)),
 	}
 }
 
@@ -378,7 +390,9 @@ print(result)
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
-				assert!(msg.contains("Last line of output is not a valid boolean"));
+				assert!(msg
+					.to_string()
+					.contains("Last line of output is not a valid boolean"));
 			}
 			_ => panic!("Expected ParseError"),
 		}
@@ -448,7 +462,9 @@ print("true")
 		assert!(result.is_err());
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
-				assert!(msg.contains("Last line of output is not a valid boolean"));
+				assert!(msg
+					.to_string()
+					.contains("Last line of output is not a valid boolean"));
 			}
 			_ => panic!("Expected ParseError"),
 		}
@@ -505,7 +521,9 @@ echo "not a boolean"
 			// Retry logic for flaky tests
 			match executor.execute(input.clone(), "").await {
 				Err(ScriptError::ParseError(msg)) => {
-					assert!(msg.contains("Last line of output is not a valid boolean"));
+					assert!(msg
+						.to_string()
+						.contains("Last line of output is not a valid boolean"));
 					return;
 				}
 				Ok(_) => {
@@ -536,7 +554,7 @@ echo "not a boolean"
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
 				println!("msg: {}", msg);
-				assert!(msg.contains("Script produced no output"));
+				assert!(msg.to_string().contains("Script produced no output"));
 			}
 			_ => panic!("Expected ParseError"),
 		}

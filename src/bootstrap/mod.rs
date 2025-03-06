@@ -333,11 +333,11 @@ async fn execute_trigger_condition(
 	match result {
 		Ok(Ok(true)) => true,
 		Ok(Err(e)) => {
-			ScriptError::execution_error(e.to_string());
+			ScriptError::execution_error(e.to_string(), None, None);
 			false
 		}
 		Err(e) => {
-			ScriptError::execution_error(e.to_string());
+			ScriptError::execution_error(e.to_string(), None, None);
 			false
 		}
 		_ => false,
@@ -370,7 +370,7 @@ async fn run_trigger_filters(
 					monitor_name, trigger_condition.script_path
 				))
 				.ok_or_else(|| {
-					ScriptError::execution_error("Script content not found".to_string())
+					ScriptError::execution_error("Script content not found".to_string(), None, None)
 				});
 			if let Ok(script_content) = script_content {
 				if execute_trigger_condition(trigger_condition, monitor_match, script_content).await
