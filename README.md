@@ -187,6 +187,8 @@ RUST_TEST_THREADS=1 cargo +stable llvm-cov
   - Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
   - Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
   - Too low settings may result in missed blocks.
+- Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. Ideally, you should increase the open file descriptor limit to at least 2,048 or higher for optimal performance.
+  - HTTP requests to RPC endpoints may consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
 
 ### Notification Considerations
 

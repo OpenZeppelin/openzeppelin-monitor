@@ -16,7 +16,7 @@ FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base
 
 ARG version=3.12
 
-RUN apk add bash python-${version} py${version}-pip nodejs
+RUN apk add bash python-${version} py${version}-pip nodejs jq
 
 # removes apk and unneeded wolfi-base tools.
 RUN apk del wolfi-base apk-tools

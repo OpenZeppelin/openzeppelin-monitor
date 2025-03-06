@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 /// - Network targets (which chains to monitor)
 /// - Contract addresses to watch
 /// - Conditions to match (functions, events, transactions)
+/// - Triggers conditions refers to a custom filter script that being executed apply extra filters
+///   to the matched transactions before triggering the notifications
 /// - Triggers to execute when conditions are met
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 pub struct Monitor {
@@ -23,6 +25,9 @@ pub struct Monitor {
 
 	/// Conditions that should trigger this monitor
 	pub match_conditions: MatchConditions,
+
+	/// Conditions that should be met prior to triggering notifications
+	pub trigger_conditions: Vec<TriggerConditions>,
 
 	/// IDs of triggers to execute when conditions match
 	pub triggers: Vec<String>,
@@ -90,4 +95,28 @@ pub enum TransactionStatus {
 	Success,
 	/// Match only failed transactions
 	Failure,
+}
+
+/// Conditions that should be met prior to triggering notifications
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct TriggerConditions {
+	/// The path to the script
+	pub script_path: String,
+
+	/// The arguments of the script
+	#[serde(default)]
+	pub arguments: Option<String>,
+
+	/// The language of the script
+	pub language: ScriptLanguage,
+
+	/// The timeout of the script
+	pub timeout_ms: u32,
+}
+/// The possible languages of the script
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq)]
+pub enum ScriptLanguage {
+	JavaScript,
+	Python,
+	Bash,
 }

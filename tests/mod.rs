@@ -21,6 +21,9 @@ mod properties {
 		mod network;
 		mod trigger;
 	}
+	mod utils {
+		mod executor;
+	}
 	mod strategies;
 }
 

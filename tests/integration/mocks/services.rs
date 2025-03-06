@@ -3,7 +3,7 @@ use mockall::mock;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
-	models::{BlockType, Monitor, MonitorMatch, Network},
+	models::{BlockType, Monitor, MonitorMatch, Network, ScriptLanguage},
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
 		blockchain::BlockFilterFactory,
@@ -26,6 +26,7 @@ mock! {
 			trigger_slugs: &[String],
 			variables: HashMap<String, String>,
 		) -> Result<(), TriggerError>;
+		async fn load_scripts(&self, monitors: &[Monitor]) -> Result<HashMap<String, (ScriptLanguage, String)>, TriggerError>;
 	}
 }
 

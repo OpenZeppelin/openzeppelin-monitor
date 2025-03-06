@@ -64,5 +64,10 @@
       }
     ]
   },
+  "trigger_conditions": [{
+    "script_path": "./config/filters/evm_filter_block_number.sh",
+    "language": "Bash",
+    "timeout_ms": 1000
+  }],
   "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
 }
