@@ -90,10 +90,10 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				.get(trigger_slug)
 				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string(), None, None))?;
 
-			let _ = self
-				.notification_service
+			self.notification_service
 				.execute(&trigger, variables.clone())
-				.await;
+				.await
+				.map_err(|e| TriggerError::execution_error(e.to_string(), None, None))?;
 		}
 		Ok(())
 	}
