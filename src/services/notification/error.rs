@@ -73,3 +73,71 @@ impl fmt::Display for NotificationError {
 }
 
 impl Error for NotificationError {}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_network_error_creation() {
+		let error = NotificationError::network_error("Failed to connect");
+		assert!(matches!(error, NotificationError::NetworkError(_)));
+		assert_eq!(error.to_string(), "Network error: Failed to connect");
+	}
+
+	#[test]
+	fn test_config_error_creation() {
+		let error = NotificationError::config_error("Invalid configuration");
+		assert!(matches!(error, NotificationError::ConfigError(_)));
+		assert_eq!(error.to_string(), "Config error: Invalid configuration");
+	}
+
+	#[test]
+	fn test_internal_error_creation() {
+		let error = NotificationError::internal_error("Processing failed");
+		assert!(matches!(error, NotificationError::InternalError(_)));
+		assert_eq!(error.to_string(), "Internal error: Processing failed");
+	}
+
+	#[test]
+	fn test_execution_error_creation() {
+		let error = NotificationError::execution_error("Script failed");
+		assert!(matches!(error, NotificationError::ExecutionError(_)));
+		assert_eq!(error.to_string(), "Execution error: Script failed");
+	}
+
+	#[tokio::test]
+	async fn test_reqwest_error_conversion() {
+		let reqwest_error = reqwest::Client::new()
+			.get("invalid-url")
+			.send()
+			.await
+			.unwrap_err();
+		let notification_error: NotificationError = reqwest_error.into();
+		assert!(matches!(
+			notification_error,
+			NotificationError::NetworkError(_)
+		));
+	}
+
+	#[test]
+	fn test_error_display() {
+		let errors = vec![
+			NotificationError::NetworkError("network".into()),
+			NotificationError::ConfigError("config".into()),
+			NotificationError::InternalError("internal".into()),
+			NotificationError::ExecutionError("execution".into()),
+		];
+
+		let expected = vec![
+			"Network error: network",
+			"Config error: config",
+			"Internal error: internal",
+			"Execution error: execution",
+		];
+
+		for (error, expected_msg) in errors.iter().zip(expected.iter()) {
+			assert_eq!(error.to_string(), *expected_msg);
+		}
+	}
+}

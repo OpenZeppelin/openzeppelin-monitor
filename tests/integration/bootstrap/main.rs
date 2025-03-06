@@ -874,3 +874,57 @@ async fn test_load_scripts_for_custom_triggers_notifications_error() {
 		_ => panic!("Expected error"),
 	}
 }
+
+#[tokio::test]
+async fn test_load_scripts_for_custom_triggers_notifications_failed() {
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
+
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: vec![],
+		}],
+		triggers: vec!["custom_trigger_not_found".to_string()],
+		..Default::default()
+	}];
+
+	let mut mocked_triggers = HashMap::new();
+	let custom_trigger = Trigger {
+		name: "custom_trigger_not_found".to_string(),
+		trigger_type: TriggerType::Script,
+		config: TriggerTypeConfig::Script {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: vec![],
+		},
+	};
+	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
+
+	// Set up mock repository
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	// Test loading scripts
+	let result = trigger_execution_service.load_scripts(&monitors).await;
+	println!("result ===>: {:?}", result);
+	assert!(result.is_err());
+
+	match result {
+		Err(e) => {
+			assert!(matches!(e, TriggerError::ConfigurationError(_)));
+			assert!(e.to_string().contains("Failed to get trigger"));
+		}
+		_ => panic!("Expected error"),
+	}
+}
