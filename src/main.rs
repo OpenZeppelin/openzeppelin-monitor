@@ -63,7 +63,10 @@ async fn main() -> Result<()> {
 
 	// Load environment variables from .env file
 	dotenv().ok();
-	setup_logging();
+	// Setup logging to stdout
+	setup_logging().unwrap_or_else(|e| {
+		tracing::error!("Failed to setup logging: {}", e);
+	});
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
 		initialize_services::<
