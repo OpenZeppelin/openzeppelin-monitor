@@ -701,46 +701,24 @@ async fn test_load_scripts() {
 	// Cleanup is handled automatically when temp_dir is dropped
 }
 
-// Also add a test for the error case
 #[tokio::test]
-async fn test_load_scripts_error() {
-	// Create test monitors with non-existent script path
+async fn test_load_scripts() {
+	// Create a temporary test script file
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
+
+	// Create test monitors with real trigger conditions
 	let monitors = vec![Monitor {
 		name: "test_monitor".to_string(),
 		trigger_conditions: vec![TriggerConditions {
-			script_path: "non_existent_script.py".to_string(),
+			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
 			arguments: None,
 		}],
-		..Default::default()
-	}];
-
-	// Create actual TriggerExecutionService instance
-	let trigger_service = setup_trigger_service(HashMap::new());
-	let notification_service = NotificationService::new();
-	let trigger_execution_service =
-		TriggerExecutionService::new(trigger_service, notification_service);
-
-	// Test loading scripts
-	let result = trigger_execution_service.load_scripts(&monitors).await;
-	assert!(result.is_err());
-
-	match result {
-		Err(e) => {
-			assert!(matches!(e, TriggerError::ConfigurationError(_)));
-			assert!(e.to_string().contains("Failed to read script file"));
-		}
-		_ => panic!("Expected error"),
-	}
-}
-
-#[tokio::test]
-async fn test_load_scripts_empty_conditions() {
-	// Create test monitors with empty trigger conditions
-	let monitors = vec![Monitor {
-		name: "test_monitor".to_string(),
-		trigger_conditions: vec![], // Empty trigger conditions
 		..Default::default()
 	}];
 
@@ -757,8 +735,142 @@ async fn test_load_scripts_empty_conditions() {
 		.unwrap();
 
 	// Verify results
-	assert!(
-		scripts.is_empty(),
-		"Scripts map should be empty when there are no trigger conditions"
-	);
+	assert_eq!(scripts.len(), 1);
+
+	let script_key = format!("test_monitor|{}", script_path.to_str().unwrap());
+	assert!(scripts.contains_key(&script_key));
+
+	let (lang, content) = &scripts[&script_key];
+	assert_eq!(*lang, ScriptLanguage::Python);
+	assert_eq!(content.trim(), "print('test script content')");
+
+	// Cleanup is handled automatically when temp_dir is dropped
+}
+
+#[tokio::test]
+async fn test_load_scripts_for_custom_triggers_notifications() {
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
+
+	let script_trigger_path = temp_dir.path().join("custom_trigger_script.py");
+	tokio::fs::write(&script_trigger_path, "print('test script trigger content')")
+		.await
+		.unwrap();
+
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: vec![],
+		}],
+		triggers: vec!["custom_trigger".to_string()],
+		..Default::default()
+	}];
+
+	let mut mocked_triggers = HashMap::new();
+	let custom_trigger = Trigger {
+		name: "custom_trigger".to_string(),
+		trigger_type: TriggerType::Script,
+		config: TriggerTypeConfig::Script {
+			script_path: script_trigger_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: vec![],
+		},
+	};
+	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
+
+	// Set up mock repository
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	// Test loading scripts
+	let scripts = trigger_execution_service
+		.load_scripts(&monitors)
+		.await
+		.unwrap();
+
+	// Verify results
+	println!("scripts: {:?}", scripts);
+	assert_eq!(scripts.len(), 2);
+
+	let script_key = format!("test_monitor|{}", script_path.to_str().unwrap());
+	assert!(scripts.contains_key(&script_key));
+
+	let (lang, content) = &scripts[&script_key];
+	assert_eq!(*lang, ScriptLanguage::Python);
+	assert_eq!(content.trim(), "print('test script content')");
+
+	let script_key_trigger = format!("test_monitor|{}", script_trigger_path.to_str().unwrap());
+	assert!(scripts.contains_key(&script_key_trigger));
+
+	let (lang, content) = &scripts[&script_key_trigger];
+	assert_eq!(*lang, ScriptLanguage::Python);
+	assert_eq!(content.trim(), "print('test script trigger content')");
+}
+
+#[tokio::test]
+async fn test_load_scripts_for_custom_triggers_notifications_error() {
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
+
+	let script_trigger_path = temp_dir.path().join("custom_trigger_script.py");
+	tokio::fs::write(&script_trigger_path, "print('test script trigger content')")
+		.await
+		.unwrap();
+
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: vec![],
+		}],
+		triggers: vec!["custom_trigger".to_string()],
+		..Default::default()
+	}];
+
+	let mut mocked_triggers = HashMap::new();
+	let custom_trigger = Trigger {
+		name: "custom_trigger".to_string(),
+		trigger_type: TriggerType::Script,
+		config: TriggerTypeConfig::Script {
+			script_path: "non_existent_script.py".to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: vec![],
+		},
+	};
+	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
+
+	// Set up mock repository
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	// Test loading scripts
+	let result = trigger_execution_service.load_scripts(&monitors).await;
+	assert!(result.is_err());
+
+	match result {
+		Err(e) => {
+			assert!(matches!(e, TriggerError::ConfigurationError(_)));
+			assert!(e.to_string().contains("Failed to read script file"));
+		}
+		_ => panic!("Expected error"),
+	}
 }
