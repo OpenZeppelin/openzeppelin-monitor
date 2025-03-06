@@ -965,6 +965,7 @@ mod tests {
 				},
 			},
 		};
+
 		assert!(invalid_token.validate().is_err());
 
 		// Test invalid chat ID
@@ -988,7 +989,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(), // noboost
+				token: "11234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
 				chat_id: "1730223038".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
@@ -1003,7 +1004,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(), // noboost
+				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
 				chat_id: "1730223038".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
@@ -1012,6 +1013,7 @@ mod tests {
 				},
 			},
 		};
+
 		assert!(invalid_body_message.validate().is_err());
 	}
 
