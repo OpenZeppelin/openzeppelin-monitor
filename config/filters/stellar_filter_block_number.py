@@ -24,7 +24,7 @@ def main():
         if not input_data:
             print("No input JSON provided", flush=True)
             return False
-        
+
         # Parse input JSON
         try:
             data = json.loads(input_data)
