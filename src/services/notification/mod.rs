@@ -150,3 +150,162 @@ impl Default for NotificationService {
 		Self::new()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::{Trigger, TriggerType, TriggerTypeConfig};
+	use std::collections::HashMap;
+
+	#[tokio::test]
+	async fn test_slack_notification_invalid_config() {
+		let service = NotificationService::new();
+
+		let trigger = Trigger {
+			name: "test_slack".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Script {
+				// Intentionally wrong config type
+				path: "invalid".to_string(),
+				args: vec![],
+			},
+		};
+
+		let variables = HashMap::new();
+		let result = service.execute(&trigger, variables).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx.message.contains("Invalid slack configuration"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_email_notification_invalid_config() {
+		let service = NotificationService::new();
+
+		let trigger = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Script {
+				// Intentionally wrong config type
+				path: "invalid".to_string(),
+				args: vec![],
+			},
+		};
+
+		let variables = HashMap::new();
+		let result = service.execute(&trigger, variables).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx.message.contains("Invalid email configuration"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_webhook_notification_invalid_config() {
+		let service = NotificationService::new();
+
+		// Create a trigger with invalid Webhook config
+		let trigger = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Script {
+				// Intentionally wrong config type
+				path: "invalid".to_string(),
+				args: vec![],
+			},
+		};
+
+		let variables = HashMap::new();
+		let result = service.execute(&trigger, variables).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx.message.contains("Invalid webhook configuration"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_discord_notification_invalid_config() {
+		let service = NotificationService::new();
+
+		let trigger = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Script {
+				// Intentionally wrong config type
+				path: "invalid".to_string(),
+				args: vec![],
+			},
+		};
+
+		let variables = HashMap::new();
+		let result = service.execute(&trigger, variables).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx.message.contains("Invalid discord configuration"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_telegram_notification_invalid_config() {
+		let service = NotificationService::new();
+
+		let trigger = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Script {
+				// Intentionally wrong config type
+				path: "invalid".to_string(),
+				args: vec![],
+			},
+		};
+
+		let variables = HashMap::new();
+		let result = service.execute(&trigger, variables).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx.message.contains("Invalid telegram configuration"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_script_notification() {
+		let service = NotificationService::new();
+
+		let trigger = Trigger {
+			name: "test_script".to_string(),
+			trigger_type: TriggerType::Script,
+			config: TriggerTypeConfig::Script {
+				path: "/usr/local/bin/script.sh".to_string(),
+				args: vec!["arg1".to_string(), "arg2".to_string()],
+			},
+		};
+
+		let variables = HashMap::new();
+
+		let result = service.execute(&trigger, variables).await;
+
+		// Script notification is not implemented yet, but should not error
+		assert!(result.is_ok());
+	}
+}
