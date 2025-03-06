@@ -403,6 +403,16 @@ mod tests {
 	}
 
 	#[test]
+	fn test_validate_empty_cron_schedule() {
+		let mut network = create_valid_network();
+		network.cron_schedule = "".to_string();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
 	fn test_invalid_load_from_path() {
 		let path = Path::new("config/networks/invalid.json");
 		assert!(matches!(

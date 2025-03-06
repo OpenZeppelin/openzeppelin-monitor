@@ -478,6 +478,8 @@ mod tests {
 		core::{Trigger, TriggerType},
 		NotificationMessage,
 	};
+	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
+	use tempfile::TempDir;
 
 	#[test]
 	fn test_slack_trigger_validation() {
@@ -1095,5 +1097,41 @@ mod tests {
 		if let Err(ConfigError::FileError(err)) = result {
 			assert!(err.message.contains("triggers directory not found"));
 		}
+	}
+
+	#[test]
+	#[cfg(unix)] // This test is Unix-specific due to permission handling
+	fn test_load_all_unreadable_file() {
+		// Create a temporary directory for our test
+		let temp_dir = TempDir::new().unwrap();
+		let config_dir = temp_dir.path().join("triggers");
+		std::fs::create_dir(&config_dir).unwrap();
+
+		// Create a JSON file with valid content but unreadable permissions
+		let file_path = config_dir.join("unreadable.json");
+		{
+			let mut file = File::create(&file_path).unwrap();
+			writeln!(file, r#"{{ "test_trigger": {{ "name": "test", "trigger_type": "Slack", "config": {{ "slack_url": "https://hooks.slack.com/services/xxx", "message": {{ "title": "Alert", "body": "Test message" }} }} }} }}"#).unwrap();
+		}
+
+		// Change permissions to make the file unreadable
+		let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
+		perms.set_mode(0o000); // No permissions
+		std::fs::set_permissions(&file_path, perms).unwrap();
+
+		// Try to load triggers from the directory
+		let result: Result<HashMap<String, Trigger>, ConfigError> =
+			Trigger::load_all(Some(&config_dir));
+
+		// Verify we get the expected error
+		assert!(matches!(result, Err(ConfigError::FileError(_))));
+		if let Err(ConfigError::FileError(err)) = result {
+			assert!(err.message.contains("failed to read trigger config file"));
+		}
+
+		// Clean up by making the file deletable
+		let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
+		perms.set_mode(0o644);
+		std::fs::set_permissions(&file_path, perms).unwrap();
 	}
 }

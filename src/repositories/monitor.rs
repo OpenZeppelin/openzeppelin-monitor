@@ -449,4 +449,71 @@ mod tests {
 			.unwrap_err();
 		assert!(err.to_string().contains("timeout_ms greater than 0"));
 	}
+
+	#[test]
+	fn test_load_error_messages() {
+		// Test with invalid path to trigger load error
+		let invalid_path = Path::new("/non/existent/path");
+		let result = MonitorRepository::<NetworkRepository, TriggerRepository>::load_all(
+			Some(invalid_path),
+			None,
+			None,
+		);
+
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(err.to_string().contains("Failed to load monitors"));
+	}
+
+	#[test]
+	fn test_network_validation_error() {
+		// Create a monitor with a reference to a non-existent network
+		let mut monitors = HashMap::new();
+		let monitor = Monitor {
+			name: "test_monitor".to_string(),
+			networks: vec!["non_existent_network".to_string()],
+			..Default::default()
+		};
+		monitors.insert("test_monitor".to_string(), monitor);
+
+		// Empty networks and triggers
+		let networks = HashMap::new();
+		let triggers = HashMap::new();
+
+		// Validate should fail due to non-existent network reference
+		let result =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			);
+
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(err.to_string().contains("references non-existent network"));
+	}
+
+	#[test]
+	fn test_trigger_validation_error() {
+		// Create a monitor with a reference to a non-existent trigger
+		let mut monitors = HashMap::new();
+		let monitor = Monitor {
+			name: "test_monitor".to_string(),
+			triggers: vec!["non_existent_trigger".to_string()],
+			..Default::default()
+		};
+		monitors.insert("test_monitor".to_string(), monitor);
+
+		// Empty networks and triggers
+		let networks = HashMap::new();
+		let triggers = HashMap::new();
+
+		// Validate should fail due to non-existent trigger reference
+		let result =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			);
+
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(err.to_string().contains("references non-existent trigger"));
+	}
 }
