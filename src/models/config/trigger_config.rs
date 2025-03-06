@@ -29,6 +29,18 @@ impl ConfigLoader for Trigger {
 		T: FromIterator<(String, Self)>,
 	{
 		let config_dir = path.unwrap_or(Path::new("config/triggers"));
+
+		if !config_dir.exists() {
+			return Err(ConfigError::file_error(
+				"triggers directory not found",
+				None,
+				Some(HashMap::from([(
+					"path".to_string(),
+					config_dir.display().to_string(),
+				)])),
+			));
+		}
+
 		let entries = fs::read_dir(config_dir).map_err(|e| {
 			ConfigError::file_error(
 				format!("failed to read triggers directory: {}", e),
@@ -1045,5 +1057,43 @@ mod tests {
 		assert!(invalid_path.validate().is_err());
 
 		std::fs::remove_file(script_path).unwrap();
+	}
+
+	#[test]
+	fn test_invalid_load_from_path() {
+		let path = Path::new("config/triggers/invalid.json");
+		assert!(matches!(
+			Trigger::load_from_path(path),
+			Err(ConfigError::FileError(_))
+		));
+	}
+
+	#[test]
+	fn test_invalid_config_from_load_from_path() {
+		use std::io::Write;
+		use tempfile::NamedTempFile;
+
+		let mut temp_file = NamedTempFile::new().unwrap();
+		write!(temp_file, "{{\"invalid\": \"json").unwrap();
+
+		let path = temp_file.path();
+
+		assert!(matches!(
+			Trigger::load_from_path(path),
+			Err(ConfigError::ParseError(_))
+		));
+	}
+
+	#[test]
+	fn test_load_all_directory_not_found() {
+		let non_existent_path = Path::new("non_existent_directory");
+
+		let result: Result<HashMap<String, Trigger>, ConfigError> =
+			Trigger::load_all(Some(non_existent_path));
+		assert!(matches!(result, Err(ConfigError::FileError(_))));
+
+		if let Err(ConfigError::FileError(err)) = result {
+			assert!(err.message.contains("triggers directory not found"));
+		}
 	}
 }

@@ -401,4 +401,42 @@ mod tests {
 			Err(ConfigError::ValidationError(_))
 		));
 	}
+
+	#[test]
+	fn test_invalid_load_from_path() {
+		let path = Path::new("config/networks/invalid.json");
+		assert!(matches!(
+			Network::load_from_path(path),
+			Err(ConfigError::FileError(_))
+		));
+	}
+
+	#[test]
+	fn test_invalid_config_from_load_from_path() {
+		use std::io::Write;
+		use tempfile::NamedTempFile;
+
+		let mut temp_file = NamedTempFile::new().unwrap();
+		write!(temp_file, "{{\"invalid\": \"json").unwrap();
+
+		let path = temp_file.path();
+
+		assert!(matches!(
+			Network::load_from_path(path),
+			Err(ConfigError::ParseError(_))
+		));
+	}
+
+	#[test]
+	fn test_load_all_directory_not_found() {
+		let non_existent_path = Path::new("non_existent_directory");
+
+		let result: Result<HashMap<String, Network>, ConfigError> =
+			Network::load_all(Some(non_existent_path));
+		assert!(matches!(result, Err(ConfigError::FileError(_))));
+
+		if let Err(ConfigError::FileError(err)) = result {
+			assert!(err.message.contains("networks directory not found"));
+		}
+	}
 }
