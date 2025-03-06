@@ -8,7 +8,7 @@
 //! Supports variable substitution in message templates.
 
 use async_trait::async_trait;
-use script::ScriptNotifier;
+
 use std::collections::HashMap;
 
 mod discord;
@@ -24,6 +24,7 @@ use crate::models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType};
 pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
 pub use error::NotificationError;
+pub use script::ScriptNotifier;
 pub use slack::SlackNotifier;
 pub use telegram::TelegramNotifier;
 pub use webhook::WebhookNotifier;
