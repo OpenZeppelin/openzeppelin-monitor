@@ -70,8 +70,6 @@ fn make_monitor_with_transactions(mut monitor: Monitor, include_expression: bool
 
 #[tokio::test]
 async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
@@ -117,8 +115,6 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 
 #[tokio::test]
 async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
@@ -184,8 +180,6 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 
 #[tokio::test]
 async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
@@ -229,8 +223,6 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 
 #[tokio::test]
 async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
@@ -287,8 +279,6 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 
 #[tokio::test]
 async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
@@ -330,8 +320,6 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 
 #[tokio::test]
 async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
@@ -375,8 +363,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 
 #[tokio::test]
 async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
 	let client = EvmClient::new(&test_data.network).await.unwrap();
@@ -432,8 +419,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 
 #[tokio::test]
 async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
 	let client = EvmClient::new(&test_data.network).await.unwrap();
@@ -461,8 +447,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 
 #[tokio::test]
 async fn test_handle_match() -> Result<(), Box<FilterError>> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
 	let client = EvmClient::new(&test_data.network).await.unwrap();
