@@ -125,3 +125,24 @@ impl<T: NetworkRepositoryTrait> NetworkService<T> {
 		self.repository.get_all()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_load_error_messages() {
+		// Test with invalid path to trigger load error
+		let invalid_path = Path::new("/non/existent/path");
+		let result = NetworkRepository::load_all(Some(invalid_path));
+
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		match err {
+			RepositoryError::LoadError(message) => {
+				assert!(message.to_string().contains("Failed to load networks"));
+			}
+			_ => panic!("Expected RepositoryError::LoadError"),
+		}
+	}
+}

@@ -124,3 +124,25 @@ impl<T: TriggerRepositoryTrait> TriggerService<T> {
 		self.repository.get_all()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::repositories::error::RepositoryError;
+	use std::path::PathBuf;
+
+	#[test]
+	fn test_load_error_messages() {
+		// Test with invalid path to trigger load error
+		let invalid_path = PathBuf::from("/non/existent/path");
+		let result = TriggerRepository::load_all(Some(&invalid_path));
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		match err {
+			RepositoryError::LoadError(message) => {
+				assert!(message.to_string().contains("Failed to load triggers"));
+			}
+			_ => panic!("Expected RepositoryError::LoadError"),
+		}
+	}
+}
