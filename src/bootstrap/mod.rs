@@ -375,8 +375,7 @@ async fn run_trigger_filters(
 					ScriptError::execution_error("Script content not found".to_string())
 				});
 			if let Ok(script_content) = script_content {
-				if execute_trigger_condition(&trigger_condition, monitor_match, script_content)
-					.await
+				if execute_trigger_condition(trigger_condition, monitor_match, script_content).await
 				{
 					is_filtered = true;
 					break;

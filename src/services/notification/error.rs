@@ -122,14 +122,14 @@ mod tests {
 
 	#[test]
 	fn test_error_display() {
-		let errors = vec![
+		let errors = [
 			NotificationError::NetworkError("network".into()),
 			NotificationError::ConfigError("config".into()),
 			NotificationError::InternalError("internal".into()),
 			NotificationError::ExecutionError("execution".into()),
 		];
 
-		let expected = vec![
+		let expected = [
 			"Network error: network",
 			"Config error: config",
 			"Internal error: internal",

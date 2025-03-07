@@ -284,7 +284,7 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 		Just(1000u32),
 	)
 		.prop_map(|(script_path, arguments, timeout_ms)| {
-			let language = match script_path.split('.').last() {
+			let language = match script_path.split('.').next_back() {
 				Some("py") => ScriptLanguage::Python,
 				Some("js") => ScriptLanguage::JavaScript,
 				Some("sh") => ScriptLanguage::Bash,

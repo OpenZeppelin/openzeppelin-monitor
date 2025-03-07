@@ -26,7 +26,6 @@ use openzeppelin_monitor::{
 };
 
 use std::{collections::HashMap, sync::Arc};
-use tempfile;
 use tokio::sync::watch;
 use web3::types::{H160, U256};
 

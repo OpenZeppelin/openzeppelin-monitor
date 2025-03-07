@@ -18,7 +18,7 @@ pub trait ScriptExecutor: Send + Sync + Any {
 	///
 	/// # Returns
 	/// * `Result<bool, ScriptError>` - Returns true/false based on script execution or an error
-	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError>;
+	async fn execute(&self, input: MonitorMatch, args: &[String]) -> Result<bool, ScriptError>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
@@ -58,7 +58,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &[String]) -> Result<bool, ScriptError> {
 		let (open_fds, max_fds) = count_open_fds();
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -116,7 +116,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &[String]) -> Result<bool, ScriptError> {
 		let (open_fds, max_fds) = count_open_fds();
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
@@ -173,7 +173,7 @@ impl ScriptExecutor for BashScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &Vec<String>) -> Result<bool, ScriptError> {
+	async fn execute(&self, input: MonitorMatch, args: &[String]) -> Result<bool, ScriptError> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -259,9 +259,9 @@ pub fn process_script_output(output: std::process::Output) -> Result<bool, Scrip
 	match last_line.to_lowercase().as_str() {
 		"true" => Ok(true),
 		"false" => Ok(false),
-		_ => Err(ScriptError::parse_error(format!(
-			"Last line of output is not a valid boolean"
-		))),
+		_ => Err(ScriptError::parse_error(
+			"Last line of output is not a valid boolean".to_string(),
+		)),
 	}
 }
 
@@ -353,7 +353,7 @@ print(result)
 		let args = vec![];
 		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -408,7 +408,7 @@ print("true")
 		let args = vec![];
 		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -429,7 +429,7 @@ print("true")
 		let args = vec![];
 		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -475,7 +475,7 @@ echo "true"
 			// Retry logic for flaky tests
 			match executor.execute(input.clone(), &args).await {
 				Ok(result) => {
-					assert_eq!(result, true);
+					assert!(result);
 					return;
 				}
 				Err(e) => {
@@ -560,7 +560,7 @@ print("     true    ")  # Should handle whitespace correctly
 		let args = vec![];
 		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -613,7 +613,7 @@ print("true")
 		let args = vec![];
 		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -644,7 +644,7 @@ else:
 		let input = create_mock_monitor_match();
 		let args = vec![];
 		let result = executor.execute(input, &args).await;
-		assert_eq!(result.unwrap(), false);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -679,13 +679,13 @@ else:
 		let args = vec![String::from("test_argument")];
 		let result = executor.execute(input.clone(), &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), false);
+		assert!(result.unwrap());
 
 		// Test with non-matching argument
 		let args = vec![String::from("--verbose"), String::from("--other-arg")];
 		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -723,13 +723,13 @@ else:
 		];
 		let result = executor.execute(input.clone(), &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 
 		// Test with wrong argument
 		let args = vec![String::from("wrong_arg")];
 		let result = executor.execute(input, &args).await;
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), false);
+		assert!(!result.unwrap());
 	}
 
 	#[tokio::test]
@@ -741,7 +741,7 @@ else:
 		let result = executor.execute(input, &args).await;
 
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), true);
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -754,6 +754,6 @@ else:
 		let result = executor.execute(input, &args).await;
 
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), false);
+		assert!(!result.unwrap());
 	}
 }

@@ -690,7 +690,7 @@ mod tests {
 		};
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test invalid telegram token
+		// Test invalid token
 		let invalid_token = Trigger {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,

@@ -62,7 +62,7 @@ impl Notifier for ScriptNotifier {
 
 				let result = tokio::time::timeout(
 					Duration::from_millis(u64::from(*timeout_ms)),
-					executor.execute(monitor_match.clone(), &arguments),
+					executor.execute(monitor_match.clone(), arguments),
 				)
 				.await;
 
