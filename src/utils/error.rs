@@ -371,4 +371,84 @@ mod tests {
 
 		inner_test();
 	}
+
+	// Custom error type for testing
+	#[derive(Debug)]
+	struct TestError {
+		message: String,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+	}
+
+	impl fmt::Display for TestError {
+		fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+			write!(f, "{}", self.message)
+		}
+	}
+
+	impl std::error::Error for TestError {
+		fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+			self.source
+				.as_ref()
+				.map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+		}
+	}
+
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an inner error with ErrorContext
+		let inner_error = ErrorContext::new(
+			"Inner error",
+			None,
+			Some(HashMap::from([("key".to_string(), "value".to_string())])),
+		);
+
+		// Get the trace ID from the inner error
+		let inner_trace_id = inner_error.trace_id.clone();
+
+		// Create a middle error that wraps the inner error
+		let middle_error = TestError {
+			message: "Middle error".to_string(),
+			source: Some(Box::new(inner_error)),
+		};
+
+		// Create an outer error with ErrorContext that wraps the middle error
+		let outer_error = ErrorContext::new("Outer error", Some(Box::new(middle_error)), None);
+
+		// Get the trace ID from the outer error
+		let outer_trace_id = outer_error.trace_id.clone();
+
+		// Verify that the trace IDs match
+		assert_eq!(
+			inner_trace_id, outer_trace_id,
+			"Trace IDs should match between inner and outer errors"
+		);
+
+		// Test the TraceableError implementation
+		let dyn_error: &(dyn std::error::Error + Send + Sync) = &outer_error;
+		let trace_id = TraceableError::trace_id(dyn_error);
+
+		assert_eq!(
+			inner_trace_id, trace_id,
+			"Trace ID from TraceableError should match the original trace ID"
+		);
+	}
+
+	#[test]
+	fn test_error_sanitization() {
+		// Test HTML sanitization
+		let html_error = "Error occurred<html><body>Some HTML content</body></html>";
+		let sanitized = sanitize_error_message(html_error);
+		assert_eq!(
+			sanitized, "Error occurred",
+			"HTML content should be removed"
+		);
+
+		// Test normal error message
+		let normal_error = "This is a normal error message";
+		let sanitized = sanitize_error_message(normal_error);
+		assert_eq!(
+			sanitized, normal_error,
+			"Normal error should remain unchanged"
+		);
+	}
 }
