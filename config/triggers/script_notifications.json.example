@@ -5,7 +5,7 @@
     "config": {
       "language": "Bash",
       "script_path": "./config/triggers/scripts/custom_notification.sh",
-      "arguments": "--verbose",
+      "arguments": ["--verbose"],
       "timeout_ms": 1000
     }
   }
