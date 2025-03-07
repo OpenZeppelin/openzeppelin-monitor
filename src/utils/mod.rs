@@ -11,7 +11,6 @@ mod expression;
 mod script;
 pub use cron_utils::*;
 pub use expression::*;
-pub use retry::*;
 pub use script::{
 	process_script_output, validate_script_config, BashScriptExecutor, JavaScriptScriptExecutor,
 	PythonScriptExecutor, ScriptError, ScriptExecutor, ScriptExecutorFactory,
