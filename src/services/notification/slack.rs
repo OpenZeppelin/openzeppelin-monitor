@@ -101,13 +101,16 @@ impl Notifier for SlackNotifier {
 			text: message.to_string(),
 		};
 
-		let response = self
-			.client
-			.post(&self.url)
-			.json(&payload)
-			.send()
-			.await
-			.map_err(|e| NotificationError::network_error(e.to_string(), None, None))?;
+		let response = match self.client.post(&self.url).json(&payload).send().await {
+			Ok(resp) => resp,
+			Err(e) => {
+				return Err(NotificationError::network_error(
+					"Failed to send Slack notification",
+					Some(Box::new(e)),
+					None,
+				));
+			}
+		};
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(

@@ -151,14 +151,23 @@ impl Notifier for DiscordNotifier {
 			embeds: None,
 		};
 
-		let response = self
+		let response = match self
 			.client
 			.post(&self.url)
 			.header("Content-Type", "application/json")
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| NotificationError::network_error(e.to_string(), None, None))?;
+		{
+			Ok(resp) => resp,
+			Err(e) => {
+				return Err(NotificationError::network_error(
+					"Failed to send Discord notification",
+					Some(Box::new(e)),
+					None,
+				));
+			}
+		};
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(

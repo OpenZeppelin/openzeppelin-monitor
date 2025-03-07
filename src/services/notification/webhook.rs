@@ -230,14 +230,24 @@ impl Notifier for WebhookNotifier {
 			}
 		}
 
-		let response = self
+		let response = match self
 			.client
 			.request(method, self.url.as_str())
 			.headers(headers)
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| NotificationError::network_error(e.to_string(), None, None))?;
+		{
+			Ok(resp) => resp,
+			Err(e) => {
+				// Pass the original error as source instead of just its string representation
+				return Err(NotificationError::network_error(
+					"Failed to send webhook notification",
+					Some(Box::new(e)),
+					None,
+				));
+			}
+		};
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(

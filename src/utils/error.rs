@@ -52,12 +52,18 @@ impl ErrorContext {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
+		let trace_id = if let Some(ref src) = source {
+			TraceableError::trace_id(src.as_ref())
+		} else {
+			Uuid::new_v4().to_string()
+		};
+
 		Self {
 			message: message.into(),
 			source,
 			metadata,
 			timestamp: Utc::now().to_rfc3339(),
-			trace_id: Uuid::new_v4().to_string(),
+			trace_id,
 		}
 	}
 
@@ -157,14 +163,52 @@ impl std::error::Error for ErrorContext {
 unsafe impl Send for ErrorContext {}
 unsafe impl Sync for ErrorContext {}
 
+/// A trait for errors that can provide a trace ID
+trait TraceableError {
+	/// Returns the trace ID for this error
+	fn trace_id(&self) -> String;
+}
+
+/// Sanitize error messages to remove HTML content
+fn sanitize_error_message(message: &str) -> String {
+	// Simple approach: if the message contains HTML tags, truncate at the first tag
+	if message.contains("<html>") || message.contains("<head>") || message.contains("<body>") {
+		if let Some(pos) = message.find('<') {
+			return message[..pos].trim().to_string();
+		}
+	}
+	message.to_string()
+}
+
+impl TraceableError for dyn std::error::Error + Send + Sync + 'static {
+	fn trace_id(&self) -> String {
+		// Try to downcast to ErrorContext first
+		if let Some(err_ctx) = self.downcast_ref::<ErrorContext>() {
+			return err_ctx.trace_id.clone();
+		}
+
+		// Check if any source in the error chain has a trace ID
+		let mut source = self.source();
+		while let Some(err) = source {
+			if let Some(err_ctx) = err.downcast_ref::<ErrorContext>() {
+				return err_ctx.trace_id.clone();
+			}
+			source = err.source();
+		}
+
+		// No trace ID found in the error chain
+		Uuid::new_v4().to_string()
+	}
+}
+
 /// Helper function to format the complete error chain
 fn format_error_chain(err: &dyn std::error::Error) -> String {
-	let mut result = err.to_string();
+	let mut result = sanitize_error_message(&err.to_string());
 	let mut source = err.source();
 
 	while let Some(err) = source {
 		result.push_str("\n  Caused by: ");
-		result.push_str(&err.to_string());
+		result.push_str(&sanitize_error_message(&err.to_string()));
 		source = err.source();
 	}
 

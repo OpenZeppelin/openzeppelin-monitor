@@ -120,12 +120,17 @@ impl Notifier for TelegramNotifier {
 	/// * `Result<(), NotificationError>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		let url = self.construct_url(message);
-		let response = self
-			.client
-			.get(&url)
-			.send()
-			.await
-			.map_err(|e| NotificationError::network_error(e.to_string(), None, None))?;
+
+		let response = match self.client.get(&url).send().await {
+			Ok(resp) => resp,
+			Err(e) => {
+				return Err(NotificationError::network_error(
+					"Failed to send Telegram notification",
+					Some(Box::new(e)),
+					None,
+				));
+			}
+		};
 
 		if !response.status().is_success() {
 			return Err(NotificationError::network_error(
