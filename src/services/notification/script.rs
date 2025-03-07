@@ -44,8 +44,6 @@ impl Notifier for ScriptNotifier {
 				arguments,
 				timeout_ms,
 			} => {
-				println!("ScriptNotifier config: {:?}", self.config);
-
 				let monitor_name = match monitor_match {
 					MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
 					MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,

@@ -217,7 +217,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.wait_with_output()
 			.await
 			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-		println!("output ===>: {:?}", output);
+
 		process_script_output(output)
 	}
 }
