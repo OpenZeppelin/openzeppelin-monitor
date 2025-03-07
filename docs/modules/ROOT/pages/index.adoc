@@ -26,6 +26,7 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 - Discord notifications
 - Telegram notifications
 - Webhook notifications
+- Script notifications (custom notifications via scripts)
 
 [NOTE]
 ====
@@ -625,6 +626,40 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |Message template with variable substitution
 |===
 
+
+===== Script Notifications
+[source,json]
+----
+{
+  "language": "Bash",
+  "script_path": "./config/triggers/scripts/custom_notification.sh",
+  "arguments": ["--verbose"],
+  "timeout_ms": 1000
+}
+----
+
+===== Script Notification Fields
+[cols="1,2,3"]
+|===
+|Field |Type |Description
+
+|language
+|String
+|The language of the script
+
+|script_path
+|String
+|The path to the script
+
+|arguments
+|Array[String]
+|The arguments of the script.
+
+|timeout_ms
+|Number
+|The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed.
+|===
+
 ==== Available Template Variables
 
 ===== Common Variables
@@ -897,8 +932,8 @@ Important considerations:
 [source,json]
 ----
 {
-  "script_path": "./config/filters/evm_custom_filter.py",
-  "language": "Python",
+  "script_path": "./config/filters/evm_filter_block_number.sh",
+  "language": "Bash",
   "arguments": ["--verbose"],
   "timeout_ms": 1000
 }
