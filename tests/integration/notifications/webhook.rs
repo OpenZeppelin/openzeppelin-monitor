@@ -176,3 +176,33 @@ async fn test_notification_service_webhook_execution_failure() {
 	assert!(result.is_err());
 	mock.assert();
 }
+
+#[tokio::test]
+async fn test_notification_service_webhook_execution_invalid_config() {
+	let notification_service = NotificationService::new();
+
+	let trigger = Trigger {
+		name: "test_trigger".to_string(),
+		trigger_type: TriggerType::Webhook,
+		config: TriggerTypeConfig::Slack {
+			slack_url: "".to_string(),
+			message: NotificationMessage {
+				title: "Test Alert".to_string(),
+				body: "Test message".to_string(),
+			},
+		},
+	};
+
+	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
+
+	let result = notification_service
+		.execute(&trigger, HashMap::new(), &monitor_match, &HashMap::new())
+		.await;
+
+	// Verify we get the specific "Invalid webhook configuration" error
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Invalid webhook configuration"));
+}

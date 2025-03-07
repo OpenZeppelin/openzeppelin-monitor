@@ -73,6 +73,7 @@ mod integration {
 		mod email;
 		mod script;
 		mod slack;
+		mod telegram;
 		mod webhook;
 	}
 }
