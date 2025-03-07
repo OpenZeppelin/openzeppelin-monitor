@@ -34,7 +34,7 @@ impl NotificationError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::NetworkError(ErrorContext::new(msg, source, metadata))
+		Self::NetworkError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Config error
@@ -43,7 +43,7 @@ impl NotificationError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ConfigError(ErrorContext::new(msg, source, metadata))
+		Self::ConfigError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Internal error
@@ -52,7 +52,7 @@ impl NotificationError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::InternalError(ErrorContext::new(msg, source, metadata))
+		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 }
 

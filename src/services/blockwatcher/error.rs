@@ -42,7 +42,7 @@ impl BlockWatcherError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::SchedulerError(ErrorContext::new(msg, source, metadata))
+		Self::SchedulerError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Network error
@@ -51,7 +51,7 @@ impl BlockWatcherError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::NetworkError(ErrorContext::new(msg, source, metadata))
+		Self::NetworkError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Processing error
@@ -60,7 +60,7 @@ impl BlockWatcherError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ProcessingError(ErrorContext::new(msg, source, metadata))
+		Self::ProcessingError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Storage error
@@ -69,7 +69,7 @@ impl BlockWatcherError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::StorageError(ErrorContext::new(msg, source, metadata))
+		Self::StorageError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Block tracker error
@@ -78,7 +78,7 @@ impl BlockWatcherError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::BlockTrackerError(ErrorContext::new(msg, source, metadata))
+		Self::BlockTrackerError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 }
 

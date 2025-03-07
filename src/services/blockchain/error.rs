@@ -46,7 +46,7 @@ impl BlockChainError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ConnectionError(ErrorContext::new(msg, source, metadata))
+		Self::ConnectionError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Request error
@@ -55,7 +55,7 @@ impl BlockChainError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::RequestError(ErrorContext::new(msg, source, metadata))
+		Self::RequestError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Block not found
@@ -64,7 +64,7 @@ impl BlockChainError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::BlockNotFound(ErrorContext::new(msg, source, metadata))
+		Self::BlockNotFound(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Transaction error
@@ -73,7 +73,7 @@ impl BlockChainError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::TransactionError(ErrorContext::new(msg, source, metadata))
+		Self::TransactionError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Internal error
@@ -82,7 +82,7 @@ impl BlockChainError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::InternalError(ErrorContext::new(msg, source, metadata))
+		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Client pool error
@@ -91,7 +91,7 @@ impl BlockChainError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ClientPoolError(ErrorContext::new(msg, source, metadata))
+		Self::ClientPoolError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 }
 

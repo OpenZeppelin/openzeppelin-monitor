@@ -34,7 +34,7 @@ impl TriggerError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::NotFound(ErrorContext::new(msg, source, metadata))
+		Self::NotFound(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Execution error
@@ -43,7 +43,7 @@ impl TriggerError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ExecutionError(ErrorContext::new(msg, source, metadata))
+		Self::ExecutionError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
 	// Configuration error
@@ -52,7 +52,7 @@ impl TriggerError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ConfigurationError(ErrorContext::new(msg, source, metadata))
+		Self::ConfigurationError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 }
 
