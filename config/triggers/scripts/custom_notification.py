@@ -1,4 +1,20 @@
 #!/usr/bin/env python3
+"""
+Custom Notification Script
+This script filters monitor matches based on the block number of the transaction.
+
+Input: JSON object containing:
+    - monitor_match: The monitor match data with transaction details
+    - args: Additional arguments passed to the script
+
+Output:
+    - Prints 'true' for transactions in even-numbered blocks
+    - Prints 'false' for transactions in odd-numbered blocks or invalid input
+    - Includes additional logging of block number status
+
+Note: Block numbers are extracted from the EVM transaction data and converted
+from hexadecimal to decimal before processing.
+"""
 import sys
 import json
 import logging
