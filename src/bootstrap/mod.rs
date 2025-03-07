@@ -397,6 +397,7 @@ mod tests {
 	use crate::models::{
 		EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
 		StellarBlock, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
+		TriggerConditions,
 	};
 	use std::io::Write;
 	use tempfile::NamedTempFile;
