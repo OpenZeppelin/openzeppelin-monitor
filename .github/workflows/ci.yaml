@@ -228,9 +228,13 @@ jobs:
           LLVM_PROFILE_FILE: integration-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
         run: cargo test --test mod -- tests/integration/ --nocapture
+
+
+      - name: Setup upterm session
+        uses: lhotari/action-upterm@v1
  
       - name: Generate Integration Coverage Report
-        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path integration-lcov.info --files-from-raw integration-*.profraw
+        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path integration-lcov.info -- tests/integration/
 
       # Properties tests coverage
       - name: Run Properties Tests
@@ -240,7 +244,7 @@ jobs:
         run: cargo test --test mod -- tests/properties/ --nocapture
 
       - name: Generate Properties Coverage Report
-        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path properties-lcov.info --files-from-raw properties-*.profraw
+        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path properties-lcov.info -- tests/properites/
 
       # - name: Run Tests
       #   env:
