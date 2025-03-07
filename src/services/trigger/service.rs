@@ -78,7 +78,6 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 	/// # Errors
 	/// - Returns `TriggerError::NotFound` if a trigger cannot be found
 	/// - Returns `TriggerError::ExecutionError` if notification delivery fails
-	/// - Returns `TriggerError::ConfigurationError` if trigger configuration is invalid
 	async fn execute(
 		&self,
 		trigger_slugs: &[String],
@@ -93,7 +92,9 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 			self.notification_service
 				.execute(&trigger, variables.clone())
 				.await
-				.map_err(|e| TriggerError::execution_error(e.to_string(), None, None))?;
+				.map_err(|e| {
+					TriggerError::execution_error("Failed to execute trigger", Some(e.into()), None)
+				})?;
 		}
 		Ok(())
 	}

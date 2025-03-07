@@ -151,8 +151,8 @@ impl Notifier for WebhookNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let payload = WebhookMessage {
 			title: self.title.clone(),
 			body: message.to_string(),
@@ -176,18 +176,10 @@ impl Notifier for WebhookNotifier {
 				if let Ok(header_value) = HeaderValue::from_str(&signature) {
 					headers.insert(header_name, header_value);
 				} else {
-					return Err(NotificationError::config_error(
-						"Invalid signature value",
-						None,
-						None,
-					));
+					return Err(anyhow::anyhow!("Invalid signature value",));
 				}
 			} else {
-				return Err(NotificationError::config_error(
-					"Invalid signature header name",
-					None,
-					None,
-				));
+				return Err(anyhow::anyhow!("Invalid signature header name",));
 			}
 
 			// Handle X-Timestamp header
@@ -195,36 +187,23 @@ impl Notifier for WebhookNotifier {
 				if let Ok(header_value) = HeaderValue::from_str(&timestamp) {
 					headers.insert(header_name, header_value);
 				} else {
-					return Err(NotificationError::config_error(
-						"Invalid timestamp value",
-						None,
-						None,
-					));
+					return Err(anyhow::anyhow!("Invalid timestamp value",));
 				}
 			} else {
-				return Err(NotificationError::config_error(
-					"Invalid timestamp header name",
-					None,
-					None,
-				));
+				return Err(anyhow::anyhow!("Invalid timestamp header name",));
 			}
 		}
 
 		if let Some(headers_map) = &self.headers {
 			for (key, value) in headers_map {
 				let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
-					return Err(NotificationError::config_error(
-						format!("Invalid header name: {}", key),
-						None,
-						None,
-					));
+					return Err(anyhow::anyhow!("Invalid header name: {}", key));
 				};
 				let Ok(header_value) = HeaderValue::from_str(value) else {
-					return Err(NotificationError::config_error(
-						format!("Invalid header value for key: {}", key),
-						None,
-						None,
-					));
+					return Err(anyhow::anyhow!(format!(
+						"Invalid header value for key: {}",
+						key
+					),));
 				};
 				headers.insert(header_name, header_value);
 			}
@@ -241,19 +220,17 @@ impl Notifier for WebhookNotifier {
 			Ok(resp) => resp,
 			Err(e) => {
 				// Pass the original error as source instead of just its string representation
-				return Err(NotificationError::network_error(
-					"Failed to send webhook notification",
-					Some(Box::new(e)),
-					None,
+				return Err(anyhow::anyhow!(
+					"Failed to send webhook notification: {}",
+					e
 				));
 			}
 		};
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(
-				format!("Webhook returned error status: {}", response.status()),
-				None,
-				None,
+			return Err(anyhow::anyhow!(
+				"Webhook returned error status: {}",
+				response.status()
 			));
 		}
 
@@ -446,11 +423,8 @@ mod tests {
 		);
 
 		let result = notifier.notify("Test message").await;
-		assert!(result.is_err());
-		assert!(matches!(result, Err(NotificationError::ConfigError(_))));
-		if let Err(NotificationError::ConfigError(msg)) = result {
-			assert!(msg.to_string().contains("Invalid header name"));
-		}
+		let err = result.unwrap_err();
+		assert!(err.to_string().contains("Invalid header name"));
 	}
 
 	#[tokio::test]
@@ -467,11 +441,8 @@ mod tests {
 		);
 
 		let result = notifier.notify("Test message").await;
-		assert!(result.is_err());
-		assert!(matches!(result, Err(NotificationError::ConfigError(_))));
-		if let Err(NotificationError::ConfigError(msg)) = result {
-			assert!(msg.to_string().contains("Invalid header value"));
-		}
+		let err = result.unwrap_err();
+		assert!(err.to_string().contains("Invalid header value"));
 	}
 
 	#[tokio::test]

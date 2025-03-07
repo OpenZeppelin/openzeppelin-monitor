@@ -174,8 +174,8 @@ where
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let recipients_str = self
 			.recipients
 			.iter()
@@ -185,30 +185,31 @@ where
 
 		let mailboxes: Mailboxes = recipients_str
 			.parse::<Mailboxes>()
-			.map_err(|e| NotificationError::internal_error(e.to_string(), None, None))?;
+			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 		let recipients_header: header::To = mailboxes.into();
 
-		let email =
-			Message::builder()
-				.mailbox(recipients_header)
-				.from(
-					self.sender.to_string().parse::<Mailbox>().map_err(|e| {
-						NotificationError::internal_error(e.to_string(), None, None)
-					})?,
-				)
-				.reply_to(
-					self.sender.to_string().parse::<Mailbox>().map_err(|e| {
-						NotificationError::internal_error(e.to_string(), None, None)
-					})?,
-				)
-				.subject(&self.subject)
-				.header(ContentType::TEXT_PLAIN)
-				.body(message.to_owned())
-				.map_err(|e| NotificationError::internal_error(e.to_string(), None, None))?;
+		let email = Message::builder()
+			.mailbox(recipients_header)
+			.from(
+				self.sender
+					.to_string()
+					.parse::<Mailbox>()
+					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
+			)
+			.reply_to(
+				self.sender
+					.to_string()
+					.parse::<Mailbox>()
+					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
+			)
+			.subject(&self.subject)
+			.header(ContentType::TEXT_PLAIN)
+			.body(message.to_owned())
+			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
 		self.client
 			.send(&email)
-			.map_err(|e| NotificationError::network_error(e.to_string(), None, None))?;
+			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
 		Ok(())
 	}

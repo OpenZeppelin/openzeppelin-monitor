@@ -4,9 +4,10 @@
 //! including validation errors, loading errors, and internal errors. It provides
 //! a consistent error handling interface across all repository implementations.
 
-use crate::utils::ErrorContext;
+use crate::utils::{ErrorContext, TraceableError};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Represents errors that can occur during repository operations
 #[derive(ThisError, Debug)]
@@ -54,6 +55,17 @@ impl RepositoryError {
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
 		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+}
+
+impl TraceableError for RepositoryError {
+	fn trace_id(&self) -> String {
+		match self {
+			Self::ValidationError(ctx) => ctx.trace_id.clone(),
+			Self::LoadError(ctx) => ctx.trace_id.clone(),
+			Self::InternalError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
+		}
 	}
 }
 
@@ -142,5 +154,33 @@ mod tests {
 		} else {
 			panic!("Expected LoadError variant");
 		}
+	}
+
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		// Wrap it in a RepositoryError
+		let repository_error = RepositoryError::LoadError(error_context);
+
+		// Verify the trace ID is preserved
+		assert_eq!(repository_error.trace_id(), original_trace_id);
+
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		let repository_error = RepositoryError::LoadError(error_context);
+		assert_eq!(repository_error.trace_id(), original_trace_id);
+
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let repository_error: RepositoryError = anyhow_error.into();
+
+		// Other variant should generate a new UUID
+		assert!(!repository_error.trace_id().is_empty());
 	}
 }

@@ -3,9 +3,10 @@
 //! Defines the error cases that can occur during block filtering
 //! and provides helper methods for error creation and formatting.
 
-use crate::utils::ErrorContext;
+use crate::utils::{ErrorContext, TraceableError};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Represents errors that can occur during filter operations
 #[derive(ThisError, Debug)]
@@ -53,6 +54,17 @@ impl FilterError {
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
 		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+}
+
+impl TraceableError for FilterError {
+	fn trace_id(&self) -> String {
+		match self {
+			Self::BlockTypeMismatch(ctx) => ctx.trace_id.clone(),
+			Self::NetworkError(ctx) => ctx.trace_id.clone(),
+			Self::InternalError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
+		}
 	}
 }
 
@@ -144,5 +156,33 @@ mod tests {
 		} else {
 			panic!("Expected BlockTypeMismatch variant");
 		}
+	}
+
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		// Wrap it in a FilterError
+		let filter_error = FilterError::BlockTypeMismatch(error_context);
+
+		// Verify the trace ID is preserved
+		assert_eq!(filter_error.trace_id(), original_trace_id);
+
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		let filter_error = FilterError::BlockTypeMismatch(error_context);
+		assert_eq!(filter_error.trace_id(), original_trace_id);
+
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let filter_error: FilterError = anyhow_error.into();
+
+		// Other variant should generate a new UUID
+		assert!(!filter_error.trace_id().is_empty());
 	}
 }

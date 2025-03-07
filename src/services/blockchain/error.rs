@@ -3,9 +3,10 @@
 //! Provides a comprehensive error handling system for blockchain operations,
 //! including network connectivity, request processing, and blockchain-specific errors.
 
-use crate::utils::ErrorContext;
+use crate::utils::{ErrorContext, TraceableError};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Represents possible errors that can occur during blockchain operations
 #[derive(ThisError, Debug)]
@@ -92,6 +93,20 @@ impl BlockChainError {
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
 		Self::ClientPoolError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+}
+
+impl TraceableError for BlockChainError {
+	fn trace_id(&self) -> String {
+		match self {
+			Self::ConnectionError(ctx) => ctx.trace_id.clone(),
+			Self::RequestError(ctx) => ctx.trace_id.clone(),
+			Self::BlockNotFound(ctx) => ctx.trace_id.clone(),
+			Self::TransactionError(ctx) => ctx.trace_id.clone(),
+			Self::InternalError(ctx) => ctx.trace_id.clone(),
+			Self::ClientPoolError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
+		}
 	}
 }
 
@@ -246,5 +261,33 @@ mod tests {
 		} else {
 			panic!("Expected RequestError variant");
 		}
+	}
+
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		// Wrap it in a BlockChainError
+		let block_chain_error = BlockChainError::RequestError(error_context);
+
+		// Verify the trace ID is preserved
+		assert_eq!(block_chain_error.trace_id(), original_trace_id);
+
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		let block_chain_error = BlockChainError::RequestError(error_context);
+		assert_eq!(block_chain_error.trace_id(), original_trace_id);
+
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let block_chain_error: BlockChainError = anyhow_error.into();
+
+		// Other variant should generate a new UUID
+		assert!(!block_chain_error.trace_id().is_empty());
 	}
 }

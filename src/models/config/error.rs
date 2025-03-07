@@ -3,9 +3,10 @@
 //! This module defines the error types that can occur during configuration
 //! loading and validation.
 
-use crate::utils::ErrorContext;
+use crate::utils::{ErrorContext, TraceableError};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Represents errors that can occur during configuration operations
 #[derive(ThisError, Debug)]
@@ -59,6 +60,17 @@ impl ConfigError {
 		// We explicitly do not use new_with_log here because we want to log the error
 		// at from the context of the repository
 		Self::FileError(ErrorContext::new(msg, source, metadata))
+	}
+}
+
+impl TraceableError for ConfigError {
+	fn trace_id(&self) -> String {
+		match self {
+			Self::ValidationError(ctx) => ctx.trace_id.clone(),
+			Self::ParseError(ctx) => ctx.trace_id.clone(),
+			Self::FileError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
+		}
 	}
 }
 
@@ -172,5 +184,33 @@ mod tests {
 		let serde_error = serde_json::from_str::<serde_json::Value>(json).unwrap_err();
 		let config_error: ConfigError = serde_error.into();
 		assert!(matches!(config_error, ConfigError::ParseError(_)));
+	}
+
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		// Wrap it in a ConfigError
+		let config_error = ConfigError::FileError(error_context);
+
+		// Verify the trace ID is preserved
+		assert_eq!(config_error.trace_id(), original_trace_id);
+
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		let config_error = ConfigError::FileError(error_context);
+		assert_eq!(config_error.trace_id(), original_trace_id);
+
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let config_error: ConfigError = anyhow_error.into();
+
+		// Other variant should generate a new UUID
+		assert!(!config_error.trace_id().is_empty());
 	}
 }

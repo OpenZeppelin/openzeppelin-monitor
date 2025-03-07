@@ -3,9 +3,10 @@
 //! Provides error types for script-related operations,
 //! including execution failures and configuration issues.
 
-use crate::utils::ErrorContext;
+use crate::utils::{ErrorContext, TraceableError};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Represents possible errors during script operations
 #[derive(ThisError, Debug)]
@@ -66,6 +67,18 @@ impl ScriptError {
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
 		Self::SystemError(ErrorContext::new(msg, source, metadata))
+	}
+}
+
+impl TraceableError for ScriptError {
+	fn trace_id(&self) -> String {
+		match self {
+			Self::NotFound(ctx) => ctx.trace_id.clone(),
+			Self::ExecutionError(ctx) => ctx.trace_id.clone(),
+			Self::ParseError(ctx) => ctx.trace_id.clone(),
+			Self::SystemError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
+		}
 	}
 }
 
@@ -168,5 +181,33 @@ mod tests {
 		} else {
 			panic!("Expected SystemError variant");
 		}
+	}
+
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		// Wrap it in a ScriptError
+		let script_error = ScriptError::ExecutionError(error_context);
+
+		// Verify the trace ID is preserved
+		assert_eq!(script_error.trace_id(), original_trace_id);
+
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		let script_error = ScriptError::SystemError(error_context);
+		assert_eq!(script_error.trace_id(), original_trace_id);
+
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let script_error: ScriptError = anyhow_error.into();
+
+		// Other variant should generate a new UUID
+		assert!(!script_error.trace_id().is_empty());
 	}
 }

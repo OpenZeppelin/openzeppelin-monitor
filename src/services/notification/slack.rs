@@ -96,27 +96,23 @@ impl Notifier for SlackNotifier {
 	///
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let payload = SlackMessage {
 			text: message.to_string(),
 		};
 
-		let response = match self.client.post(&self.url).json(&payload).send().await {
-			Ok(resp) => resp,
-			Err(e) => {
-				return Err(NotificationError::network_error(
-					"Failed to send Slack notification",
-					Some(Box::new(e)),
-					None,
-				));
-			}
-		};
+		let response = self
+			.client
+			.post(&self.url)
+			.json(&payload)
+			.send()
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to send Slack notification: {}", e))?;
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(
-				format!("Slack webhook returned error status: {}", response.status()),
-				None,
-				None,
+			return Err(anyhow::anyhow!(
+				"Slack webhook returned error status: {}",
+				response.status()
 			));
 		}
 

@@ -53,6 +53,7 @@ impl ErrorContext {
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
 		let trace_id = if let Some(ref src) = source {
+			// Try to extract trace ID using the TraceableError trait
 			TraceableError::trace_id(src.as_ref())
 		} else {
 			Uuid::new_v4().to_string()
@@ -164,41 +165,85 @@ unsafe impl Send for ErrorContext {}
 unsafe impl Sync for ErrorContext {}
 
 /// A trait for errors that can provide a trace ID
-trait TraceableError {
+pub trait TraceableError: std::error::Error + Send + Sync {
 	/// Returns the trace ID for this error
 	fn trace_id(&self) -> String;
 }
 
+impl TraceableError for dyn std::error::Error + Send + Sync + 'static {
+	fn trace_id(&self) -> String {
+		// First check if this error itself has a trace ID
+		if let Some(id) = try_extract_trace_id(self) {
+			return id;
+		}
+
+		// Then check the source chain to retain existing trace IDs
+		let mut source = self.source();
+		const MAX_DEPTH: usize = 3; // Limit the recursion depth
+		let mut depth = 0;
+
+		while let Some(err) = source {
+			depth += 1;
+			if depth > MAX_DEPTH {
+				break;
+			}
+
+			// Try to extract trace ID from this error in the chain
+			if let Some(id) = try_extract_trace_id(err) {
+				return id;
+			}
+
+			// Continue with the next source
+			source = err.source();
+		}
+
+		// If no trace ID found, generate a new one
+		Uuid::new_v4().to_string()
+	}
+}
+
+/// Helper function to try extracting a trace ID from an error
+fn try_extract_trace_id(err: &(dyn std::error::Error + 'static)) -> Option<String> {
+	// First check if this error is an ErrorContext
+	if let Some(ctx) = err.downcast_ref::<ErrorContext>() {
+		return Some(ctx.trace_id.clone());
+	}
+
+	// Define a macro to try downcasting to each error type
+	macro_rules! try_downcast {
+		($($ty:path),*) => {
+			$(
+				if let Some(e) = err.downcast_ref::<$ty>() {
+					return Some(e.trace_id());
+				}
+			)*
+		}
+	}
+
+	// Try all error types
+	try_downcast!(
+		crate::services::notification::NotificationError,
+		crate::services::trigger::TriggerError,
+		crate::services::filter::FilterError,
+		crate::services::blockwatcher::BlockWatcherError,
+		crate::services::blockchain::BlockChainError,
+		crate::repositories::RepositoryError,
+		crate::utils::script::ScriptError,
+		crate::models::ConfigError
+	);
+
+	// No match found
+	None
+}
+
 /// Sanitize error messages to remove HTML content
 fn sanitize_error_message(message: &str) -> String {
-	// Simple approach: if the message contains HTML tags, truncate at the first tag
 	if message.contains("<html>") || message.contains("<head>") || message.contains("<body>") {
 		if let Some(pos) = message.find('<') {
 			return message[..pos].trim().to_string();
 		}
 	}
 	message.to_string()
-}
-
-impl TraceableError for dyn std::error::Error + Send + Sync + 'static {
-	fn trace_id(&self) -> String {
-		// Try to downcast to ErrorContext first
-		if let Some(err_ctx) = self.downcast_ref::<ErrorContext>() {
-			return err_ctx.trace_id.clone();
-		}
-
-		// Check if any source in the error chain has a trace ID
-		let mut source = self.source();
-		while let Some(err) = source {
-			if let Some(err_ctx) = err.downcast_ref::<ErrorContext>() {
-				return err_ctx.trace_id.clone();
-			}
-			source = err.source();
-		}
-
-		// No trace ID found in the error chain
-		Uuid::new_v4().to_string()
-	}
 }
 
 /// Helper function to format the complete error chain
@@ -255,6 +300,8 @@ fn log_error(error: &ErrorContext) {
 
 #[cfg(test)]
 mod tests {
+	use crate::services::notification::NotificationError;
+
 	use super::*;
 	use std::io;
 
@@ -449,6 +496,95 @@ mod tests {
 		assert_eq!(
 			sanitized, normal_error,
 			"Normal error should remain unchanged"
+		);
+	}
+
+	#[test]
+	fn test_try_extract_trace_id() {
+		// Test extracting from ErrorContext
+		let error_ctx = ErrorContext::new("Test error", None, None);
+		let expected_trace_id = error_ctx.trace_id.clone();
+
+		let dyn_error: &(dyn std::error::Error + 'static) = &error_ctx;
+		let extracted = try_extract_trace_id(dyn_error);
+
+		assert_eq!(
+			extracted,
+			Some(expected_trace_id),
+			"Should extract trace ID from ErrorContext"
+		);
+
+		// Test with non-traceable error
+		let std_error = io::Error::new(io::ErrorKind::Other, "Standard error");
+		let dyn_error: &(dyn std::error::Error + 'static) = &std_error;
+		let extracted = try_extract_trace_id(dyn_error);
+
+		assert_eq!(
+			extracted, None,
+			"Should return None for non-traceable errors"
+		);
+	}
+
+	// Mock error types to test the try_downcast macro
+	#[derive(Debug)]
+	struct MockTraceableError {
+		trace_id: String,
+	}
+
+	impl MockTraceableError {
+		fn new() -> Self {
+			Self {
+				trace_id: Uuid::new_v4().to_string(),
+			}
+		}
+	}
+
+	impl fmt::Display for MockTraceableError {
+		fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+			write!(f, "Mock traceable error")
+		}
+	}
+
+	impl std::error::Error for MockTraceableError {}
+
+	impl TraceableError for MockTraceableError {
+		fn trace_id(&self) -> String {
+			self.trace_id.clone()
+		}
+	}
+
+	#[test]
+	fn test_trace_id_extraction_with_custom_implementation() {
+		// Create a mock error that implements TraceableError
+		let mock_error = MockTraceableError::new();
+		let expected_trace_id = mock_error.trace_id.clone();
+
+		// We need to test the actual implementation of TraceableError for dyn Error
+		let dyn_error: &(dyn std::error::Error + Send + Sync) = &mock_error;
+		let extracted = TraceableError::trace_id(dyn_error);
+
+		assert!(
+			extracted != expected_trace_id,
+			"Should not extract trace ID from custom error types since it's not in the \
+			 try_downcast! macro list"
+		);
+	}
+
+	#[test]
+	fn test_trace_id_propagation_through_error_chain() {
+		let mock_error = NotificationError::config_error("Test error", None, None);
+		let expected_trace_id = mock_error.trace_id();
+
+		// First, box our error
+		let boxed_error: Box<dyn std::error::Error + Send + Sync> = Box::new(mock_error);
+
+		// Now create an error context with this as the source
+		let error_ctx = ErrorContext::new("Outer error", Some(boxed_error), None);
+
+		// The trace ID should be extracted from our mock error
+		assert_eq!(
+			error_ctx.trace_id, expected_trace_id,
+			"Trace ID should propagate through the error chain"
 		);
 	}
 }

@@ -1,12 +1,9 @@
 //! Notification service implementation.
 //!
-//! This module provides functionality to send notifications through various channels:
-//! - Slack messages via webhooks
-//! - HTTP webhooks (planned)
-//! - Script execution (planned)
-//!
+//! This module provides functionality to send notifications through various channels
 //! Supports variable substitution in message templates.
 
+use anyhow::Context;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
@@ -38,8 +35,8 @@ pub trait Notifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError>;
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error>;
 }
 
 /// Service for managing notifications across different channels
@@ -70,7 +67,10 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await?;
+						.await
+						.with_context(|| {
+							format!("Failed to execute notification {}", trigger.name)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid slack configuration",
@@ -84,7 +84,10 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await?;
+						.await
+						.with_context(|| {
+							format!("Failed to execute notification {}", trigger.name)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid email configuration",
@@ -98,7 +101,10 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await?;
+						.await
+						.with_context(|| {
+							format!("Failed to execute notification {}", trigger.name)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid webhook configuration",
@@ -113,7 +119,10 @@ impl NotificationService {
 				if let Some(notifier) = notifier {
 					notifier
 						.notify(&notifier.format_message(&variables))
-						.await?;
+						.await
+						.with_context(|| {
+							format!("Failed to execute notification {}", trigger.name)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid discord configuration",
@@ -128,7 +137,9 @@ impl NotificationService {
 					notifier
 						.notify(&notifier.format_message(&variables))
 						.await
-						.map_err(|e| NotificationError::config_error(e.to_string(), None, None))?;
+						.with_context(|| {
+							format!("Failed to execute notification {}", trigger.name)
+						})?;
 				} else {
 					return Err(NotificationError::config_error(
 						"Invalid telegram configuration",
