@@ -1106,6 +1106,11 @@ graph TD
 ** Event-triggered notifications only populate event variables.
 ** Function-triggered notifications only populate function variables.
 ** Mixing contexts results in empty values.
+* Custom script notifications have additional considerations:
+** Scripts receive monitor match data and arguments as JSON input
+** Scripts must complete within their configured timeout_ms or they will be terminated
+** Script modifications require monitor restart to take effect
+** Supported languages are limited to Python, JavaScript, and Bash
 
 == Testing
 
