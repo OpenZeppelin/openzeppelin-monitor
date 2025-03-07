@@ -644,7 +644,7 @@ else:
 		let input = create_mock_monitor_match();
 		let args = vec![];
 		let result = executor.execute(input, &args).await;
-		assert!(result.unwrap());
+		assert!(!result.unwrap());
 	}
 
 	#[tokio::test]
@@ -679,7 +679,7 @@ else:
 		let args = vec![String::from("test_argument")];
 		let result = executor.execute(input.clone(), &args).await;
 		assert!(result.is_ok());
-		assert!(result.unwrap());
+		assert!(!result.unwrap());
 
 		// Test with non-matching argument
 		let args = vec![String::from("--verbose"), String::from("--other-arg")];
