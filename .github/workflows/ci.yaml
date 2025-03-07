@@ -227,20 +227,20 @@ jobs:
         env:
           LLVM_PROFILE_FILE: integration-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
-        run: cargo test --test 'integration::*' --locked --no-fail-fast
-
+        run: cargo test --test mod -- tests/integration/ --nocapture
+ 
       - name: Generate Integration Coverage Report
-        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path integration-lcov.info --include-tests 'integration::*'
+        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path integration-lcov.info --files-from-raw integration-*.profraw
 
       # Properties tests coverage
       - name: Run Properties Tests
         env:
           LLVM_PROFILE_FILE: properties-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
-        run: cargo test --test 'properties::*' --locked --no-fail-fast
+        run: cargo test --test mod -- tests/properties/ --nocapture
 
       - name: Generate Properties Coverage Report
-        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path properties-lcov.info --include-tests 'properties::*'
+        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path properties-lcov.info --files-from-raw properties-*.profraw
 
       # - name: Run Tests
       #   env:
