@@ -8,6 +8,9 @@ coverage:
       default:
         target: 80%
         threshold: 1%
+        flags:
+          - integration
+          - properties
     patch:
       default:
         target: 90%
