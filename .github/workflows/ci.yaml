@@ -230,7 +230,7 @@ jobs:
         run: cargo test --test integration
  
       - name: Generate Integration Coverage Report
-        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path integration-lcov.info -- tests/integration/
+        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path integration-lcov.info --test integration
 
       # Properties tests coverage
       - name: Run Properties Tests
@@ -240,7 +240,7 @@ jobs:
         run: cargo test --test properties
 
       - name: Generate Properties Coverage Report
-        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path properties-lcov.info -- tests/properites/
+        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path properties-lcov.info --test properties
 
       # - name: Run Tests
       #   env:
