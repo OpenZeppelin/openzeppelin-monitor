@@ -227,7 +227,7 @@ jobs:
         env:
           LLVM_PROFILE_FILE: integration-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
-        run: RUST_TEST_THREADS=1 cargo test integration
+        run: cargo hack llvm-cov --no-report --feature-powerset --locked --test integration
  
       - name: Generate Integration Coverage Report
         run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path integration-lcov.info --test integration
@@ -237,7 +237,7 @@ jobs:
         env:
           LLVM_PROFILE_FILE: properties-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
-        run: RUST_TEST_THREADS=1 cargo test properties
+        run: cargo hack llvm-cov --no-report --feature-powerset --locked --test properties
 
       - name: Generate Properties Coverage Report
         run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path properties-lcov.info --test properties
