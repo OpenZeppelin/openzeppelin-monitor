@@ -25,6 +25,7 @@ use openzeppelin_monitor::{
 	},
 };
 
+use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::watch;
 use web3::types::{H160, U256};
@@ -833,4 +834,98 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 		}
 		_ => panic!("Expected error"),
 	}
+}
+
+#[tokio::test]
+async fn test_trigger_execution_service_execute_multiple_triggers() {
+	// Slack execution success - Webhook execution failure - Script execution failure
+	// We should see two errors regarding the webhook and one regarding the script
+	let mut server = mockito::Server::new_async().await;
+	let mock = server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(json!({
+			"text": "*Test Alert*\n\nTest message with value 42"
+		})))
+		.with_status(200)
+		.create_async()
+		.await;
+	let mut mocked_triggers = HashMap::new();
+
+	mocked_triggers.insert(
+		"example_trigger_slack".to_string(),
+		Trigger {
+			name: "test_trigger".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: server.url(),
+				message: openzeppelin_monitor::models::NotificationMessage {
+					title: "Test Alert".to_string(),
+					body: "Test message with value ${value}".to_string(),
+				},
+			},
+		},
+	);
+	mocked_triggers.insert(
+		"example_trigger_webhook".to_string(),
+		Trigger {
+			name: "example_trigger_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url:
+					"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+						.to_string(),
+				method: Some("POST".to_string()),
+				secret: Some("secret".to_string()),
+				headers: Some(HashMap::new()),
+				message: NotificationMessage {
+					title: "Test Title".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		},
+	);
+	let script_path = "tests/integration/fixtures/evm/triggers/scripts/custom_notification.py";
+	mocked_triggers.insert(
+		"example_trigger_script".to_string(),
+		Trigger {
+			name: "example_trigger_script".to_string(),
+			trigger_type: TriggerType::Script,
+			config: TriggerTypeConfig::Script {
+				script_path: script_path.to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: None,
+			},
+		},
+	);
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	let triggers = vec![
+		"example_trigger_slack".to_string(),
+		"example_trigger_webhook".to_string(),
+		"example_trigger_script".to_string(),
+	];
+	let mut variables = HashMap::new();
+	variables.insert("value".to_string(), "42".to_string());
+	let monitor_match = create_test_monitor_match(BlockChainType::EVM);
+
+	let result = trigger_execution_service
+		.execute(&triggers, variables, &monitor_match, &HashMap::new())
+		.await;
+	println!("result: {:?}", result);
+	assert!(result.is_err());
+	match result {
+		Err(e) => {
+			assert!(e.to_string().contains("Multiple triggers failed"));
+			assert!(e
+				.to_string()
+				.contains("Webhook returned error status: 404 Not Found"));
+			assert!(e.to_string().contains("Script content not found"));
+		}
+		_ => panic!("Expected error"),
+	}
+	mock.assert();
 }
