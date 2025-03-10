@@ -57,7 +57,7 @@ pub trait Notifier {
 		_script_content: &(ScriptLanguage, String),
 	) -> Result<(), NotificationError> {
 		// Default implementation that does nothing
-		Ok(())
+		unimplemented!("script_notify must be implemented by ScriptNotifier implementation")
 	}
 }
 

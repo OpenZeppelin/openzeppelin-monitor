@@ -151,29 +151,29 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 						))
 					})?;
 
-				match trigger_config.config {
-					TriggerTypeConfig::Script {
-						language,
-						script_path,
-						arguments: _,
-						timeout_ms: _,
-					} => {
-						let script_path = Path::new(&script_path);
-						let content =
-							tokio::fs::read_to_string(script_path).await.map_err(|e| {
-								TriggerError::configuration_error(format!(
-									"Failed to read script file {}: {}",
-									script_path.display(),
-									e
-								))
-							})?;
-						scripts.insert(
-							format!("{}|{}", monitor.name, script_path.display()),
-							(language, content),
-						);
-					}
-					_ => continue,
-				}
+				let TriggerTypeConfig::Script {
+					language,
+					script_path,
+					arguments: _,
+					timeout_ms: _,
+				} = &trigger_config.config
+				else {
+					continue;
+				};
+
+				let script_path = Path::new(script_path);
+				let content = tokio::fs::read_to_string(script_path).await.map_err(|e| {
+					TriggerError::configuration_error(format!(
+						"Failed to read script file {}: {}",
+						script_path.display(),
+						e
+					))
+				})?;
+
+				scripts.insert(
+					format!("{}|{}", monitor.name, script_path.display()),
+					(language.clone(), content),
+				);
 			}
 		}
 
