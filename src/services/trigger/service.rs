@@ -119,7 +119,7 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 
 		for monitor in monitors {
 			// Skip monitors without trigger conditions
-			if monitor.trigger_conditions.is_empty() {
+			if monitor.trigger_conditions.is_empty() && monitor.triggers.is_empty() {
 				continue;
 			}
 
