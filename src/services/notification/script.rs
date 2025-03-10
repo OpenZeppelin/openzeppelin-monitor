@@ -89,6 +89,7 @@ impl Notifier for ScriptNotifier {
 mod tests {
 	use super::*;
 	use crate::models::{EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch};
+	use std::time::Instant;
 	use web3::types::{H160, U256};
 
 	fn create_test_script_config() -> TriggerTypeConfig {
@@ -193,5 +194,74 @@ mod tests {
 			.unwrap_err()
 			.to_string()
 			.contains("Script content not found"));
+	}
+
+	#[tokio::test]
+	async fn test_script_notify_succeeds_within_timeout() {
+		let config = TriggerTypeConfig::Script {
+			language: ScriptLanguage::Python,
+			script_path: "test_script.py".to_string(),
+			arguments: None,
+			timeout_ms: 1000, // Timeout longer than sleep time
+		};
+		let notifier = ScriptNotifier::from_config(&config).unwrap();
+		let monitor_match = create_test_monitor_match();
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test_monitor|test_script.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				"import time\ntime.sleep(0.3)\nprint(True)".to_string(), // Sleep less than timeout
+			),
+		);
+
+		let start_time = Instant::now();
+		let result = notifier
+			.script_notify(&monitor_match, &trigger_scripts)
+			.await;
+		let elapsed = start_time.elapsed();
+
+		assert!(result.is_ok());
+		// Verify that execution took at least 300ms (the sleep time)
+		assert!(elapsed.as_millis() >= 300);
+		// Verify that execution took less than the timeout
+		assert!(elapsed.as_millis() < 1000);
+	}
+
+	#[tokio::test]
+	async fn test_script_notify_completes_before_timeout() {
+		let config = TriggerTypeConfig::Script {
+			language: ScriptLanguage::Python,
+			script_path: "test_script.py".to_string(),
+			arguments: None,
+			timeout_ms: 400, // Set timeout lower than the sleep time
+		};
+		let notifier = ScriptNotifier::from_config(&config).unwrap();
+		let monitor_match = create_test_monitor_match();
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"test_monitor|test_script.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				"import time\ntime.sleep(0.5)\nprint(True)".to_string(),
+			),
+		);
+
+		let start_time = Instant::now();
+		let result = notifier
+			.script_notify(&monitor_match, &trigger_scripts)
+			.await;
+		let elapsed = start_time.elapsed();
+
+		// The script should fail because it takes 500ms but timeout is 400ms
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("deadline has elapsed"));
+		// Verify that it failed around the timeout time
+		assert!(elapsed.as_millis() >= 400 && elapsed.as_millis() < 600);
 	}
 }
