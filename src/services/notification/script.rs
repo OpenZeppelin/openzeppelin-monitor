@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use std::time::Duration;
 
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
@@ -46,14 +45,17 @@ impl Notifier for ScriptNotifier {
 			} => {
 				let executor = ScriptExecutorFactory::create(language, &script_content.1);
 
-				let result = tokio::time::timeout(
-					Duration::from_millis(u64::from(*timeout_ms)),
-					executor.execute(monitor_match.clone(), arguments.as_deref(), true),
-				)
-				.await;
+				let result = executor
+					.execute(
+						monitor_match.clone(),
+						timeout_ms,
+						arguments.as_deref(),
+						true,
+					)
+					.await;
 
 				match result {
-					Ok(Ok(true)) => Ok(()),
+					Ok(true) => Ok(()),
 					Err(e) => {
 						return Err(NotificationError::execution_error(e.to_string()));
 					}
@@ -211,7 +213,7 @@ mod tests {
 		assert!(result
 			.unwrap_err()
 			.to_string()
-			.contains("deadline has elapsed"));
+			.contains("Script execution timed out"));
 		// Verify that it failed around the timeout time
 		assert!(elapsed.as_millis() >= 400 && elapsed.as_millis() < 600);
 	}
