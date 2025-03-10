@@ -222,6 +222,17 @@ jobs:
       # - name: Build
       #   run: cargo test --no-run --locked
 
+      # Unit tests coverage
+      - name: Run Unit Tests
+        env:
+          LLVM_PROFILE_FILE: unit-%p-%m.profraw
+          RUSTFLAGS: -Cinstrument-coverage
+        run: cargo hack llvm-cov --no-report --feature-powerset --locked --lib
+        # RUST_TEST_THREADS=1 cargo +stable llvm-cov --lib
+ 
+      - name: Generate Unit Coverage Report
+        run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path unit-lcov.info --lib
+
       # Integration tests coverage
       - name: Run Integration Tests
         env:
@@ -259,6 +270,16 @@ jobs:
       #     files: lcov.info
       #     fail_ci_if_error: true
 
+
+      # Upload unit coverage
+      - name: Upload Unit Coverage to Codecov
+        uses: codecov/codecov-action@13ce06bfc6bbe3ecf90edbbf1bc32fe5978ca1d3  # v5.3.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          name: unit-coverage
+          files: unit-lcov.info
+          flags: unittests
+          fail_ci_if_error: false
 
       # Upload integration coverage
       - name: Upload Integration Coverage to Codecov
