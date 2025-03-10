@@ -11,6 +11,7 @@ coverage:
         flags:
           - integration
           - properties
+          - unittests
     patch:
       default:
         target: 90%
