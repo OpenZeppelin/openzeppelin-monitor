@@ -55,7 +55,7 @@ mockall = "0.13.1"
 mockito = "1.6.1"
 proptest = "1.6.0"
 rand = "0.9.0"
-tempfile = "3.2"
+tempfile = "3.18"
 
 [lib]
 path = "src/lib.rs"
