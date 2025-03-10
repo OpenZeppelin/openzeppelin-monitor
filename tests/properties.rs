@@ -1,8 +1,13 @@
+//! PBT tests for the OpenZeppelin Monitor.
+//!
+//! Contains tests for blockchain monitoring functionality across different
+//! chains (EVM and Stellar) and mock implementations for testing.
+
 mod properties {
-    // mod chain{
-    //     mod evm;
-    //     mod stellar;
-    // }
+    mod chain{
+        mod evm;
+        mod stellar;
+    }
 	mod filters {
 		mod evm {
 			mod filter;
