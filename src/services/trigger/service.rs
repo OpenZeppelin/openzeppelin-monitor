@@ -87,18 +87,35 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 		monitor_match: &MonitorMatch,
 		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), TriggerError> {
-		for trigger_slug in trigger_slugs {
-			let trigger = self
-				.trigger_service
-				.get(trigger_slug)
-				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string()))?;
+		let mut errors = Vec::new();
 
-			self.notification_service
+		for trigger_slug in trigger_slugs {
+			let trigger = match self.trigger_service.get(trigger_slug) {
+				Some(trigger) => trigger,
+				None => {
+					errors.push(TriggerError::not_found(trigger_slug.to_string()));
+					continue;
+				}
+			};
+
+			if let Err(e) = self
+				.notification_service
 				.execute(&trigger, variables.clone(), monitor_match, trigger_scripts)
 				.await
-				.map_err(|e| TriggerError::execution_error(e.to_string()))?;
+			{
+				errors.push(TriggerError::execution_error(e.to_string()));
+				continue;
+			}
 		}
-		Ok(())
+
+		if errors.is_empty() {
+			Ok(())
+		} else {
+			Err(TriggerError::execution_error(format!(
+				"Multiple triggers failed: {:?}",
+				errors
+			)))
+		}
 	}
 	/// Loads trigger condition scripts for monitors
 	///
