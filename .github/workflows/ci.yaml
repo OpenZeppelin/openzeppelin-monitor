@@ -227,7 +227,6 @@ jobs:
           LLVM_PROFILE_FILE: unit-%p-%m.profraw
           RUSTFLAGS: -Cinstrument-coverage
         run: cargo hack llvm-cov --no-report --feature-powerset --locked --lib
-        # RUST_TEST_THREADS=1 cargo +stable llvm-cov --lib
  
       - name: Generate Unit Coverage Report
         run: RUST_TEST_THREADS=1 cargo llvm-cov --locked --lcov --output-path unit-lcov.info --lib
