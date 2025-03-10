@@ -75,6 +75,9 @@ impl NotificationService {
 	/// # Arguments
 	/// * `trigger` - Trigger containing the notification type and parameters
 	/// * `variables` - Variables to substitute in message templates
+	/// * `monitor_match` - Monitor match to send (needed for custom script trigger)
+	/// * `trigger_scripts` - Contains the script content to execute (needed for custom script
+	///   trigger)
 	///
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
