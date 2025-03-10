@@ -2,20 +2,16 @@
 ################################################################################
 # Custom Notification Script
 #
-# This script processes monitor matches and handles custom notification logic.
-# It demonstrates basic JSON processing and argument handling.
+# This script validates JSON input and logs validation results to stderr.
 #
 # Input: JSON object containing:
 #   - monitor_match: The monitor match data
-#   - args: Additional arguments passed to the script
+#   - args: Additional arguments passed to the script (optional)
 #
 # Arguments:
 #   --verbose: Enables detailed logging of the processing
 #
-# Output:
-#   - Prints 'true' if processing is successful
-#   - Prints 'false' if there are any errors
-#   - Includes additional logging when verbose mode is enabled
+# Note: Only stderr output is monitored. If the script returns a non-zero exit code, the error will be logged.
 ################################################################################
 
 # Enable error handling
