@@ -29,14 +29,9 @@ try {
         // Validate monitor match data
         if (!monitorMatch) {
             console.log("No monitor match data provided");
-            console.log('false');
             return;
         }
-
-        // If we reach here, processing was successful
-        console.log('true');
     });
 } catch (e) {
     console.log(`Error processing input: ${e}`);
-    console.log('false');
 }

@@ -39,14 +39,12 @@ main() {
     # Validate input
     if [ -z "$input_json" ]; then
         echo "No input JSON provided"
-        echo "false"
         exit 1
     fi
 
     # Validate JSON structure
     if ! echo "$input_json" | jq . >/dev/null 2>&1; then
         echo "Invalid JSON input"
-        echo "false"
         exit 1
     fi
 
@@ -65,8 +63,7 @@ main() {
 
     # If we made it here, everything worked
     echo "Verbose mode: $verbose"
-    echo "true"
-    exit 0
+
 }
 
 # Call main function
