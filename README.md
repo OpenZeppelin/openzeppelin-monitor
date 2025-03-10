@@ -188,6 +188,7 @@ RUST_TEST_THREADS=1 cargo +stable llvm-cov
   - Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
   - Too low settings may result in missed blocks.
 - Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. Ideally, you should increase the open file descriptor limit to at least 2,048 or higher for optimal performance.
+  - Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
   - HTTP requests to RPC endpoints may consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
 
 ### Notification Considerations
@@ -197,6 +198,8 @@ RUST_TEST_THREADS=1 cargo +stable llvm-cov
   - Event-triggered notifications only populate event variables.
   - Function-triggered notifications only populate function variables.
   - Mixing contexts results in empty values.
+- Custom scripts for notifications:
+  - Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
 
 ## Contributing
 

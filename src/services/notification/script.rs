@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
@@ -35,29 +35,15 @@ impl Notifier for ScriptNotifier {
 	async fn script_notify(
 		&self,
 		monitor_match: &MonitorMatch,
-		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
+		script_content: &(ScriptLanguage, String),
 	) -> Result<(), NotificationError> {
 		match &self.config {
 			TriggerTypeConfig::Script {
-				script_path,
+				script_path: _,
 				language,
 				arguments,
 				timeout_ms,
 			} => {
-				let monitor_name = match monitor_match {
-					MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
-					MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,
-				};
-				let script = trigger_scripts
-					.get(&format!("{}|{}", monitor_name, script_path))
-					.ok_or_else(|| {
-						NotificationError::execution_error("Script content not found".to_string())
-					});
-				let script_content = match &script {
-					Ok(content) => content,
-					Err(e) => return Err(NotificationError::execution_error(e.to_string())),
-				};
-
 				let executor = ScriptExecutorFactory::create(language, &script_content.1);
 
 				let result = tokio::time::timeout(
@@ -137,15 +123,6 @@ mod tests {
 		}))
 	}
 
-	fn create_test_trigger_scripts() -> HashMap<String, (ScriptLanguage, String)> {
-		let mut scripts = HashMap::new();
-		scripts.insert(
-			"test_monitor|test_script.py".to_string(),
-			(ScriptLanguage::Python, "print(True)".to_string()),
-		);
-		scripts
-	}
-
 	#[test]
 	fn test_from_config_with_script_config() {
 		let config = create_test_script_config();
@@ -170,30 +147,13 @@ mod tests {
 		let config = create_test_script_config();
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
 		let monitor_match = create_test_monitor_match();
-		let trigger_scripts = create_test_trigger_scripts();
+		let script_content = (ScriptLanguage::Python, "print(True)".to_string());
 
 		let result = notifier
-			.script_notify(&monitor_match, &trigger_scripts)
+			.script_notify(&monitor_match, &script_content)
 			.await;
 		println!("Result: {:?}", result);
 		assert!(result.is_ok());
-	}
-
-	#[tokio::test]
-	async fn test_script_notify_with_missing_script() {
-		let config = create_test_script_config();
-		let notifier = ScriptNotifier::from_config(&config).unwrap();
-		let monitor_match = create_test_monitor_match();
-		let trigger_scripts = HashMap::new();
-
-		let result = notifier
-			.script_notify(&monitor_match, &trigger_scripts)
-			.await;
-		assert!(result.is_err());
-		assert!(result
-			.unwrap_err()
-			.to_string()
-			.contains("Script content not found"));
 	}
 
 	#[tokio::test]
@@ -207,18 +167,14 @@ mod tests {
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
 		let monitor_match = create_test_monitor_match();
 
-		let mut trigger_scripts = HashMap::new();
-		trigger_scripts.insert(
-			"test_monitor|test_script.py".to_string(),
-			(
-				ScriptLanguage::Python,
-				"import time\ntime.sleep(0.3)\nprint(True)".to_string(), // Sleep less than timeout
-			),
+		let script_content = (
+			ScriptLanguage::Python,
+			"import time\ntime.sleep(0.3)\nprint(True)".to_string(),
 		);
 
 		let start_time = Instant::now();
 		let result = notifier
-			.script_notify(&monitor_match, &trigger_scripts)
+			.script_notify(&monitor_match, &script_content)
 			.await;
 		let elapsed = start_time.elapsed();
 
@@ -240,18 +196,13 @@ mod tests {
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
 		let monitor_match = create_test_monitor_match();
 
-		let mut trigger_scripts = HashMap::new();
-		trigger_scripts.insert(
-			"test_monitor|test_script.py".to_string(),
-			(
-				ScriptLanguage::Python,
-				"import time\ntime.sleep(0.5)\nprint(True)".to_string(),
-			),
+		let script_content = (
+			ScriptLanguage::Python,
+			"import time\ntime.sleep(0.5)\nprint(True)".to_string(),
 		);
-
 		let start_time = Instant::now();
 		let result = notifier
-			.script_notify(&monitor_match, &trigger_scripts)
+			.script_notify(&monitor_match, &script_content)
 			.await;
 		let elapsed = start_time.elapsed();
 

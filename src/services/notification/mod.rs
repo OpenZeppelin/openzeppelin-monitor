@@ -19,7 +19,7 @@ mod slack;
 mod telegram;
 mod webhook;
 
-use crate::models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType};
+use crate::models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig};
 
 pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
@@ -54,7 +54,7 @@ pub trait Notifier {
 	async fn script_notify(
 		&self,
 		_monitor_match: &MonitorMatch,
-		_trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
+		_script_content: &(ScriptLanguage, String),
 	) -> Result<(), NotificationError> {
 		// Default implementation that does nothing
 		Ok(())
@@ -158,8 +158,32 @@ impl NotificationService {
 			TriggerType::Script => {
 				let notifier = ScriptNotifier::from_config(&trigger.config);
 				if let Some(notifier) = notifier {
+					let monitor_name = match monitor_match {
+						MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
+						MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,
+					};
+					let script_path = match &trigger.config {
+						TriggerTypeConfig::Script { script_path, .. } => script_path,
+						_ => {
+							return Err(NotificationError::config_error(
+								"Invalid script configuration".to_string(),
+							))
+						}
+					};
+					let script = trigger_scripts
+						.get(&format!("{}|{}", monitor_name, script_path))
+						.ok_or_else(|| {
+							NotificationError::execution_error(
+								"Script content not found".to_string(),
+							)
+						});
+					let script_content = match &script {
+						Ok(content) => content,
+						Err(e) => return Err(NotificationError::execution_error(e.to_string())),
+					};
+
 					notifier
-						.script_notify(monitor_match, trigger_scripts)
+						.script_notify(monitor_match, script_content)
 						.await
 						.map_err(|e| NotificationError::config_error(e.to_string()))?;
 				}
