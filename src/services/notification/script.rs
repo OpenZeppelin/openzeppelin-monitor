@@ -62,7 +62,7 @@ impl Notifier for ScriptNotifier {
 
 				let result = tokio::time::timeout(
 					Duration::from_millis(u64::from(*timeout_ms)),
-					executor.execute(monitor_match.clone(), arguments),
+					executor.execute(monitor_match.clone(), arguments.as_deref(), true),
 				)
 				.await;
 
@@ -95,7 +95,7 @@ mod tests {
 		TriggerTypeConfig::Script {
 			language: ScriptLanguage::Python,
 			script_path: "test_script.py".to_string(),
-			arguments: vec!["arg1".to_string(), "arg2".to_string()],
+			arguments: Some(vec!["arg1".to_string(), "arg2".to_string()]),
 			timeout_ms: 1000,
 		}
 	}

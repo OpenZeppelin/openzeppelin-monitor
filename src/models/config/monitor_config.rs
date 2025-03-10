@@ -334,7 +334,7 @@ mod tests {
 			trigger_conditions: vec![TriggerConditions {
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 1000,
-				arguments: vec![],
+				arguments: None,
 				language: ScriptLanguage::Python,
 			}],
 			triggers: vec![],
@@ -361,7 +361,7 @@ mod tests {
 			trigger_conditions: vec![TriggerConditions {
 				script_path: "non_existent_script.py".to_string(),
 				timeout_ms: 1000,
-				arguments: vec![],
+				arguments: None,
 				language: ScriptLanguage::Python,
 			}],
 			triggers: vec![],
@@ -393,7 +393,7 @@ mod tests {
 			trigger_conditions: vec![TriggerConditions {
 				script_path: "test_script.py".to_string(),
 				timeout_ms: 0,
-				arguments: vec![],
+				arguments: None,
 				language: ScriptLanguage::Python,
 			}],
 			triggers: vec![],
@@ -441,7 +441,7 @@ mod tests {
 				trigger_conditions: vec![TriggerConditions {
 					script_path: script_path.to_string_lossy().into_owned(),
 					timeout_ms: 1000,
-					arguments: vec![],
+					arguments: None,
 					language: language.clone(),
 				}],
 				triggers: vec![],

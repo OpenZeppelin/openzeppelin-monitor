@@ -323,7 +323,7 @@ mod tests {
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
-				arguments: vec![],
+				arguments: None,
 			}],
 			..Default::default()
 		};
@@ -343,7 +343,7 @@ mod tests {
 				script_path: "non_existent_script.py".to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
-				arguments: vec![],
+				arguments: None,
 			}],
 			..Default::default()
 		};
@@ -366,7 +366,7 @@ mod tests {
 				script_path: wrong_ext_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
-				arguments: vec![],
+				arguments: None,
 			}],
 			..Default::default()
 		};
@@ -391,7 +391,7 @@ mod tests {
 				script_path: script_path.to_str().unwrap().to_string(),
 				language: ScriptLanguage::Python,
 				timeout_ms: 0,
-				arguments: vec![],
+				arguments: None,
 			}],
 			..Default::default()
 		};

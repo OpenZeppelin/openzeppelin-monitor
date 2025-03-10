@@ -105,7 +105,7 @@ pub struct TriggerConditions {
 
 	/// The arguments of the script
 	#[serde(default)]
-	pub arguments: Vec<String>,
+	pub arguments: Option<Vec<String>>,
 
 	/// The language of the script
 	pub language: ScriptLanguage,

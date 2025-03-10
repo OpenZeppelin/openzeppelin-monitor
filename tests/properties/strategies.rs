@@ -293,7 +293,7 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 
 			vec![TriggerConditions {
 				script_path,
-				arguments: arguments.split(',').map(|s| s.to_string()).collect(),
+				arguments: Some(arguments.split(',').map(|s| s.to_string()).collect()),
 				language,
 				timeout_ms,
 			}]

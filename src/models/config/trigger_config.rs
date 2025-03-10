@@ -765,7 +765,7 @@ mod tests {
 			trigger_type: TriggerType::Script,
 			config: TriggerTypeConfig::Script {
 				script_path: script_path.to_str().unwrap().to_string(),
-				arguments: vec![String::from("arg1")],
+				arguments: Some(vec![String::from("arg1")]),
 				language: ScriptLanguage::Bash,
 				timeout_ms: 1000,
 			},
@@ -778,7 +778,7 @@ mod tests {
 			trigger_type: TriggerType::Script,
 			config: TriggerTypeConfig::Script {
 				script_path: "/non/existent/path".to_string(),
-				arguments: vec![String::from("arg1")],
+				arguments: Some(vec![String::from("arg1")]),
 				language: ScriptLanguage::Python,
 				timeout_ms: 1000,
 			},

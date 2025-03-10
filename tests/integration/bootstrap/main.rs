@@ -444,7 +444,7 @@ print(True)  # Always return true for test
 		script_path: "test_script.py".to_string(),
 		language: ScriptLanguage::Python,
 		timeout_ms: 1000,
-		arguments: vec![],
+		arguments: None,
 	}];
 
 	let processed_block = ProcessedBlock {
@@ -562,7 +562,7 @@ async fn test_load_scripts() {
 			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		}],
 		..Default::default()
 	}];
@@ -602,7 +602,7 @@ async fn test_load_scripts_error() {
 			script_path: "non_existent_script.py".to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		}],
 		..Default::default()
 	}];
@@ -673,7 +673,7 @@ async fn test_load_scripts_for_custom_triggers_notifications() {
 			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		}],
 		triggers: vec!["custom_trigger".to_string()],
 		..Default::default()
@@ -687,7 +687,7 @@ async fn test_load_scripts_for_custom_triggers_notifications() {
 			script_path: script_trigger_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		},
 	};
 	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
@@ -743,7 +743,7 @@ async fn test_load_scripts_for_custom_triggers_notifications_error() {
 			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		}],
 		triggers: vec!["custom_trigger".to_string()],
 		..Default::default()
@@ -757,7 +757,7 @@ async fn test_load_scripts_for_custom_triggers_notifications_error() {
 			script_path: "non_existent_script.py".to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		},
 	};
 	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
@@ -796,7 +796,7 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		}],
 		triggers: vec!["custom_trigger_not_found".to_string()],
 		..Default::default()
@@ -810,7 +810,7 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 			script_path: script_path.to_str().unwrap().to_string(),
 			language: ScriptLanguage::Python,
 			timeout_ms: 1000,
-			arguments: vec![],
+			arguments: None,
 		},
 	};
 	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
@@ -824,9 +824,8 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 
 	// Test loading scripts
 	let result = trigger_execution_service.load_scripts(&monitors).await;
-	println!("result ===>: {:?}", result);
-	assert!(result.is_err());
 
+	assert!(result.is_err());
 	match result {
 		Err(e) => {
 			assert!(matches!(e, TriggerError::ConfigurationError(_)));

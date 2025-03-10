@@ -55,7 +55,7 @@ async fn test_notification_service_script_execution() {
 		config: TriggerTypeConfig::Script {
 			language: ScriptLanguage::Python,
 			script_path: "test_script.py".to_string(),
-			arguments: vec!["arg1".to_string()],
+			arguments: Some(vec!["arg1".to_string()]),
 			timeout_ms: 1000,
 		},
 	};
@@ -83,7 +83,7 @@ async fn test_notification_service_script_execution_failure() {
 		config: TriggerTypeConfig::Script {
 			language: ScriptLanguage::Python,
 			script_path: "nonexistent.py".to_string(),
-			arguments: vec!["arg1".to_string()],
+			arguments: Some(vec!["arg1".to_string()]),
 			timeout_ms: 1000,
 		},
 	};

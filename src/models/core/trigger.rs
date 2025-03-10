@@ -109,7 +109,7 @@ pub enum TriggerTypeConfig {
 		script_path: String,
 		/// Command line arguments
 		#[serde(default)]
-		arguments: Vec<String>,
+		arguments: Option<Vec<String>>,
 		/// Timeout in milliseconds
 		timeout_ms: u32,
 	},
