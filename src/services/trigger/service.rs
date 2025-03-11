@@ -111,10 +111,16 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 		if errors.is_empty() {
 			Ok(())
 		} else {
-			Err(TriggerError::execution_error(format!(
-				"Multiple triggers failed: {:?}",
-				errors
-			)))
+			let error_msg = if errors.len() == 1 {
+				format!("Trigger failed: {:?}", errors[0])
+			} else {
+				format!(
+					"Multiple triggers failed ({} failures): {:?}",
+					errors.len(),
+					errors
+				)
+			};
+			Err(TriggerError::execution_error(error_msg))
 		}
 	}
 	/// Loads trigger condition scripts for monitors

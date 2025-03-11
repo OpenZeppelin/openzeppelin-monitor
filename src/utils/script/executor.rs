@@ -600,7 +600,6 @@ echo "not a boolean"
 
 		match result {
 			Err(ScriptError::ParseError(msg)) => {
-				println!("msg: {}", msg);
 				assert!(msg.contains("Script produced no output"));
 			}
 			_ => panic!("Expected ParseError"),
@@ -882,7 +881,6 @@ time.sleep(0.3)
 		let input = create_mock_monitor_match();
 		let start_time = Instant::now();
 		let result = executor.execute(input, &1000, None, true).await;
-		println!("Result: {:?}", result);
 		let elapsed = start_time.elapsed();
 
 		assert!(result.is_ok());
@@ -907,7 +905,6 @@ time.sleep(0.5)
 		let input = create_mock_monitor_match();
 		let start_time = Instant::now();
 		let result = executor.execute(input, &400, None, true).await;
-		println!("Result: {:?}", result);
 		let elapsed = start_time.elapsed();
 
 		assert!(result.is_err());

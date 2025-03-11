@@ -707,7 +707,6 @@ async fn test_load_scripts_for_custom_triggers_notifications() {
 		.unwrap();
 
 	// Verify results
-	println!("scripts: {:?}", scripts);
 	assert_eq!(scripts.len(), 2);
 
 	let script_key = format!("test_monitor|{}", script_path.to_str().unwrap());
@@ -837,7 +836,7 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 }
 
 #[tokio::test]
-async fn test_trigger_execution_service_execute_multiple_triggers() {
+async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 	// Slack execution success - Webhook execution failure - Script execution failure
 	// We should see two errors regarding the webhook and one regarding the script
 	let mut server = mockito::Server::new_async().await;
@@ -846,7 +845,7 @@ async fn test_trigger_execution_service_execute_multiple_triggers() {
 		.match_body(mockito::Matcher::Json(json!({
 			"text": "*Test Alert*\n\nTest message with value 42"
 		})))
-		.with_status(200)
+		.with_status(500)
 		.create_async()
 		.await;
 	let mut mocked_triggers = HashMap::new();
@@ -915,17 +914,200 @@ async fn test_trigger_execution_service_execute_multiple_triggers() {
 	let result = trigger_execution_service
 		.execute(&triggers, variables, &monitor_match, &HashMap::new())
 		.await;
-	println!("result: {:?}", result);
 	assert!(result.is_err());
 	match result {
 		Err(e) => {
-			assert!(e.to_string().contains("Multiple triggers failed"));
+			assert!(e
+				.to_string()
+				.contains("Multiple triggers failed (3 failures)"));
 			assert!(e
 				.to_string()
 				.contains("Webhook returned error status: 404 Not Found"));
 			assert!(e.to_string().contains("Script content not found"));
+			assert!(e
+				.to_string()
+				.contains("Slack webhook returned error status: 500 Internal Server Error"));
 		}
 		_ => panic!("Expected error"),
 	}
 	mock.assert();
+}
+
+#[tokio::test]
+async fn test_trigger_execution_service_execute_multiple_triggers_success() {
+	// Set up mock servers for both Slack and Webhook endpoints
+	let mut slack_server = mockito::Server::new_async().await;
+	let mut webhook_server = mockito::Server::new_async().await;
+
+	// Set up Slack mock
+	let slack_mock = slack_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(json!({
+			"text": "*Test Alert*\n\nTest message with value 42"
+		})))
+		.with_status(200)
+		.create_async()
+		.await;
+
+	// Set up Webhook mock
+	let webhook_mock = webhook_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Any)
+		.with_status(200)
+		.create_async()
+		.await;
+
+	let mut mocked_triggers = HashMap::new();
+
+	// Add Slack trigger
+	mocked_triggers.insert(
+		"example_trigger_slack".to_string(),
+		Trigger {
+			name: "test_trigger".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: slack_server.url(),
+				message: openzeppelin_monitor::models::NotificationMessage {
+					title: "Test Alert".to_string(),
+					body: "Test message with value ${value}".to_string(),
+				},
+			},
+		},
+	);
+
+	// Add Webhook trigger
+	mocked_triggers.insert(
+		"example_trigger_webhook".to_string(),
+		Trigger {
+			name: "example_trigger_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: webhook_server.url(),
+				method: Some("POST".to_string()),
+				secret: Some("secret".to_string()),
+				headers: Some(HashMap::new()),
+				message: NotificationMessage {
+					title: "Test Title".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		},
+	);
+
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	let triggers = vec![
+		"example_trigger_slack".to_string(),
+		"example_trigger_webhook".to_string(),
+	];
+	let mut variables = HashMap::new();
+	variables.insert("value".to_string(), "42".to_string());
+	let monitor_match = create_test_monitor_match(BlockChainType::EVM);
+
+	let result = trigger_execution_service
+		.execute(&triggers, variables, &monitor_match, &HashMap::new())
+		.await;
+	// Assert all triggers executed successfully
+	assert!(result.is_ok());
+
+	// Verify that both mock servers received their expected calls
+	slack_mock.assert();
+	webhook_mock.assert();
+}
+
+#[tokio::test]
+async fn test_trigger_execution_service_execute_multiple_triggers_partial_success() {
+	// Set up mock servers for both Slack and Webhook endpoints
+	let mut slack_server = mockito::Server::new_async().await;
+	let mut webhook_server = mockito::Server::new_async().await;
+
+	// Set up Slack mock
+	let slack_mock = slack_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(json!({
+			"text": "*Test Alert*\n\nTest message with value 42"
+		})))
+		.with_status(500)
+		.create_async()
+		.await;
+
+	// Set up Webhook mock
+	let webhook_mock = webhook_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Any)
+		.with_status(200)
+		.create_async()
+		.await;
+
+	let mut mocked_triggers = HashMap::new();
+
+	// Add Slack trigger
+	mocked_triggers.insert(
+		"example_trigger_slack".to_string(),
+		Trigger {
+			name: "test_trigger".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: slack_server.url(),
+				message: openzeppelin_monitor::models::NotificationMessage {
+					title: "Test Alert".to_string(),
+					body: "Test message with value ${value}".to_string(),
+				},
+			},
+		},
+	);
+
+	// Add Webhook trigger
+	mocked_triggers.insert(
+		"example_trigger_webhook".to_string(),
+		Trigger {
+			name: "example_trigger_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: webhook_server.url(),
+				method: Some("POST".to_string()),
+				secret: Some("secret".to_string()),
+				headers: Some(HashMap::new()),
+				message: NotificationMessage {
+					title: "Test Title".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		},
+	);
+
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	let triggers = vec![
+		"example_trigger_slack".to_string(),
+		"example_trigger_webhook".to_string(),
+	];
+	let mut variables = HashMap::new();
+	variables.insert("value".to_string(), "42".to_string());
+	let monitor_match = create_test_monitor_match(BlockChainType::EVM);
+
+	let result = trigger_execution_service
+		.execute(&triggers, variables, &monitor_match, &HashMap::new())
+		.await;
+
+	// Assert all triggers executed successfully
+	assert!(result.is_err());
+	match result {
+		Err(e) => {
+			assert!(e.to_string().contains("Trigger failed"));
+			assert!(e
+				.to_string()
+				.contains("Slack webhook returned error status: 500 Internal Server Error"));
+		}
+		_ => panic!("Expected error"),
+	}
+	// Verify that both mock servers received their expected calls
+	slack_mock.assert();
+	webhook_mock.assert();
 }

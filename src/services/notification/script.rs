@@ -154,7 +154,6 @@ mod tests {
 		let result = notifier
 			.script_notify(&monitor_match, &script_content)
 			.await;
-		println!("Result: {:?}", result);
 		assert!(result.is_ok());
 	}
 
