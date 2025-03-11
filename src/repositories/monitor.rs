@@ -7,13 +7,20 @@
 use std::{collections::HashMap, marker::PhantomData, path::Path};
 
 use crate::{
-	models::{ConfigLoader, Monitor, Network, Trigger},
+	models::{ConfigLoader, Monitor, Network, ScriptLanguage, Trigger},
 	repositories::{
 		error::RepositoryError,
 		network::{NetworkRepository, NetworkRepositoryTrait, NetworkService},
 		trigger::{TriggerRepository, TriggerRepositoryTrait, TriggerService},
 	},
 };
+
+/// Static mapping of script languages to their file extensions
+const LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
+	(&ScriptLanguage::Python, "py"),
+	(&ScriptLanguage::JavaScript, "js"),
+	(&ScriptLanguage::Bash, "sh"),
+];
 
 /// Repository for storing and retrieving monitor configurations
 #[derive(Clone)]
@@ -77,6 +84,49 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 					validation_errors.push(format!(
 						"Monitor '{}' references non-existent network '{}'",
 						monitor_name, network_slug
+					));
+				}
+			}
+
+			// Validate custom trigger conditions
+			for condition in &monitor.trigger_conditions {
+				let script_path = Path::new(&condition.script_path);
+				if !script_path.exists() {
+					validation_errors.push(format!(
+						"Monitor '{}' has a custom filter script that does not exist: {}",
+						monitor_name, condition.script_path
+					));
+				}
+
+				// Validate file extension matches the specified language
+				let expected_extension = match LANGUAGE_EXTENSIONS
+					.iter()
+					.find(|(lang, _)| *lang == &condition.language)
+					.map(|(_, ext)| *ext)
+				{
+					Some(ext) => ext,
+					None => {
+						validation_errors.push(format!(
+							"Monitor '{}' uses unsupported script language {:?}",
+							monitor_name, condition.language
+						));
+						continue;
+					}
+				};
+
+				match script_path.extension().and_then(|ext| ext.to_str()) {
+					Some(ext) if ext == expected_extension => (), // Valid extension
+					_ => validation_errors.push(format!(
+						"Monitor '{}' has a custom filter script with invalid extension - must be \
+						 .{} for {:?} language: {}",
+						monitor_name, expected_extension, condition.language, condition.script_path
+					)),
+				}
+
+				if condition.timeout_ms == 0 {
+					validation_errors.push(format!(
+						"Monitor '{}' should have a custom filter timeout_ms greater than 0",
+						monitor_name
 					));
 				}
 			}
@@ -245,5 +295,117 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	/// Returns a copy of the monitor map to prevent external mutation.
 	pub fn get_all(&self) -> HashMap<String, Monitor> {
 		self.repository.get_all()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::{MatchConditions, Monitor, ScriptLanguage};
+	use std::fs;
+	use tempfile::TempDir;
+
+	#[test]
+	fn test_validate_custom_trigger_conditions() {
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("test_script.py");
+		fs::write(&script_path, "print('test')").unwrap();
+
+		let mut monitors = HashMap::new();
+		let triggers = HashMap::new();
+		let networks = HashMap::new();
+
+		// Test valid configuration
+		let monitor = Monitor {
+			name: "test_monitor".to_string(),
+			match_conditions: MatchConditions::default(),
+			trigger_conditions: vec![crate::models::TriggerConditions {
+				script_path: script_path.to_str().unwrap().to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: None,
+			}],
+			..Default::default()
+		};
+		monitors.insert("test_monitor".to_string(), monitor);
+
+		assert!(
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks
+			)
+			.is_ok()
+		);
+
+		// Test non-existent script
+		let monitor_bad_path = Monitor {
+			name: "test_monitor_bad_path".to_string(),
+			trigger_conditions: vec![crate::models::TriggerConditions {
+				script_path: "non_existent_script.py".to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: None,
+			}],
+			..Default::default()
+		};
+		monitors.insert("test_monitor_bad_path".to_string(), monitor_bad_path);
+
+		let err =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			)
+			.unwrap_err();
+		assert!(err.to_string().contains("does not exist"));
+
+		// Test wrong extension
+		let wrong_ext_path = temp_dir.path().join("test_script.js");
+		fs::write(&wrong_ext_path, "print('test')").unwrap();
+
+		let monitor_wrong_ext = Monitor {
+			name: "test_monitor_wrong_ext".to_string(),
+			trigger_conditions: vec![crate::models::TriggerConditions {
+				script_path: wrong_ext_path.to_str().unwrap().to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: None,
+			}],
+			..Default::default()
+		};
+		monitors.clear();
+		monitors.insert("test_monitor_wrong_ext".to_string(), monitor_wrong_ext);
+
+		let err =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			)
+			.unwrap_err();
+		assert!(err.to_string().contains(
+			"Monitor 'test_monitor_wrong_ext' has a custom filter script with invalid extension - \
+			 must be .py for Python language"
+		));
+
+		// Test zero timeout
+		let monitor_zero_timeout = Monitor {
+			name: "test_monitor_zero_timeout".to_string(),
+			match_conditions: MatchConditions::default(),
+			trigger_conditions: vec![crate::models::TriggerConditions {
+				script_path: script_path.to_str().unwrap().to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 0,
+				arguments: None,
+			}],
+			..Default::default()
+		};
+		monitors.clear();
+		monitors.insert(
+			"test_monitor_zero_timeout".to_string(),
+			monitor_zero_timeout,
+		);
+
+		let err =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			)
+			.unwrap_err();
+		assert!(err.to_string().contains("timeout_ms greater than 0"));
 	}
 }

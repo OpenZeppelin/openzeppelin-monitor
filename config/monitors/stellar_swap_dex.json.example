@@ -24,6 +24,11 @@
       }
     ]
   },
+  "trigger_conditions": [{
+    "script_path": "./config/filters/stellar_filter_block_number.sh",
+    "language": "Bash",
+    "timeout_ms": 1000
+  }],
   "triggers": [
     "stellar_large_swap_by_dex_slack"
   ]

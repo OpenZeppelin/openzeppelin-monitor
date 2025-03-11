@@ -3,11 +3,12 @@
 //! Provides functionality to execute triggers with variable substitution
 //! and notification delivery. Manages trigger lookup and execution flow.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use async_trait::async_trait;
 
 use crate::{
+	models::{Monitor, ScriptLanguage},
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{notification::NotificationService, trigger::error::TriggerError},
 };
@@ -23,6 +24,10 @@ pub trait TriggerExecutionServiceTrait {
 		trigger_slugs: &[String],
 		variables: HashMap<String, String>,
 	) -> Result<(), TriggerError>;
+	async fn load_scripts(
+		&self,
+		monitors: &[Monitor],
+	) -> Result<HashMap<String, (ScriptLanguage, String)>, TriggerError>;
 }
 
 /// Service for executing triggers with notifications
@@ -90,5 +95,49 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				.map_err(|e| TriggerError::execution_error(e.to_string()))?;
 		}
 		Ok(())
+	}
+	/// Loads trigger condition scripts for monitors
+	///
+	/// # Arguments
+	/// * `monitors` - List of monitors containing trigger conditions
+	///
+	/// # Returns
+	/// * `Result<HashMap<String, (ScriptLanguage, String)>, TriggerError>` - Map of monitor names
+	///   and script path to their script language and content
+	///
+	/// # Errors
+	/// - Returns `TriggerError::ConfigurationError` if script files cannot be read
+	async fn load_scripts(
+		&self,
+		monitors: &[Monitor],
+	) -> Result<HashMap<String, (ScriptLanguage, String)>, TriggerError> {
+		let mut scripts = HashMap::new();
+
+		for monitor in monitors {
+			// Skip monitors without trigger conditions
+			if monitor.trigger_conditions.is_empty() {
+				continue;
+			}
+
+			// For each monitor, we'll load all its trigger condition scripts
+			for condition in &monitor.trigger_conditions {
+				let script_path = Path::new(&condition.script_path);
+
+				// Read the script content
+				let content = tokio::fs::read_to_string(script_path).await.map_err(|e| {
+					TriggerError::configuration_error(format!(
+						"Failed to read script file {}: {}",
+						condition.script_path, e
+					))
+				})?;
+				// Store the script content with its language
+				scripts.insert(
+					format!("{}|{}", monitor.name, condition.script_path),
+					(condition.language.clone(), content),
+				);
+			}
+		}
+
+		Ok(scripts)
 	}
 }

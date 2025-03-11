@@ -452,8 +452,8 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	let mut trigger_execution_service =
 		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
 
-	trigger_execution_service
-		.expect_execute()
+	// Set up expectations for execute()
+	trigger_execution_service.expect_execute()
 		.withf(|trigger_name, variables| {
 			trigger_name == ["example_trigger_slack"]
 				// Event variables

@@ -45,6 +45,7 @@
       }
     ]
   },
+  "trigger_conditions": [],
   "triggers": [
     "example_trigger_slack"
   ]

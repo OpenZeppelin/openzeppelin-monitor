@@ -1,7 +1,7 @@
 use crate::properties::strategies::{monitor_strategy, network_strategy, trigger_strategy};
 
 use openzeppelin_monitor::{
-	models::ConfigLoader,
+	models::{ConfigLoader, ScriptLanguage},
 	repositories::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, TriggerRepository,
 	},
@@ -145,7 +145,7 @@ proptest! {
 		)
 	) {
 		// Validate each monitor configuration
-		for monitor in monitors.values(){
+		for monitor in monitors.values() {
 			prop_assert!(monitor.validate().is_ok());
 
 			let mut invalid_monitor = monitor.clone();
@@ -164,6 +164,28 @@ proptest! {
 			invalid_monitor = monitor.clone();
 			if let Some(event) = invalid_monitor.match_conditions.events.first_mut() {
 				event.signature = "invalid_signature".to_string(); // Missing parentheses
+				prop_assert!(invalid_monitor.validate().is_err());
+			}
+
+			// Test invalid script path
+			invalid_monitor = monitor.clone();
+			if let Some(condition) = invalid_monitor.trigger_conditions.first_mut() {
+				condition.script_path = "invalid_path".to_string();
+				prop_assert!(invalid_monitor.validate().is_err());
+			}
+
+			// Test invalid script extension
+			invalid_monitor = monitor.clone();
+			if let Some(condition) = invalid_monitor.trigger_conditions.first_mut() {
+				// Test Python script with wrong extension
+				condition.language = ScriptLanguage::Python;
+				condition.script_path = "test_script.js".to_string();
+				prop_assert!(invalid_monitor.validate().is_err());
+			}
+
+			invalid_monitor = monitor.clone();
+			if let Some(condition) = invalid_monitor.trigger_conditions.first_mut() {
+				condition.timeout_ms = 0;
 				prop_assert!(invalid_monitor.validate().is_err());
 			}
 		}

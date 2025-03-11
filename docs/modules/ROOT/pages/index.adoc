@@ -702,6 +702,7 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
 * Network targets (which chains to monitor)
 * Contract addresses to watch
 * Conditions to match (functions, events, transactions)
+* Trigger conditions (custom scripts that act as filters for each monitor match to determine whether a trigger should be activated).
 * Triggers to execute when conditions are met
 
 .Example Monitor Configuration
@@ -737,6 +738,14 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
       }
     ]
   },
+  "trigger_conditions": [
+    {
+      "script_path": "./config/filters/evm_filter_block_number.sh",
+      "language": "bash",
+      "arguments": "--verbose",
+      "timeout_ms": 1000
+    }
+  ],
   "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
 }
 ----
@@ -816,6 +825,10 @@ Match transaction properties:
 |Object
 |Collection of conditions that can trigger the monitor
 
+|trigger_conditions
+|Array[Object]
+|Collection of filters to apply to monitor matches before executing triggers
+
 |triggers
 |Array[String]
 |IDs of triggers to execute when conditions match
@@ -859,6 +872,61 @@ For Stellar function `transfer(Address,Address,I128)`:
   "expression": "2 > 1000"
 }
 ----
+
+==== Trigger Conditions (Custom filters)
+
+Custom filters allow you to create sophisticated filtering logic for processing monitor matches. These filters act as additional validation layers that determine whether a match should trigger the execution of a trigger or not.
+
+You can write custom filters in any of the following languages:
+
+* Python
+* JavaScript
+* Bash
+
+Important considerations:
+
+* Input: The filter script receives a JSON object containing two fields: `monitor_match` and `args`. The `monitor_match` field contains the monitor match data and the `args` (strings separated by commas) field contains the arguments of the script.
+* Processing: Your script can analyze any properties of the match data
+* Output: The script must print either `true` or `false` to stdout to indicate whether the match should be included
+* All filters against a monitor match must return `false` for it to be included
+* Scripts must exit with code 0 for their output to be considered valid
+* Invalid output or non-zero exit codes will cause the filter to fail and the match will be included by default
+* Trigger conditions are executed sequentially based on their position in the trigger conditions array.
+
+.Example Trigger Conditions Configuration
+[source,json]
+----
+{
+  "script_path": "./config/filters/evm_custom_filter.py",
+  "language": "Python",
+  "arguments": "--verbose",
+  "timeout_ms": 1000
+}
+----
+
+==== Available Fields
+
+===== Trigger Conditions Fields
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|script_path
+|String
+|The path to the script
+
+|language
+|String
+|The language of the script
+
+|arguments
+|String
+|The arguments of the script. If you want to pass more than one argument, each argument should be separated by a comma.
+
+|timeout_ms
+|Number
+|The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default.
+|===
 
 ==== Important Considerations:
 
@@ -944,6 +1012,9 @@ docker run \
 ** Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
 ** Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
 ** Too low settings may result in missed blocks.
+* Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _**temporarily**_ increase it with `ulimit -n 2048`.
+* Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
+* HTTP requests to RPC endpoints may consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
 
 === Notification Considerations:
 

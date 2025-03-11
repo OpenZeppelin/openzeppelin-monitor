@@ -1,10 +1,11 @@
 use email_address::EmailAddress;
 use openzeppelin_monitor::models::{
 	AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions, Monitor,
-	Network, NotificationMessage, RpcUrl, TransactionCondition, TransactionStatus, Trigger,
-	TriggerType, TriggerTypeConfig,
+	Network, NotificationMessage, RpcUrl, ScriptLanguage, TransactionCondition, TransactionStatus,
+	Trigger, TriggerConditions, TriggerType, TriggerTypeConfig,
 };
 use proptest::{option, prelude::*};
+use std::os::unix::prelude::ExitStatusExt;
 
 const MIN_COLLECTION_SIZE: usize = 0;
 const MAX_COLLECTION_SIZE: usize = 10;
@@ -31,15 +32,25 @@ pub fn monitor_strategy(
 			MIN_COLLECTION_SIZE..MAX_ADDRESSES,
 		),
 		match_conditions_strategy(),
+		trigger_conditions_strategy(),
 	)
 		.prop_map(
-			|(triggers, networks, name, paused, addresses, match_conditions)| Monitor {
+			|(
 				triggers,
 				networks,
 				name,
 				paused,
 				addresses,
 				match_conditions,
+				trigger_conditions,
+			)| Monitor {
+				triggers,
+				networks,
+				name,
+				paused,
+				addresses,
+				match_conditions,
+				trigger_conditions,
 			},
 		)
 }
@@ -255,4 +266,83 @@ pub fn match_conditions_strategy() -> impl Strategy<Value = MatchConditions> {
 			events,
 			transactions,
 		})
+}
+
+pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditions>> {
+	let script_paths = prop::sample::select(vec![
+		"tests/integration/fixtures/filters/evm_filter_block_number.py".to_string(),
+		"tests/integration/fixtures/filters/stellar_filter_block_number.py".to_string(),
+		"tests/integration/fixtures/filters/evm_filter_block_number.js".to_string(),
+		"tests/integration/fixtures/filters/stellar_filter_block_number.js".to_string(),
+		"tests/integration/fixtures/filters/evm_filter_block_number.sh".to_string(),
+		"tests/integration/fixtures/filters/stellar_filter_block_number.sh".to_string(),
+	]);
+
+	(
+		script_paths,
+		"[a-zA-Z0-9_]+".prop_map(|s| s.to_string()),
+		Just(1000u32),
+	)
+		.prop_map(|(script_path, arguments, timeout_ms)| {
+			let language = match script_path.split('.').last() {
+				Some("py") => ScriptLanguage::Python,
+				Some("js") => ScriptLanguage::JavaScript,
+				Some("sh") => ScriptLanguage::Bash,
+				_ => ScriptLanguage::Python, // fallback to Python for unknown extensions
+			};
+
+			vec![TriggerConditions {
+				script_path,
+				arguments: Some(arguments),
+				language,
+				timeout_ms,
+			}]
+		})
+}
+
+pub fn process_output_strategy() -> impl Strategy<Value = std::process::Output> {
+	// Helper strategy for debug output lines
+	let debug_line_strategy = prop_oneof![
+		"[a-zA-Z0-9 ]{1,50}".prop_map(|s| format!("{}...", s)),
+		"debugging...".prop_map(|s| s.to_string()),
+		"Processing data...".prop_map(|s| s.to_string()),
+		"Starting script execution...".prop_map(|s| s.to_string())
+	];
+
+	// Generate stdout content with optional debug lines and a final boolean
+	let stdout_strategy = (
+		// 0 to 5 debug lines
+		prop::collection::vec(debug_line_strategy, 0..5),
+		// Final boolean output with optional whitespace
+		(
+			"[ \t]*".prop_map(|s| s.to_string()),
+			prop_oneof![Just("true"), Just("false")],
+			"[ \t\n]*".prop_map(|s| s.to_string()),
+		),
+	)
+		.prop_map(|(debug_lines, (pre, val, post))| {
+			let mut output = String::new();
+			for line in debug_lines {
+				output.push_str(&line);
+				output.push('\n');
+			}
+			output.push_str(&format!("{}{}{}", pre, val, post));
+			output
+		});
+
+	// Generate stderr content for error cases
+	let stderr_strategy = prop_oneof![
+		Just("".to_string()),
+		"Script execution failed:.*".prop_map(|s| s.to_string()),
+		"ImportError:.*".prop_map(|s| s.to_string()),
+		"SyntaxError:.*".prop_map(|s| s.to_string())
+	];
+
+	(stdout_strategy, stderr_strategy, prop::bool::ANY).prop_map(|(stdout, stderr, success)| {
+		std::process::Output {
+			status: ExitStatusExt::from_raw(if success { 0 } else { 1 }),
+			stdout: stdout.into_bytes(),
+			stderr: stderr.into_bytes(),
+		}
+	})
 }

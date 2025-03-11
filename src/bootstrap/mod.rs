@@ -18,10 +18,13 @@
 use futures::future::BoxFuture;
 use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Duration};
 
 use crate::{
-	models::{BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock},
+	models::{
+		BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock, ScriptLanguage,
+		TriggerConditions,
+	},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
 		RepositoryError, TriggerRepositoryTrait, TriggerService,
@@ -32,6 +35,7 @@ use crate::{
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
+	utils::{ScriptError, ScriptExecutorFactory},
 };
 
 /// Type alias for handling ServiceResult
@@ -242,15 +246,22 @@ where
 pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 'static>(
 	shutdown_tx: watch::Sender<bool>,
 	trigger_service: Arc<S>,
+	active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 ) -> Arc<impl Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync> {
 	Arc::new(move |block: &ProcessedBlock| {
 		let mut shutdown_rx = shutdown_tx.subscribe();
 		let trigger_service = trigger_service.clone();
+		let trigger_scripts = active_monitors_trigger_scripts.clone();
 		let block = block.clone();
+
 		tokio::spawn(async move {
 			tokio::select! {
 				_ = async {
-					for monitor_match in &block.processing_results {
+					if block.processing_results.is_empty() {
+						return;
+					}
+					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
+					for monitor_match in &filtered_matches {
 						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
 							error!("Error handling trigger: {}", e);
 						}
@@ -308,26 +319,190 @@ fn filter_network_monitors(monitors: &[Monitor], network_slug: &String) -> Vec<M
 		.collect()
 }
 
+async fn execute_trigger_condition(
+	trigger_condition: &TriggerConditions,
+	monitor_match: &MonitorMatch,
+	script_content: &(ScriptLanguage, String),
+) -> bool {
+	let executor = ScriptExecutorFactory::create(&script_content.0, &script_content.1);
+
+	let result = tokio::time::timeout(
+		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
+		executor.execute(
+			monitor_match.clone(),
+			trigger_condition.arguments.as_deref().unwrap_or(""),
+		),
+	)
+	.await;
+
+	match result {
+		Ok(Ok(true)) => true,
+		Ok(Err(e)) => {
+			ScriptError::execution_error(e.to_string());
+			false
+		}
+		Err(e) => {
+			ScriptError::execution_error(e.to_string());
+			false
+		}
+		_ => false,
+	}
+}
+
+async fn run_trigger_filters(
+	matches: &[MonitorMatch],
+	_network: &str,
+	trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
+) -> Vec<MonitorMatch> {
+	let mut filtered_matches = vec![];
+
+	for monitor_match in matches {
+		let mut is_filtered = false;
+		let trigger_conditions = match monitor_match {
+			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
+			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
+		};
+
+		for trigger_condition in trigger_conditions {
+			let monitor_name = match monitor_match {
+				MonitorMatch::EVM(evm_match) => evm_match.monitor.name.clone(),
+				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
+			};
+
+			let script_content = trigger_scripts
+				.get(&format!(
+					"{}|{}",
+					monitor_name, trigger_condition.script_path
+				))
+				.ok_or_else(|| {
+					ScriptError::execution_error("Script content not found".to_string())
+				});
+			if let Ok(script_content) = script_content {
+				if execute_trigger_condition(trigger_condition, monitor_match, script_content).await
+				{
+					is_filtered = true;
+					break;
+				}
+			}
+		}
+		if !is_filtered {
+			filtered_matches.push(monitor_match.clone());
+		}
+	}
+
+	filtered_matches
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::models::{
+		EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
+		StellarBlock, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
+	};
+	use std::io::Write;
+	use tempfile::NamedTempFile;
+	use web3::types::{TransactionReceipt, H160, U256};
 
-	fn create_test_monitor(name: &str, networks: Vec<&str>, paused: bool) -> Monitor {
+	// Helper function to create a temporary script file
+	fn create_temp_script(content: &str) -> NamedTempFile {
+		let mut file = NamedTempFile::new().unwrap();
+		file.write_all(content.as_bytes()).unwrap();
+		file
+	}
+	fn create_test_monitor(
+		name: &str,
+		networks: Vec<&str>,
+		paused: bool,
+		script_path: Option<&str>,
+	) -> Monitor {
 		Monitor {
 			name: name.to_string(),
 			networks: networks.into_iter().map(|s| s.to_string()).collect(),
 			paused,
+			trigger_conditions: vec![TriggerConditions {
+				language: ScriptLanguage::Python,
+				script_path: script_path.unwrap_or("test.py").to_string(),
+				timeout_ms: 1000,
+				arguments: None,
+			}],
 			..Default::default()
+		}
+	}
+
+	fn create_test_evm_transaction() -> EVMTransaction {
+		EVMTransaction::from({
+			web3::types::Transaction {
+				from: Some(H160::default()),
+				to: Some(H160::default()),
+				value: U256::default(),
+				..Default::default()
+			}
+		})
+	}
+
+	fn create_test_stellar_transaction() -> StellarTransaction {
+		StellarTransaction::from({
+			StellarTransactionInfo {
+				..Default::default()
+			}
+		})
+	}
+
+	fn create_test_stellar_block() -> StellarBlock {
+		StellarBlock::default()
+	}
+
+	fn create_mock_stellar_monitor_match(script_path: Option<&str>) -> MonitorMatch {
+		MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
+			monitor: create_test_monitor("test", vec![], false, script_path),
+			transaction: create_test_stellar_transaction(),
+			ledger: create_test_stellar_block(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}))
+	}
+
+	fn create_mock_monitor_match(script_path: Option<&str>) -> MonitorMatch {
+		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: create_test_monitor("test", vec![], false, script_path),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}))
+	}
+
+	fn matches_equal(a: &MonitorMatch, b: &MonitorMatch) -> bool {
+		match (a, b) {
+			(MonitorMatch::EVM(a), MonitorMatch::EVM(b)) => a.monitor.name == b.monitor.name,
+			(MonitorMatch::Stellar(a), MonitorMatch::Stellar(b)) => {
+				a.monitor.name == b.monitor.name
+			}
+			_ => false,
 		}
 	}
 
 	#[test]
 	fn test_has_active_monitors() {
 		let monitors = vec![
-			create_test_monitor("1", vec!["ethereum_mainnet"], false),
-			create_test_monitor("2", vec!["ethereum_sepolia"], false),
-			create_test_monitor("3", vec!["ethereum_mainnet", "ethereum_sepolia"], false),
-			create_test_monitor("4", vec!["stellar_mainnet"], true),
+			create_test_monitor("1", vec!["ethereum_mainnet"], false, None),
+			create_test_monitor("2", vec!["ethereum_sepolia"], false, None),
+			create_test_monitor(
+				"3",
+				vec!["ethereum_mainnet", "ethereum_sepolia"],
+				false,
+				None,
+			),
+			create_test_monitor("4", vec!["stellar_mainnet"], true, None),
 		];
 
 		assert!(has_active_monitors(
@@ -353,15 +528,15 @@ mod tests {
 		let mut monitors = HashMap::new();
 		monitors.insert(
 			"1".to_string(),
-			create_test_monitor("1", vec!["ethereum_mainnet"], false),
+			create_test_monitor("1", vec!["ethereum_mainnet"], false, None),
 		);
 		monitors.insert(
 			"2".to_string(),
-			create_test_monitor("2", vec!["stellar_mainnet"], true),
+			create_test_monitor("2", vec!["stellar_mainnet"], true, None),
 		);
 		monitors.insert(
 			"3".to_string(),
-			create_test_monitor("3", vec!["ethereum_mainnet"], false),
+			create_test_monitor("3", vec!["ethereum_mainnet"], false, None),
 		);
 
 		let active_monitors = filter_active_monitors(monitors);
@@ -372,9 +547,14 @@ mod tests {
 	#[test]
 	fn test_filter_network_monitors() {
 		let monitors = vec![
-			create_test_monitor("1", vec!["ethereum_mainnet"], false),
-			create_test_monitor("2", vec!["stellar_mainnet"], true),
-			create_test_monitor("3", vec!["ethereum_mainnet", "stellar_mainnet"], false),
+			create_test_monitor("1", vec!["ethereum_mainnet"], false, None),
+			create_test_monitor("2", vec!["stellar_mainnet"], true, None),
+			create_test_monitor(
+				"3",
+				vec!["ethereum_mainnet", "stellar_mainnet"],
+				false,
+				None,
+			),
 		];
 
 		let eth_monitors = filter_network_monitors(&monitors, &"ethereum_mainnet".to_string());
@@ -391,5 +571,600 @@ mod tests {
 
 		let sol_monitors = filter_network_monitors(&monitors, &"solana_mainnet".to_string());
 		assert!(sol_monitors.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_empty_matches() {
+		// Create empty matches vector
+		let matches: Vec<MonitorMatch> = vec![];
+
+		// Create trigger scripts with a more realistic script path
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test-test.py".to_string(), // Using a more realistic key format
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(False)
+            "#
+				.to_string(),
+			),
+		);
+
+		// Test the filter function
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert!(filtered.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_true_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("debugging...")
+def test():
+    return True
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			format!("test-{}", temp_file.path().to_str().unwrap()),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
+		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+		assert!(matches_equal(&filtered[0], &match_item));
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_false_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print("debugging...")
+def test():
+    return False
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			format!("test-{}", temp_file.path().to_str().unwrap()),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
+		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+	}
+
+	#[tokio::test]
+	async fn test_execute_trigger_condition_returns_false() {
+		let script_content = r#"
+print(False)  # Script returns false
+"#;
+		let temp_file = create_temp_script(script_content);
+		let trigger_condition = TriggerConditions {
+			language: ScriptLanguage::Python,
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			timeout_ms: 1000,
+			arguments: None,
+		};
+		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let script_content = (ScriptLanguage::Python, script_content.to_string());
+
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
+		assert!(!result); // Should be false when script returns false
+	}
+
+	#[tokio::test]
+	async fn test_execute_trigger_condition_script_error() {
+		let script_content = r#"
+raise Exception("Test error")  # Raise an error
+"#;
+		let temp_file = create_temp_script(script_content);
+		let trigger_condition = TriggerConditions {
+			language: ScriptLanguage::Python,
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			timeout_ms: 1000,
+			arguments: None,
+		};
+		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let script_content = (ScriptLanguage::Python, script_content.to_string());
+
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
+		assert!(!result); // Should be false when script errors
+	}
+
+	#[tokio::test]
+	async fn test_execute_trigger_condition_invalid_script() {
+		let trigger_condition = TriggerConditions {
+			language: ScriptLanguage::Python,
+			script_path: "non_existent_script.py".to_string(),
+			timeout_ms: 1000,
+			arguments: None,
+		};
+		let match_item = create_mock_monitor_match(Some("non_existent_script.py"));
+		let script_content = (ScriptLanguage::Python, "invalid script content".to_string());
+
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
+		assert!(!result); // Should be false for invalid script
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_multiple_conditions_keep_match() {
+		// Create a monitor with two trigger conditions
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "test1.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "test2.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		// Create a match with this monitor
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		// Set up trigger scripts - first one returns false, second returns true
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|test1.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(True)
+                "#
+				.to_string(),
+			),
+		);
+		trigger_scripts.insert(
+			"monitor_test|test2.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(True)
+                "#
+				.to_string(),
+			),
+		);
+
+		// Run the filter with our test data
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+
+		assert_eq!(filtered.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_condition_two_combinations_exclude_match() {
+		// Create a monitor with three trigger conditions with different execution orders
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition1.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition2.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		// Test case 1: All conditions return true - match should be kept
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(True)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_condition_two_combinations_keep_match() {
+		// Create a monitor with three trigger conditions with different execution orders
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition1.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition2.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_condition_two_combinations_exclude_match_last_condition() {
+		// Create a monitor with three trigger conditions with different execution orders
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition1.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition2.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(True)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_condition_three_combinations_exclude_match() {
+		// Create a monitor with three trigger conditions with different execution orders
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition1.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition2.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition3.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition3.py".to_string(),
+			(ScriptLanguage::Python, "print(True)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 0);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_condition_three_combinations_keep_match() {
+		// Create a monitor with three trigger conditions with different execution orders
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition1.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition2.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition3.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_evm_transaction(),
+			receipt: TransactionReceipt::default(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition3.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+	}
+
+	// Add these new test cases
+	#[tokio::test]
+	async fn test_run_trigger_filters_stellar_empty_matches() {
+		let matches: Vec<MonitorMatch> = vec![];
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|test.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(False)
+                "#
+				.to_string(),
+			),
+		);
+
+		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
+		assert!(filtered.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_stellar_true_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("debugging...")
+def test():
+    return True
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			format!("test|{}", temp_file.path().to_str().unwrap()),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
+		let match_item =
+			create_mock_stellar_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+		assert!(matches_equal(&filtered[0], &match_item));
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_stellar_multiple_conditions() {
+		let monitor = Monitor {
+			name: "monitor_test".to_string(),
+			networks: vec!["stellar_mainnet".to_string()],
+			paused: false,
+			trigger_conditions: vec![
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition1.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+				TriggerConditions {
+					language: ScriptLanguage::Python,
+					script_path: "condition2.py".to_string(),
+					timeout_ms: 1000,
+					arguments: None,
+				},
+			],
+			..Default::default()
+		};
+
+		let match_item = MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
+			monitor: monitor.clone(),
+			transaction: create_test_stellar_transaction(),
+			ledger: create_test_stellar_block(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}));
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(True)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 0); // Match should be filtered out because condition2 returns true
 	}
 }
