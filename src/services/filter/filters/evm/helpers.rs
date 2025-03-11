@@ -167,3 +167,210 @@ pub fn format_token_value(token: &Token) -> String {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use alloy::primitives::{hex, Address, B256};
+	use ethabi::Token;
+
+	#[test]
+	fn test_h256_to_string() {
+		let hash_bytes =
+			hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+				.unwrap();
+		let hash = Hash::from_slice(&hash_bytes);
+		let result = h256_to_string(hash);
+		assert_eq!(
+			result,
+			"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+		);
+	}
+
+	#[test]
+	fn test_b256_to_string() {
+		let hash_bytes =
+			hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+				.unwrap();
+		let hash = B256::from_slice(&hash_bytes);
+		let result = b256_to_string(hash);
+		assert_eq!(
+			result,
+			"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+		);
+	}
+
+	#[test]
+	fn test_string_to_h256() {
+		let hash_str = "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+		let result = string_to_h256(hash_str).unwrap();
+		assert_eq!(
+			b256_to_string(result),
+			"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+		);
+
+		// Test without 0x prefix
+		let hash_str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+		let result = string_to_h256(hash_str).unwrap();
+		assert_eq!(
+			b256_to_string(result),
+			"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+		);
+
+		// Test invalid hex string
+		let result = string_to_h256("invalid_hex");
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_h160_to_string() {
+		let address_bytes = hex::decode("0123456789abcdef0123456789abcdef01234567").unwrap();
+		let address = Address::from_slice(&address_bytes);
+		let result = h160_to_string(address);
+		assert_eq!(result, "0x0123456789abcdef0123456789abcdef01234567");
+	}
+
+	#[test]
+	fn test_string_to_h160() {
+		let address_str = "0x0123456789abcdef0123456789abcdef01234567";
+		let result = string_to_h160(address_str).unwrap();
+		assert_eq!(
+			h160_to_string(result),
+			"0x0123456789abcdef0123456789abcdef01234567"
+		);
+
+		// Test without 0x prefix
+		let address_str = "0123456789abcdef0123456789abcdef01234567";
+		let result = string_to_h160(address_str).unwrap();
+		assert_eq!(
+			h160_to_string(result),
+			"0x0123456789abcdef0123456789abcdef01234567"
+		);
+
+		// Test invalid hex string
+		let result = string_to_h160("invalid_hex");
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_are_same_address() {
+		assert!(are_same_address(
+			"0x0123456789abcdef0123456789abcdef01234567",
+			"0x0123456789ABCDEF0123456789ABCDEF01234567"
+		));
+		assert!(are_same_address(
+			"0123456789abcdef0123456789abcdef01234567",
+			"0x0123456789abcdef0123456789abcdef01234567"
+		));
+		assert!(!are_same_address(
+			"0x0123456789abcdef0123456789abcdef01234567",
+			"0x0123456789abcdef0123456789abcdef01234568"
+		));
+	}
+
+	#[test]
+	fn test_normalize_address() {
+		assert_eq!(
+			normalize_address("0x0123456789ABCDEF0123456789ABCDEF01234567"),
+			"0123456789abcdef0123456789abcdef01234567"
+		);
+		assert_eq!(
+			normalize_address("0123456789ABCDEF0123456789ABCDEF01234567"),
+			"0123456789abcdef0123456789abcdef01234567"
+		);
+		assert_eq!(
+			normalize_address("0x0123456789abcdef 0123456789abcdef01234567"),
+			"0123456789abcdef0123456789abcdef01234567"
+		);
+	}
+
+	#[test]
+	fn test_are_same_signature() {
+		assert!(are_same_signature(
+			"transfer(address,uint256)",
+			"transfer(address, uint256)"
+		));
+		assert!(are_same_signature(
+			"TRANSFER(address,uint256)",
+			"transfer(address,uint256)"
+		));
+		assert!(!are_same_signature(
+			"transfer(address,uint256)",
+			"transfer(address,uint128)"
+		));
+	}
+
+	#[test]
+	fn test_normalize_signature() {
+		assert_eq!(
+			normalize_signature("transfer(address, uint256)"),
+			"transfer(address,uint256)"
+		);
+		assert_eq!(
+			normalize_signature("TRANSFER(address,uint256)"),
+			"transfer(address,uint256)"
+		);
+		assert_eq!(
+			normalize_signature("transfer (address , uint256 )"),
+			"transfer(address,uint256)"
+		);
+	}
+
+	#[test]
+	fn test_format_token_value() {
+		// Test Address
+		let address = ethabi::Address::from_slice(
+			&hex::decode("0123456789abcdef0123456789abcdef01234567").unwrap(),
+		);
+		assert_eq!(
+			format_token_value(&Token::Address(address)),
+			"0x0123456789abcdef0123456789abcdef01234567"
+		);
+
+		// Test Bytes
+		let bytes = hex::decode("0123456789").unwrap();
+		assert_eq!(
+			format_token_value(&Token::Bytes(bytes.clone())),
+			"0x0123456789"
+		);
+		assert_eq!(
+			format_token_value(&Token::FixedBytes(bytes)),
+			"0x0123456789"
+		);
+
+		// Test Numbers
+		assert_eq!(
+			format_token_value(&Token::Int(ethabi::Int::from(123))),
+			"123"
+		);
+		assert_eq!(
+			format_token_value(&Token::Uint(ethabi::Uint::from(456))),
+			"456"
+		);
+
+		// Test Bool
+		assert_eq!(format_token_value(&Token::Bool(true)), "true");
+		assert_eq!(format_token_value(&Token::Bool(false)), "false");
+
+		// Test String
+		assert_eq!(
+			format_token_value(&Token::String("test".to_string())),
+			"test"
+		);
+
+		// Test Array
+		let arr = vec![
+			Token::Uint(ethabi::Uint::from(1)),
+			Token::Uint(ethabi::Uint::from(2)),
+		];
+		assert_eq!(format_token_value(&Token::Array(arr.clone())), "[1,2]");
+		assert_eq!(format_token_value(&Token::FixedArray(arr)), "[1,2]");
+
+		// Test Tuple
+		let tuple = vec![
+			Token::String("test".to_string()),
+			Token::Uint(ethabi::Uint::from(123)),
+		];
+		assert_eq!(format_token_value(&Token::Tuple(tuple)), "(test,123)");
+	}
+}

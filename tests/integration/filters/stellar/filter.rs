@@ -16,6 +16,8 @@ use crate::integration::{
 	mocks::{MockStellarClientTrait, MockStellarTransportClient},
 };
 
+use serde_json::Value;
+
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.functions = vec![];
 	monitor.match_conditions.transactions = vec![];
@@ -719,6 +721,11 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	trigger_execution_service
 		.expect_execute()
 		.withf(|trigger_name, variables| {
+			let expected_json: Value =
+				serde_json::from_str("{\"myKey1\":1234,\"myKey2\":\"Hello, world!\"}").unwrap();
+			let actual_json: Value =
+				serde_json::from_str(variables.get("function_0_0").unwrap()).unwrap();
+
 			trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
@@ -727,7 +734,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 					== Some(&"FAKE5a3a9153e19002517935a5df291b81a341b98ccd80f0919d78cea5ed29d8".to_string())
 				// Function arguments
 				&& variables.get("function_0_signature") == Some(&"upsert_data(Map)".to_string())
-				&& variables.get("function_0_0") == Some(&"{\"\\\"myKey1\\\"\":1234,\"\\\"myKey2\\\"\":\"Hello, world!\"}".to_string())
+				&& expected_json == actual_json
 		})
 		.once()
 		.returning(|_, _| Ok(()));

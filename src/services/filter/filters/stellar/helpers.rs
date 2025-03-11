@@ -4,6 +4,7 @@
 //! and formatting, including address normalization, XDR value parsing, and
 //! operation processing.
 
+use alloy::primitives::{I256, U256};
 use hex::encode;
 use log::debug;
 use serde_json::{json, Value};
@@ -23,29 +24,33 @@ use crate::models::{StellarDecodedParamEntry, StellarParsedOperationResult};
 /// # Returns
 /// A string representation of the combined 256-bit unsigned integer
 fn combine_u256(n: &UInt256Parts) -> String {
-	(
-		((n.hi_hi as u128) << 64) | // Shift hi_hi left by 64 bits
-        ((n.hi_lo as u128) << 64) | // Shift hi_lo left by 64 bits
-        ((n.lo_hi as u128) << 64) |   // Shift lo_hi left by 64 bits
-        (n.lo_lo as u128)
-		// Add lo_lo
-	)
-		.to_string() // Combine all parts into a single u256 value
+	let result = U256::from_limbs([n.lo_lo, n.lo_hi, n.hi_lo, n.hi_hi]);
+	result.to_string()
 }
 
 /// Combines the parts of an Int256 into a single string representation.
+/// Note: hi_hi is signed (i64) while other components are unsigned (u64)
 ///
 /// # Arguments
-/// * `n` - The Int256Parts containing the 4 64-bit components
+/// * `n` - The Int256Parts containing the signed hi_hi and 3 unsigned components
 ///
 /// # Returns
 /// A string representation of the combined 256-bit signed integer
 fn combine_i256(n: &Int256Parts) -> String {
-	(((n.hi_hi as i128) << 64)
-		| ((n.hi_lo as i128) << 64)
-		| ((n.lo_hi as i128) << 64)
-		| (n.lo_lo as i128))
-		.to_string()
+	// First create unsigned value from the limbs
+	let unsigned = U256::from_limbs([n.lo_lo, n.lo_hi, n.hi_lo, n.hi_hi as u64]);
+
+	// If hi_hi is negative, we need to handle the sign
+	if n.hi_hi < 0 {
+		// Create I256 and negate if necessary
+		let signed = I256::from_raw(unsigned);
+		// If hi_hi was negative, we need to adjust the value
+		// by subtracting 2^256 from it
+		(-signed).to_string()
+	} else {
+		// If hi_hi was non-negative, we can use the unsigned value directly
+		I256::from_raw(unsigned).to_string()
+	}
 }
 
 /// Combines the parts of a UInt128 into a single string representation.
@@ -131,7 +136,10 @@ fn process_sc_map(map: &ScMap) -> Value {
 		.0
 		.iter()
 		.map(|ScMapEntry { key, val }| {
-			let key_str = process_sc_val(key).to_string();
+			let key_str = process_sc_val(key)
+				.to_string()
+				.trim_matches('"')
+				.to_string();
 			(key_str, process_sc_val(val))
 		})
 		.collect();
@@ -527,5 +535,239 @@ pub fn get_kind_from_value(value: &Value) -> String {
 		Value::Array(_) => "Vec".to_string(),
 		Value::Object(_) => "Map".to_string(),
 		Value::Null => "Null".to_string(),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::str::FromStr;
+
+	use super::*;
+	use serde_json::json;
+	use stellar_xdr::curr::{Hash, ScString, ScSymbol, StringM};
+
+	#[test]
+	fn test_combine_number_functions() {
+		// Test U256
+		let u256 = UInt256Parts {
+			hi_hi: 1,
+			hi_lo: 2,
+			lo_hi: 3,
+			lo_lo: 4,
+		};
+		assert_eq!(
+			combine_u256(&u256),
+			"6277101735386680764516354157049543343084444891548699590660"
+		);
+
+		// Test I256
+		let i256 = Int256Parts {
+			hi_hi: 1,
+			hi_lo: 2,
+			lo_hi: 3,
+			lo_lo: 4,
+		};
+		assert_eq!(
+			combine_i256(&i256),
+			"6277101735386680764516354157049543343084444891548699590660"
+		);
+
+		// Test U128
+		let u128 = UInt128Parts { hi: 1, lo: 2 };
+		assert_eq!(combine_u128(&u128), "18446744073709551618");
+
+		// Test I128
+		let i128 = Int128Parts { hi: 1, lo: 2 };
+		assert_eq!(combine_i128(&i128), "18446744073709551618");
+	}
+
+	#[test]
+	fn test_process_sc_val() {
+		// Test basic types
+		assert_eq!(process_sc_val(&ScVal::Bool(true)), json!(true));
+		assert_eq!(process_sc_val(&ScVal::Void), json!(null));
+		assert_eq!(process_sc_val(&ScVal::U32(42)), json!(42));
+		assert_eq!(process_sc_val(&ScVal::I32(-42)), json!(-42));
+		assert_eq!(process_sc_val(&ScVal::U64(42)), json!(42));
+		assert_eq!(process_sc_val(&ScVal::I64(-42)), json!(-42));
+
+		// Test string and symbol
+		assert_eq!(
+			process_sc_val(&ScVal::String(ScString("test".try_into().unwrap()))),
+			json!("test")
+		);
+		assert_eq!(
+			process_sc_val(&ScVal::Symbol(ScSymbol(StringM::from_str("test").unwrap()))),
+			json!("test")
+		);
+
+		// Test bytes
+		assert_eq!(
+			process_sc_val(&ScVal::Bytes(vec![1, 2, 3].try_into().unwrap())),
+			json!("010203")
+		);
+
+		// Test complex types (Vec and Map)
+		let vec_val = ScVal::Vec(Some(ScVec(
+			vec![ScVal::I32(1), ScVal::I32(2), ScVal::I32(3)]
+				.try_into()
+				.unwrap(),
+		)));
+		assert_eq!(process_sc_val(&vec_val), json!([1, 2, 3]));
+
+		let map_entry = ScMapEntry {
+			key: ScVal::String(ScString("key".try_into().unwrap())),
+			val: ScVal::I32(42),
+		};
+		let map_val = ScVal::Map(Some(ScMap(vec![map_entry].try_into().unwrap())));
+		assert_eq!(process_sc_val(&map_val), json!({"key": 42}));
+	}
+
+	#[test]
+	fn test_get_function_signature() {
+		let function_name: String = "test_function".into();
+		let args = vec![
+			ScVal::I32(1),
+			ScVal::String(ScString("test".try_into().unwrap())),
+			ScVal::Bool(true),
+		];
+		let invoke_op = InvokeHostFunctionOp {
+			host_function: HostFunction::InvokeContract(stellar_xdr::curr::InvokeContractArgs {
+				contract_address: ScAddress::Contract(Hash([0; 32])),
+				function_name: function_name.clone().try_into().unwrap(),
+				args: args.try_into().unwrap(),
+			}),
+			auth: vec![].try_into().unwrap(),
+		};
+
+		assert_eq!(
+			get_function_signature(&invoke_op),
+			"test_function(I32,String,Bool)"
+		);
+	}
+
+	#[test]
+	fn test_address_functions() {
+		// Test address validation
+		let valid_ed25519 = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+		let valid_contract = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+		let invalid_address = "invalid_address";
+
+		assert!(is_address(valid_ed25519));
+		assert!(is_address(valid_contract));
+		assert!(!is_address(invalid_address));
+
+		// Test address comparison
+		assert!(are_same_address(
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI",
+			"gbzxn7pirzgnmhga7muuuf4gwpy5aypv6ly4uv2gl6vjgiqrxfdnmadi"
+		));
+		assert!(!are_same_address(valid_ed25519, valid_contract));
+
+		// Test address normalization
+		assert_eq!(
+			normalize_address(" GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI "),
+			"gbzxn7pirzgnmhga7muuuf4gwpy5aypv6ly4uv2gl6vjgiqrxfdnmadi"
+		);
+	}
+
+	#[test]
+	fn test_signature_functions() {
+		// Test signature comparison
+		assert!(are_same_signature(
+			"test_function(int32)",
+			"test_function( int32 )"
+		));
+		assert!(!are_same_signature(
+			"test_function(int32)",
+			"test_function(int64)"
+		));
+
+		// Test signature normalization
+		assert_eq!(
+			normalize_signature(" test_function( int32 ) "),
+			"test_function(int32)"
+		);
+	}
+
+	#[test]
+	fn test_parse_sc_val() {
+		// Test basic types
+		let bool_val = parse_sc_val(&ScVal::Bool(true), false).unwrap();
+		assert_eq!(bool_val.kind, "Bool");
+		assert_eq!(bool_val.value, "true");
+
+		let int_val = parse_sc_val(&ScVal::I32(-42), true).unwrap();
+		assert_eq!(int_val.kind, "I32");
+		assert_eq!(int_val.value, "-42");
+		assert!(int_val.indexed);
+
+		// Test complex types
+		let bytes_val =
+			parse_sc_val(&ScVal::Bytes(vec![1, 2, 3].try_into().unwrap()), false).unwrap();
+		assert_eq!(bytes_val.kind, "Bytes");
+		assert_eq!(bytes_val.value, "010203");
+
+		let string_val =
+			parse_sc_val(&ScVal::String(ScString("test".try_into().unwrap())), false).unwrap();
+		assert_eq!(string_val.kind, "String");
+		assert_eq!(string_val.value, "test");
+	}
+
+	#[test]
+	fn test_json_helper_functions() {
+		// Test parse_json_safe
+		assert!(parse_json_safe("invalid json").is_none());
+		assert_eq!(
+			parse_json_safe(r#"{"key": "value"}"#).unwrap(),
+			json!({"key": "value"})
+		);
+
+		// Test get_nested_value
+		let json_obj = json!({
+			"user": {
+				"address": {
+					"street": "123 Main St"
+				}
+			}
+		});
+		assert_eq!(
+			get_nested_value(&json_obj, "user.address.street").unwrap(),
+			&json!("123 Main St")
+		);
+		assert!(get_nested_value(&json_obj, "invalid.path").is_none());
+
+		// Test string comparison functions
+		assert!(compare_strings("test", "==", "test"));
+		assert!(compare_strings("test", "!=", "other"));
+		assert!(!compare_strings("test", "invalid", "test"));
+
+		// Test JSON value comparison functions
+		assert!(compare_json_values(&json!(42), "==", &json!(42)));
+		assert!(compare_json_values(&json!(42), ">", &json!(30)));
+		assert!(!compare_json_values(&json!(42), "<", &json!(30)));
+		assert!(!compare_json_values(
+			&json!("test"),
+			"invalid",
+			&json!("test")
+		));
+	}
+
+	#[test]
+	fn test_get_kind_from_value() {
+		assert_eq!(get_kind_from_value(&json!(-42)), "I64");
+		assert_eq!(get_kind_from_value(&json!(42)), "U64");
+		assert_eq!(get_kind_from_value(&json!(42.5)), "F64");
+		assert_eq!(get_kind_from_value(&json!(true)), "Bool");
+		assert_eq!(get_kind_from_value(&json!("test")), "String");
+		assert_eq!(
+			get_kind_from_value(&json!(
+				"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+			)),
+			"Address"
+		);
+		assert_eq!(get_kind_from_value(&json!([1, 2, 3])), "Vec");
+		assert_eq!(get_kind_from_value(&json!({"key": "value"})), "Map");
+		assert_eq!(get_kind_from_value(&json!(null)), "Null");
 	}
 }
