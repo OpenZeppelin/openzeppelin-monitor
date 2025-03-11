@@ -125,8 +125,8 @@ The retry mechanism is implemented at two levels:
 +
 [source,rust]
 ----
-pub struct Web3TransportClient {
-  client: Arc<RwLock<Web3<Http>>>,
+pub struct AlloyTransportClient {
+  client: Arc<RwLock<RpcClient>>,
   endpoint_manager: EndpointManager,
   retry_policy: ExponentialBackoff,
 }

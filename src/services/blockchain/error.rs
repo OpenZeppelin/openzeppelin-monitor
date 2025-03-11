@@ -96,13 +96,6 @@ impl std::fmt::Display for BlockChainError {
 
 impl std::error::Error for BlockChainError {}
 
-/// Conversion from Web3 errors to BlockChainError
-impl From<web3::Error> for BlockChainError {
-	fn from(err: web3::Error) -> Self {
-		Self::request_error(err.to_string())
-	}
-}
-
 /// Conversion from BlockChainError to BlockWatcherError
 impl From<BlockChainError> for BlockWatcherError {
 	fn from(err: BlockChainError) -> Self {

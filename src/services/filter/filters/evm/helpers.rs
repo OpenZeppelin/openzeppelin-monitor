@@ -4,8 +4,8 @@
 //! and formatting, including address and hash conversions, signature normalization,
 //! and token value formatting.
 
-use ethabi::Token;
-use web3::types::{H160, H256};
+use alloy::primitives::{Address, B256};
+use ethabi::{Hash, Token};
 
 /// Converts an H256 hash to its hexadecimal string representation.
 ///
@@ -14,8 +14,19 @@ use web3::types::{H160, H256};
 ///
 /// # Returns
 /// A string in the format "0x..." representing the hash
-pub fn h256_to_string(hash: H256) -> String {
+pub fn h256_to_string(hash: Hash) -> String {
 	format!("0x{}", hex::encode(hash.as_bytes()))
+}
+
+/// Converts an B256 hash to its hexadecimal string representation.
+///
+/// # Arguments
+/// * `hash` - The B256 hash to convert
+///
+/// # Returns
+/// A string in the format "0x..." representing the hash
+pub fn b256_to_string(hash: B256) -> String {
+	format!("0x{}", hex::encode(hash.as_slice()))
 }
 
 /// Converts a hexadecimal string to an H256 hash.
@@ -28,10 +39,10 @@ pub fn h256_to_string(hash: H256) -> String {
 ///
 /// # Errors
 /// Returns an error if the input string is not valid hexadecimal
-pub fn string_to_h256(hash_string: &str) -> Result<H256, Box<dyn std::error::Error>> {
+pub fn string_to_h256(hash_string: &str) -> Result<B256, Box<dyn std::error::Error>> {
 	let hash_without_prefix = hash_string.strip_prefix("0x").unwrap_or(hash_string);
 	let hash_bytes = hex::decode(hash_without_prefix)?;
-	Ok(H256::from_slice(&hash_bytes))
+	Ok(B256::from_slice(&hash_bytes))
 }
 
 /// Converts an H160 address to its hexadecimal string representation.
@@ -41,8 +52,8 @@ pub fn string_to_h256(hash_string: &str) -> Result<H256, Box<dyn std::error::Err
 ///
 /// # Returns
 /// A string in the format "0x..." representing the address
-pub fn h160_to_string(address: H160) -> String {
-	format!("0x{}", hex::encode(address.as_bytes()))
+pub fn h160_to_string(address: Address) -> String {
+	format!("0x{}", hex::encode(address.as_slice()))
 }
 
 /// Converts a hexadecimal string to an H160 address.
@@ -55,10 +66,10 @@ pub fn h160_to_string(address: H160) -> String {
 ///
 /// # Errors
 /// Returns an error if the input string is not valid hexadecimal
-pub fn string_to_h160(address_string: &str) -> Result<H160, Box<dyn std::error::Error>> {
+pub fn string_to_h160(address_string: &str) -> Result<Address, Box<dyn std::error::Error>> {
 	let address_without_prefix = address_string.strip_prefix("0x").unwrap_or(address_string);
 	let address_bytes = hex::decode(address_without_prefix)?;
-	Ok(H160::from_slice(&address_bytes))
+	Ok(Address::from_slice(&address_bytes))
 }
 
 /// Compares two addresses for equality, ignoring case and "0x" prefixes.

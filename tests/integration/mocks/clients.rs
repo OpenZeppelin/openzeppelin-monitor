@@ -12,7 +12,9 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use openzeppelin_monitor::{
-	models::{BlockType, Network, StellarEvent, StellarTransaction},
+	models::{
+		BlockType, EVMReceiptLog, EVMTransactionReceipt, Network, StellarEvent, StellarTransaction,
+	},
 	services::{
 		blockchain::{
 			BlockChainClient, BlockChainError, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
@@ -25,7 +27,7 @@ use openzeppelin_monitor::{
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
 
-use super::{MockStellarTransportClient, MockWeb3TransportClient};
+use super::{MockAlloyTransportClient, MockStellarTransportClient};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -51,13 +53,13 @@ mock! {
 		async fn get_transaction_receipt(
 			&self,
 			transaction_hash: String,
-		) -> Result<web3::types::TransactionReceipt, BlockChainError>;
+		) -> Result<EVMTransactionReceipt, BlockChainError>;
 
 		async fn get_logs_for_blocks(
 			&self,
 			from_block: u64,
 			to_block: u64,
-		) -> Result<Vec<web3::types::Log>, BlockChainError>;
+		) -> Result<Vec<EVMReceiptLog>, BlockChainError>;
 	}
 
 	impl<T: Send + Sync + Clone + 'static> Clone for EvmClientTrait<T> {
@@ -136,9 +138,9 @@ mock! {
 
 	#[async_trait]
 	impl ClientPoolTrait for ClientPool {
-		type EvmClient = MockEvmClientTrait<MockWeb3TransportClient>;
+		type EvmClient = MockEvmClientTrait<MockAlloyTransportClient>;
 		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
-		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockWeb3TransportClient>>, BlockChainError>;
+		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockAlloyTransportClient>>, BlockChainError>;
 		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>, BlockChainError>;
 	}
 

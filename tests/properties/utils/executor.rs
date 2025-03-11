@@ -101,7 +101,7 @@ proptest! {
 	) {
 		let output_str = format!("{}{}{}",
 			spaces_before,
-			value.to_string(),
+			value,
 			spaces_after
 		);
 

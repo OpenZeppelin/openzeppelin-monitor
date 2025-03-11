@@ -3,8 +3,8 @@ use mockall::predicate;
 use std::sync::Arc;
 
 use crate::integration::mocks::{
-	create_test_block, create_test_network, MockBlockStorage, MockBlockTracker, MockEvmClientTrait,
-	MockWeb3TransportClient,
+	create_test_block, create_test_network, MockAlloyTransportClient, MockBlockStorage,
+	MockBlockTracker, MockEvmClientTrait,
 };
 use openzeppelin_monitor::{
 	models::{BlockChainType, BlockType, Network, ProcessedBlock},
@@ -30,7 +30,7 @@ fn setup_mocks(
 ) -> (
 	Arc<MockBlockStorage>,
 	MockBlockTracker<MockBlockStorage>,
-	MockEvmClientTrait<MockWeb3TransportClient>,
+	MockEvmClientTrait<MockAlloyTransportClient>,
 ) {
 	// Setup mock block storage
 	let mut block_storage = MockBlockStorage::new();

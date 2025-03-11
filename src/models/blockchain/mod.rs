@@ -46,6 +46,15 @@ impl BlockType {
 	}
 }
 
+/// Transaction data from different blockchain platforms
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TransactionType {
+	/// EVM transaction
+	EVM(evm::EVMTransaction),
+	/// Stellar transaction
+	Stellar(stellar::StellarTransaction),
+}
+
 /// Monitor match results from different blockchain platforms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorMatch {

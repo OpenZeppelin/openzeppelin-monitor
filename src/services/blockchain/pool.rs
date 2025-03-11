@@ -13,8 +13,8 @@
 use crate::{
 	models::{BlockChainType, Network},
 	services::blockchain::{
-		BlockChainClient, BlockChainError, BlockFilterFactory, EvmClient, EvmClientTrait,
-		StellarClient, StellarClientTrait, StellarTransportClient, Web3TransportClient,
+		AlloyTransportClient, BlockChainClient, BlockChainError, BlockFilterFactory, EvmClient,
+		EvmClientTrait, StellarClient, StellarClientTrait, StellarTransportClient,
 	},
 };
 use async_trait::async_trait;
@@ -76,7 +76,7 @@ impl ClientPool {
 		};
 
 		// Register client types
-		pool.register_client_type::<EvmClient<Web3TransportClient>>(BlockChainType::EVM);
+		pool.register_client_type::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM);
 		pool.register_client_type::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar);
 
 		pool
@@ -134,7 +134,7 @@ impl ClientPool {
 
 #[async_trait]
 impl ClientPoolTrait for ClientPool {
-	type EvmClient = EvmClient<Web3TransportClient>;
+	type EvmClient = EvmClient<AlloyTransportClient>;
 	type StellarClient = StellarClient<StellarTransportClient>;
 
 	/// Gets or creates an EVM client for the given network.

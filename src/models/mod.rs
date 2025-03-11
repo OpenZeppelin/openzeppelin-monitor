@@ -11,11 +11,11 @@ mod config;
 mod core;
 
 // Re-export blockchain types
-pub use blockchain::{BlockChainType, BlockType, MonitorMatch, ProcessedBlock};
+pub use blockchain::{BlockChainType, BlockType, MonitorMatch, ProcessedBlock, TransactionType};
 
 pub use blockchain::evm::{
-	EVMBlock, EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch,
-	EVMTransaction,
+	EVMBaseTransaction, EVMBlock, EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap,
+	EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt,
 };
 
 pub use blockchain::stellar::{

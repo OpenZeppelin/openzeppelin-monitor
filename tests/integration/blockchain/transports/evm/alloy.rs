@@ -1,28 +1,20 @@
-use mockito::{Mock, Server};
+use mockito::Server;
 use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, BlockchainTransport, RotatingTransport, Web3TransportClient,
+	AlloyTransportClient, BlockChainError, BlockchainTransport, RotatingTransport,
 };
 use serde_json::{json, Value};
 
-use crate::integration::mocks::create_evm_test_network_with_urls;
-
-fn create_valid_server_mock_network_response(server: &mut Server) -> Mock {
-	server
-		.mock("POST", "/")
-		.match_body(r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id":0}"#)
-		.with_header("content-type", "application/json")
-		.with_status(200)
-		.with_body(r#"{"jsonrpc":"2.0","result":"1","id":0}"#)
-		.create()
-}
+use crate::integration::mocks::{
+	create_evm_test_network_with_urls, create_evm_valid_server_mock_network_response,
+};
 
 #[tokio::test]
 async fn test_client_creation() {
 	let mut server = Server::new_async().await;
-	let mock = create_valid_server_mock_network_response(&mut server);
+	let mock = create_evm_valid_server_mock_network_response(&mut server);
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
 
-	match Web3TransportClient::new(&network).await {
+	match AlloyTransportClient::new(&network).await {
 		Ok(transport) => {
 			let active_url = transport.get_current_url().await;
 			assert_eq!(active_url, server.url());
@@ -33,7 +25,7 @@ async fn test_client_creation() {
 
 	let network = create_evm_test_network_with_urls(vec!["invalid-url"]);
 
-	match Web3TransportClient::new(&network).await {
+	match AlloyTransportClient::new(&network).await {
 		Err(BlockChainError::ConnectionError(msg)) => {
 			assert_eq!(msg, "All RPC URLs failed to connect");
 		}
@@ -50,16 +42,16 @@ async fn test_client_creation_with_fallback() {
 
 	let mock = server
 		.mock("POST", "/")
-		.match_body(r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id":0}"#)
+		.match_body(r#"{"method":"net_version","id":0,"jsonrpc":"2.0"}"#)
 		.with_header("content-type", "application/json")
-		.with_status(500) // Simulate a failed request
+		.with_status(500)
 		.create();
 
-	let mock2 = create_valid_server_mock_network_response(&mut server2);
+	let mock2 = create_evm_valid_server_mock_network_response(&mut server2);
 
 	let network = create_evm_test_network_with_urls(vec![&server.url(), &server2.url()]);
 
-	match Web3TransportClient::new(&network).await {
+	match AlloyTransportClient::new(&network).await {
 		Ok(transport) => {
 			let active_url = transport.get_current_url().await;
 			assert_eq!(active_url, server2.url());
@@ -75,10 +67,10 @@ async fn test_client_update_client() {
 	let mut server = Server::new_async().await;
 	let server2 = Server::new_async().await;
 
-	let mock1 = create_valid_server_mock_network_response(&mut server);
+	let mock1 = create_evm_valid_server_mock_network_response(&mut server);
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let client = Web3TransportClient::new(&network).await.unwrap();
+	let client = AlloyTransportClient::new(&network).await.unwrap();
 
 	// Test successful update
 	let result = client.update_client(&server2.url()).await;
@@ -90,7 +82,7 @@ async fn test_client_update_client() {
 	assert!(result.is_err(), "Update with invalid URL should fail");
 	match result {
 		Err(BlockChainError::ConnectionError(msg)) => {
-			assert_eq!(msg, "Failed to create client");
+			assert_eq!(msg, "Invalid URL");
 		}
 		_ => panic!("Expected ConnectionError"),
 	}
@@ -103,11 +95,11 @@ async fn test_client_try_connect() {
 	let mut server = Server::new_async().await;
 	let mut server2 = Server::new_async().await;
 	let server3 = Server::new_async().await;
-	let mock = create_valid_server_mock_network_response(&mut server);
-	let mock2 = create_valid_server_mock_network_response(&mut server2);
+	let mock = create_evm_valid_server_mock_network_response(&mut server);
+	let mock2 = create_evm_valid_server_mock_network_response(&mut server2);
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let client = Web3TransportClient::new(&network).await.unwrap();
+	let client = AlloyTransportClient::new(&network).await.unwrap();
 
 	let result = client.try_connect(&server2.url()).await;
 	assert!(result.is_ok(), "Try connect should succeed");
@@ -139,7 +131,7 @@ async fn test_send_raw_request() {
 	let mut server = Server::new_async().await;
 
 	// First, set up the network verification mock that's called during client creation
-	let network_mock = create_valid_server_mock_network_response(&mut server);
+	let network_mock = create_evm_valid_server_mock_network_response(&mut server);
 
 	// Then set up the test request mock with the correct field order
 	let test_mock = server
@@ -151,7 +143,7 @@ async fn test_send_raw_request() {
 		.create();
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let client = Web3TransportClient::new(&network).await.unwrap();
+	let client = AlloyTransportClient::new(&network).await.unwrap();
 
 	// Test with params
 	let params = json!({"key": "value"});

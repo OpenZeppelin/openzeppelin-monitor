@@ -1,11 +1,14 @@
+use alloy::{
+	primitives::{Address, U64},
+	rpc::types::Index,
+};
 use mockall::predicate;
 use openzeppelin_monitor::services::blockchain::{
 	BlockChainClient, BlockChainError, EvmClient, EvmClientTrait,
 };
 use serde_json::{json, Value};
-use web3::types::H160;
 
-use crate::integration::mocks::MockWeb3TransportClient;
+use crate::integration::mocks::MockAlloyTransportClient;
 
 fn create_mock_block(number: u64) -> Value {
 	json!({
@@ -36,7 +39,7 @@ fn create_mock_block(number: u64) -> Value {
 
 #[tokio::test]
 async fn test_get_logs_for_blocks_implementation() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Expected request parameters
 	let expected_params = json!([{
@@ -60,7 +63,7 @@ async fn test_get_logs_for_blocks_implementation() {
 		}]
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.with(
 			predicate::eq("eth_getLogs"),
@@ -68,24 +71,24 @@ async fn test_get_logs_for_blocks_implementation() {
 		)
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_ok());
 	let logs = result.unwrap();
 	assert_eq!(logs.len(), 1);
-	assert_eq!(logs[0].block_number.unwrap().as_u64(), 1);
+	assert_eq!(logs[0].block_number.unwrap(), U64::from(1));
 	assert_eq!(
 		logs[0].address,
 		"0x1234567890123456789012345678901234567890"
-			.parse::<H160>()
+			.parse::<Address>()
 			.unwrap()
 	);
 }
 
 #[tokio::test]
 async fn test_get_logs_for_blocks_missing_result() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response without result field
 	let mock_response = json!({
@@ -93,11 +96,11 @@ async fn test_get_logs_for_blocks_missing_result() {
 		"jsonrpc": "2.0"
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
@@ -109,7 +112,7 @@ async fn test_get_logs_for_blocks_missing_result() {
 
 #[tokio::test]
 async fn test_get_logs_for_blocks_invalid_format() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response with invalid log format
 	let mock_response = json!({
@@ -118,11 +121,11 @@ async fn test_get_logs_for_blocks_invalid_format() {
 		}]
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
@@ -133,16 +136,16 @@ async fn test_get_logs_for_blocks_invalid_format() {
 }
 
 #[tokio::test]
-async fn test_get_logs_for_blocks_web3_error() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+async fn test_get_logs_for_blocks_alloy_error() {
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(|_: &str, _: Option<Vec<Value>>| {
-			Err(BlockChainError::RequestError("Web3 error".into()))
+			Err(BlockChainError::RequestError("Alloy error".into()))
 		});
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client.get_logs_for_blocks(1, 10).await;
 
 	assert!(result.is_err());
@@ -150,7 +153,7 @@ async fn test_get_logs_for_blocks_web3_error() {
 
 #[tokio::test]
 async fn test_get_transaction_receipt_success() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Expected request parameters for a transaction hash
 	let expected_params =
@@ -176,7 +179,7 @@ async fn test_get_transaction_receipt_success() {
 		}
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.with(
 			predicate::eq("eth_getTransactionReceipt"),
@@ -184,7 +187,7 @@ async fn test_get_transaction_receipt_success() {
 		)
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -193,24 +196,24 @@ async fn test_get_transaction_receipt_success() {
 
 	assert!(result.is_ok());
 	let receipt = result.unwrap();
-	assert_eq!(receipt.block_number.unwrap().as_u64(), 1);
-	assert_eq!(receipt.transaction_index.as_u64(), 1);
+	assert_eq!(receipt.block_number.unwrap(), U64::from(1));
+	assert_eq!(receipt.transaction_index, Index::from(1));
 }
 
 #[tokio::test]
 async fn test_get_transaction_receipt_not_found() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response for a non-existent transaction
 	let mock_response = json!({
 		"result": null
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -228,10 +231,10 @@ async fn test_get_transaction_receipt_not_found() {
 
 #[tokio::test]
 async fn test_get_transaction_receipt_invalid_hash() {
-	let mock_web3 = MockWeb3TransportClient::new();
+	let mock_alloy = MockAlloyTransportClient::new();
 	// We don't need to mock any response since the validation will fail before making the
 	// request
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 
 	// Test with an invalid hash format
 	let result = client
@@ -250,7 +253,7 @@ async fn test_get_transaction_receipt_invalid_hash() {
 
 #[tokio::test]
 async fn test_get_transaction_receipt_missing_result() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response without result field
 	let mock_response = json!({
@@ -258,11 +261,11 @@ async fn test_get_transaction_receipt_missing_result() {
 		"jsonrpc": "2.0"
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -280,7 +283,7 @@ async fn test_get_transaction_receipt_missing_result() {
 
 #[tokio::test]
 async fn test_get_transaction_receipt_parse_failure() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response with malformed receipt data
 	let mock_response = json!({
@@ -291,11 +294,11 @@ async fn test_get_transaction_receipt_parse_failure() {
 		}
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client
 		.get_transaction_receipt(
 			"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
@@ -313,19 +316,19 @@ async fn test_get_transaction_receipt_parse_failure() {
 
 #[tokio::test]
 async fn test_get_latest_block_number_success() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response with a block number
 	let mock_response = json!({
 		"result": "0x1234"
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.with(predicate::eq("eth_blockNumber"), predicate::always())
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_ok());
@@ -334,18 +337,18 @@ async fn test_get_latest_block_number_success() {
 
 #[tokio::test]
 async fn test_get_latest_block_number_invalid_response() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response with invalid format
 	let mock_response = json!({
 		"result": "invalid_hex"
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -357,7 +360,7 @@ async fn test_get_latest_block_number_invalid_response() {
 
 #[tokio::test]
 async fn test_get_latest_block_number_missing_result() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response without result field
 	let mock_response = json!({
@@ -365,12 +368,12 @@ async fn test_get_latest_block_number_missing_result() {
 		"jsonrpc": "2.0"
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.with(predicate::eq("eth_blockNumber"), predicate::always())
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -384,7 +387,7 @@ async fn test_get_latest_block_number_missing_result() {
 
 #[tokio::test]
 async fn test_get_single_block() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock successful block response
 	let mock_response = json!({
@@ -393,7 +396,7 @@ async fn test_get_single_block() {
 		"result": create_mock_block(1)
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.with(
 			predicate::eq("eth_getBlockByNumber"),
@@ -404,7 +407,7 @@ async fn test_get_single_block() {
 		)
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_ok());
@@ -414,9 +417,9 @@ async fn test_get_single_block() {
 
 #[tokio::test]
 async fn test_get_multiple_blocks() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 	// Expect calls for blocks 1, 2, and 3
-	mock_web3.expect_send_raw_request().times(3).returning(
+	mock_alloy.expect_send_raw_request().times(3).returning(
 		move |_: &str, params: Option<Vec<Value>>| {
 			let block_num = u64::from_str_radix(
 				params.as_ref().unwrap()[0]
@@ -434,7 +437,7 @@ async fn test_get_multiple_blocks() {
 		},
 	);
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 
 	let result = client.get_blocks(1, Some(3)).await;
 	assert!(result.is_ok());
@@ -444,7 +447,7 @@ async fn test_get_multiple_blocks() {
 
 #[tokio::test]
 async fn test_get_blocks_missing_result() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response without result field
 	let mock_response = json!({
@@ -452,11 +455,11 @@ async fn test_get_blocks_missing_result() {
 		"id": 1
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
@@ -470,7 +473,7 @@ async fn test_get_blocks_missing_result() {
 
 #[tokio::test]
 async fn test_get_blocks_null_result() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response with null result
 	let mock_response = json!({
@@ -479,11 +482,11 @@ async fn test_get_blocks_null_result() {
 		"result": null
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
@@ -497,7 +500,7 @@ async fn test_get_blocks_null_result() {
 
 #[tokio::test]
 async fn test_get_blocks_parse_failure() {
-	let mut mock_web3 = MockWeb3TransportClient::new();
+	let mut mock_alloy = MockAlloyTransportClient::new();
 
 	// Mock response with malformed block data
 	let mock_response = json!({
@@ -510,11 +513,11 @@ async fn test_get_blocks_parse_failure() {
 		}
 	});
 
-	mock_web3
+	mock_alloy
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-	let client = EvmClient::<MockWeb3TransportClient>::new_with_transport(mock_web3);
+	let client = EvmClient::<MockAlloyTransportClient>::new_with_transport(mock_alloy);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());

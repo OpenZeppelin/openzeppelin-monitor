@@ -40,8 +40,8 @@ mod integration {
 		}
 		mod transports {
 			mod evm {
+				mod alloy;
 				mod transport;
-				mod web3;
 			}
 			mod stellar {
 				mod horizon;

@@ -292,7 +292,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 				}
 			});
 
-			// TODO: Replace this once the SDK is updated with `get_ledgers`
 			let response = self
 				.stellar_client
 				.send_raw_request("getLedgers", Some(params))

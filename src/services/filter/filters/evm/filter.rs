@@ -7,25 +7,26 @@
 //! - Event log processing and filtering
 //! - ABI-based decoding of function calls and events
 
+use alloy::primitives::U64;
 use async_trait::async_trait;
 use ethabi::Contract;
 use log::{debug, warn};
 use serde_json::Value;
 use std::{marker::PhantomData, str::FromStr};
-use web3::types::{Log, Transaction, TransactionReceipt, U64};
 
 use crate::{
 	models::{
 		AddressWithABI, BlockType, EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap,
-		EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition, MatchConditions,
-		Monitor, MonitorMatch, Network, TransactionCondition, TransactionStatus,
+		EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt, EventCondition,
+		FunctionCondition, MatchConditions, Monitor, MonitorMatch, Network, TransactionCondition,
+		TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, EvmClientTrait},
 		filter::{
 			evm_helpers::{
-				are_same_address, are_same_signature, format_token_value, h160_to_string,
-				h256_to_string, normalize_address,
+				are_same_address, are_same_signature, b256_to_string, format_token_value,
+				h160_to_string, h256_to_string, normalize_address,
 			},
 			BlockFilter, FilterError,
 		},
@@ -49,7 +50,7 @@ impl<T> EVMBlockFilter<T> {
 	pub fn find_matching_transaction(
 		&self,
 		tx_status: &TransactionStatus,
-		transaction: &Transaction,
+		transaction: &EVMTransaction,
 		monitor: &Monitor,
 		matched_transactions: &mut Vec<TransactionCondition>,
 	) {
@@ -91,7 +92,7 @@ impl<T> EVMBlockFilter<T> {
 							},
 							EVMMatchParamEntry {
 								name: "hash".to_string(),
-								value: h256_to_string(transaction.hash),
+								value: b256_to_string(transaction.hash),
 								kind: "string".to_string(),
 								indexed: false,
 							},
@@ -129,7 +130,7 @@ impl<T> EVMBlockFilter<T> {
 	/// * `matched_on_args` - Arguments from matched function calls
 	pub fn find_matching_functions_for_transaction(
 		&self,
-		transaction: &Transaction,
+		transaction: &EVMTransaction,
 		monitor: &Monitor,
 		matched_functions: &mut Vec<FunctionCondition>,
 		matched_on_args: &mut EVMMatchArguments,
@@ -259,7 +260,7 @@ impl<T> EVMBlockFilter<T> {
 	/// * `involved_addresses` - Addresses involved in matched events
 	pub async fn find_matching_events_for_transaction(
 		&self,
-		receipt: &TransactionReceipt,
+		receipt: &EVMTransactionReceipt,
 		monitor: &Monitor,
 		matched_events: &mut Vec<EventCondition>,
 		matched_on_args: &mut EVMMatchArguments,
@@ -444,7 +445,11 @@ impl<T> EVMBlockFilter<T> {
 	///
 	/// # Returns
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
-	pub async fn decode_events(&self, abi: &Value, log: &Log) -> Option<EVMMatchParamsMap> {
+	pub async fn decode_events(
+		&self,
+		abi: &Value,
+		log: &EVMReceiptLog,
+	) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = Contract::load(abi.to_string().as_bytes())
 			.map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
@@ -452,10 +457,17 @@ impl<T> EVMBlockFilter<T> {
 
 		let decoded_log = contract
 			.events()
-			.find(|event| event.signature() == log.topics[0])
+			.find(|event| h256_to_string(event.signature()) == b256_to_string(log.topics[0]))
 			.and_then(|event| {
 				event
-					.parse_log((log.topics.clone(), log.data.0.clone()).into())
+					.parse_log(ethabi::RawLog {
+						topics: log
+							.topics
+							.iter()
+							.map(|t| ethabi::Hash::from_slice(t.as_slice()))
+							.collect(),
+						data: log.data.0.to_vec(),
+					})
 					.ok()
 					.map(|parsed| {
 						let event_params_map = EVMMatchParamsMap {
@@ -536,7 +548,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			.transactions
 			.iter()
 			.map(|transaction| {
-				let tx_hash = h256_to_string(transaction.hash);
+				let tx_hash = b256_to_string(transaction.hash);
 				client.get_transaction_receipt(tx_hash)
 			})
 			.collect();
@@ -588,7 +600,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 					};
 
 					// Get transaction status from receipt
-					let tx_status = if receipt.status.map(|s| s.as_u64() == 1).unwrap_or(false) {
+					let tx_status = if receipt.status.map(|s| s.to::<u64>() == 1).unwrap_or(false) {
 						TransactionStatus::Success
 					} else {
 						TransactionStatus::Failure
@@ -689,7 +701,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 										.collect(),
 									..monitor.clone()
 								},
-								transaction: EVMTransaction::from(transaction.clone()),
+								transaction: transaction.clone(),
 								receipt: receipt.clone(),
 								matched_on: MatchConditions {
 									events: matched_events
@@ -733,10 +745,15 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 #[cfg(test)]
 mod tests {
+	use crate::models::EVMBaseTransaction;
+
 	use super::*;
+	use alloy::{
+		consensus::{Eip658Value, Receipt, ReceiptEnvelope, ReceiptWithBloom},
+		primitives::{Address, Bytes, LogData, B256, U256},
+	};
 	use ethabi::{Function, Param, ParamType};
 	use serde_json::json;
-	use web3::types::{H160, H256, U256};
 
 	fn create_test_filter() -> EVMBlockFilter<()> {
 		EVMBlockFilter::<()> {
@@ -746,17 +763,17 @@ mod tests {
 
 	fn create_test_transaction(
 		value: U256,
-		from: Option<H160>,
-		to: Option<H160>,
+		from: Option<Address>,
+		to: Option<Address>,
 		input_data: Vec<u8>,
-	) -> Transaction {
-		Transaction {
-			value,
+	) -> EVMTransaction {
+		EVMTransaction(EVMBaseTransaction {
 			from,
 			to,
-			input: web3::types::Bytes(input_data),
+			value,
+			input: Bytes(input_data.into()),
 			..Default::default()
-		}
+		})
 	}
 
 	/// Creates a test monitor with customizable parameters
@@ -845,54 +862,82 @@ mod tests {
 	}
 
 	fn create_test_log(
-		contract_address: H160,
+		contract_address: Address,
 		event_signature: &str,
-		from_address: &str,
-		to_address: &str,
+		from_address: Address,
+		to_address: Address,
 		value_hex: &str,
-	) -> Log {
-		Log {
+	) -> EVMReceiptLog {
+		EVMReceiptLog {
 			address: contract_address,
 			topics: vec![
-				H256::from_str(event_signature).unwrap(),
-				H256::from_str(from_address).unwrap(),
-				H256::from_str(to_address).unwrap(),
+				B256::from_str(event_signature).unwrap(),
+				B256::from_slice(&[&[0u8; 12], from_address.as_slice()].concat()),
+				B256::from_slice(&[&[0u8; 12], to_address.as_slice()].concat()),
 			],
-			data: web3::types::Bytes(hex::decode(value_hex).unwrap()),
+			data: Bytes(hex::decode(value_hex).unwrap().into()),
 			block_hash: None,
 			block_number: None,
 			transaction_hash: None,
 			transaction_index: None,
-			log_index: Some(0.into()),
-			transaction_log_index: Some(0.into()),
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
 			log_type: None,
 			removed: Some(false),
 		}
 	}
 
 	fn create_test_transfer_receipt(
-		contract_address: H160,
-		from_address: &str,
-		to_address: &str,
+		contract_address: Address,
+		from_address: Address,
+		to_address: Address,
 		value: u64,
-	) -> TransactionReceipt {
-		// Standard Transfer event signature
+	) -> EVMTransactionReceipt {
 		let event_signature = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-
-		// Convert value to 32-byte hex string with leading zeros
 		let value_hex = format!("{:064x}", value);
 
-		TransactionReceipt {
-			logs: vec![create_test_log(
-				contract_address,
-				event_signature,
-				from_address,
-				to_address,
-				&value_hex,
-			)],
-			status: Some(1.into()),
-			..Default::default()
-		}
+		EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
+			inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
+				receipt: Receipt {
+					status: Eip658Value::Eip658(true),
+					logs: vec![alloy::rpc::types::Log {
+						inner: alloy::primitives::Log {
+							address: contract_address,
+							data: LogData::new_unchecked(
+								vec![
+									B256::from_str(event_signature).unwrap(),
+									B256::from_slice(
+										&[&[0u8; 12], from_address.as_slice()].concat(),
+									),
+									B256::from_slice(&[&[0u8; 12], to_address.as_slice()].concat()),
+								],
+								Bytes(hex::decode(value_hex).unwrap().into()),
+							),
+						},
+						block_hash: None,
+						block_number: None,
+						block_timestamp: None,
+						transaction_hash: None,
+						transaction_index: None,
+						log_index: None,
+						removed: false,
+					}],
+					cumulative_gas_used: 0,
+				},
+				logs_bloom: Default::default(),
+			}),
+			transaction_hash: B256::ZERO,
+			transaction_index: Some(0),
+			block_hash: Some(B256::ZERO),
+			block_number: Some(0),
+			gas_used: 0,
+			effective_gas_price: 0,
+			blob_gas_used: None,
+			blob_gas_price: None,
+			from: from_address,
+			to: Some(to_address),
+			contract_address: Some(contract_address),
+		})
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
@@ -906,7 +951,7 @@ mod tests {
 
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::zero(), None, None, vec![]),
+			&create_test_transaction(U256::ZERO, None, None, vec![]),
 			&monitor,
 			&mut matched,
 		);
@@ -934,7 +979,7 @@ mod tests {
 		// Test successful transaction
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::zero(), None, None, vec![]),
+			&create_test_transaction(U256::ZERO, None, None, vec![]),
 			&monitor,
 			&mut matched,
 		);
@@ -946,7 +991,7 @@ mod tests {
 		matched.clear();
 		filter.find_matching_transaction(
 			&TransactionStatus::Failure,
-			&create_test_transaction(U256::zero(), None, None, vec![]),
+			&create_test_transaction(U256::ZERO, None, None, vec![]),
 			&monitor,
 			&mut matched,
 		);
@@ -995,7 +1040,7 @@ mod tests {
 	fn test_address_expression_matching() {
 		let filter = create_test_filter();
 		let mut matched = Vec::new();
-		let test_address = H160::from_low_u64_be(12345);
+		let test_address = Address::from_str("0x0000000000000000000000000000000000001234").unwrap();
 
 		let monitor = create_test_monitor(
 			vec![], // events
@@ -1010,7 +1055,7 @@ mod tests {
 		// Test matching 'to' address
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::zero(), None, Some(test_address), vec![]),
+			&create_test_transaction(U256::ZERO, None, Some(test_address), vec![]),
 			&monitor,
 			&mut matched,
 		);
@@ -1022,9 +1067,9 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&create_test_transaction(
-				U256::zero(),
+				U256::ZERO,
 				None,
-				Some(H160::from_low_u64_be(54321)),
+				Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
 				vec![],
 			),
 			&monitor,
@@ -1038,7 +1083,7 @@ mod tests {
 	fn test_from_address_expression_matching() {
 		let filter = create_test_filter();
 		let mut matched = Vec::new();
-		let test_address = H160::from_low_u64_be(12345);
+		let test_address = Address::from_str("0x0000000000000000000000000000000000001234").unwrap();
 
 		let monitor = create_test_monitor(
 			vec![], // events
@@ -1053,7 +1098,7 @@ mod tests {
 		// Test matching 'from' address
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::zero(), Some(test_address), None, vec![]),
+			&create_test_transaction(U256::ZERO, Some(test_address), None, vec![]),
 			&monitor,
 			&mut matched,
 		);
@@ -1065,8 +1110,8 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&create_test_transaction(
-				U256::zero(),
-				Some(H160::from_low_u64_be(54321)),
+				U256::ZERO,
+				Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
 				None,
 				vec![],
 			),
@@ -1098,7 +1143,7 @@ mod tests {
 			}], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000003039",
+				"0x0000000000000000000000000000000000004321",
 				Some(create_test_abi("function")),
 			)], // addresses
 		);
@@ -1129,15 +1174,17 @@ mod tests {
 		};
 
 		let params = vec![
-			ethabi::Token::Address(H160::from_low_u64_be(54321)),
-			ethabi::Token::Uint(U256::from(1000)),
+			ethabi::Token::Address(
+				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			),
+			ethabi::Token::Uint(ethabi::Uint::from(1000)),
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
 		let transaction = create_test_transaction(
-			U256::zero(),
-			Some(H160::from_low_u64_be(12345)), // from address
-			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()), /* to address matching monitor */
+			U256::ZERO,
+			Some(Address::from_str("0x0000000000000000000000000000000000001234").unwrap()), /* from address */
+			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()), /* to address matching monitor */
 			encoded,
 		);
 
@@ -1176,7 +1223,7 @@ mod tests {
 			}], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000003039",
+				"0x0000000000000000000000000000000000004321",
 				Some(create_test_abi("function")),
 			)], // addresses
 		);
@@ -1207,15 +1254,17 @@ mod tests {
 
 		// Test with amount > 500 (should match)
 		let params = vec![
-			ethabi::Token::Address(H160::from_low_u64_be(54321)),
-			ethabi::Token::Uint(U256::from(1000)),
+			ethabi::Token::Address(
+				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			),
+			ethabi::Token::Uint(ethabi::Uint::from(1000)),
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
 		let transaction = create_test_transaction(
-			U256::zero(),
+			U256::ZERO,
 			None,
-			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()),
+			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
 			encoded,
 		);
 
@@ -1239,15 +1288,17 @@ mod tests {
 		}
 
 		let params = vec![
-			ethabi::Token::Address(H160::from_low_u64_be(54321)),
-			ethabi::Token::Uint(U256::from(500)),
+			ethabi::Token::Address(
+				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			),
+			ethabi::Token::Uint(ethabi::Uint::from(500)),
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
 		let transaction = create_test_transaction(
-			U256::zero(),
+			U256::ZERO,
 			None,
-			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()),
+			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
 			encoded,
 		);
 
@@ -1278,7 +1329,7 @@ mod tests {
 			}],
 			vec![],
 			vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000003039".to_string(),
+				address: "0x0000000000000000000000000000000000004321".to_string(),
 				abi: Some(create_test_abi("function")),
 			}],
 		);
@@ -1309,15 +1360,17 @@ mod tests {
 		};
 
 		let params = vec![
-			ethabi::Token::Address(H160::from_low_u64_be(54321)),
-			ethabi::Token::Uint(U256::from(1000)),
+			ethabi::Token::Address(
+				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			),
+			ethabi::Token::Uint(ethabi::Uint::from(1000)),
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
 		let transaction = create_test_transaction(
-			U256::zero(),
+			U256::ZERO,
 			None,
-			Some(H160::from_str("0x0000000000000000000000000000000000001234").unwrap()), /* Different address in proper hex format */
+			Some(Address::from_str("0x0000000000000000000000000000000000001234").unwrap()), /* Different address in proper hex format */
 			encoded,
 		);
 
@@ -1350,7 +1403,7 @@ mod tests {
 				transactions: vec![],
 			},
 			addresses: vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000003039".to_string(),
+				address: "0x0000000000000000000000000000000000004321".to_string(),
 				abi: Some(create_test_abi("function")),
 			}],
 			name: "test".to_string(),
@@ -1362,9 +1415,9 @@ mod tests {
 
 		// Test with invalid input data (less than 4 bytes)
 		let transaction = create_test_transaction(
-			U256::zero(),
+			U256::ZERO,
 			None,
-			Some(H160::from_str("0x0000000000000000000000000000000000003039").unwrap()),
+			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
 			vec![0x12, 0x34], // Invalid input data
 		);
 
@@ -1401,18 +1454,18 @@ mod tests {
 			vec![], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000003039",
+				"0x0000000000000000000000000000000000004321",
 				Some(create_test_abi("event")), // Changed to event ABI
 			)], // addresses
 		);
 
 		// Create a transaction receipt with a Transfer event
 		let contract_address =
-			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
 		let receipt = create_test_transfer_receipt(
 			contract_address,
-			"0x0000000000000000000000000000000000000000000000000000000000001234",
-			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
 			100,
 		);
 
@@ -1435,7 +1488,7 @@ mod tests {
 		assert_eq!(involved_addresses.len(), 1);
 		assert_eq!(
 			involved_addresses[0],
-			"0x0000000000000000000000000000000000003039"
+			"0x0000000000000000000000000000000000004321"
 		);
 	}
 
@@ -1458,19 +1511,19 @@ mod tests {
 			vec![], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000003039",
+				"0x0000000000000000000000000000000000004321",
 				Some(create_test_abi("event")), // Changed to event ABI
 			)], // addresses
 		);
 
 		// Create a receipt with value > 500 (should match)
 		let contract_address =
-			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
 		let receipt = create_test_transfer_receipt(
 			contract_address,
-			"0x0000000000000000000000000000000000000000000000000000000000001234",
-			"0x0000000000000000000000000000000000000000000000000000000000005678",
-			1000, // Changed to 1000 to be > 500
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
+			1000,
 		);
 
 		filter
@@ -1498,8 +1551,8 @@ mod tests {
 
 		let receipt_no_match = create_test_transfer_receipt(
 			contract_address,
-			"0x0000000000000000000000000000000000000000000000000000000000001234",
-			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
 			50,
 		);
 
@@ -1534,18 +1587,18 @@ mod tests {
 			}], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000003039",
+				"0x0000000000000000000000000000000000004321",
 				Some(create_test_abi("function")),
 			)], // addresses
 		);
 
 		// Create a receipt with non-matching contract address
 		let different_address =
-			H160::from_str("0x0000000000000000000000000000000000001234").unwrap();
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap();
 		let receipt = create_test_transfer_receipt(
 			different_address,
-			"0x0000000000000000000000000000000000000000000000000000000000001234",
-			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
 			100,
 		);
 
@@ -1713,15 +1766,15 @@ mod tests {
 
 		// Create contract address and log
 		let contract_address =
-			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
 		let log = create_test_log(
 			contract_address,
 			// Transfer event signature
 			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
 			// from address
-			"0x0000000000000000000000000000000000000000000000000000000000001234",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
 			// to address
-			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
 			// value (100 in hex)
 			"0000000000000000000000000000000000000000000000000000000000000064",
 		);
@@ -1760,12 +1813,12 @@ mod tests {
 	async fn test_decode_events_invalid_abi() {
 		let filter = create_test_filter();
 		let contract_address =
-			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+			Address::from_str("0x0000000000000000000000000000000000003039").unwrap();
 		let log = create_test_log(
 			contract_address,
 			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-			"0x0000000000000000000000000000000000000000000000000000000000001234",
-			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
 			"0000000000000000000000000000000000000000000000000000000000000064",
 		);
 
@@ -1785,15 +1838,15 @@ mod tests {
 	async fn test_decode_events_mismatched_signature() {
 		let filter = create_test_filter();
 		let contract_address =
-			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
 
 		// Create log with different event signature
 		let log = create_test_log(
 			contract_address,
 			// Different event signature
 			"0x0000000000000000000000000000000000000000000000000000000000000000",
-			"0x0000000000000000000000000000000000000000000000000000000000001234",
-			"0x0000000000000000000000000000000000000000000000000000000000005678",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
 			"0000000000000000000000000000000000000000000000000000000000000064",
 		);
 
@@ -1807,34 +1860,24 @@ mod tests {
 	async fn test_decode_events_malformed_log_data() {
 		let filter = create_test_filter();
 		let contract_address =
-			H160::from_str("0x0000000000000000000000000000000000003039").unwrap();
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		let log = create_test_log(
+			contract_address,
+			// Transfer event signature
+			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+			// from address
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			// to address
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
+			// value (100 in hex)
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
 
 		// Create log with invalid data length
-		let log = Log {
-			address: contract_address,
-			topics: vec![
-				H256::from_str(
-					"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-				)
-				.unwrap(),
-				H256::from_str(
-					"0x0000000000000000000000000000000000000000000000000000000000001234",
-				)
-				.unwrap(),
-				H256::from_str(
-					"0x0000000000000000000000000000000000000000000000000000000000005678",
-				)
-				.unwrap(),
-			],
-			data: web3::types::Bytes(vec![0x00]), // Invalid data length
-			block_hash: None,
-			block_number: None,
-			transaction_hash: None,
-			transaction_index: None,
-			log_index: Some(0.into()),
-			transaction_log_index: Some(0.into()),
-			log_type: None,
-			removed: Some(false),
+		let log = EVMReceiptLog {
+			data: Bytes(vec![0x00].into()), // Invalid data length
+			..log
 		};
 
 		let abi = create_test_abi("event");

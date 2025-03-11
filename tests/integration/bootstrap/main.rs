@@ -4,17 +4,17 @@ use crate::integration::{
 		setup_trigger_service,
 	},
 	mocks::{
-		create_test_block, create_test_network, MockClientPool, MockEvmClientTrait,
-		MockStellarClientTrait, MockTriggerExecutionService, MockTriggerRepository,
-		MockWeb3TransportClient,
+		create_test_block, create_test_network, create_test_transaction, MockAlloyTransportClient,
+		MockClientPool, MockEvmClientTrait, MockStellarClientTrait, MockTriggerExecutionService,
+		MockTriggerRepository,
 	},
 };
 use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
 	models::{
-		BlockChainType, EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch,
-		NotificationMessage, ProcessedBlock, ScriptLanguage, StellarBlock, StellarMonitorMatch,
-		StellarTransaction, StellarTransactionInfo, Trigger, TriggerConditions, TriggerType,
+		BlockChainType, EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, Monitor,
+		MonitorMatch, NotificationMessage, ProcessedBlock, ScriptLanguage, StellarBlock,
+		StellarMonitorMatch, TransactionType, Trigger, TriggerConditions, TriggerType,
 		TriggerTypeConfig,
 	},
 	services::{
@@ -26,9 +26,7 @@ use openzeppelin_monitor::{
 };
 
 use std::{collections::HashMap, sync::Arc};
-use tempfile;
 use tokio::sync::watch;
-use web3::types::{H160, U256};
 
 fn create_test_monitor(
 	name: &str,
@@ -43,25 +41,6 @@ fn create_test_monitor(
 		triggers: triggers.into_iter().map(|s| s.to_string()).collect(),
 		..Default::default()
 	}
-}
-
-fn create_test_evm_transaction() -> EVMTransaction {
-	EVMTransaction::from({
-		web3::types::Transaction {
-			from: Some(H160::default()),
-			to: Some(H160::default()),
-			value: U256::default(),
-			..Default::default()
-		}
-	})
-}
-
-fn create_test_stellar_transaction() -> StellarTransaction {
-	StellarTransaction::from({
-		StellarTransactionInfo {
-			..Default::default()
-		}
-	})
 }
 
 fn create_test_trigger(name: &str) -> Trigger {
@@ -84,14 +63,20 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 	match chain {
 		BlockChainType::EVM => MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor("test", vec!["ethereum_mainnet"], false, vec![]),
-			transaction: create_test_evm_transaction(),
-			receipt: web3::types::TransactionReceipt::default(),
+			transaction: match create_test_transaction(chain) {
+				TransactionType::EVM(tx) => tx,
+				_ => panic!("Expected EVM transaction"),
+			},
+			receipt: EVMTransactionReceipt::default(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		})),
 		BlockChainType::Stellar => MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
 			monitor: create_test_monitor("test", vec!["stellar_mainnet"], false, vec![]),
-			transaction: create_test_stellar_transaction(),
+			transaction: match create_test_transaction(chain) {
+				TransactionType::Stellar(tx) => tx,
+				_ => panic!("Expected Stellar transaction"),
+			},
 			ledger: StellarBlock::default(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
@@ -449,8 +434,11 @@ print(True)  # Always return true for test
 		network_slug: "ethereum_mainnet".to_string(),
 		processing_results: vec![MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor,
-			transaction: create_test_evm_transaction(),
-			receipt: web3::types::TransactionReceipt::default(),
+			transaction: match create_test_transaction(BlockChainType::EVM) {
+				TransactionType::EVM(tx) => tx,
+				_ => panic!("Expected EVM transaction"),
+			},
+			receipt: EVMTransactionReceipt::default(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		}))],
@@ -464,7 +452,7 @@ print(True)  # Always return true for test
 
 #[tokio::test]
 async fn test_process_block() {
-	let mut mock_client = MockEvmClientTrait::<MockWeb3TransportClient>::new();
+	let mut mock_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let monitors = vec![create_test_monitor(
@@ -508,7 +496,7 @@ async fn test_process_block() {
 #[ignore]
 /// Skipping as this test is flaky and fails intermittently
 async fn test_process_block_with_shutdown() {
-	let mock_client = MockEvmClientTrait::<MockWeb3TransportClient>::new();
+	let mock_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let monitors = vec![create_test_monitor(

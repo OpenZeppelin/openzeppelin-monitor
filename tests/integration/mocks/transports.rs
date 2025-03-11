@@ -6,22 +6,22 @@ use openzeppelin_monitor::services::blockchain::{
 	BlockChainError, BlockchainTransport, RotatingTransport,
 };
 
-// Mock implementation of a Web3 transport client.
-// Used for testing Ethereum/Web3-compatible blockchain interactions.
+// Mock implementation of a Alloy transport client.
+// Used for testing Ethereum/Alloy-compatible blockchain interactions.
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
-	pub Web3TransportClient {
+	pub AlloyTransportClient {
 		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, BlockChainError>;
 		pub async fn get_current_url(&self) -> String;
 	}
 
-	impl Clone for Web3TransportClient {
+	impl Clone for AlloyTransportClient {
 		fn clone(&self) -> Self;
 	}
 }
 
 #[async_trait::async_trait]
-impl BlockchainTransport for MockWeb3TransportClient {
+impl BlockchainTransport for MockAlloyTransportClient {
 	async fn get_current_url(&self) -> String {
 		self.get_current_url().await
 	}
@@ -49,7 +49,7 @@ impl BlockchainTransport for MockWeb3TransportClient {
 }
 
 #[async_trait::async_trait]
-impl RotatingTransport for MockWeb3TransportClient {
+impl RotatingTransport for MockAlloyTransportClient {
 	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
 		Ok(())
 	}
