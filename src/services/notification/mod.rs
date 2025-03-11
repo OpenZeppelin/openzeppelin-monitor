@@ -43,22 +43,27 @@ pub trait Notifier {
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), NotificationError>;
+}
 
-	/// Executes the script and returns the result
+/// Interface for executing scripts
+///
+/// This Interface is used to execute scripts for notifications.
+/// It is implemented by the ScriptNotifier struct.
+#[async_trait]
+pub trait ScriptExecutor {
+	/// Executes a script to send a custom notifications
 	///
 	/// # Arguments
 	/// * `monitor_match` - The monitor match to send
+	/// * `script_content` - The script content to execute
 	///
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
 	async fn script_notify(
 		&self,
-		_monitor_match: &MonitorMatch,
-		_script_content: &(ScriptLanguage, String),
-	) -> Result<(), NotificationError> {
-		// Default implementation that does nothing
-		unimplemented!("script_notify must be implemented by ScriptNotifier implementation")
-	}
+		monitor_match: &MonitorMatch,
+		script_content: &(ScriptLanguage, String),
+	) -> Result<(), NotificationError>;
 }
 
 /// Service for managing notifications across different channels

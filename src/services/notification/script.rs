@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
-	services::notification::{NotificationError, Notifier},
+	services::notification::{NotificationError, ScriptExecutor},
 	utils::ScriptExecutorFactory,
 };
 
@@ -23,13 +23,7 @@ impl ScriptNotifier {
 }
 
 #[async_trait]
-impl Notifier for ScriptNotifier {
-	async fn notify(&self, _message: &str) -> Result<(), NotificationError> {
-		Err(NotificationError::config_error(
-			"ScriptNotifier does not support regular notifications".to_string(),
-		))
-	}
-
+impl ScriptExecutor for ScriptNotifier {
 	/// Implement the actual script notification logic
 	async fn script_notify(
 		&self,
@@ -130,18 +124,6 @@ mod tests {
 		let config = create_test_script_config();
 		let notifier = ScriptNotifier::from_config(&config);
 		assert!(notifier.is_some());
-	}
-
-	#[tokio::test]
-	async fn test_notify_returns_error() {
-		let config = create_test_script_config();
-		let notifier = ScriptNotifier::from_config(&config).unwrap();
-		let result = notifier.notify("test message").await;
-		assert!(result.is_err());
-		assert!(result
-			.unwrap_err()
-			.to_string()
-			.contains("does not support regular notifications"));
 	}
 
 	#[tokio::test]
