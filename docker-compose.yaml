@@ -6,8 +6,6 @@ services:
     build:
       context: .
       dockerfile: ${DOCKERFILE:-Dockerfile.development}
-    ports:
-      - 8080:8080/tcp
     environment:
       APP_PORT: ${APP_PORT:-8080}
       METRICS_PORT: ${METRICS_PORT:-8081}
@@ -16,16 +14,13 @@ services:
       # Default: info
       LOG_LEVEL: ${RUST_LOG:-info}
       # Options: stdout, file
-      # Uncomment to write logs to file
       # Default: stdout
-      # LOG_MODE: file
+      LOG_MODE: ${LOG_MODE:-stdout}
       # Default: logs/
-      # Uncomment to specify log file path dir where to store logs
-      # LOG_FILE_PATH: logs/
-      # Uncomment to set max log file size
+      LOG_FILE_PATH: ${LOG_FILE_PATH:-logs/}
       # Only used if LOG_MODE is file
       # Default: 1GB (1073741824 bytes)
-      # LOG_MAX_SIZE: 1073741824
+      LOG_MAX_SIZE: ${LOG_MAX_SIZE:-1073741824}
     restart: on-failure:5
     mem_swappiness: 0
     security_opt:
@@ -34,9 +29,8 @@ services:
       - ./config:/app/config/:ro
       # Uncomment to persist data
       #- ${MONITOR_DATA_DIR:-./data}:/app/data
-      # Uncomment to persist logs
-      # Default: writes to stdout/console
-      - ${LOGS_DATA_DIR:-./logs}:/app/logs
+      # Uncomment to persist logs (file mode)
+      # - ${LOGS_DATA_DIR:-./logs}:/app/logs
     networks:
       - monitor-network
       - metrics-network
@@ -46,8 +40,7 @@ services:
     security_opt:
       - no-new-privileges
     command: --log.level=warn --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus
-      --storage.tsdb.retention.time=30d --web.console.libraries=/usr/share/prometheus/console_libraries
-      --web.console.templates=/usr/share/prometheus/consoles
+      --storage.tsdb.retention.time=30d
     ports:
       - 9090:9090/tcp
     networks:

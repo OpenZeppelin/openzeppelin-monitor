@@ -354,8 +354,8 @@ Note: if your pull request isn't getting enough attention, you can email us at `
 - Format code with `rustfmt`:
 
   ```sh
-  rustup component add rustfmt --toolchain nightly
-  cargo +nightly fmt
+  rustup component add rustfmt
+  cargo fmt
   ```
 
 - Lint code with `clippy`:

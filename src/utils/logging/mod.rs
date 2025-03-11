@@ -3,7 +3,7 @@
 //! Environment variables used:
 //! - LOG_MODE: "stdout" (default) or "file"
 //! - LOG_LEVEL: log level ("trace", "debug", "info", "warn", "error"); default is "info"
-//! - LOG_FILE_PATH: when using file mode, the path of the log file (default "logs/relayer.log")
+//! - LOG_FILE_PATH: when using file mode, the path of the log file (default "logs/monitor.log")
 
 use chrono::Utc;
 use log::info;
@@ -59,7 +59,9 @@ pub fn space_based_rolling(
 /// Sets up logging by reading configuration from environment variables.
 pub fn setup_logging() {
 	let log_mode = env::var("LOG_MODE").unwrap_or_else(|_| "stdout".to_string());
+
 	let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
+
 	// Parse the log level into LevelFilter
 	let level_filter = match log_level.to_lowercase().as_str() {
 		"trace" => LevelFilter::Trace,
@@ -87,7 +89,7 @@ pub fn setup_logging() {
 		let date_str = now.format("%Y-%m-%d").to_string();
 
 		// Get log file path from environment or use default
-		let base_file_path = format!("{}relayer.log", log_dir);
+		let base_file_path = format!("{}monitor.log", log_dir);
 
 		// verify the log file already exists
 		if Path::new(&base_file_path).exists() {

@@ -166,6 +166,8 @@ async fn test_normal_block_range() -> Result<(), BlockWatcherError> {
 	// Create trigger handler that spawns an empty task
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
 
+	let block_tracker_arc = Arc::new(block_tracker);
+
 	// Process blocks
 	process_new_blocks(
 		&network,
@@ -173,7 +175,7 @@ async fn test_normal_block_range() -> Result<(), BlockWatcherError> {
 		block_storage.clone(),
 		block_handler,
 		trigger_handler,
-		Arc::new(block_tracker),
+		block_tracker_arc,
 	)
 	.await?;
 

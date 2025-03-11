@@ -148,11 +148,10 @@ To get started, run the following commands to install pre-commit hooks:
 
   > :warning: If you encounter issues with pip, consider using [pipx](https://pipx.pypa.io/stable/installation/) for a global installation.
 
-- Install the nightly toolchain:
+- Install the toolchain:
 
   ```bash
-  rustup toolchain install nightly
-  rustup component add rustfmt --toolchain nightly
+  rustup component add rustfmt
   ```
 
 ### Run Tests

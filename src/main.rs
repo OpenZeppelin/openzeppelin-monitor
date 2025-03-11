@@ -38,9 +38,9 @@ use crate::{
 	utils::logging::setup_logging,
 };
 
-use clap::Command;
+use clap::{Arg, Command};
 use dotenvy::dotenv;
-use log::{error, info};
+use log::{debug, error, info};
 use models::BlockChainType;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -52,17 +52,64 @@ use tokio::sync::watch;
 #[tokio::main]
 async fn main() -> Result<()> {
 	// Initialize command-line interface
-	let _ = Command::new("openzeppelin-monitor")
+	let matches = Command::new("openzeppelin-monitor")
 		.version(env!("CARGO_PKG_VERSION"))
 		.about(
 			"A blockchain monitoring service that watches for specific on-chain activities and \
 			 triggers notifications based on configurable conditions.",
 		)
+		.arg(
+			Arg::new("log-file")
+				.long("log-file")
+				.help("Write logs to file instead of stdout")
+				.action(clap::ArgAction::SetTrue),
+		)
+		.arg(
+			Arg::new("log-level")
+				.long("log-level")
+				.help("Set log level (trace, debug, info, warn, error)")
+				.value_name("LEVEL"),
+		)
+		.arg(
+			Arg::new("log-path")
+				.long("log-path")
+				.help("Path to store log files (default: logs/)")
+				.value_name("PATH"),
+		)
+		.arg(
+			Arg::new("log-max-size")
+				.long("log-max-size")
+				.help("Maximum log file size in bytes before rolling (default: 1GB)")
+				.value_name("BYTES"),
+		)
 		.get_matches();
 
 	// Load environment variables from .env file
 	dotenv().ok();
-	//env_logger::init();
+
+	// Only apply CLI options if the corresponding environment variables are NOT already set
+	if matches.get_flag("log-file") && std::env::var("LOG_MODE").is_err() {
+		std::env::set_var("LOG_MODE", "file");
+	}
+
+	if let Some(level) = matches.get_one::<String>("log-level") {
+		if std::env::var("LOG_LEVEL").is_err() {
+			std::env::set_var("LOG_LEVEL", level);
+		}
+	}
+
+	if let Some(path) = matches.get_one::<String>("log-path") {
+		if std::env::var("LOG_FILE_PATH").is_err() {
+			std::env::set_var("LOG_FILE_PATH", path);
+		}
+	}
+
+	if let Some(max_size) = matches.get_one::<String>("log-max-size") {
+		if std::env::var("LOG_MAX_SIZE").is_err() {
+			std::env::set_var("LOG_MAX_SIZE", max_size);
+		}
+	}
+
 	setup_logging();
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
@@ -79,6 +126,7 @@ async fn main() -> Result<()> {
 		.collect();
 
 	if networks_with_monitors.is_empty() {
+		debug!("No networks with active monitors found. Exiting...");
 		info!("No networks with active monitors found. Exiting...");
 		return Ok(());
 	}
