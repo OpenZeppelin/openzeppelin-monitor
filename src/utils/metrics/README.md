@@ -2,7 +2,7 @@
 
 - This folder contains middleware that is used to intercept the requests for all the endpoints as well as the definition of the metrics that are collected.
 
-- Metrics server is started on port `8081` which collects the metrics from the relayer app and exposes them on the `/metrics` endpoint.
+- Metrics server is started on port `8081` which collects the metrics from the monitor app and exposes them on the `/metrics` endpoint.
 
 - We use `prometheus` to collect metrics from the application. The list of metrics are exposed on the `/metrics` endpoint.
 

@@ -8,6 +8,7 @@
 //! The mocks are implemented using the `mockall` crate.
 
 mod clients;
+mod logging;
 mod models;
 mod repositories;
 mod services;
