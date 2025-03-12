@@ -5,7 +5,10 @@
 
 use std::{fs, path::Path};
 
-use crate::models::{config::error::ConfigError, ConfigLoader, Monitor, ScriptLanguage};
+use crate::{
+	models::{config::error::ConfigError, ConfigLoader, Monitor},
+	utils::validate_script_config,
+};
 
 impl ConfigLoader for Monitor {
 	/// Load all monitor configurations from a directory
@@ -87,41 +90,11 @@ impl ConfigLoader for Monitor {
 
 		// Validate trigger conditions (focus on script path, timeout, and language)
 		for trigger_condition in &self.trigger_conditions {
-			let script_path = Path::new(&trigger_condition.script_path);
-
-			// Validate script exists
-			if !script_path.exists() {
-				return Err(ConfigError::validation_error(format!(
-					"Script file not found: {}",
-					trigger_condition.script_path
-				)));
-			}
-
-			// Validate file extension matches language
-			let extension = script_path
-				.extension()
-				.and_then(|ext| ext.to_str())
-				.unwrap_or("");
-
-			let valid_extension = match trigger_condition.language {
-				ScriptLanguage::Python => extension == "py",
-				ScriptLanguage::JavaScript => extension == "js",
-				ScriptLanguage::Bash => extension == "sh",
-			};
-
-			if !valid_extension {
-				return Err(ConfigError::validation_error(format!(
-					"Script file extension does not match specified language {:?}: {}",
-					trigger_condition.language, trigger_condition.script_path
-				)));
-			}
-
-			// Validate timeout
-			if trigger_condition.timeout_ms == 0 {
-				return Err(ConfigError::validation_error(
-					"Timeout must be greater than 0",
-				));
-			}
+			validate_script_config(
+				&trigger_condition.script_path,
+				&trigger_condition.language,
+				&trigger_condition.timeout_ms,
+			)?;
 		}
 
 		Ok(())

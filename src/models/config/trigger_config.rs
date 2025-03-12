@@ -7,8 +7,9 @@ use email_address::EmailAddress;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
 
-use crate::models::{
-	config::error::ConfigError, ConfigLoader, Trigger, TriggerType, TriggerTypeConfig,
+use crate::{
+	models::{config::error::ConfigError, ConfigLoader, Trigger, TriggerType, TriggerTypeConfig},
+	utils::validate_script_config,
 };
 
 /// File structure for trigger configuration files
@@ -296,14 +297,14 @@ impl ConfigLoader for Trigger {
 				}
 			}
 			TriggerType::Script => {
-				if let TriggerTypeConfig::Script { path, .. } = &self.config {
-					// Validate script path exists
-					if !Path::new(path).exists() {
-						return Err(ConfigError::validation_error(format!(
-							"Script path does not exist: {}",
-							path
-						)));
-					}
+				if let TriggerTypeConfig::Script {
+					script_path,
+					language,
+					timeout_ms,
+					..
+				} = &self.config
+				{
+					validate_script_config(script_path, language, timeout_ms)?;
 				}
 			}
 		}
@@ -316,7 +317,7 @@ mod tests {
 	use super::*;
 	use crate::models::{
 		core::{Trigger, TriggerType},
-		NotificationMessage,
+		NotificationMessage, ScriptLanguage,
 	};
 
 	#[test]
@@ -763,8 +764,10 @@ mod tests {
 			name: "test_script".to_string(),
 			trigger_type: TriggerType::Script,
 			config: TriggerTypeConfig::Script {
-				path: script_path.to_str().unwrap().to_string(),
-				args: vec!["arg1".to_string(), "arg2".to_string()],
+				script_path: script_path.to_str().unwrap().to_string(),
+				arguments: Some(vec![String::from("arg1")]),
+				language: ScriptLanguage::Bash,
+				timeout_ms: 1000,
 			},
 		};
 		assert!(valid_trigger.validate().is_ok());
@@ -774,8 +777,10 @@ mod tests {
 			name: "test_script".to_string(),
 			trigger_type: TriggerType::Script,
 			config: TriggerTypeConfig::Script {
-				path: "/non/existent/path".to_string(),
-				args: vec!["arg1".to_string(), "arg2".to_string()],
+				script_path: "/non/existent/path".to_string(),
+				arguments: Some(vec![String::from("arg1")]),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
 			},
 		};
 		assert!(invalid_path.validate().is_err());

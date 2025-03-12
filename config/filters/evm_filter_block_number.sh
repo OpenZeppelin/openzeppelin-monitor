@@ -25,18 +25,19 @@
 set -e
 
 main() {
-    verbose=false
-    
     # Read JSON input from stdin
     input_json=$(cat)
 
-    # Parse arguments from the input JSON
-    args=$(echo "$input_json" | jq -r '.args // empty')
+    # Parse arguments from the input JSON and initialize verbose flag
+    verbose=false
+    args=$(echo "$input_json" | jq -r '.args[]? // empty')
     if [ ! -z "$args" ]; then
-        if [[ $args == *"--verbose"* ]]; then
-            verbose=true
-            echo "Verbose mode enabled"
-        fi
+        while IFS= read -r arg; do
+            if [ "$arg" = "--verbose" ]; then
+                verbose=true
+                echo "Verbose mode enabled"
+            fi
+        done <<< "$args"
     fi
 
     # Extract the monitor match data from the input

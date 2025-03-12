@@ -11,7 +11,7 @@ proptest! {
 
 	#[test]
 	fn test_process_script_output(output in process_output_strategy()) {
-		let result = process_script_output(output.clone());
+		let result = process_script_output(output.clone(), false);
 		if let Ok(parse_result) = result {
 			match parse_result {
 				true => {
@@ -62,7 +62,7 @@ proptest! {
 			stderr: Vec::new(),
 		};
 
-		let result = process_script_output(output);
+		let result = process_script_output(output, false);
 
 		if append_bool {
 			prop_assert!(result.is_ok());
@@ -83,7 +83,7 @@ proptest! {
 			stderr: error_msg.clone().into_bytes(),
 		};
 
-		let result = process_script_output(output);
+		let result = process_script_output(output, false);
 		prop_assert!(result.is_err());
 
 		if let Err(ScriptError::ExecutionError(msg)) = result {
@@ -111,8 +111,40 @@ proptest! {
 			stderr: Vec::new(),
 		};
 
-		let result = process_script_output(output);
+		let result = process_script_output(output, false);
 		prop_assert!(result.is_ok());
 		prop_assert_eq!(result.unwrap(), value);
+	}
+
+	#[test]
+	fn test_script_executor_with_ignore_output(
+		lines in prop::collection::vec(any::<String>(), 0..10),
+		exit_code in 0..2i32
+	) {
+		let output_content = lines.join("\n");
+
+		let output = std::process::Output {
+			status: std::process::ExitStatus::from_raw(exit_code),
+			stdout: output_content.into_bytes(),
+			stderr: Vec::new(),
+		};
+
+		let result = process_script_output(output, true);
+
+		// When ignore_output is true, the result should be:
+		// - Ok(true) if exit_code is 0
+		// - Err(ExecutionError) if exit_code is not 0
+		if exit_code == 0 {
+			prop_assert!(result.is_ok());
+			prop_assert!(result.unwrap());
+		} else {
+			prop_assert!(result.is_err());
+			if let Err(ScriptError::ExecutionError(_)) = result {
+				// Expected error type
+				prop_assert!(true);
+			} else {
+				prop_assert!(false, "Expected ExecutionError");
+			}
+		}
 	}
 }

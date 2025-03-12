@@ -32,4 +32,4 @@ pub use core::{
 };
 
 // Re-export config types
-pub use config::ConfigLoader;
+pub use config::{ConfigError, ConfigLoader};

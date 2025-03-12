@@ -25,6 +25,7 @@ use openzeppelin_monitor::{
 	},
 };
 
+use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::watch;
 
@@ -177,7 +178,9 @@ async fn test_create_trigger_handler() {
 		.with(mockall::predicate::always(), mockall::predicate::always())
 		.returning(|_trigger_service, _notification_service| {
 			let mut mock = MockTriggerExecutionService::default();
-			mock.expect_execute().times(1).return_once(|_, _| Ok(()));
+			mock.expect_execute()
+				.times(1)
+				.return_once(|_, _, _, _| Ok(()));
 			mock
 		});
 
@@ -385,7 +388,9 @@ async fn test_create_trigger_handler_with_conditions() {
 		.with(mockall::predicate::always(), mockall::predicate::always())
 		.returning(|_trigger_service, _notification_service| {
 			let mut mock = MockTriggerExecutionService::default();
-			mock.expect_execute().times(1).return_once(|_, _| Ok(()));
+			mock.expect_execute()
+				.times(1)
+				.return_once(|_, _, _, _| Ok(()));
 			mock
 		});
 
@@ -637,4 +642,461 @@ async fn test_load_scripts_empty_conditions() {
 		scripts.is_empty(),
 		"Scripts map should be empty when there are no trigger conditions"
 	);
+}
+
+#[tokio::test]
+async fn test_load_scripts_for_custom_triggers_notifications() {
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
+
+	let script_trigger_path = temp_dir.path().join("custom_trigger_script.py");
+	tokio::fs::write(&script_trigger_path, "print('test script trigger content')")
+		.await
+		.unwrap();
+
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		}],
+		triggers: vec!["custom_trigger".to_string()],
+		..Default::default()
+	}];
+
+	let mut mocked_triggers = HashMap::new();
+	let custom_trigger = Trigger {
+		name: "custom_trigger".to_string(),
+		trigger_type: TriggerType::Script,
+		config: TriggerTypeConfig::Script {
+			script_path: script_trigger_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		},
+	};
+	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
+
+	// Set up mock repository
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	// Test loading scripts
+	let scripts = trigger_execution_service
+		.load_scripts(&monitors)
+		.await
+		.unwrap();
+
+	// Verify results
+	assert_eq!(scripts.len(), 2);
+
+	let script_key = format!("test_monitor|{}", script_path.to_str().unwrap());
+	assert!(scripts.contains_key(&script_key));
+
+	let (lang, content) = &scripts[&script_key];
+	assert_eq!(*lang, ScriptLanguage::Python);
+	assert_eq!(content.trim(), "print('test script content')");
+
+	let script_key_trigger = format!("test_monitor|{}", script_trigger_path.to_str().unwrap());
+	assert!(scripts.contains_key(&script_key_trigger));
+
+	let (lang, content) = &scripts[&script_key_trigger];
+	assert_eq!(*lang, ScriptLanguage::Python);
+	assert_eq!(content.trim(), "print('test script trigger content')");
+}
+
+#[tokio::test]
+async fn test_load_scripts_for_custom_triggers_notifications_error() {
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
+
+	let script_trigger_path = temp_dir.path().join("custom_trigger_script.py");
+	tokio::fs::write(&script_trigger_path, "print('test script trigger content')")
+		.await
+		.unwrap();
+
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		}],
+		triggers: vec!["custom_trigger".to_string()],
+		..Default::default()
+	}];
+
+	let mut mocked_triggers = HashMap::new();
+	let custom_trigger = Trigger {
+		name: "custom_trigger".to_string(),
+		trigger_type: TriggerType::Script,
+		config: TriggerTypeConfig::Script {
+			script_path: "non_existent_script.py".to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		},
+	};
+	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
+
+	// Set up mock repository
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	// Test loading scripts
+	let result = trigger_execution_service.load_scripts(&monitors).await;
+	assert!(result.is_err());
+
+	match result {
+		Err(e) => {
+			assert!(matches!(e, TriggerError::ConfigurationError(_)));
+			assert!(e.to_string().contains("Failed to read script file"));
+		}
+		_ => panic!("Expected error"),
+	}
+}
+
+#[tokio::test]
+async fn test_load_scripts_for_custom_triggers_notifications_failed() {
+	let temp_dir = tempfile::tempdir().unwrap();
+	let script_path = temp_dir.path().join("test_script.py");
+	tokio::fs::write(&script_path, "print('test script content')")
+		.await
+		.unwrap();
+
+	let monitors = vec![Monitor {
+		name: "test_monitor".to_string(),
+		trigger_conditions: vec![TriggerConditions {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		}],
+		triggers: vec!["custom_trigger_not_found".to_string()],
+		..Default::default()
+	}];
+
+	let mut mocked_triggers = HashMap::new();
+	let custom_trigger = Trigger {
+		name: "custom_trigger_not_found".to_string(),
+		trigger_type: TriggerType::Script,
+		config: TriggerTypeConfig::Script {
+			script_path: script_path.to_str().unwrap().to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 1000,
+			arguments: None,
+		},
+	};
+	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
+
+	// Set up mock repository
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	// Test loading scripts
+	let result = trigger_execution_service.load_scripts(&monitors).await;
+
+	assert!(result.is_err());
+	match result {
+		Err(e) => {
+			assert!(matches!(e, TriggerError::ConfigurationError(_)));
+			assert!(e.to_string().contains("Failed to get trigger"));
+		}
+		_ => panic!("Expected error"),
+	}
+}
+
+#[tokio::test]
+async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
+	// Slack execution success - Webhook execution failure - Script execution failure
+	// We should see two errors regarding the webhook and one regarding the script
+	let mut server = mockito::Server::new_async().await;
+	let mock = server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(json!({
+			"text": "*Test Alert*\n\nTest message with value 42"
+		})))
+		.with_status(500)
+		.create_async()
+		.await;
+	let mut mocked_triggers = HashMap::new();
+
+	mocked_triggers.insert(
+		"example_trigger_slack".to_string(),
+		Trigger {
+			name: "test_trigger".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: server.url(),
+				message: openzeppelin_monitor::models::NotificationMessage {
+					title: "Test Alert".to_string(),
+					body: "Test message with value ${value}".to_string(),
+				},
+			},
+		},
+	);
+	mocked_triggers.insert(
+		"example_trigger_webhook".to_string(),
+		Trigger {
+			name: "example_trigger_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url:
+					"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+						.to_string(),
+				method: Some("POST".to_string()),
+				secret: Some("secret".to_string()),
+				headers: Some(HashMap::new()),
+				message: NotificationMessage {
+					title: "Test Title".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		},
+	);
+	let script_path = "tests/integration/fixtures/evm/triggers/scripts/custom_notification.py";
+	mocked_triggers.insert(
+		"example_trigger_script".to_string(),
+		Trigger {
+			name: "example_trigger_script".to_string(),
+			trigger_type: TriggerType::Script,
+			config: TriggerTypeConfig::Script {
+				script_path: script_path.to_string(),
+				language: ScriptLanguage::Python,
+				timeout_ms: 1000,
+				arguments: None,
+			},
+		},
+	);
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	let triggers = vec![
+		"example_trigger_slack".to_string(),
+		"example_trigger_webhook".to_string(),
+		"example_trigger_script".to_string(),
+	];
+	let mut variables = HashMap::new();
+	variables.insert("value".to_string(), "42".to_string());
+	let monitor_match = create_test_monitor_match(BlockChainType::EVM);
+
+	let result = trigger_execution_service
+		.execute(&triggers, variables, &monitor_match, &HashMap::new())
+		.await;
+	assert!(result.is_err());
+	match result {
+		Err(e) => {
+			assert!(e
+				.to_string()
+				.contains("Multiple triggers failed (3 failures)"));
+			assert!(e
+				.to_string()
+				.contains("Webhook returned error status: 404 Not Found"));
+			assert!(e.to_string().contains("Script content not found"));
+			assert!(e
+				.to_string()
+				.contains("Slack webhook returned error status: 500 Internal Server Error"));
+		}
+		_ => panic!("Expected error"),
+	}
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_trigger_execution_service_execute_multiple_triggers_success() {
+	// Set up mock servers for both Slack and Webhook endpoints
+	let mut slack_server = mockito::Server::new_async().await;
+	let mut webhook_server = mockito::Server::new_async().await;
+
+	// Set up Slack mock
+	let slack_mock = slack_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(json!({
+			"text": "*Test Alert*\n\nTest message with value 42"
+		})))
+		.with_status(200)
+		.create_async()
+		.await;
+
+	// Set up Webhook mock
+	let webhook_mock = webhook_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Any)
+		.with_status(200)
+		.create_async()
+		.await;
+
+	let mut mocked_triggers = HashMap::new();
+
+	// Add Slack trigger
+	mocked_triggers.insert(
+		"example_trigger_slack".to_string(),
+		Trigger {
+			name: "test_trigger".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: slack_server.url(),
+				message: openzeppelin_monitor::models::NotificationMessage {
+					title: "Test Alert".to_string(),
+					body: "Test message with value ${value}".to_string(),
+				},
+			},
+		},
+	);
+
+	// Add Webhook trigger
+	mocked_triggers.insert(
+		"example_trigger_webhook".to_string(),
+		Trigger {
+			name: "example_trigger_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: webhook_server.url(),
+				method: Some("POST".to_string()),
+				secret: Some("secret".to_string()),
+				headers: Some(HashMap::new()),
+				message: NotificationMessage {
+					title: "Test Title".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		},
+	);
+
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	let triggers = vec![
+		"example_trigger_slack".to_string(),
+		"example_trigger_webhook".to_string(),
+	];
+	let mut variables = HashMap::new();
+	variables.insert("value".to_string(), "42".to_string());
+	let monitor_match = create_test_monitor_match(BlockChainType::EVM);
+
+	let result = trigger_execution_service
+		.execute(&triggers, variables, &monitor_match, &HashMap::new())
+		.await;
+	// Assert all triggers executed successfully
+	assert!(result.is_ok());
+
+	// Verify that both mock servers received their expected calls
+	slack_mock.assert();
+	webhook_mock.assert();
+}
+
+#[tokio::test]
+async fn test_trigger_execution_service_execute_multiple_triggers_partial_success() {
+	// Set up mock servers for both Slack and Webhook endpoints
+	let mut slack_server = mockito::Server::new_async().await;
+	let mut webhook_server = mockito::Server::new_async().await;
+
+	// Set up Slack mock
+	let slack_mock = slack_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(json!({
+			"text": "*Test Alert*\n\nTest message with value 42"
+		})))
+		.with_status(500)
+		.create_async()
+		.await;
+
+	// Set up Webhook mock
+	let webhook_mock = webhook_server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Any)
+		.with_status(200)
+		.create_async()
+		.await;
+
+	let mut mocked_triggers = HashMap::new();
+
+	// Add Slack trigger
+	mocked_triggers.insert(
+		"example_trigger_slack".to_string(),
+		Trigger {
+			name: "test_trigger".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: slack_server.url(),
+				message: openzeppelin_monitor::models::NotificationMessage {
+					title: "Test Alert".to_string(),
+					body: "Test message with value ${value}".to_string(),
+				},
+			},
+		},
+	);
+
+	// Add Webhook trigger
+	mocked_triggers.insert(
+		"example_trigger_webhook".to_string(),
+		Trigger {
+			name: "example_trigger_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: webhook_server.url(),
+				method: Some("POST".to_string()),
+				secret: Some("secret".to_string()),
+				headers: Some(HashMap::new()),
+				message: NotificationMessage {
+					title: "Test Title".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		},
+	);
+
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	let triggers = vec![
+		"example_trigger_slack".to_string(),
+		"example_trigger_webhook".to_string(),
+	];
+	let mut variables = HashMap::new();
+	variables.insert("value".to_string(), "42".to_string());
+	let monitor_match = create_test_monitor_match(BlockChainType::EVM);
+
+	let result = trigger_execution_service
+		.execute(&triggers, variables, &monitor_match, &HashMap::new())
+		.await;
+
+	// Assert all triggers executed successfully
+	assert!(result.is_err());
+	match result {
+		Err(e) => {
+			assert!(e.to_string().contains("Trigger failed"));
+			assert!(e
+				.to_string()
+				.contains("Slack webhook returned error status: 500 Internal Server Error"));
+		}
+		_ => panic!("Expected error"),
+	}
+	// Verify that both mock servers received their expected calls
+	slack_mock.assert();
+	webhook_mock.assert();
 }

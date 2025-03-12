@@ -8,7 +8,7 @@ use std::{collections::HashMap, path::Path};
 use async_trait::async_trait;
 
 use crate::{
-	models::{Monitor, ScriptLanguage},
+	models::{Monitor, MonitorMatch, ScriptLanguage, TriggerTypeConfig},
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{notification::NotificationService, trigger::error::TriggerError},
 };
@@ -23,6 +23,8 @@ pub trait TriggerExecutionServiceTrait {
 		&self,
 		trigger_slugs: &[String],
 		variables: HashMap<String, String>,
+		monitor_match: &MonitorMatch,
+		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), TriggerError>;
 	async fn load_scripts(
 		&self,
@@ -82,19 +84,44 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 		&self,
 		trigger_slugs: &[String],
 		variables: HashMap<String, String>,
+		monitor_match: &MonitorMatch,
+		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), TriggerError> {
-		for trigger_slug in trigger_slugs {
-			let trigger = self
-				.trigger_service
-				.get(trigger_slug)
-				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string()))?;
+		let mut errors = Vec::new();
 
-			self.notification_service
-				.execute(&trigger, variables.clone())
+		for trigger_slug in trigger_slugs {
+			let trigger = match self.trigger_service.get(trigger_slug) {
+				Some(trigger) => trigger,
+				None => {
+					errors.push(TriggerError::not_found(trigger_slug.to_string()));
+					continue;
+				}
+			};
+
+			if let Err(e) = self
+				.notification_service
+				.execute(&trigger, variables.clone(), monitor_match, trigger_scripts)
 				.await
-				.map_err(|e| TriggerError::execution_error(e.to_string()))?;
+			{
+				errors.push(TriggerError::execution_error(e.to_string()));
+				continue;
+			}
 		}
-		Ok(())
+
+		if errors.is_empty() {
+			Ok(())
+		} else {
+			let error_msg = if errors.len() == 1 {
+				format!("Trigger failed: {:?}", errors[0])
+			} else {
+				format!(
+					"Multiple triggers failed ({} failures): {:?}",
+					errors.len(),
+					errors
+				)
+			};
+			Err(TriggerError::execution_error(error_msg))
+		}
 	}
 	/// Loads trigger condition scripts for monitors
 	///
@@ -115,7 +142,7 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 
 		for monitor in monitors {
 			// Skip monitors without trigger conditions
-			if monitor.trigger_conditions.is_empty() {
+			if monitor.trigger_conditions.is_empty() && monitor.triggers.is_empty() {
 				continue;
 			}
 
@@ -134,6 +161,41 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				scripts.insert(
 					format!("{}|{}", monitor.name, condition.script_path),
 					(condition.language.clone(), content),
+				);
+			}
+
+			// For each trigger, we'll load the script
+			for trigger in &monitor.triggers {
+				let trigger_config =
+					self.trigger_service.get(trigger.as_str()).ok_or_else(|| {
+						TriggerError::configuration_error(format!(
+							"Failed to get trigger: {}",
+							trigger
+						))
+					})?;
+
+				let TriggerTypeConfig::Script {
+					language,
+					script_path,
+					arguments: _,
+					timeout_ms: _,
+				} = &trigger_config.config
+				else {
+					continue;
+				};
+
+				let script_path = Path::new(script_path);
+				let content = tokio::fs::read_to_string(script_path).await.map_err(|e| {
+					TriggerError::configuration_error(format!(
+						"Failed to read script file {}: {}",
+						script_path.display(),
+						e
+					))
+				})?;
+
+				scripts.insert(
+					format!("{}|{}", monitor.name, script_path.display()),
+					(language.clone(), content),
 				);
 			}
 		}

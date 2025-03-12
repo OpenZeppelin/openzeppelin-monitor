@@ -1,7 +1,7 @@
 use mockito::{Mock, Server};
 use openzeppelin_monitor::models::{
-	BlockChainType, BlockType, EVMBlock, EVMTransaction, Network, RpcUrl, StellarBlock,
-	StellarLedgerInfo, StellarTransaction, StellarTransactionInfo, TransactionType,
+	BlockChainType, BlockType, EVMBlock, EVMTransaction, EVMTransactionReceipt, Network, RpcUrl,
+	StellarBlock, StellarLedgerInfo, StellarTransaction, StellarTransactionInfo, TransactionType,
 };
 use serde_json::json;
 
@@ -287,4 +287,24 @@ pub fn create_test_transaction(chain: BlockChainType) -> TransactionType {
 		}
 		_ => panic!("Unsupported chain"),
 	}
+}
+
+pub fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
+	EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
+		inner: alloy::consensus::ReceiptEnvelope::Legacy(alloy::consensus::ReceiptWithBloom {
+			receipt: alloy::consensus::Receipt::default(),
+			logs_bloom: alloy::primitives::Bloom::default(),
+		}),
+		transaction_hash: alloy::primitives::B256::ZERO,
+		transaction_index: Some(0),
+		block_hash: Some(alloy::primitives::B256::ZERO),
+		block_number: Some(0),
+		gas_used: 0,
+		effective_gas_price: 0,
+		blob_gas_used: None,
+		blob_gas_price: None,
+		from: alloy::primitives::Address::ZERO,
+		to: Some(alloy::primitives::Address::ZERO),
+		contract_address: None,
+	})
 }

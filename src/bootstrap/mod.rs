@@ -18,7 +18,7 @@
 use futures::future::BoxFuture;
 use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::{sync::watch, time::Duration};
+use tokio::sync::watch;
 
 use crate::{
 	models::{
@@ -262,7 +262,7 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 					}
 					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
 					for monitor_match in &filtered_matches {
-						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
+						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service, &trigger_scripts).await {
 							error!("Error handling trigger: {}", e);
 						}
 					}
@@ -326,21 +326,17 @@ async fn execute_trigger_condition(
 ) -> bool {
 	let executor = ScriptExecutorFactory::create(&script_content.0, &script_content.1);
 
-	let result = tokio::time::timeout(
-		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
-		executor.execute(
+	let result = executor
+		.execute(
 			monitor_match.clone(),
-			trigger_condition.arguments.as_deref().unwrap_or(""),
-		),
-	)
-	.await;
+			&trigger_condition.timeout_ms,
+			trigger_condition.arguments.as_deref(),
+			false,
+		)
+		.await;
 
 	match result {
-		Ok(Ok(true)) => true,
-		Ok(Err(e)) => {
-			ScriptError::execution_error(e.to_string());
-			false
-		}
+		Ok(true) => true,
 		Err(e) => {
 			ScriptError::execution_error(e.to_string());
 			false
@@ -399,7 +395,7 @@ mod tests {
 	use crate::models::{
 		EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor,
 		MonitorMatch, ScriptLanguage, StellarBlock, StellarMonitorMatch, StellarTransaction,
-		StellarTransactionInfo,
+		StellarTransactionInfo, TriggerConditions,
 	};
 	use alloy::{
 		consensus::{

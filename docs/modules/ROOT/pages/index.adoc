@@ -26,6 +26,7 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 - Discord notifications
 - Telegram notifications
 - Webhook notifications
+- Custom Script notifications
 
 [NOTE]
 ====
@@ -625,6 +626,56 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |Message template with variable substitution
 |===
 
+
+===== Script Notifications
+[source,json]
+----
+{
+  "language": "Bash",
+  "script_path": "./config/triggers/scripts/custom_notification.sh",
+  "arguments": ["--verbose"],
+  "timeout_ms": 1000
+}
+----
+
+===== Script Notification Fields
+[cols="1,2,3"]
+|===
+|Field |Type |Description
+
+|language
+|String
+|The language of the script
+
+|script_path
+|String
+|The path to the script
+
+|arguments
+|Array[String]
+|The arguments of the script (optional).
+
+|timeout_ms
+|Number
+|The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed.
+|===
+
+==== Important Considerations about script notification:
+
+* Input: The script receives a JSON object containing two fields: `monitor_match` and `args`. The `monitor_match` field contains the monitor match data and the `args` (array of strings) field contains the arguments of the script.
+* Output: If the script exits with a non-zero code, the error message from stderr will be logged.
+
+You can write custom filters in any of the following languages:
+
+* Python
+* JavaScript
+* Bash
+
+[WARNING]
+====
+Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
+====
+
 ==== Available Template Variables
 
 ===== Common Variables
@@ -885,21 +936,26 @@ You can write custom filters in any of the following languages:
 
 Important considerations:
 
-* Input: The filter script receives a JSON object containing two fields: `monitor_match` and `args`. The `monitor_match` field contains the monitor match data and the `args` (strings separated by commas) field contains the arguments of the script.
+* Input: The filter script receives a JSON object containing two fields: `monitor_match` and `args`. The `monitor_match` field contains the monitor match data and the `args` (array of strings) field contains the arguments of the script.
 * Processing: Your script can analyze any properties of the match data
 * Output: The script must print either `true` or `false` to stdout to indicate whether the match should be included
-* All filters against a monitor match must return `false` for it to be included
+* All filters against a monitor match must return `true` for it to be included
 * Scripts must exit with code 0 for their output to be considered valid
 * Invalid output or non-zero exit codes will cause the filter to fail and the match will be included by default
 * Trigger conditions are executed sequentially based on their position in the trigger conditions array.
+
+[WARNING]
+====
+Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
+====
 
 .Example Trigger Conditions Configuration
 [source,json]
 ----
 {
-  "script_path": "./config/filters/evm_custom_filter.py",
-  "language": "Python",
-  "arguments": "--verbose",
+  "script_path": "./config/filters/evm_filter_block_number.sh",
+  "language": "Bash",
+  "arguments": ["--verbose"],
   "timeout_ms": 1000
 }
 ----
@@ -920,8 +976,8 @@ Important considerations:
 |The language of the script
 
 |arguments
-|String
-|The arguments of the script. If you want to pass more than one argument, each argument should be separated by a comma.
+|Array[String]
+|The arguments of the script (optional).
 
 |timeout_ms
 |Number
@@ -1016,12 +1072,17 @@ docker run \
 * Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
 * HTTP requests to RPC endpoints may consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
 
-=== Notification Considerations:
+=== Notification Considerations
 
 * Template variables are context-dependent:
 ** Event-triggered notifications only populate event variables.
 ** Function-triggered notifications only populate function variables.
 ** Mixing contexts results in empty values.
+* Custom script notifications have additional considerations:
+** Scripts receive monitor match data and arguments as JSON input
+** Scripts must complete within their configured timeout_ms or they will be terminated
+** Script modifications require monitor restart to take effect
+** Supported languages are limited to Python, JavaScript, and Bash
 
 == Testing
 

@@ -1,3 +1,4 @@
+use crate::models::core::ScriptLanguage;
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
@@ -102,9 +103,14 @@ pub enum TriggerTypeConfig {
 	},
 	/// Script execution configuration
 	Script {
+		/// Language of the script
+		language: ScriptLanguage,
 		/// Path to script file
-		path: String,
+		script_path: String,
 		/// Command line arguments
-		args: Vec<String>,
+		#[serde(default)]
+		arguments: Option<Vec<String>>,
+		/// Timeout in milliseconds
+		timeout_ms: u32,
 	},
 }
