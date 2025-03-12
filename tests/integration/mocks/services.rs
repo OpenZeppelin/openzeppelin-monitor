@@ -25,6 +25,8 @@ mock! {
 			&self,
 			trigger_slugs: &[String],
 			variables: HashMap<String, String>,
+			monitor_match: &MonitorMatch,
+			trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 		) -> Result<(), TriggerError>;
 		async fn load_scripts(&self, monitors: &[Monitor]) -> Result<HashMap<String, (ScriptLanguage, String)>, TriggerError>;
 	}

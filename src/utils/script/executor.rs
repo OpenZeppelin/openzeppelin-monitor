@@ -3,8 +3,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use libc::{c_int, getrlimit, RLIMIT_NOFILE};
 use log::debug;
-use std::{any::Any, mem::MaybeUninit, process::Stdio};
-use tokio::io::AsyncWriteExt;
+use std::{any::Any, mem::MaybeUninit, process::Stdio, time::Duration};
+use tokio::{io::AsyncWriteExt, time::timeout};
 
 /// A trait that defines the interface for executing custom scripts in different languages.
 /// Implementors must be both Send and Sync to ensure thread safety.
@@ -16,10 +16,19 @@ pub trait ScriptExecutor: Send + Sync + Any {
 	///
 	/// # Arguments
 	/// * `input` - A MonitorMatch instance containing the data to be processed by the script
+	/// * `timeout_ms` - The timeout for the script execution in milliseconds
+	/// * `args` - Additional arguments passed to the script
+	/// * `from_custom_notification` - Whether the script is from a custom notification
 	///
 	/// # Returns
 	/// * `Result<bool, anyhow::Error>` - Returns true/false based on script execution or an error
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, anyhow::Error>;
+	async fn execute(
+		&self,
+		input: MonitorMatch,
+		timeout_ms: &u32,
+		args: Option<&[String]>,
+		from_custom_notification: bool,
+	) -> Result<bool, anyhow::Error>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
@@ -59,7 +68,13 @@ impl ScriptExecutor for PythonScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, anyhow::Error> {
+	async fn execute(
+		&self,
+		input: MonitorMatch,
+		timeout_ms: &u32,
+		args: Option<&[String]>,
+		from_custom_notification: bool,
+	) -> Result<bool, anyhow::Error> {
 		let (open_fds, max_fds) = count_open_fds();
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -79,7 +94,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 			);
 		}
 
-		let mut cmd = tokio::process::Command::new("python3")
+		let cmd = tokio::process::Command::new("python3")
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -89,20 +104,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.spawn()
 			.with_context(|| "Failed to spawn python3 process")?;
 
-		// Write the input_json to stdin
-		cmd.stdin
-			.take()
-			.ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?
-			.write_all(input_json.as_bytes())
-			.await
-			.with_context(|| "Failed to write input to script")?;
-
-		let output = cmd
-			.wait_with_output()
-			.await
-			.with_context(|| "Failed to wait for script output")?;
-
-		process_script_output(output).with_context(|| "Failed to process script output")
+		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
 
@@ -117,7 +119,13 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, anyhow::Error> {
+	async fn execute(
+		&self,
+		input: MonitorMatch,
+		timeout_ms: &u32,
+		args: Option<&[String]>,
+		from_custom_notification: bool,
+	) -> Result<bool, anyhow::Error> {
 		let (open_fds, max_fds) = count_open_fds();
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
@@ -137,7 +145,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			);
 		}
 
-		let mut cmd = tokio::process::Command::new("node")
+		let cmd = tokio::process::Command::new("node")
 			.arg("-e")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -147,19 +155,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.spawn()
 			.with_context(|| "Failed to spawn node process")?;
 
-		// Write the input_json to stdin
-		cmd.stdin
-			.take()
-			.ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?
-			.write_all(input_json.as_bytes())
-			.await
-			.with_context(|| "Failed to write input to script")?;
-
-		let output = cmd
-			.wait_with_output()
-			.await
-			.with_context(|| "Failed to wait for script output")?;
-		process_script_output(output).with_context(|| "Failed to process script output")
+		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
 
@@ -174,7 +170,13 @@ impl ScriptExecutor for BashScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-	async fn execute(&self, input: MonitorMatch, args: &str) -> Result<bool, anyhow::Error> {
+	async fn execute(
+		&self,
+		input: MonitorMatch,
+		timeout_ms: &u32,
+		args: Option<&[String]>,
+		from_custom_notification: bool,
+	) -> Result<bool, anyhow::Error> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -196,7 +198,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			);
 		}
 
-		let mut cmd = tokio::process::Command::new("sh")
+		let cmd = tokio::process::Command::new("sh")
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -206,20 +208,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.spawn()
 			.with_context(|| "Failed to spawn shell process")?;
 
-		// Write the combined input_json to stdin
-		cmd.stdin
-			.take()
-			.ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?
-			.write_all(input_json.as_bytes())
-			.await
-			.with_context(|| "Failed to write input to script")?;
-
-		let output = cmd
-			.wait_with_output()
-			.await
-			.with_context(|| "Failed to wait for script output")?;
-
-		process_script_output(output).with_context(|| "Failed to process script output")
+		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
 
@@ -227,7 +216,7 @@ impl ScriptExecutor for BashScriptExecutor {
 ///
 /// # Arguments
 /// * `output` - The process output containing stdout, stderr, and status
-///
+/// * `from_custom_notification` - Whether the script is from a custom notification
 /// # Returns
 /// * `Result<bool, ScriptError>` - Returns parsed boolean result or error
 ///
@@ -237,13 +226,22 @@ impl ScriptExecutor for BashScriptExecutor {
 /// * The output cannot be parsed as a boolean
 /// * The script produced no output
 #[allow(clippy::result_large_err)]
-pub fn process_script_output(output: std::process::Output) -> Result<bool, anyhow::Error> {
+pub fn process_script_output(
+	output: std::process::Output,
+	from_custom_notification: bool,
+) -> Result<bool, anyhow::Error> {
 	if !output.status.success() {
 		let error_message = String::from_utf8_lossy(&output.stderr).to_string();
 		return Err(anyhow::anyhow!(
 			"Script execution failed: {}",
 			error_message
 		));
+	}
+
+	// If the script is from a custom notification and the status is success, we don't need to check
+	// the output
+	if from_custom_notification {
+		return Ok(true);
 	}
 
 	let stdout = String::from_utf8_lossy(&output.stdout);
@@ -268,6 +266,35 @@ pub fn process_script_output(output: std::process::Output) -> Result<bool, anyho
 	}
 }
 
+async fn process_command(
+	mut cmd: tokio::process::Child,
+	input_json: &str,
+	timeout_ms: &u32,
+	from_custom_notification: bool,
+) -> Result<bool, anyhow::Error> {
+	if let Some(mut stdin) = cmd.stdin.take() {
+		stdin
+			.write_all(input_json.as_bytes())
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to write input to script: {}", e))?;
+	} else {
+		return Err(anyhow::anyhow!("Failed to get stdin handle"));
+	}
+
+	// Define a timeout duration
+	let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
+
+	// Apply timeout to script execution
+	match timeout(timeout_duration, cmd.wait_with_output()).await {
+		Ok(result) => {
+			let output =
+				result.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))?;
+			process_script_output(output, from_custom_notification)
+		}
+		Err(_) => Err(anyhow::anyhow!("Script execution timed out")),
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -275,9 +302,8 @@ mod tests {
 		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
 		MatchConditions, Monitor, MonitorMatch, TransactionCondition,
 	};
-	use std::{fs, path::Path};
+	use std::{fs, path::Path, time::Instant};
 	use web3::types::{TransactionReceipt, H160, U256};
-
 	fn read_fixture(filename: &str) -> String {
 		let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
 			.join("tests/integration/fixtures/filters")
@@ -353,7 +379,8 @@ print(result)
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let timeout = 1000;
+		let result = executor.execute(input, &timeout, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -375,13 +402,14 @@ print(result)
 		};
 
 		let input = create_mock_monitor_match();
-
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
-				assert!(err_msg.contains("Failed to process script output"));
+				assert!(
+					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
+				);
 			}
 			_ => panic!("Expected error"),
 		}
@@ -408,7 +436,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -428,7 +456,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -446,13 +474,14 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
-				assert!(err_msg.contains("Failed to process script output"));
+				assert!(
+					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
+				);
 			}
 			_ => panic!("Expected error"),
 		}
@@ -472,9 +501,9 @@ echo "true"
 		};
 
 		let input = create_mock_monitor_match();
-
-		let result = executor.execute(input.clone(), "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -492,15 +521,16 @@ echo "not a boolean"
 		};
 
 		let input = create_mock_monitor_match();
-
-		let result = executor.execute(input.clone(), "").await;
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_err());
 		match result {
-			Err(err) => {
-				let err_msg = err.to_string();
-				assert!(err_msg.contains("Failed to process script output"));
+			Err(e) => {
+				assert!(e
+					.to_string()
+					.contains("Last line of output is not a valid boolean"));
 			}
 			Ok(_) => {
-				panic!("Expected error, got success");
+				panic!("Expected ParseError, got success");
 			}
 		}
 	}
@@ -516,12 +546,11 @@ echo "not a boolean"
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 
 		match result {
-			Err(err) => {
-				let err_msg = err.to_string();
-				assert!(err_msg.contains("Failed to process script output"));
+			Err(e) => {
+				assert!(e.to_string().contains("Script produced no output"));
 			}
 			_ => panic!("Expected error"),
 		}
@@ -539,7 +568,7 @@ print("     true    ")  # Should handle whitespace correctly
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -564,7 +593,7 @@ print("     true    ")  # Should handle whitespace correctly
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 	}
 
@@ -590,7 +619,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -621,7 +650,7 @@ else:
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "").await;
+		let result = executor.execute(input, &1000, None, false).await;
 		assert!(!result.unwrap());
 	}
 
@@ -641,7 +670,7 @@ if 'monitor_match' not in data or 'args' not in data:
 
 # Test args parsing
 args = data['args']
-if args == "--verbose":
+if "--verbose" in args:
     print("true")
 else:
     print("false")
@@ -654,12 +683,18 @@ else:
 		let input = create_mock_monitor_match();
 
 		// Test with matching argument
-		let result = executor.execute(input.clone(), "test_argument").await;
+		let args = vec![String::from("test_argument")];
+		let result = executor
+			.execute(input.clone(), &1000, Some(&args), false)
+			.await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
 
 		// Test with non-matching argument
-		let result = executor.execute(input, "--verbose").await;
+		let args = vec![String::from("--verbose"), String::from("--other-arg")];
+		let result = executor
+			.execute(input.clone(), &1000, Some(&args), false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -677,8 +712,9 @@ monitor_match = data['monitor_match']
 args = data['args']
 
 # Test both monitor_match and args together
+expected_args = ["--verbose", "--specific_arg", "--test"]
 if (monitor_match['EVM'] and
-    args == "--verbose,--specific_arg,--test"):
+    args == expected_args):
     print("true")
 else:
     print("false")
@@ -691,14 +727,22 @@ else:
 		let input = create_mock_monitor_match();
 
 		// Test with correct combination
+		let args = vec![
+			String::from("--verbose"),
+			String::from("--specific_arg"),
+			String::from("--test"),
+		];
 		let result = executor
-			.execute(input.clone(), "--verbose,--specific_arg,--test")
+			.execute(input.clone(), &1000, Some(&args), false)
 			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 
 		// Test with wrong argument
-		let result = executor.execute(input, "wrong_arg").await;
+		let args = vec![String::from("wrong_arg")];
+		let result = executor
+			.execute(input.clone(), &1000, Some(&args), false)
+			.await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
 	}
@@ -707,9 +751,11 @@ else:
 	async fn test_python_script_executor_with_verbose_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
 		let executor = PythonScriptExecutor { script_content };
-
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "--verbose").await;
+		let args = vec![String::from("--verbose")];
+		let result = executor
+			.execute(input.clone(), &1000, Some(&args), false)
+			.await;
 
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -721,9 +767,98 @@ else:
 		let executor = PythonScriptExecutor { script_content };
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, "--wrong_arg,--test").await;
+		let args = vec![String::from("--wrong_arg"), String::from("--test")];
+		let result = executor
+			.execute(input.clone(), &1000, Some(&args), false)
+			.await;
 
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_script_executor_with_ignore_output() {
+		let script_content = r#"
+		# This script produces no output
+		"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, true).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_script_executor_with_non_zero_exit() {
+		let script_content = r#"
+import sys
+sys.stderr.write("Error: something went wrong\n")
+sys.exit(1)
+		"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, true).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(e) => {
+				assert!(e.to_string().contains("Error: something went wrong"));
+			}
+			_ => panic!("Expected ExecutionError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_script_notify_succeeds_within_timeout() {
+		let script_content = r#"
+import sys
+import time
+time.sleep(0.3)
+		"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let start_time = Instant::now();
+		let result = executor.execute(input, &1000, None, true).await;
+		let elapsed = start_time.elapsed();
+
+		assert!(result.is_ok());
+		// Verify that execution took at least 300ms (the sleep time)
+		assert!(elapsed.as_millis() >= 300);
+		// Verify that execution took less than the timeout
+		assert!(elapsed.as_millis() < 1000);
+	}
+
+	#[tokio::test]
+	async fn test_script_notify_fails_within_timeout() {
+		let script_content = r#"
+import sys
+import time
+time.sleep(0.5)
+		"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let start_time = Instant::now();
+		let result = executor.execute(input, &400, None, true).await;
+		let elapsed = start_time.elapsed();
+
+		assert!(result.is_err());
+		// Verify that execution took at least 300ms (the sleep time)
+		assert!(elapsed.as_millis() >= 400 && elapsed.as_millis() < 600);
 	}
 }

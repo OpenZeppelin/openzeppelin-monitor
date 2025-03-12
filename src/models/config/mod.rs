@@ -13,7 +13,6 @@ mod network_config;
 mod trigger_config;
 
 pub use error::ConfigError;
-
 /// Common interface for loading configuration files
 pub trait ConfigLoader: Sized {
 	/// Load all configuration files from a directory

@@ -23,6 +23,10 @@ pub enum NotificationError {
 	#[error("Internal error: {0}")]
 	InternalError(ErrorContext),
 
+	/// Errors related to script execution
+	#[error("Script execution error: {0}")]
+	ExecutionError(ErrorContext),
+
 	/// Other errors that don't fit into the categories above
 	#[error(transparent)]
 	Other(#[from] anyhow::Error),
@@ -55,6 +59,15 @@ impl NotificationError {
 	) -> Self {
 		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
 	}
+
+	// Execution error
+	pub fn execution_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ExecutionError(ErrorContext::new_with_log(msg, source, metadata))
+	}
 }
 
 impl TraceableError for NotificationError {
@@ -63,6 +76,7 @@ impl TraceableError for NotificationError {
 			Self::NetworkError(ctx) => ctx.trace_id.clone(),
 			Self::ConfigError(ctx) => ctx.trace_id.clone(),
 			Self::InternalError(ctx) => ctx.trace_id.clone(),
+			Self::ExecutionError(ctx) => ctx.trace_id.clone(),
 			Self::Other(_) => Uuid::new_v4().to_string(),
 		}
 	}
@@ -115,6 +129,23 @@ mod tests {
 		assert_eq!(
 			error.to_string(),
 			"Internal error: test error [key1=value1]"
+		);
+	}
+
+	#[test]
+	fn test_execution_error_formatting() {
+		let error = NotificationError::execution_error("test error", None, None);
+		assert_eq!(error.to_string(), "Script execution error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = NotificationError::execution_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Script execution error: test error [key1=value1]"
 		);
 	}
 

@@ -1,0 +1,12 @@
+{
+  "evm_large_transfer_usdc_script": {
+    "name": "Large Transfer Action",
+    "trigger_type": "script",
+    "config": {
+      "language": "Bash",
+      "script_path": "./config/triggers/scripts/custom_notification.sh",
+      "arguments": ["--verbose"],
+      "timeout_ms": 1000
+    }
+  }
+}

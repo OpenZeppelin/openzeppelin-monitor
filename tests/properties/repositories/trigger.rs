@@ -251,17 +251,17 @@ proptest! {
 					}
 				}
 				TriggerType::Script => {
-					if let TriggerTypeConfig::Script { path: _, args: _ } = &trigger.config {
+					if let TriggerTypeConfig::Script { script_path: _, arguments: _, language: _, timeout_ms: _ } = &trigger.config {
 						// Test invalid path
 						invalid_trigger = trigger.clone();
-						if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
+						if let TriggerTypeConfig::Script { script_path: p, .. } = &mut invalid_trigger.config {
 							*p = "invalid/path/no-extension".to_string();
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
 
 						// Test empty path
 						invalid_trigger = trigger.clone();
-						if let TriggerTypeConfig::Script { path: p, .. } = &mut invalid_trigger.config {
+						if let TriggerTypeConfig::Script { script_path: p, .. } = &mut invalid_trigger.config {
 							*p = "".to_string();
 						}
 						prop_assert!(invalid_trigger.validate().is_err());

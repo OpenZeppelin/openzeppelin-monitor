@@ -3,6 +3,8 @@
 //! Tests the monitoring functionality for the Stellar blockchain,
 //! including contract invocations and transaction filtering.
 
+use std::collections::HashMap;
+
 use openzeppelin_monitor::{
 	models::{
 		BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, StellarEvent,
@@ -649,6 +651,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
+	let trigger_scripts = HashMap::new();
 
 	// Load Stellar-specific test data
 	let events: Vec<StellarEvent> =
@@ -678,7 +681,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 
 	trigger_execution_service
 		.expect_execute()
-		.withf(|trigger_name, variables| {
+		.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 			trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
@@ -698,11 +701,11 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				&& variables.get("event_0_3") == Some(&"2240".to_string())
 		})
 		.once()
-		.returning(|_, _| Ok(()));
+		.returning(|_, _, _, _| Ok(()));
 
 	trigger_execution_service
 		.expect_execute()
-		.withf(|trigger_name, variables| {
+		.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 			trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
@@ -714,7 +717,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				&& variables.get("function_0_0") == Some(&"{\"\\\"myKey1\\\"\":1234,\"\\\"myKey2\\\"\":\"Hello, world!\"}".to_string())
 		})
 		.once()
-		.returning(|_, _| Ok(()));
+		.returning(|_, _, _, _| Ok(()));
 
 	let matches = filter_service
 		.filter_block(
@@ -728,7 +731,12 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	assert!(!matches.is_empty(), "Should have found matches to handle");
 
 	for matching_monitor in matches {
-		let result = handle_match(matching_monitor.clone(), &trigger_execution_service).await;
+		let result = handle_match(
+			matching_monitor.clone(),
+			&trigger_execution_service,
+			&trigger_scripts,
+		)
+		.await;
 		assert!(result.is_ok(), "Handle match should succeed");
 	}
 

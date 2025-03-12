@@ -173,7 +173,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
     {
       "script_path": "./config/filters/evm_filter_block_number.sh",
       "language": "bash",
-      "arguments": "--verbose",
+      "arguments": ["--verbose"],
       "timeout_ms": 1000
     }
   ],
@@ -354,7 +354,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
     {
       "script_path": "./config/filters/stellar_filter_block_number.sh",
       "language": "bash",
-      "arguments": "--verbose",
+      "arguments": ["--verbose"],
       "timeout_ms": 1000
     }
   ],
