@@ -76,6 +76,7 @@ graph TD
         Discord
         Telegram
         Webhook
+        Script
     end
 
     %% Block Processing Flow
@@ -100,6 +101,7 @@ graph TD
     NS --> Discord
     NS --> Telegram
     NS --> Webhook
+    NS --> Script
 
     style STL fill:#f0f0f0
 
@@ -111,7 +113,7 @@ graph TD
     class ETH,POL,BSC rpc
     class BS storage
     class BW,FS,TS,NS service
-    class Slack,Email,Discord,Telegram,Webhook notification
+    class Slack,Email,Discord,Telegram,Webhook,Script notification
 ....
 
 == Project Structure
@@ -247,6 +249,7 @@ cp config/triggers/slack_notifications.json.example config/triggers/slack_notifi
 cp config/triggers/discord_notifications.json.example config/triggers/discord_notifications.json
 cp config/triggers/telegram_notifications.json.example config/triggers/telegram_notifications.json
 cp config/triggers/webhook_notifications.json.example config/triggers/webhook_notifications.json
+cp config/triggers/script_notifications.json.example config/triggers/script_notifications.json
 ----
 
 == Data Storage Configuration
