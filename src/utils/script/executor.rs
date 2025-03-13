@@ -1,9 +1,7 @@
 use crate::models::MonitorMatch;
 use anyhow::Context;
 use async_trait::async_trait;
-use libc::{c_int, getrlimit, RLIMIT_NOFILE};
-use log::debug;
-use std::{any::Any, mem::MaybeUninit, process::Stdio, time::Duration};
+use std::{any::Any, process::Stdio, time::Duration};
 use tokio::{io::AsyncWriteExt, time::timeout};
 
 /// A trait that defines the interface for executing custom scripts in different languages.
@@ -37,32 +35,6 @@ pub struct PythonScriptExecutor {
 	pub script_content: String,
 }
 
-/// Counts the number of open file descriptors for the current process
-fn count_open_fds() -> (usize, u64) {
-	#[cfg(unix)]
-	{
-		let mut rlimit = MaybeUninit::uninit();
-		let ret = unsafe { getrlimit(RLIMIT_NOFILE, rlimit.as_mut_ptr()) };
-
-		if ret == 0 {
-			let rlimit = unsafe { rlimit.assume_init() };
-			let mut count = 0;
-
-			// Check each potential file descriptor up to the soft limit
-			for fd in 0..rlimit.rlim_cur {
-				let ret = unsafe { libc::fcntl(fd as c_int, libc::F_GETFD) };
-				if ret != -1 {
-					count += 1;
-				}
-			}
-			(count, rlimit.rlim_cur)
-		} else {
-			debug!("Failed to get rlimit");
-			(0, 0)
-		}
-	}
-}
-
 #[async_trait]
 impl ScriptExecutor for PythonScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
@@ -75,24 +47,12 @@ impl ScriptExecutor for PythonScriptExecutor {
 		args: Option<&[String]>,
 		from_custom_notification: bool,
 	) -> Result<bool, anyhow::Error> {
-		let (open_fds, max_fds) = count_open_fds();
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
 			"args": args
 		});
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
-
-		// Warning if open file descriptors exceed the maximum limit
-		if open_fds > max_fds as usize {
-			log::warn!(
-				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
-				 This may cause unexpected runtime issues. You should increase the limit for open \
-				 files by running:  ulimit -n <number of fds>",
-				open_fds,
-				max_fds
-			);
-		}
 
 		let cmd = tokio::process::Command::new("python3")
 			.arg("-c")
@@ -126,7 +86,6 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		args: Option<&[String]>,
 		from_custom_notification: bool,
 	) -> Result<bool, anyhow::Error> {
-		let (open_fds, max_fds) = count_open_fds();
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -134,16 +93,6 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		});
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
-
-		// Warning if open file descriptors exceed the maximum limit
-		if open_fds > max_fds as usize {
-			log::warn!(
-				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
-				 This will cause issues. You should increase the limit for open files.",
-				open_fds,
-				max_fds
-			);
-		}
 
 		let cmd = tokio::process::Command::new("node")
 			.arg("-e")
@@ -185,18 +134,6 @@ impl ScriptExecutor for BashScriptExecutor {
 
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
-
-		let (open_fds, max_fds) = count_open_fds();
-
-		// Warning if open file descriptors exceed the maximum limit
-		if open_fds > max_fds as usize {
-			log::warn!(
-				"Critical: Number of open file descriptors ({}) exceeds maximum allowed ({}). \
-				 This will cause issues. You should increase the limit for open files.",
-				open_fds,
-				max_fds
-			);
-		}
 
 		let cmd = tokio::process::Command::new("sh")
 			.arg("-c")

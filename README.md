@@ -27,6 +27,7 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 - Discord notifications
 - Telegram notifications
 - Webhook notifications
+- Script notifications
 
 ## For Users
 
