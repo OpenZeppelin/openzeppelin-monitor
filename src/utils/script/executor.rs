@@ -299,11 +299,17 @@ async fn process_command(
 mod tests {
 	use super::*;
 	use crate::models::{
-		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
-		MatchConditions, Monitor, MonitorMatch, TransactionCondition,
+		AddressWithABI, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, EventCondition,
+		FunctionCondition, MatchConditions, Monitor, MonitorMatch, TransactionCondition,
+	};
+	use alloy::{
+		consensus::{
+			transaction::Recovered, Receipt, ReceiptEnvelope, ReceiptWithBloom, Signed, TxEnvelope,
+		},
+		primitives::{Address, Bytes, TxKind, B256, U256},
 	};
 	use std::{fs, path::Path, time::Instant};
-	use web3::types::{TransactionReceipt, H160, U256};
+
 	fn read_fixture(filename: &str) -> String {
 		let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
 			.join("tests/integration/fixtures/filters")
@@ -332,14 +338,51 @@ mod tests {
 		}
 	}
 
+	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
+		EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
+			inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
+				receipt: Receipt::default(),
+				logs_bloom: Default::default(),
+			}),
+			transaction_hash: B256::ZERO,
+			transaction_index: Some(0),
+			block_hash: Some(B256::ZERO),
+			block_number: Some(0),
+			gas_used: 0,
+			effective_gas_price: 0,
+			blob_gas_used: None,
+			blob_gas_price: None,
+			from: Address::ZERO,
+			to: Some(Address::ZERO),
+			contract_address: None,
+		})
+	}
+
 	fn create_test_evm_transaction() -> EVMTransaction {
-		EVMTransaction::from({
-			web3::types::Transaction {
-				from: Some(H160::default()),
-				to: Some(H160::default()),
-				value: U256::default(),
-				..Default::default()
-			}
+		let tx = alloy::consensus::TxLegacy {
+			chain_id: None,
+			nonce: 0,
+			gas_price: 0,
+			gas_limit: 0,
+			to: TxKind::Call(Address::ZERO),
+			value: U256::ZERO,
+			input: Bytes::default(),
+		};
+
+		let signature =
+			alloy::signers::Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+
+		let hash = B256::ZERO;
+
+		EVMTransaction::from(alloy::rpc::types::Transaction {
+			inner: Recovered::new_unchecked(
+				TxEnvelope::Legacy(Signed::new_unchecked(tx, signature, hash)),
+				Address::ZERO,
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_index: None,
+			effective_gas_price: None,
 		})
 	}
 
@@ -347,7 +390,7 @@ mod tests {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],

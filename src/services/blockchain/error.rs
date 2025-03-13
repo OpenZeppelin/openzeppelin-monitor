@@ -110,13 +110,6 @@ impl TraceableError for BlockChainError {
 	}
 }
 
-// Conversion from Web3 errors
-impl From<web3::Error> for BlockChainError {
-	fn from(err: web3::Error) -> Self {
-		Self::request_error(format!("Web3 error: {}", err), None, None)
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -216,17 +209,6 @@ mod tests {
 			error.to_string(),
 			"Client pool error: test error [key1=value1]"
 		);
-	}
-
-	#[test]
-	fn test_from_web3_error() {
-		let error = web3::Error::InvalidResponse("test error".to_string());
-		let block_chain_error: BlockChainError = error.into();
-		assert!(matches!(
-			block_chain_error,
-			BlockChainError::RequestError { .. }
-		));
-		assert!(block_chain_error.to_string().contains("Web3 error"));
 	}
 
 	#[test]

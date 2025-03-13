@@ -237,13 +237,11 @@ impl Default for NotificationService {
 
 #[cfg(test)]
 mod tests {
-	use web3::types::{TransactionReceipt, H160, U256};
-
 	use super::*;
 	use crate::models::{
-		AddressWithABI, EVMMonitorMatch, EVMTransaction, EventCondition, FunctionCondition,
-		MatchConditions, Monitor, MonitorMatch, NotificationMessage, ScriptLanguage,
-		TransactionCondition, Trigger, TriggerType, TriggerTypeConfig,
+		AddressWithABI, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, EventCondition,
+		FunctionCondition, MatchConditions, Monitor, MonitorMatch, NotificationMessage,
+		ScriptLanguage, TransactionCondition, Trigger, TriggerType, TriggerTypeConfig,
 	};
 	use std::collections::HashMap;
 
@@ -267,13 +265,35 @@ mod tests {
 	}
 
 	fn create_test_evm_transaction() -> EVMTransaction {
-		EVMTransaction::from({
-			web3::types::Transaction {
-				from: Some(H160::default()),
-				to: Some(H160::default()),
-				value: U256::default(),
-				..Default::default()
-			}
+		let tx = alloy::consensus::TxLegacy {
+			chain_id: None,
+			nonce: 0,
+			gas_price: 0,
+			gas_limit: 0,
+			to: alloy::primitives::TxKind::Call(alloy::primitives::Address::ZERO),
+			value: alloy::primitives::U256::ZERO,
+			input: alloy::primitives::Bytes::default(),
+		};
+
+		let signature = alloy::signers::Signature::from_scalars_and_parity(
+			alloy::primitives::B256::ZERO,
+			alloy::primitives::B256::ZERO,
+			false,
+		);
+
+		let hash = alloy::primitives::B256::ZERO;
+
+		EVMTransaction::from(alloy::rpc::types::Transaction {
+			inner: alloy::consensus::transaction::Recovered::new_unchecked(
+				alloy::consensus::transaction::TxEnvelope::Legacy(
+					alloy::consensus::Signed::new_unchecked(tx, signature, hash),
+				),
+				alloy::primitives::Address::ZERO,
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_index: None,
+			effective_gas_price: None,
 		})
 	}
 
@@ -281,7 +301,7 @@ mod tests {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: EVMTransactionReceipt::default(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],

@@ -8,13 +8,13 @@
 
 use std::collections::HashMap;
 
-use web3::types::H160;
+use alloy::primitives::Address;
 
 use crate::{
 	models::{MonitorMatch, ScriptLanguage},
 	services::{
 		filter::{
-			evm_helpers::{h160_to_string, h256_to_string},
+			evm_helpers::{b256_to_string, h160_to_string},
 			FilterError,
 		},
 		trigger::TriggerExecutionServiceTrait,
@@ -57,12 +57,12 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 		MonitorMatch::EVM(evm_monitor_match) => {
 			let transaction = evm_monitor_match.transaction.clone();
 			// If sender does not exist, we replace with 0x0000000000000000000000000000000000000000
-			let sender = transaction.sender().unwrap_or(&H160([0; 20]));
+			let sender = transaction.sender().unwrap_or(&Address::ZERO);
 			// Convert transaction data to a HashMap
 			let mut data = HashMap::new();
 			data.insert(
 				"transaction_hash".to_string(),
-				h256_to_string(*transaction.hash()),
+				b256_to_string(*transaction.hash()),
 			);
 			data.insert("transaction_from".to_string(), h160_to_string(*sender));
 			data.insert(

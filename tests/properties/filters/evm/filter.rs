@@ -1,15 +1,16 @@
 //! Property-based tests for EVM transaction matching and filtering.
 //! Tests cover signature/address normalization, expression evaluation, and transaction matching.
 
+use alloy::primitives::{Address, Bytes, U256};
 use std::marker::PhantomData;
 
 use openzeppelin_monitor::{
 	models::{
-		AddressWithABI, EVMMatchArguments, EVMMatchParamEntry, FunctionCondition, MatchConditions,
-		Monitor, TransactionCondition, TransactionStatus,
+		AddressWithABI, EVMBaseTransaction, EVMMatchArguments, EVMMatchParamEntry, EVMTransaction,
+		FunctionCondition, MatchConditions, Monitor, TransactionCondition, TransactionStatus,
 	},
 	services::{
-		blockchain::{EvmClient, Web3TransportClient},
+		blockchain::{AlloyTransportClient, EvmClient},
 		filter::{
 			evm_helpers::{
 				are_same_address, are_same_signature, normalize_address, normalize_signature,
@@ -20,7 +21,6 @@ use openzeppelin_monitor::{
 };
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::json;
-use web3::types::{Bytes, Transaction, H160, U256};
 
 // Generates valid EVM function signatures with random parameters
 prop_compose! {
@@ -72,14 +72,14 @@ prop_compose! {
 		from_addr in valid_address(),
 		to_addr in valid_address(),
 		input_data in prop::collection::vec(any::<u8>(), 0..100)
-	) -> Transaction {
-		Transaction {
-			from: Some(H160::from_slice(&hex::decode(&from_addr[2..]).unwrap())),
-			to: Some(H160::from_slice(&hex::decode(&to_addr[2..]).unwrap())),
+	) -> EVMTransaction {
+		EVMTransaction(EVMBaseTransaction {
+			from: Some(Address::from_slice(&hex::decode(&from_addr[2..]).unwrap())),
+			to: Some(Address::from_slice(&hex::decode(&to_addr[2..]).unwrap())),
 			value: U256::from(value),
 			input: Bytes::from(input_data),
 			..Default::default()
-		}
+		})
 	}
 }
 
@@ -308,7 +308,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -343,7 +343,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -387,7 +387,7 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -414,7 +414,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+			let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -466,7 +466,7 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -503,7 +503,7 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -531,7 +531,7 @@ proptest! {
 		tx in generate_transaction(),
 		monitor in generate_monitor_with_transaction()
 	) {
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -546,7 +546,7 @@ proptest! {
 			);
 
 			// Verify matches based on monitor conditions and transaction status
-			let value = tx.value.as_u128();
+			let value = tx.value.to::<u128>();
 			let should_match = monitor.match_conditions.transactions.iter().any(|condition| {
 				let status_matches = matches!(condition.status, TransactionStatus::Any) ||
 								   condition.status == status;
@@ -576,7 +576,7 @@ proptest! {
 	fn test_find_matching_transaction_empty_conditions(
 		tx in generate_transaction()
 	) {
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 		let mut matched_transactions = Vec::new();
@@ -612,7 +612,7 @@ proptest! {
 	fn test_find_matching_function_for_transaction(
 		monitor in generate_monitor_with_function()
 	) {
-		let filter = EVMBlockFilter::<EvmClient<Web3TransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
 			_client: PhantomData,
 		};
 		let mut matched_functions = Vec::new();
@@ -622,19 +622,18 @@ proptest! {
 		};
 
 		// Create transaction with specific function call data
-		let monitor_address = H160::from_slice(&hex::decode(&monitor.addresses[0].address[2..]).unwrap());
+		let monitor_address = Address::from_slice(&hex::decode(&monitor.addresses[0].address[2..]).unwrap());
 		let store_signature = [96, 87, 54, 29];  // store(uint256) function selector
 		let mut input_data = store_signature.to_vec();
 		let value = U256::from(600000u128);
-		let mut bytes = [0u8; 32];
-		value.to_big_endian(&mut bytes);
+		let bytes: [u8; 32] = value.to_be_bytes();
 		input_data.extend_from_slice(&bytes);
 
-		let tx = Transaction {
+		let tx = EVMTransaction(EVMBaseTransaction {
 			to: Some(monitor_address),
 			input: Bytes::from(input_data),
 			..Default::default()
-		};
+		});
 
 		filter.find_matching_functions_for_transaction(
 			&tx,

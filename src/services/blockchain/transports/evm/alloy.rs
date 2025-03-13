@@ -1,14 +1,15 @@
-//! Web3 transport implementation for EVM blockchain interactions.
+//! Alloy transport implementation for EVM blockchain interactions.
 //!
 //! This module provides a client implementation for interacting with EVM-compatible nodes
-//! via Web3, supporting connection management and raw JSON-RPC request functionality.
+//! via alloy, supporting connection management and raw JSON-RPC request functionality.
 
+use alloy::rpc::client::{ClientBuilder, RpcClient};
 use reqwest_retry::{policies::ExponentialBackoff, Jitter};
 use serde::Serialize;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
-use web3::{transports::Http, Web3};
+use url::Url;
 
 use crate::{
 	models::Network,
@@ -18,19 +19,19 @@ use crate::{
 	},
 };
 
-/// A client for interacting with EVM-compatible blockchain nodes via Web3
+/// A client for interacting with EVM-compatible blockchain nodes via alloy
 #[derive(Clone, Debug)]
-pub struct Web3TransportClient {
-	/// The underlying Web3 client for RPC requests
-	pub client: Arc<RwLock<Web3<Http>>>,
+pub struct AlloyTransportClient {
+	/// The underlying alloy client for RPC requests
+	pub client: Arc<RwLock<RpcClient>>,
 	/// Manages RPC endpoint rotation and request handling
 	endpoint_manager: EndpointManager,
 	/// The retry policy for the transport
 	retry_policy: ExponentialBackoff,
 }
 
-impl Web3TransportClient {
-	/// Creates a new Web3 transport client by attempting to connect to available endpoints
+impl AlloyTransportClient {
+	/// Creates a new alloy transport client by attempting to connect to available endpoints
 	///
 	/// Tries each RPC URL in order of descending weight until a successful connection is
 	/// established.
@@ -49,7 +50,7 @@ impl Web3TransportClient {
 
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
-		// Default retry policy for Web3 transport
+		// Default retry policy for Alloy transport
 		let retry_policy = ExponentialBackoff::builder()
 			.base(2)
 			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
@@ -57,30 +58,28 @@ impl Web3TransportClient {
 			.build_with_max_retries(2);
 
 		for rpc_url in rpc_urls.iter() {
-			match Http::new(&rpc_url.url) {
-				Ok(transport) => {
-					let client = Web3::new(transport);
-					match client.net().version().await {
-						Ok(_) => {
-							let fallback_urls: Vec<String> = rpc_urls
-								.iter()
-								.filter(|url| url.url != rpc_url.url)
-								.map(|url| url.url.clone())
-								.collect();
-
-							return Ok(Self {
-								client: Arc::new(RwLock::new(client)),
-								endpoint_manager: EndpointManager::new(
-									rpc_url.url.as_ref(),
-									fallback_urls,
-								),
-								retry_policy,
-							});
-						}
-						Err(_) => continue,
-					}
-				}
+			let url = match Url::parse(&rpc_url.url) {
+				Ok(url) => url,
 				Err(_) => continue,
+			};
+			let client = ClientBuilder::default().http(url);
+			match client.request_noparams::<String>("net_version").await {
+				Ok(_) => {
+					let fallback_urls: Vec<String> = rpc_urls
+						.iter()
+						.filter(|url| url.url != rpc_url.url)
+						.map(|url| url.url.clone())
+						.collect();
+
+					return Ok(Self {
+						client: Arc::new(RwLock::new(client)),
+						endpoint_manager: EndpointManager::new(rpc_url.url.as_ref(), fallback_urls),
+						retry_policy,
+					});
+				}
+				Err(_) => {
+					continue;
+				}
 			}
 		}
 
@@ -96,7 +95,7 @@ impl Web3TransportClient {
 }
 
 #[async_trait::async_trait]
-impl BlockchainTransport for Web3TransportClient {
+impl BlockchainTransport for AlloyTransportClient {
 	/// Gets the current active URL
 	///
 	/// # Returns
@@ -154,34 +153,39 @@ impl BlockchainTransport for Web3TransportClient {
 }
 
 #[async_trait::async_trait]
-impl RotatingTransport for Web3TransportClient {
+impl RotatingTransport for AlloyTransportClient {
 	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
-		match Http::new(url) {
-			Ok(transport) => {
-				let client = Web3::new(transport);
-				if client.net().version().await.is_ok() {
-					Ok(())
-				} else {
-					Err(anyhow::anyhow!("Failed to connect: {}", url))
-				}
-			}
-			Err(e) => Err(anyhow::anyhow!("Invalid URL: {}", e)),
+		let url = match Url::parse(url) {
+			Ok(url) => url,
+			Err(_) => return Err(anyhow::anyhow!("Invalid URL: {}", url.to_string())),
+		};
+
+		let url_clone = url.clone();
+		let client = ClientBuilder::default().http(url);
+
+		match client.request_noparams::<String>("net_version").await {
+			Ok(_) => Ok(()),
+			Err(_) => Err(anyhow::anyhow!(
+				"Failed to connect: {}",
+				url_clone.to_string()
+			)),
 		}
 	}
 
 	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
-		if let Ok(transport) = Http::new(url) {
-			let new_client = Web3::new(transport);
-			let mut client = self.client.write().await;
-			*client = new_client;
+		let parsed_url = match Url::parse(url) {
+			Ok(url) => url,
+			Err(_) => return Err(anyhow::anyhow!("Invalid URL: {}", url)),
+		};
+		let new_client = ClientBuilder::default().http(parsed_url);
 
-			// Update the endpoint manager's active URL as well
-			let mut active_url = self.endpoint_manager.active_url.write().await;
-			*active_url = url.to_string();
+		let mut client = self.client.write().await;
+		*client = new_client;
 
-			Ok(())
-		} else {
-			Err(anyhow::anyhow!("Failed to create client: {}", url))
-		}
+		// Update the endpoint manager's active URL as well
+		let mut active_url = self.endpoint_manager.active_url.write().await;
+		*active_url = url.to_string();
+
+		Ok(())
 	}
 }

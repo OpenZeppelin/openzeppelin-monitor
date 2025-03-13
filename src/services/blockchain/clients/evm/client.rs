@@ -12,11 +12,11 @@ use futures;
 use serde_json::json;
 
 use crate::{
-	models::{BlockType, EVMBlock, Network},
+	models::{BlockType, EVMBlock, EVMReceiptLog, EVMTransactionReceipt, Network},
 	services::{
 		blockchain::{
 			client::BlockChainClient,
-			transports::{BlockchainTransport, Web3TransportClient},
+			transports::{AlloyTransportClient, BlockchainTransport},
 			BlockChainError, BlockFilterFactory,
 		},
 		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
@@ -25,22 +25,22 @@ use crate::{
 
 /// Client implementation for Ethereum Virtual Machine (EVM) compatible blockchains
 ///
-/// Provides high-level access to EVM blockchain data and operations through Web3
+/// Provides high-level access to EVM blockchain data and operations through Alloy
 /// transport layer.
 #[derive(Clone)]
 pub struct EvmClient<T: Send + Sync + Clone> {
-	/// The underlying Web3 transport client for RPC communication
-	web3_client: T,
+	/// The underlying Alloy transport client for RPC communication
+	alloy_client: T,
 }
 
 impl<T: Send + Sync + Clone> EvmClient<T> {
 	/// Creates a new EVM client instance with a specific transport client
-	pub fn new_with_transport(web3_client: T) -> Self {
-		Self { web3_client }
+	pub fn new_with_transport(alloy_client: T) -> Self {
+		Self { alloy_client }
 	}
 }
 
-impl EvmClient<Web3TransportClient> {
+impl EvmClient<AlloyTransportClient> {
 	/// Creates a new EVM client instance
 	///
 	/// # Arguments
@@ -49,8 +49,8 @@ impl EvmClient<Web3TransportClient> {
 	/// # Returns
 	/// * `Result<Self, BlockChainError>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
-		let web3_client = Web3TransportClient::new(network).await?;
-		Ok(Self::new_with_transport(web3_client))
+		let alloy_client = AlloyTransportClient::new(network).await?;
+		Ok(Self::new_with_transport(alloy_client))
 	}
 }
 
@@ -76,7 +76,7 @@ pub trait EvmClientTrait {
 	async fn get_transaction_receipt(
 		&self,
 		transaction_hash: String,
-	) -> Result<web3::types::TransactionReceipt, anyhow::Error>;
+	) -> Result<EVMTransactionReceipt, anyhow::Error>;
 
 	/// Retrieves logs for a range of blocks
 	///
@@ -90,7 +90,7 @@ pub trait EvmClientTrait {
 		&self,
 		from_block: u64,
 		to_block: u64,
-	) -> Result<Vec<web3::types::Log>, anyhow::Error>;
+	) -> Result<Vec<EVMReceiptLog>, anyhow::Error>;
 }
 
 #[async_trait]
@@ -103,7 +103,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 	async fn get_transaction_receipt(
 		&self,
 		transaction_hash: String,
-	) -> Result<web3::types::TransactionReceipt, anyhow::Error> {
+	) -> Result<EVMTransactionReceipt, anyhow::Error> {
 		let hash = string_to_h256(&transaction_hash)
 			.map_err(|e| anyhow::anyhow!("Invalid transaction hash: {}", e))?;
 
@@ -113,7 +113,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 			.to_vec();
 
 		let response = self
-			.web3_client
+			.alloy_client
 			.send_raw_request(
 				"eth_getTransactionReceipt",
 				Some(serde_json::Value::Array(params)),
@@ -137,14 +137,12 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 
 	/// Retrieves logs within the specified block range
 	///
-	/// Uses Web3's filter builder to construct the log filter query
-	///
 	/// # Arguments
 	/// * `from_block` - Starting block number
 	/// * `to_block` - Ending block number
 	///
 	/// # Returns
-	/// * `Result<Vec<web3::types::Log>, anyhow::Error>` - Collection of matching logs or error
+	/// * `Result<Vec<EVMReceiptLog>, anyhow::Error>` - Collection of matching logs or error
 	///
 	/// # Errors
 	/// - Returns `BlockChainError::InternalError` if the JSON-RPC params array is invalid
@@ -153,7 +151,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 		&self,
 		from_block: u64,
 		to_block: u64,
-	) -> Result<Vec<web3::types::Log>, anyhow::Error> {
+	) -> Result<Vec<EVMReceiptLog>, anyhow::Error> {
 		// Convert parameters to JSON-RPC format
 		let params = json!([{
 			"fromBlock": format!("0x{:x}", from_block),
@@ -164,7 +162,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 		.to_vec();
 
 		let response = self
-			.web3_client
+			.alloy_client
 			.send_raw_request("eth_getLogs", Some(params))
 			.await
 			.with_context(|| {
@@ -189,7 +187,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 	/// Retrieves the latest block number with retry functionality
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
-			.web3_client
+			.alloy_client
 			.send_raw_request::<serde_json::Value>("eth_blockNumber", None)
 			.await
 			.with_context(|| "Failed to get latest block number")?;
@@ -220,7 +218,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 					format!("0x{:x}", block_number),
 					true // include full transaction objects
 				]);
-				let client = self.web3_client.clone();
+				let client = self.alloy_client.clone();
 
 				async move {
 					let response = client
@@ -236,11 +234,10 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 						return Err(anyhow::anyhow!("Block not found"));
 					}
 
-					let block: web3::types::Block<web3::types::Transaction> =
-						serde_json::from_value(block_data.clone())
-							.map_err(|e| anyhow::anyhow!("Failed to parse block: {}", e))?;
+					let block: EVMBlock = serde_json::from_value(block_data.clone())
+						.map_err(|e| anyhow::anyhow!("Failed to parse block: {}", e))?;
 
-					Ok(BlockType::EVM(Box::new(EVMBlock::from(block))))
+					Ok(BlockType::EVM(Box::new(block)))
 				}
 			})
 			.collect();

@@ -1,16 +1,121 @@
 //! EVM transaction data structures.
 
-use std::ops::Deref;
+use std::{collections::HashMap, ops::Deref};
 
 use serde::{Deserialize, Serialize};
-use web3::types::{Transaction as Web3Transaction, H160, H256, U256};
 
-/// Wrapper around Web3 Transaction that implements additional functionality
+use alloy::{
+	consensus::Transaction as AlloyConsensusTransaction,
+	primitives::{Address, Bytes, B256, U256, U64},
+	rpc::types::{AccessList, Index, Transaction as AlloyTransaction},
+};
+
+/// L2-specific transaction fields
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+pub struct BaseL2Transaction {
+	/// Deposit receipt version (for L2 transactions)
+	#[serde(
+		rename = "depositReceiptVersion",
+		default,
+		skip_serializing_if = "Option::is_none"
+	)]
+	pub deposit_receipt_version: Option<U64>,
+
+	/// Source hash (for L2 transactions)
+	#[serde(
+		rename = "sourceHash",
+		default,
+		skip_serializing_if = "Option::is_none"
+	)]
+	pub source_hash: Option<B256>,
+
+	/// Mint amount (for L2 transactions)
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub mint: Option<U256>,
+
+	/// Y parity (alternative to v in some implementations)
+	#[serde(rename = "yParity", default, skip_serializing_if = "Option::is_none")]
+	pub y_parity: Option<U64>,
+}
+
+/// Base Transaction struct
+/// Copied from web3 crate (now deprecated) and slightly modified for alloy compatibility
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+pub struct BaseTransaction {
+	/// Hash
+	pub hash: B256,
+	/// Nonce
+	pub nonce: U256,
+	/// Block hash. None when pending.
+	#[serde(rename = "blockHash")]
+	pub block_hash: Option<B256>,
+	/// Block number. None when pending.
+	#[serde(rename = "blockNumber")]
+	pub block_number: Option<U64>,
+	/// Transaction Index. None when pending.
+	#[serde(rename = "transactionIndex")]
+	pub transaction_index: Option<Index>,
+	/// Sender
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub from: Option<Address>,
+	/// Recipient (None when contract creation)
+	pub to: Option<Address>,
+	/// Transferred value
+	pub value: U256,
+	/// Gas Price
+	#[serde(rename = "gasPrice")]
+	pub gas_price: Option<U256>,
+	/// Gas amount
+	pub gas: U256,
+	/// Input data
+	pub input: Bytes,
+	/// ECDSA recovery id
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub v: Option<U64>,
+	/// ECDSA signature r, 32 bytes
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub r: Option<U256>,
+	/// ECDSA signature s, 32 bytes
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub s: Option<U256>,
+	/// Raw transaction data
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub raw: Option<Bytes>,
+	/// Transaction type, Some(1) for AccessList transaction, None for Legacy
+	#[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+	pub transaction_type: Option<U64>,
+	/// Access list
+	#[serde(
+		rename = "accessList",
+		default,
+		skip_serializing_if = "Option::is_none"
+	)]
+	pub access_list: Option<AccessList>,
+	/// Max fee per gas
+	#[serde(rename = "maxFeePerGas", skip_serializing_if = "Option::is_none")]
+	pub max_fee_per_gas: Option<U256>,
+	/// miner bribe
+	#[serde(
+		rename = "maxPriorityFeePerGas",
+		skip_serializing_if = "Option::is_none"
+	)]
+	pub max_priority_fee_per_gas: Option<U256>,
+
+	/// L2-specific transaction fields
+	#[serde(flatten)]
+	pub l2: BaseL2Transaction,
+
+	/// Catch-all for non-standard fields
+	#[serde(flatten)]
+	pub extra: HashMap<String, serde_json::Value>,
+}
+
+/// Wrapper around Base Transaction that implements additional functionality
 ///
 /// This type provides a convenient interface for working with EVM transactions
-/// while maintaining compatibility with the web3 types.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Transaction(pub Web3Transaction);
+/// while maintaining compatibility with the base types.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Transaction(pub BaseTransaction);
 
 impl Transaction {
 	/// Get the transaction value (amount of ETH transferred)
@@ -19,12 +124,12 @@ impl Transaction {
 	}
 
 	/// Get the transaction sender address
-	pub fn sender(&self) -> Option<&H160> {
+	pub fn sender(&self) -> Option<&Address> {
 		self.0.from.as_ref()
 	}
 
 	/// Get the transaction recipient address (None for contract creation)
-	pub fn to(&self) -> Option<&H160> {
+	pub fn to(&self) -> Option<&Address> {
 		self.0.to.as_ref()
 	}
 
@@ -44,19 +149,55 @@ impl Transaction {
 	}
 
 	/// Get the transaction hash
-	pub fn hash(&self) -> &H256 {
+	pub fn hash(&self) -> &B256 {
 		&self.0.hash
 	}
 }
 
-impl From<Web3Transaction> for Transaction {
-	fn from(tx: Web3Transaction) -> Self {
+impl From<BaseTransaction> for Transaction {
+	fn from(tx: BaseTransaction) -> Self {
+		Self(tx)
+	}
+}
+
+impl From<AlloyTransaction> for Transaction {
+	fn from(tx: AlloyTransaction) -> Self {
+		let tx = BaseTransaction {
+			hash: *tx.inner.tx_hash(),
+			nonce: U256::from(tx.inner.nonce()),
+			block_hash: tx.block_hash,
+			block_number: tx.block_number.map(U64::from),
+			transaction_index: tx.transaction_index.map(|i| Index::from(i as usize)),
+			from: Some(tx.inner.signer()),
+			to: tx.inner.to(),
+			value: tx.inner.value(),
+			gas_price: tx.inner.gas_price().map(U256::from),
+			gas: U256::from(tx.inner.gas_limit()),
+			input: tx.inner.input().clone(),
+			v: Some(U64::from(u64::from(tx.inner.signature().v()))),
+			r: Some(U256::from(tx.inner.signature().r())),
+			s: Some(U256::from(tx.inner.signature().s())),
+			raw: None,
+			transaction_type: Some(U64::from(tx.inner.tx_type() as u64)),
+			access_list: tx.inner.access_list().cloned(),
+			max_fee_per_gas: Some(U256::from(tx.inner.max_fee_per_gas())),
+			max_priority_fee_per_gas: Some(U256::from(
+				tx.inner.max_priority_fee_per_gas().unwrap_or(0),
+			)),
+			l2: BaseL2Transaction {
+				deposit_receipt_version: None,
+				source_hash: None,
+				mint: None,
+				y_parity: None,
+			},
+			extra: HashMap::new(),
+		};
 		Self(tx)
 	}
 }
 
 impl Deref for Transaction {
-	type Target = Web3Transaction;
+	type Target = BaseTransaction;
 
 	fn deref(&self) -> &Self::Target {
 		&self.0
@@ -66,17 +207,20 @@ impl Deref for Transaction {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use web3::types::{Bytes, U64};
+	use alloy::{
+		primitives::{Address, Bytes, B256, U256, U64},
+		rpc::types::Index,
+	};
 
-	fn create_test_transaction() -> Web3Transaction {
-		Web3Transaction {
-			hash: H256::from_low_u64_be(1),
+	fn create_test_transaction() -> BaseTransaction {
+		BaseTransaction {
+			hash: B256::with_last_byte(1),
 			nonce: U256::from(2),
-			block_hash: Some(H256::from_low_u64_be(3)),
+			block_hash: Some(B256::with_last_byte(3)),
 			block_number: Some(U64::from(4)),
-			transaction_index: Some(U64::from(0)),
-			from: Some(H160::from_low_u64_be(5)),
-			to: Some(H160::from_low_u64_be(6)),
+			transaction_index: Some(Index::from(0)),
+			from: Some(Address::with_last_byte(5)),
+			to: Some(Address::with_last_byte(6)),
 			value: U256::from(100),
 			gas_price: Some(U256::from(20)),
 			gas: U256::from(21000),
@@ -89,6 +233,13 @@ mod tests {
 			access_list: None,
 			max_priority_fee_per_gas: None,
 			max_fee_per_gas: None,
+			l2: BaseL2Transaction {
+				deposit_receipt_version: None,
+				source_hash: None,
+				mint: None,
+				y_parity: None,
+			},
+			extra: HashMap::new(),
 		}
 	}
 
@@ -101,13 +252,13 @@ mod tests {
 	#[test]
 	fn test_sender() {
 		let tx = Transaction(create_test_transaction());
-		assert_eq!(tx.sender(), Some(&H160::from_low_u64_be(5)));
+		assert_eq!(tx.sender(), Some(&Address::with_last_byte(5)));
 	}
 
 	#[test]
 	fn test_recipient() {
 		let tx = Transaction(create_test_transaction());
-		assert_eq!(tx.to(), Some(&H160::from_low_u64_be(6)));
+		assert_eq!(tx.to(), Some(&Address::with_last_byte(6)));
 	}
 
 	#[test]
@@ -131,20 +282,20 @@ mod tests {
 	#[test]
 	fn test_hash() {
 		let tx = Transaction(create_test_transaction());
-		assert_eq!(*tx.hash(), H256::from_low_u64_be(1));
+		assert_eq!(*tx.hash(), B256::with_last_byte(1));
 	}
 
 	#[test]
-	fn test_from_web3_transaction() {
-		let web3_tx = create_test_transaction();
-		let tx: Transaction = web3_tx.clone().into();
-		assert_eq!(tx.0, web3_tx);
+	fn test_from_base_transaction() {
+		let base_tx = create_test_transaction();
+		let tx: Transaction = base_tx.clone().into();
+		assert_eq!(tx.0, base_tx);
 	}
 
 	#[test]
 	fn test_deref() {
-		let web3_tx = create_test_transaction();
-		let tx = Transaction(web3_tx.clone());
-		assert_eq!(*tx, web3_tx);
+		let base_tx = create_test_transaction();
+		let tx = Transaction(base_tx.clone());
+		assert_eq!(*tx, base_tx);
 	}
 }

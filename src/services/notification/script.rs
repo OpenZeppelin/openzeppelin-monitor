@@ -66,9 +66,11 @@ impl ScriptExecutor for ScriptNotifier {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch};
+	use crate::models::{
+		EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor,
+		MonitorMatch,
+	};
 	use std::time::Instant;
-	use web3::types::{H160, U256};
 
 	fn create_test_script_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Script {
@@ -95,13 +97,35 @@ mod tests {
 	}
 
 	fn create_test_evm_transaction() -> EVMTransaction {
-		EVMTransaction::from({
-			web3::types::Transaction {
-				from: Some(H160::default()),
-				to: Some(H160::default()),
-				value: U256::default(),
-				..Default::default()
-			}
+		let tx = alloy::consensus::TxLegacy {
+			chain_id: None,
+			nonce: 0,
+			gas_price: 0,
+			gas_limit: 0,
+			to: alloy::primitives::TxKind::Call(alloy::primitives::Address::ZERO),
+			value: alloy::primitives::U256::ZERO,
+			input: alloy::primitives::Bytes::default(),
+		};
+
+		let signature = alloy::signers::Signature::from_scalars_and_parity(
+			alloy::primitives::B256::ZERO,
+			alloy::primitives::B256::ZERO,
+			false,
+		);
+
+		let hash = alloy::primitives::B256::ZERO;
+
+		EVMTransaction::from(alloy::rpc::types::Transaction {
+			inner: alloy::consensus::transaction::Recovered::new_unchecked(
+				alloy::consensus::transaction::TxEnvelope::Legacy(
+					alloy::consensus::Signed::new_unchecked(tx, signature, hash),
+				),
+				alloy::primitives::Address::ZERO,
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_index: None,
+			effective_gas_price: None,
 		})
 	}
 
@@ -109,7 +133,7 @@ mod tests {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor("test_monitor", vec!["ethereum_mainnet"], false, vec![]),
 			transaction: create_test_evm_transaction(),
-			receipt: web3::types::TransactionReceipt::default(),
+			receipt: EVMTransactionReceipt::default(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		}))
