@@ -93,11 +93,6 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 		network: &Network,
 		block_number: u64,
 	) -> Result<(), anyhow::Error> {
-		let context = HashMap::from([
-			("network".to_string(), network.slug.clone()),
-			("block_number".to_string(), block_number.to_string()),
-		]);
-
 		let mut history = self.block_history.lock().await;
 		let network_history = history
 			.entry(network.slug.clone())
@@ -111,7 +106,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 					BlockWatcherError::block_tracker_error(
 						format!("Missed block {}", missed),
 						None,
-						Some(context.clone()),
+						None,
 					);
 
 					if network.store_blocks.unwrap_or(false) {
@@ -121,7 +116,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 								BlockWatcherError::storage_error(
 									format!("Failed to store missed block {}", missed),
 									None,
-									Some(context.clone()),
+									None,
 								);
 							}
 						}
@@ -134,7 +129,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 						block_number, last_block
 					),
 					None,
-					Some(context),
+					None,
 				);
 			}
 		}

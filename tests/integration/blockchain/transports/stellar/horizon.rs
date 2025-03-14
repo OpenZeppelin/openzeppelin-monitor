@@ -1,6 +1,6 @@
 use mockito::Server;
 use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, BlockchainTransport, HorizonTransportClient, RotatingTransport,
+	BlockchainTransport, HorizonTransportClient, RotatingTransport,
 };
 use serde_json::{json, Value};
 
@@ -27,10 +27,8 @@ async fn test_client_creation() {
 	let network = create_stellar_test_network_with_urls(vec!["invalid-url"], "horizon");
 
 	match HorizonTransportClient::new(&network).await {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg
-				.to_string()
-				.contains("All RPC URLs failed to connect [network=test]"));
+		Err(error) => {
+			assert!(error.to_string().contains("All RPC URLs failed to connect"));
 		}
 		_ => panic!("Transport creation should fail"),
 	}

@@ -11,6 +11,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
+use tracing::instrument;
 
 use crate::{
 	models::{BlockType, Network, ProcessedBlock},
@@ -176,7 +177,17 @@ where
 					trigger_handler,
 					block_tracker,
 				)
-				.await;
+				.await
+				.map_err(|e| {
+					BlockWatcherError::processing_error(
+						"Failed to process blocks".to_string(),
+						Some(e.into()),
+						Some(HashMap::from([(
+							"network".to_string(),
+							network.slug.clone(),
+						)])),
+					)
+				});
 			})
 		})
 		.with_context(|| "Failed to create job")?;
@@ -316,6 +327,7 @@ where
 ///
 /// # Returns
 /// * `Result<(), BlockWatcherError>` - Success or error
+#[instrument(skip_all, fields(network = network.slug))]
 pub async fn process_new_blocks<
 	S: BlockStorage,
 	C: BlockChainClient + Send + Clone + 'static,
@@ -330,9 +342,6 @@ pub async fn process_new_blocks<
 	trigger_handler: Arc<T>,
 	block_tracker: Arc<TR>,
 ) -> Result<(), BlockWatcherError> {
-	let mut context = HashMap::new();
-	context.insert("network".to_string(), network.slug.clone());
-
 	let start_time = std::time::Instant::now();
 
 	let last_processed_block = block_storage
@@ -359,10 +368,8 @@ pub async fn process_new_blocks<
 	);
 
 	tracing::info!(
-		"Network {} ({}) processing blocks:\n\tLast processed block: {}\n\tLatest confirmed \
-		 block: {}\n\tStart block: {}{}\n\tConfirmations required: {}\n\tMax past blocks: {}",
-		network.name,
-		network.slug,
+		"Processing blocks:\n\tLast processed block: {}\n\tLatest confirmed block: {}\n\tStart \
+		 block: {}{}\n\tConfirmations required: {}\n\tMax past blocks: {}",
 		last_processed_block,
 		latest_confirmed_block,
 		start_block,
@@ -376,12 +383,6 @@ pub async fn process_new_blocks<
 		},
 		network.confirmation_blocks,
 		max_past_blocks
-	);
-
-	context.insert("start_block".to_string(), start_block.to_string());
-	context.insert(
-		"latest_confirmed_block".to_string(),
-		latest_confirmed_block.to_string(),
 	);
 
 	let mut blocks = Vec::new();
@@ -520,9 +521,7 @@ pub async fn process_new_blocks<
 		.with_context(|| "Failed to save last processed block")?;
 
 	tracing::info!(
-		"Network {} ({}) processed {} blocks in {}ms",
-		network.name,
-		network.slug,
+		"Processed {} blocks in {}ms",
 		blocks.len(),
 		start_time.elapsed().as_millis()
 	);

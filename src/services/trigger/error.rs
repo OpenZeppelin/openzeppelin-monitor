@@ -47,6 +47,15 @@ impl TriggerError {
 		Self::ExecutionError(ErrorContext::new_with_log(msg, source, metadata))
 	}
 
+	// Execution error without logging
+	pub fn execution_error_without_log(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ExecutionError(ErrorContext::new(msg, source, metadata))
+	}
+
 	// Configuration error
 	pub fn configuration_error(
 		msg: impl Into<String>,

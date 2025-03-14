@@ -155,7 +155,7 @@ impl ScriptExecutor for BashScriptExecutor {
 /// * `output` - The process output containing stdout, stderr, and status
 /// * `from_custom_notification` - Whether the script is from a custom notification
 /// # Returns
-/// * `Result<bool, ScriptError>` - Returns parsed boolean result or error
+/// * `Result<bool, anyhow::Error>` - Returns parsed boolean result or error
 ///
 /// # Errors
 /// Returns an error if:

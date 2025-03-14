@@ -51,7 +51,7 @@ impl EndpointManager {
 	/// * `transport` - The transport client implementing the RotatingTransport trait
 	///
 	/// # Returns
-	/// * `Result<(), BlockChainError>` - The result of the rotation operation
+	/// * `Result<(), anyhow::Error>` - The result of the rotation operation
 	pub async fn rotate_url<T: RotatingTransport>(
 		&self,
 		transport: &T,

@@ -13,8 +13,8 @@
 use crate::{
 	models::{BlockChainType, Network},
 	services::blockchain::{
-		AlloyTransportClient, BlockChainClient, BlockChainError, BlockFilterFactory, EvmClient,
-		EvmClientTrait, StellarClient, StellarClientTrait, StellarTransportClient,
+		AlloyTransportClient, BlockChainClient, BlockFilterFactory, EvmClient, EvmClientTrait,
+		StellarClient, StellarClientTrait, StellarTransportClient,
 	},
 };
 use anyhow::Context;
@@ -100,8 +100,8 @@ impl ClientPool {
 		&self,
 		client_type: BlockChainType,
 		network: &Network,
-		create_fn: impl Fn(&Network) -> BoxFuture<'static, Result<T, BlockChainError>>,
-	) -> Result<Arc<T>, BlockChainError> {
+		create_fn: impl Fn(&Network) -> BoxFuture<'static, Result<T, anyhow::Error>>,
+	) -> Result<Arc<T>, anyhow::Error> {
 		let storage = self
 			.storages
 			.get(&client_type)

@@ -24,8 +24,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	/// * `network_id` - Unique identifier for the network
 	///
 	/// # Returns
-	/// * `Result<Option<u64>, BlockWatcherError>` - Last processed block number or None if not
-	///   found
+	/// * `Result<Option<u64>, anyhow::Error>` - Last processed block number or None if not found
 	async fn get_last_processed_block(
 		&self,
 		network_id: &str,
@@ -38,7 +37,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	/// * `block` - Block number to save
 	///
 	/// # Returns
-	/// * `Result<(), BlockWatcherError>` - Success or error
+	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn save_last_processed_block(
 		&self,
 		network_id: &str,
@@ -52,7 +51,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	/// * `blocks` - Collection of blocks to save
 	///
 	/// # Returns
-	/// * `Result<(), BlockWatcherError>` - Success or error
+	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn save_blocks(
 		&self,
 		network_id: &str,
@@ -65,7 +64,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	/// * `network_id` - Unique identifier for the network
 	///
 	/// # Returns
-	/// * `Result<(), BlockWatcherError>` - Success or error
+	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn delete_blocks(&self, network_id: &str) -> Result<(), anyhow::Error>;
 
 	/// Saves a missed block for a network
@@ -75,7 +74,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	/// * `block` - Block number to save
 	///
 	/// # Returns
-	/// * `Result<(), BlockWatcherError>` - Success or error
+	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), anyhow::Error>;
 }
 
@@ -205,7 +204,7 @@ impl BlockStorage for FileBlockStorage {
 	/// * `block` - Block number to save
 	///
 	/// # Returns
-	/// * `Result<(), BlockWatcherError>` - Success or error
+	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), anyhow::Error> {
 		let file_path = self
 			.storage_path

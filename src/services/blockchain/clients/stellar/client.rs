@@ -19,7 +19,7 @@ use crate::{
 		blockchain::{
 			client::{BlockChainClient, BlockFilterFactory},
 			transports::StellarTransportClient,
-			BlockChainError, BlockchainTransport,
+			BlockchainTransport,
 		},
 		filter::StellarBlockFilter,
 	},
@@ -49,8 +49,8 @@ impl StellarClient<StellarTransportClient> {
 	/// * `network` - Network configuration containing RPC endpoints and chain details
 	///
 	/// # Returns
-	/// * `Result<Self, BlockChainError>` - New client instance or connection error
-	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
+	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
+	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let stellar_client: StellarTransportClient = StellarTransportClient::new(network).await?;
 		Ok(Self::new_with_transport(stellar_client))
 	}

@@ -87,44 +87,48 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 		monitor_match: &MonitorMatch,
 		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), TriggerError> {
-		let mut errors = Vec::new();
+		use futures::future::join_all;
 
-		for trigger_slug in trigger_slugs {
-			let trigger = match self.trigger_service.get(trigger_slug) {
-				Some(trigger) => trigger,
-				None => {
-					errors.push(TriggerError::not_found(
-						trigger_slug.to_string(),
-						None,
-						None,
-					));
-					continue;
-				}
-			};
+		let futures = trigger_slugs.iter().map(|trigger_slug| async {
+			let trigger = self
+				.trigger_service
+				.get(trigger_slug)
+				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string(), None, None))?;
 
-			if let Err(e) = self
-				.notification_service
+			self.notification_service
 				.execute(&trigger, variables.clone(), monitor_match, trigger_scripts)
 				.await
-			{
-				errors.push(TriggerError::execution_error(e.to_string(), None, None));
-				continue;
-			}
-		}
+				// We remove logging capability here since we're logging it further down
+				.map_err(|e| TriggerError::execution_error_without_log(e.to_string(), None, None))
+		});
+
+		let results = join_all(futures).await;
+		let errors: Vec<_> = results.into_iter().filter_map(|r| r.err()).collect();
 
 		if errors.is_empty() {
 			Ok(())
 		} else {
-			let error_msg = if errors.len() == 1 {
-				format!("Trigger failed: {:?}", errors[0])
-			} else {
-				format!(
-					"Multiple triggers failed ({} failures): {:?}",
-					errors.len(),
-					errors
-				)
-			};
-			Err(TriggerError::execution_error(error_msg, None, None))
+			Err(TriggerError::execution_error(
+				format!("Some trigger(s) failed ({} failure(s))", errors.len()),
+				// We join all errors into a single string for the source and wrap it as a single
+				// Execution
+				Some(
+					TriggerError::execution_error(
+						format!(
+							"{:#?}",
+							errors
+								.iter()
+								.map(|e| e.to_string())
+								.collect::<Vec<_>>()
+								.join(", ")
+						),
+						None,
+						None,
+					)
+					.into(),
+				),
+				None,
+			))
 		}
 	}
 	/// Loads trigger condition scripts for monitors

@@ -1,6 +1,6 @@
 use mockito::Server;
 use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, BlockchainTransport, RotatingTransport, StellarTransportClient,
+	BlockchainTransport, RotatingTransport, StellarTransportClient,
 };
 use serde_json::{json, Value};
 
@@ -12,7 +12,6 @@ use crate::integration::mocks::{
 async fn test_client_creation() {
 	let mut server = Server::new_async().await;
 	let mock = create_stellar_valid_server_mock_network_response(&mut server, "soroban");
-
 	let network = create_stellar_test_network_with_urls(vec![&server.url()], "rpc");
 
 	match StellarTransportClient::new(&network).await {
@@ -27,10 +26,8 @@ async fn test_client_creation() {
 	let network = create_stellar_test_network_with_urls(vec!["invalid-url"], "rpc");
 
 	match StellarTransportClient::new(&network).await {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert!(msg
-				.to_string()
-				.contains("All RPC URLs failed to connect [network=test]"));
+		Err(error) => {
+			assert!(error.to_string().contains("All RPC URLs failed to connect"));
 		}
 		_ => panic!("Transport creation should fail"),
 	}

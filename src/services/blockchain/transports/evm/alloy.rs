@@ -7,16 +7,13 @@ use alloy::rpc::client::{ClientBuilder, RpcClient};
 use reqwest_retry::{policies::ExponentialBackoff, Jitter};
 use serde::Serialize;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use url::Url;
 
 use crate::{
 	models::Network,
-	services::blockchain::{
-		transports::{BlockchainTransport, EndpointManager, RotatingTransport},
-		BlockChainError,
-	},
+	services::blockchain::transports::{BlockchainTransport, EndpointManager, RotatingTransport},
 };
 
 /// A client for interacting with EVM-compatible blockchain nodes via alloy
@@ -40,8 +37,8 @@ impl AlloyTransportClient {
 	/// * `network` - Network configuration containing RPC URLs
 	///
 	/// # Returns
-	/// * `Result<Self, BlockChainError>` - A new client instance or connection error
-	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
+	/// * `Result<Self, anyhow::Error>` - A new client instance or connection error
+	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let mut rpc_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
@@ -83,14 +80,7 @@ impl AlloyTransportClient {
 			}
 		}
 
-		Err(BlockChainError::connection_error(
-			"All RPC URLs failed to connect".to_string(),
-			None,
-			Some(HashMap::from([(
-				"network".to_string(),
-				network.name.clone(),
-			)])),
-		))
+		Err(anyhow::anyhow!("All RPC URLs failed to connect"))
 	}
 }
 
@@ -134,7 +124,7 @@ impl BlockchainTransport for AlloyTransportClient {
 	/// Gets the retry policy for the transport
 	///
 	/// # Returns
-	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
+	/// * `Result<ExponentialBackoff, anyhow::Error>` - The retry policy
 	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(self.retry_policy)
 	}
@@ -145,7 +135,7 @@ impl BlockchainTransport for AlloyTransportClient {
 	/// * `retry_policy` - The retry policy to set
 	///
 	/// # Returns
-	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
+	/// * `Result<(), anyhow::Error>` - The result of setting the retry policy
 	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		self.retry_policy = retry_policy;
 		Ok(())

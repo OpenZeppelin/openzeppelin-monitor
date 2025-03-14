@@ -18,7 +18,7 @@ use crate::{
 		blockchain::{
 			client::BlockChainClient,
 			transports::{AlloyTransportClient, BlockchainTransport},
-			BlockChainError, BlockFilterFactory,
+			BlockFilterFactory,
 		},
 		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
 	},
@@ -48,8 +48,8 @@ impl EvmClient<AlloyTransportClient> {
 	/// * `network` - Network configuration containing RPC endpoints and chain details
 	///
 	/// # Returns
-	/// * `Result<Self, BlockChainError>` - New client instance or connection error
-	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
+	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
+	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let alloy_client = AlloyTransportClient::new(network).await?;
 		Ok(Self::new_with_transport(alloy_client))
 	}

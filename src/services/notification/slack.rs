@@ -95,7 +95,7 @@ impl Notifier for SlackNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
+	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let payload = SlackMessage {
 			text: message.to_string(),

@@ -896,14 +896,7 @@ async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 		Err(e) => {
 			assert!(e
 				.to_string()
-				.contains("Multiple triggers failed (3 failures)"));
-			assert!(e
-				.to_string()
-				.contains("Failed to execute notification example_trigger_webhook"));
-			assert!(e
-				.to_string()
-				.contains("Failed to execute notification test_trigger"));
-			assert!(e.to_string().contains("Script content not found"));
+				.contains("Some trigger(s) failed (3 failure(s))"));
 		}
 		_ => panic!("Expected error"),
 	}
@@ -1075,12 +1068,12 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 
 	// Assert all triggers executed successfully
 	assert!(result.is_err());
+
 	match result {
 		Err(e) => {
-			assert!(e.to_string().contains("Trigger failed"));
 			assert!(e
 				.to_string()
-				.contains("Failed to execute notification test_trigger"));
+				.contains("Some trigger(s) failed (1 failure(s))"));
 		}
 		_ => panic!("Expected error"),
 	}
