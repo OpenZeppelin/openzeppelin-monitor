@@ -493,7 +493,7 @@ pub async fn process_new_blocks<
 	.await
 	.into_iter()
 	.collect::<Result<Vec<_>, _>>()
-	.with_context(|| "Failed to process blocks")?;
+	.with_context(|| format!("Failed to process blocks for network {}", network.slug))?;
 
 	// Drop the sender after all blocks are sent
 	drop(process_tx);
