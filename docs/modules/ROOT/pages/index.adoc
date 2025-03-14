@@ -646,6 +646,14 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |===
 |Field |Type |Description
 
+|name
+|String
+|Human-readable name for the notification
+
+|trigger_type
+|String
+|Must be "script" for Script notifications
+
 |language
 |String
 |The language of the script
