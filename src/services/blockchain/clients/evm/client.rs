@@ -10,6 +10,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures;
 use serde_json::json;
+use tracing::instrument;
 
 use crate::{
 	models::{BlockType, EVMBlock, EVMReceiptLog, EVMTransactionReceipt, Network},
@@ -96,10 +97,7 @@ pub trait EvmClientTrait {
 #[async_trait]
 impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<T> {
 	/// Retrieves a transaction receipt by hash with proper error handling
-	///
-	/// # Errors
-	/// - Returns `BlockChainError::InternalError` if the hash format is invalid
-	/// - Returns `BlockChainError::RequestError` if the receipt is not found
+	#[instrument(skip(self), fields(transaction_hash))]
 	async fn get_transaction_receipt(
 		&self,
 		transaction_hash: String,
@@ -143,10 +141,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 	///
 	/// # Returns
 	/// * `Result<Vec<EVMReceiptLog>, anyhow::Error>` - Collection of matching logs or error
-	///
-	/// # Errors
-	/// - Returns `BlockChainError::InternalError` if the JSON-RPC params array is invalid
-	/// - Returns `BlockChainError::RequestError` if the logs are not found
+	#[instrument(skip(self), fields(from_block, to_block))]
 	async fn get_logs_for_blocks(
 		&self,
 		from_block: u64,
@@ -185,6 +180,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 #[async_trait]
 impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClient<T> {
 	/// Retrieves the latest block number with retry functionality
+	#[instrument(skip(self))]
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
 			.alloy_client
@@ -207,6 +203,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 	///
 	/// # Note
 	/// If end_block is None, only the start_block will be retrieved
+	#[instrument(skip(self), fields(start_block, end_block))]
 	async fn get_blocks(
 		&self,
 		start_block: u64,

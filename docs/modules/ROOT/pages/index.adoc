@@ -1051,6 +1051,10 @@ docker run \
   <your_image_tag>
 ----
 
+== Error Handling
+
+The monitor implements a comprehensive error handling system with rich context and tracing capabilities. For detailed information about error handling, see xref:error.adoc[Error Handling Guide].
+
 == Important Considerations:
 
 === Performance Considerations:

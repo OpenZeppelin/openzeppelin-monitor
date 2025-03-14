@@ -560,14 +560,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			.map(|transaction| {
 				let tx_hash = b256_to_string(transaction.hash);
 				// Capture transaction hash in the closure for better error context
-				async move {
-					client
-						.get_transaction_receipt(tx_hash.clone())
-						.await
-						.with_context(|| {
-							format!("Failed to get receipt for transaction {}", tx_hash)
-						})
-				}
+				async move { client.get_transaction_receipt(tx_hash.clone()).await }
 			})
 			.collect();
 

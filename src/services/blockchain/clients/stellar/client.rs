@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 use anyhow::Context;
 use async_trait::async_trait;
 use serde_json::json;
+use tracing::instrument;
 
 use crate::{
 	models::{
@@ -94,6 +95,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 	/// # Errors
 	/// - Returns `anyhow::Error` if start_sequence > end_sequence
 	/// - Returns `anyhow::Error` if transaction parsing fails
+	#[instrument(skip(self), fields(start_sequence, end_sequence))]
 	async fn get_transactions(
 		&self,
 		start_sequence: u32,
@@ -168,6 +170,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 	/// # Errors
 	/// - Returns `anyhow::Error` if start_sequence > end_sequence
 	/// - Returns `anyhow::Error` if event parsing fails
+	#[instrument(skip(self), fields(start_sequence, end_sequence))]
 	async fn get_events(
 		&self,
 		start_sequence: u32,
@@ -254,6 +257,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for 
 #[async_trait]
 impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarClient<T> {
 	/// Retrieves the latest block number with retry functionality
+	#[instrument(skip(self))]
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
 			.stellar_client
@@ -276,6 +280,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 	/// # Errors
 	/// - Returns `BlockChainError::RequestError` if start_block > end_block
 	/// - Returns `BlockChainError::BlockNotFound` if a block cannot be retrieved
+	#[instrument(skip(self), fields(start_block, end_block))]
 	async fn get_blocks(
 		&self,
 		start_block: u64,
