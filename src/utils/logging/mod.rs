@@ -13,6 +13,9 @@ use std::{
 	fs::{create_dir_all, metadata, File, OpenOptions},
 	path::Path,
 };
+pub mod error;
+use super::error::ErrorContext;
+use std::collections::HashMap;
 
 /// Computes the path of the rolled log file given the base file path and the date string.
 pub fn compute_rolled_file_path(base_file_path: &str, date_str: &str, index: u32) -> String {
@@ -118,8 +121,7 @@ pub fn setup_logging() {
 		let final_path =
 			space_based_rolling(&time_based_path, &base_file_path, &date_str, max_size);
 
-		// Open the log file. Append to it if it exists and is under threshold; otherwise, create
-		// it.
+		// Append if it exists otherwise, create it.
 		let log_file = if Path::new(&final_path).exists() {
 			OpenOptions::new()
 				.append(true)
@@ -138,4 +140,35 @@ pub fn setup_logging() {
 	}
 
 	info!("Logging is successfully configured (mode: {})", log_mode);
+}
+
+// Log errors
+pub fn log_error_to_file(
+	message: impl Into<String>,
+	source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+	metadata: Option<HashMap<String, String>>,
+) {
+	let error_context = ErrorContext::new(message, source, metadata);
+
+	// Use the regular logging mechanisms to log the error
+	let trace_id = &error_context.trace_id;
+	let timestamp = &error_context.timestamp;
+	let msg = error_context.format_with_metadata();
+
+	if let Some(err) = &error_context.source {
+		log::error!(
+			"Error [trace_id={}, timestamp={}]: {} - Caused by: {}",
+			trace_id,
+			timestamp,
+			msg,
+			err
+		);
+	} else {
+		log::error!(
+			"Error [trace_id={}, timestamp={}]: {}",
+			trace_id,
+			timestamp,
+			msg
+		);
+	}
 }

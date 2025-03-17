@@ -116,10 +116,16 @@ pub fn setup_trigger_service(
 	let mut mock_repo = MockTriggerRepository::default();
 
 	let triggers_clone = triggers.clone();
+	let triggers_for_get = triggers.clone();
 
 	mock_repo
 		.expect_get_all()
 		.return_once(move || triggers_clone.clone());
+
+	// // Set up get() expectation
+	mock_repo
+		.expect_get()
+		.returning(move |id| triggers_for_get.get(id).cloned());
 
 	mock_repo.expect_clone().return_once(move || {
 		let mut cloned_repo = MockTriggerRepository::default();

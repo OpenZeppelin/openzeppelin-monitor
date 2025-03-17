@@ -43,7 +43,7 @@ impl SlackNotifier {
 		url: String,
 		title: String,
 		body_template: String,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		Ok(Self {
 			url,
 			title,
@@ -95,8 +95,8 @@ impl Notifier for SlackNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let payload = SlackMessage {
 			text: message.to_string(),
 		};
@@ -107,13 +107,13 @@ impl Notifier for SlackNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+			.map_err(|e| anyhow::anyhow!("Failed to send Slack notification: {}", e))?;
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(format!(
+			return Err(anyhow::anyhow!(
 				"Slack webhook returned error status: {}",
 				response.status()
-			)));
+			));
 		}
 
 		Ok(())

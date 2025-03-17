@@ -5,17 +5,14 @@
 
 use crate::{
 	models::Network,
-	services::blockchain::{
-		transports::{BlockchainTransport, EndpointManager, RotatingTransport},
-		BlockChainError,
-	},
+	services::blockchain::transports::{BlockchainTransport, EndpointManager, RotatingTransport},
 };
 
 use async_trait::async_trait;
-use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::{policies::ExponentialBackoff, Jitter};
 use serde::Serialize;
 use serde_json::Value;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use stellar_rpc_client::Client as StellarHttpClient;
 use tokio::sync::RwLock;
 
@@ -37,8 +34,8 @@ impl StellarTransportClient {
 	/// * `network` - Network configuration containing RPC URLs
 	///
 	/// # Returns
-	/// * `Result<Self, BlockChainError>` - A new client instance or connection error
-	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
+	/// * `Result<Self, anyhow::Error>` - A new client instance or connection error
+	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let mut stellar_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
@@ -48,7 +45,11 @@ impl StellarTransportClient {
 		stellar_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
 		// Default retry policy for Stellar transport
-		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+		let retry_policy = ExponentialBackoff::builder()
+			.base(2)
+			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+			.jitter(Jitter::None)
+			.build_with_max_retries(2);
 
 		for rpc_url in stellar_urls.iter() {
 			match StellarHttpClient::new(rpc_url.url.as_str()) {
@@ -75,9 +76,7 @@ impl StellarTransportClient {
 			}
 		}
 
-		Err(BlockChainError::connection_error(
-			"All Stellar RPC URLs failed to connect".to_string(),
-		))
+		Err(anyhow::anyhow!("All RPC URLs failed to connect"))
 	}
 }
 
@@ -98,25 +97,28 @@ impl BlockchainTransport for StellarTransportClient {
 	/// * `params` - Parameters to pass to the method
 	///
 	/// # Returns
-	/// * `Result<Value, BlockChainError>` - JSON response or error
+	/// * `Result<Value, anyhow::Error>` - JSON response or error
 	async fn send_raw_request<P>(
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		self.endpoint_manager
+		let response = self
+			.endpoint_manager
 			.send_raw_request(self, method, params)
-			.await
+			.await?;
+
+		Ok(response)
 	}
 
 	/// Gets the retry policy for the transport
 	///
 	/// # Returns
-	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	/// * `Result<ExponentialBackoff, anyhow::Error>` - The retry policy
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(self.retry_policy)
 	}
 
@@ -126,11 +128,8 @@ impl BlockchainTransport for StellarTransportClient {
 	/// * `retry_policy` - The retry policy to set
 	///
 	/// # Returns
-	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
-	fn set_retry_policy(
-		&mut self,
-		retry_policy: ExponentialBackoff,
-	) -> Result<(), BlockChainError> {
+	/// * `Result<(), anyhow::Error>` - The result of setting the retry policy
+	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		self.retry_policy = retry_policy;
 		Ok(())
 	}
@@ -138,22 +137,20 @@ impl BlockchainTransport for StellarTransportClient {
 
 #[async_trait]
 impl RotatingTransport for StellarTransportClient {
-	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
 		match StellarHttpClient::new(url) {
 			Ok(client) => {
 				if client.get_network().await.is_ok() {
 					Ok(())
 				} else {
-					Err(BlockChainError::connection_error(
-						"Failed to connect".to_string(),
-					))
+					Err(anyhow::anyhow!("Failed to connect: {}", url))
 				}
 			}
-			Err(_) => Err(BlockChainError::connection_error("Invalid URL".to_string())),
+			Err(e) => Err(anyhow::anyhow!("Invalid URL: {}", e)),
 		}
 	}
 
-	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
 		if let Ok(new_client) = StellarHttpClient::new(url) {
 			let mut client = self.client.write().await;
 			*client = new_client;
@@ -164,9 +161,7 @@ impl RotatingTransport for StellarTransportClient {
 
 			Ok(())
 		} else {
-			Err(BlockChainError::connection_error(
-				"Failed to create client".to_string(),
-			))
+			Err(anyhow::anyhow!("Failed to create client: {}", url))
 		}
 	}
 }

@@ -2,26 +2,24 @@ use mockall::mock;
 use reqwest_retry::policies::ExponentialBackoff;
 use serde_json::Value;
 
-use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, BlockchainTransport, RotatingTransport,
-};
+use openzeppelin_monitor::services::blockchain::{BlockchainTransport, RotatingTransport};
 
-// Mock implementation of a Web3 transport client.
-// Used for testing Ethereum/Web3-compatible blockchain interactions.
+// Mock implementation of a Alloy transport client.
+// Used for testing Ethereum/Alloy-compatible blockchain interactions.
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
-	pub Web3TransportClient {
-		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, BlockChainError>;
+	pub AlloyTransportClient {
+		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
 	}
 
-	impl Clone for Web3TransportClient {
+	impl Clone for AlloyTransportClient {
 		fn clone(&self) -> Self;
 	}
 }
 
 #[async_trait::async_trait]
-impl BlockchainTransport for MockWeb3TransportClient {
+impl BlockchainTransport for MockAlloyTransportClient {
 	async fn get_current_url(&self) -> String {
 		self.get_current_url().await
 	}
@@ -30,7 +28,7 @@ impl BlockchainTransport for MockWeb3TransportClient {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone,
 	{
@@ -39,22 +37,22 @@ impl BlockchainTransport for MockWeb3TransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
 
 #[async_trait::async_trait]
-impl RotatingTransport for MockWeb3TransportClient {
-	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
+impl RotatingTransport for MockAlloyTransportClient {
+	async fn try_connect(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 
-	async fn update_client(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
@@ -64,7 +62,7 @@ impl RotatingTransport for MockWeb3TransportClient {
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
 	pub StellarTransportClient {
-		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, BlockChainError>;
+		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
 	}
 
@@ -83,7 +81,7 @@ impl BlockchainTransport for MockStellarTransportClient {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone,
 	{
@@ -91,22 +89,22 @@ impl BlockchainTransport for MockStellarTransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
 
 #[async_trait::async_trait]
 impl RotatingTransport for MockStellarTransportClient {
-	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 
-	async fn update_client(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
@@ -116,7 +114,7 @@ impl RotatingTransport for MockStellarTransportClient {
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
 	pub HorizonTransportClient {
-		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, BlockChainError>;
+		pub async fn send_raw_request(&self, method: &str, params: Option<Value>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
 	}
 
@@ -135,7 +133,7 @@ impl BlockchainTransport for MockHorizonTransportClient {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone,
 	{
@@ -143,22 +141,22 @@ impl BlockchainTransport for MockHorizonTransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), BlockChainError> {
+	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
 
 #[async_trait::async_trait]
 impl RotatingTransport for MockHorizonTransportClient {
-	async fn try_connect(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 
-	async fn update_client(&self, _url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, _url: &str) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }

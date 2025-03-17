@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::{EVMTransaction, MatchConditions, Monitor};
+use crate::models::{EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor};
 
 /// Result of a successful monitor match on an EVM chain
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -12,7 +12,7 @@ pub struct EVMMonitorMatch {
 	pub transaction: EVMTransaction,
 
 	/// Transaction receipt with execution results
-	pub receipt: web3::types::TransactionReceipt,
+	pub receipt: EVMTransactionReceipt,
 
 	/// Conditions that were matched
 	pub matched_on: MatchConditions,

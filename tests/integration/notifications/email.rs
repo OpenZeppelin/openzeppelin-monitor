@@ -18,7 +18,7 @@ mock! {
 
 	#[async_trait]
 	impl Notifier for EmailNotifier {
-		async fn notify(&self, message: &str) -> Result<(), NotificationError>;
+		async fn notify(&self, message: &str) -> Result<(), anyhow::Error>;
 	}
 }
 

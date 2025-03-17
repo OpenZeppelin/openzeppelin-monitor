@@ -40,12 +40,13 @@ use crate::{
 
 use clap::{Arg, Command};
 use dotenvy::dotenv;
-use log::{error, info};
 use models::BlockChainType;
 use services::trigger::TriggerExecutionServiceTrait;
 use std::env::{set_var, var};
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
+use tokio_cron_scheduler::JobScheduler;
+use tracing::{error, info};
 
 /// Main entry point for the blockchain monitoring service.
 ///
@@ -124,6 +125,7 @@ async fn main() -> Result<()> {
 		}
 	}
 
+	// Setup logging to stdout
 	setup_logging();
 
 	// Initialize repositories
@@ -213,7 +215,7 @@ async fn main() -> Result<()> {
 	);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
-	let block_watcher = BlockWatcherService::new(
+	let block_watcher = BlockWatcherService::<FileBlockStorage, _, _, JobScheduler>::new(
 		file_block_storage.clone(),
 		block_handler,
 		trigger_handler,
@@ -227,14 +229,24 @@ async fn main() -> Result<()> {
 				if let Ok(client) = client_pool.get_evm_client(&network).await {
 					let _ = block_watcher
 						.start_network_watcher(&network, (*client).clone())
-						.await;
+						.await
+						.inspect_err(|e| {
+							error!("Failed to start EVM network watcher: {}", e);
+						});
+				} else {
+					error!("Failed to get EVM client for network: {}", network.slug);
 				}
 			}
 			BlockChainType::Stellar => {
 				if let Ok(client) = client_pool.get_stellar_client(&network).await {
 					let _ = block_watcher
 						.start_network_watcher(&network, (*client).clone())
-						.await;
+						.await
+						.inspect_err(|e| {
+							error!("Failed to start Stellar network watcher: {}", e);
+						});
+				} else {
+					error!("Failed to get Stellar client for network: {}", network.slug);
 				}
 			}
 			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),

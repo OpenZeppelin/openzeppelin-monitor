@@ -5,17 +5,14 @@
 
 use crate::{
 	models::Network,
-	services::blockchain::{
-		transports::{BlockchainTransport, EndpointManager, RotatingTransport},
-		BlockChainError,
-	},
+	services::blockchain::transports::{BlockchainTransport, EndpointManager, RotatingTransport},
 };
 
 use async_trait::async_trait;
-use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::{policies::ExponentialBackoff, Jitter};
 use serde::Serialize;
 use serde_json::Value;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use stellar_horizon::{
 	api::root,
 	client::{HorizonClient as HorizonClientTrait, HorizonHttpClient},
@@ -40,8 +37,8 @@ impl HorizonTransportClient {
 	/// * `network` - Network configuration containing RPC URLs
 	///
 	/// # Returns
-	/// * `Result<Self, BlockChainError>` - A new client instance or connection error
-	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
+	/// * `Result<Self, anyhow::Error>` - A new client instance or connection error
+	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let mut horizon_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
@@ -51,7 +48,11 @@ impl HorizonTransportClient {
 		horizon_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
 		// Default retry policy for Horizon transport
-		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+		let retry_policy = ExponentialBackoff::builder()
+			.base(2)
+			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+			.jitter(Jitter::None)
+			.build_with_max_retries(2);
 
 		for rpc_url in horizon_urls.iter() {
 			match HorizonHttpClient::new_from_str(&rpc_url.url) {
@@ -85,9 +86,7 @@ impl HorizonTransportClient {
 			}
 		}
 
-		Err(BlockChainError::connection_error(
-			"All Horizon RPC URLs failed to connect".to_string(),
-		))
+		Err(anyhow::anyhow!("All RPC URLs failed to connect"))
 	}
 }
 
@@ -108,25 +107,28 @@ impl BlockchainTransport for HorizonTransportClient {
 	/// * `params` - Parameters to pass to the method
 	///
 	/// # Returns
-	/// * `Result<Value, BlockChainError>` - JSON response or error
+	/// * `Result<Value, anyhow::Error>` - JSON response or error
 	async fn send_raw_request<P>(
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		self.endpoint_manager
+		let response = self
+			.endpoint_manager
 			.send_raw_request(self, method, params)
-			.await
+			.await?;
+
+		Ok(response)
 	}
 
 	/// Gets the retry policy for the transport
 	///
 	/// # Returns
-	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	/// * `Result<ExponentialBackoff, anyhow::Error>` - The retry policy
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(self.retry_policy)
 	}
 
@@ -136,11 +138,8 @@ impl BlockchainTransport for HorizonTransportClient {
 	/// * `retry_policy` - The retry policy to set
 	///
 	/// # Returns
-	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
-	fn set_retry_policy(
-		&mut self,
-		retry_policy: ExponentialBackoff,
-	) -> Result<(), BlockChainError> {
+	/// * `Result<(), anyhow::Error>` - The result of setting the retry policy
+	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		self.retry_policy = retry_policy;
 		Ok(())
 	}
@@ -148,23 +147,21 @@ impl BlockchainTransport for HorizonTransportClient {
 
 #[async_trait]
 impl RotatingTransport for HorizonTransportClient {
-	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
 		match HorizonHttpClient::new_from_str(url) {
 			Ok(client) => {
 				let request = root::root();
 				if client.request(request).await.is_ok() {
 					Ok(())
 				} else {
-					Err(BlockChainError::connection_error(
-						"Failed to connect".to_string(),
-					))
+					Err(anyhow::anyhow!("Failed to connect: {}", url))
 				}
 			}
-			Err(_) => Err(BlockChainError::connection_error("Invalid URL".to_string())),
+			Err(e) => Err(anyhow::anyhow!("Invalid URL: {}", e)),
 		}
 	}
 
-	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
 		if let Ok(new_client) = HorizonHttpClient::new_from_str(url) {
 			let mut client = self.client.write().await;
 			*client = new_client;
@@ -175,9 +172,7 @@ impl RotatingTransport for HorizonTransportClient {
 
 			Ok(())
 		} else {
-			Err(BlockChainError::connection_error(
-				"Failed to create client".to_string(),
-			))
+			Err(anyhow::anyhow!("Failed to create client: {}", url))
 		}
 	}
 }

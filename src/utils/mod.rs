@@ -4,7 +4,10 @@
 //! the application. Currently includes:
 //!
 //! - cron_utils: Utilities for working with cron schedules and time intervals
+//! - error: Custom error type for more structured error handling
 //! - expression: Utilities for working with cron expressions
+//! - logging: Logging utilities
+//! - script: Utilities for working with scripts
 
 mod cron_utils;
 mod expression;
@@ -16,7 +19,4 @@ pub use cron_utils::*;
 pub use expression::*;
 pub use logging::*;
 pub use metrics::*;
-pub use script::{
-	process_script_output, BashScriptExecutor, JavaScriptScriptExecutor, PythonScriptExecutor,
-	ScriptError, ScriptExecutor, ScriptExecutorFactory,
-};
+pub use script::*;

@@ -16,9 +16,8 @@
 //!   from the block processing pipeline
 
 use futures::future::BoxFuture;
-use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::{sync::watch, time::Duration};
+use tokio::sync::watch;
 
 use crate::{
 	models::{
@@ -27,13 +26,13 @@ use crate::{
 	},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
-		RepositoryError, TriggerRepositoryTrait, TriggerService,
+		TriggerRepositoryTrait, TriggerService,
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
-		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
+		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 	utils::{ScriptError, ScriptExecutorFactory},
 };
@@ -71,8 +70,7 @@ where
 	let network_service = match network_service {
 		Some(service) => service,
 		None => {
-			let repository =
-				N::new(None).map_err(|_| RepositoryError::load_error("Unable to load networks"))?;
+			let repository = N::new(None)?;
 			NetworkService::<N>::new_with_repository(repository)?
 		}
 	};
@@ -80,8 +78,7 @@ where
 	let trigger_service = match trigger_service {
 		Some(service) => service,
 		None => {
-			let repository =
-				T::new(None).map_err(|_| RepositoryError::load_error("Unable to load triggers"))?;
+			let repository = T::new(None)?;
 			TriggerService::<T>::new_with_repository(repository)?
 		}
 	};
@@ -93,8 +90,7 @@ where
 				None,
 				Some(network_service.clone()),
 				Some(trigger_service.clone()),
-			)
-			.map_err(|_| RepositoryError::load_error("Unable to load monitors"))?;
+			)?;
 			MonitorService::<M, N, T>::new_with_repository(repository)?
 		}
 	};
@@ -221,14 +217,13 @@ where
 		result = filter_service.filter_block(client, network, block, applicable_monitors) => {
 			match result {
 				Ok(matches) => Some(matches),
-				Err(e) => {
-					error!("Error filtering block: {}", e);
+				Err(_) => {
 					None
 				}
 			}
 		}
 		_ = shutdown_rx.changed() => {
-			info!("Shutting down block processing task");
+			tracing::info!("Shutting down block processing task");
 			None
 		}
 	}
@@ -262,13 +257,13 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 					}
 					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
 					for monitor_match in &filtered_matches {
-						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service).await {
-							error!("Error handling trigger: {}", e);
+						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service, &trigger_scripts).await {
+							TriggerError::execution_error(e.to_string(), None, None);
 						}
 					}
 				} => {}
 				_ = shutdown_rx.changed() => {
-					info!("Shutting down trigger handling task");
+					tracing::info!("Shutting down trigger handling task");
 				}
 			}
 		})
@@ -326,23 +321,19 @@ async fn execute_trigger_condition(
 ) -> bool {
 	let executor = ScriptExecutorFactory::create(&script_content.0, &script_content.1);
 
-	let result = tokio::time::timeout(
-		Duration::from_millis(u64::from(trigger_condition.timeout_ms)),
-		executor.execute(
+	let result = executor
+		.execute(
 			monitor_match.clone(),
-			trigger_condition.arguments.as_deref().unwrap_or(""),
-		),
-	)
-	.await;
+			&trigger_condition.timeout_ms,
+			trigger_condition.arguments.as_deref(),
+			false,
+		)
+		.await;
 
 	match result {
-		Ok(Ok(true)) => true,
-		Ok(Err(e)) => {
-			ScriptError::execution_error(e.to_string());
-			false
-		}
+		Ok(true) => true,
 		Err(e) => {
-			ScriptError::execution_error(e.to_string());
+			ScriptError::execution_error(e.to_string(), None, None);
 			false
 		}
 		_ => false,
@@ -375,7 +366,7 @@ async fn run_trigger_filters(
 					monitor_name, trigger_condition.script_path
 				))
 				.ok_or_else(|| {
-					ScriptError::execution_error("Script content not found".to_string())
+					ScriptError::execution_error("Script content not found".to_string(), None, None)
 				});
 			if let Ok(script_content) = script_content {
 				if execute_trigger_condition(trigger_condition, monitor_match, script_content).await
@@ -397,12 +388,18 @@ async fn run_trigger_filters(
 mod tests {
 	use super::*;
 	use crate::models::{
-		EVMMonitorMatch, EVMTransaction, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
-		StellarBlock, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
+		EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor,
+		MonitorMatch, ScriptLanguage, StellarBlock, StellarMonitorMatch, StellarTransaction,
+		StellarTransactionInfo, TriggerConditions,
+	};
+	use alloy::{
+		consensus::{
+			transaction::Recovered, Receipt, ReceiptEnvelope, ReceiptWithBloom, Signed, TxEnvelope,
+		},
+		primitives::{Address, Bytes, TxKind, B256, U256},
 	};
 	use std::io::Write;
 	use tempfile::NamedTempFile;
-	use web3::types::{TransactionReceipt, H160, U256};
 
 	// Helper function to create a temporary script file
 	fn create_temp_script(content: &str) -> NamedTempFile {
@@ -430,14 +427,51 @@ mod tests {
 		}
 	}
 
+	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
+		EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
+			inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
+				receipt: Receipt::default(),
+				logs_bloom: Default::default(),
+			}),
+			transaction_hash: B256::ZERO,
+			transaction_index: Some(0),
+			block_hash: Some(B256::ZERO),
+			block_number: Some(0),
+			gas_used: 0,
+			effective_gas_price: 0,
+			blob_gas_used: None,
+			blob_gas_price: None,
+			from: Address::ZERO,
+			to: Some(Address::ZERO),
+			contract_address: None,
+		})
+	}
+
 	fn create_test_evm_transaction() -> EVMTransaction {
-		EVMTransaction::from({
-			web3::types::Transaction {
-				from: Some(H160::default()),
-				to: Some(H160::default()),
-				value: U256::default(),
-				..Default::default()
-			}
+		let tx = alloy::consensus::TxLegacy {
+			chain_id: None,
+			nonce: 0,
+			gas_price: 0,
+			gas_limit: 0,
+			to: TxKind::Call(Address::ZERO),
+			value: U256::ZERO,
+			input: Bytes::default(),
+		};
+
+		let signature =
+			alloy::signers::Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+
+		let hash = B256::ZERO;
+
+		EVMTransaction::from(alloy::rpc::types::Transaction {
+			inner: Recovered::new_unchecked(
+				TxEnvelope::Legacy(Signed::new_unchecked(tx, signature, hash)),
+				Address::ZERO,
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_index: None,
+			effective_gas_price: None,
 		})
 	}
 
@@ -471,7 +505,7 @@ mod tests {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor("test", vec![], false, script_path),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],
@@ -611,7 +645,7 @@ input_json = sys.argv[1]
 data = json.loads(input_json)
 print("debugging...")
 def test():
-    return True
+	return True
 result = test()
 print(result)
 "#;
@@ -639,7 +673,7 @@ input_data = sys.stdin.read()
 data = json.loads(input_data)
 print("debugging...")
 def test():
-    return False
+	return False
 result = test()
 print(result)
 "#;
@@ -658,9 +692,7 @@ print(result)
 
 	#[tokio::test]
 	async fn test_execute_trigger_condition_returns_false() {
-		let script_content = r#"
-print(False)  # Script returns false
-"#;
+		let script_content = r#"print(False)  # Script returns false"#;
 		let temp_file = create_temp_script(script_content);
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
@@ -678,9 +710,7 @@ print(False)  # Script returns false
 
 	#[tokio::test]
 	async fn test_execute_trigger_condition_script_error() {
-		let script_content = r#"
-raise Exception("Test error")  # Raise an error
-"#;
+		let script_content = r#"raise Exception("Test error")  # Raise an error"#;
 		let temp_file = create_temp_script(script_content);
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
@@ -740,7 +770,7 @@ raise Exception("Test error")  # Raise an error
 		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: monitor.clone(),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],
@@ -749,7 +779,6 @@ raise Exception("Test error")  # Raise an error
 			matched_on_args: None,
 		}));
 
-		// Set up trigger scripts - first one returns false, second returns true
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
 			"monitor_test|test1.py".to_string(),
@@ -762,7 +791,7 @@ import json
 input_data = sys.stdin.read()
 data = json.loads(input_data)
 print(True)
-                "#
+"#
 				.to_string(),
 			),
 		);
@@ -776,7 +805,7 @@ import json
 input_data = sys.stdin.read()
 data = json.loads(input_data)
 print(True)
-                "#
+"#
 				.to_string(),
 			),
 		);
@@ -815,7 +844,7 @@ print(True)
 		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: monitor.clone(),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],
@@ -867,7 +896,7 @@ print(True)
 		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: monitor.clone(),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],
@@ -918,7 +947,7 @@ print(True)
 		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: monitor.clone(),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],
@@ -975,7 +1004,7 @@ print(True)
 		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: monitor.clone(),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],
@@ -1036,7 +1065,7 @@ print(True)
 		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: monitor.clone(),
 			transaction: create_test_evm_transaction(),
-			receipt: TransactionReceipt::default(),
+			receipt: create_test_evm_transaction_receipt(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],
@@ -1080,7 +1109,7 @@ import json
 input_data = sys.stdin.read()
 data = json.loads(input_data)
 print(False)
-                "#
+"#
 				.to_string(),
 			),
 		);
@@ -1099,7 +1128,7 @@ input_json = sys.argv[1]
 data = json.loads(input_json)
 print("debugging...")
 def test():
-    return True
+	return True
 result = test()
 print(result)
 "#;
