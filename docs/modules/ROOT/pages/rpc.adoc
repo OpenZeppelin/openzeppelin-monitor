@@ -203,13 +203,11 @@ graph TD
     C -->|getNetwork| D
     D -->|eth_blockNumber| E[For every block in range]
     D -->|getLatestLedger| F[In batches of 200 blocks]
-    E -->|eth_getBlockByNumber| G[Create Block Handler]
+    E -->|eth_getBlockByNumber| G[Filter Block]
     F -->|getLedgers| G
-    G -->|net_version| H[Filter Block]
-    G -->|getNetwork| H
-    H -->|EVM| J[For every transaction in block]
+    G -->|EVM| J[For every transaction in block]
     J -->|eth_getTransactionReceipt| I[Complete]
-    H -->|Stellar| K[In batches of 200 transactions and events]
+    G -->|Stellar| K[In batches of 200 transactions and events]
     K -->|getTransactions| L[Complete]
     K -->|getEvents| L[Complete]
 
@@ -220,7 +218,6 @@ graph TD
 * RPC Client initialization (per active network): `net_version`
 * Fetching the latest block number (per cron iteration): `eth_blockNumber`
 * Fetching block data (per block): `eth_getBlockByNumber`
-* RPC Client initialization (per block): `net_version`
 * Fetching transaction receipt (per transaction in block): `eth_getTransactionReceipt`
 
 *Stellar*
@@ -228,7 +225,6 @@ graph TD
 * RPC Client initialization (per active network): `getNetwork`
 * Fetching the latest ledger (per cron iteration): `getLatestLedger`
 * Fetching ledger data (batched up to 200 in a single request): `getLedgers`
-* RPC Client initialization (per ledger): `getNetwork`
 * Fetching transactions (batched up to 200 in a single request): `getTransactions`
 * Fetching events (batched up to 200 in a single request): `getEvents`
 
