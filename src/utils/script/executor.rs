@@ -424,10 +424,24 @@ print("true")
 	#[tokio::test]
 	async fn test_javascript_script_executor_success() {
 		let script_content = r#"
-		// Do something with input and return true/false
-		console.log("debugging...");
-		console.log("finished");
-		console.log("true");
+		// Read input from stdin
+		let input = '';
+		process.stdin.on('data', (chunk) => {
+			input += chunk;
+		});
+
+		process.stdin.on('end', () => {
+			// Parse and validate input
+			try {
+				const data = JSON.parse(input);
+				console.log("debugging...");
+				console.log("finished");
+				console.log("true");
+			} catch (err) {
+				console.error(err);
+				process.exit(1);
+			}
+		});
 		"#;
 
 		let executor = JavaScriptScriptExecutor {
@@ -435,7 +449,6 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -444,9 +457,24 @@ print("true")
 	#[tokio::test]
 	async fn test_javascript_script_executor_invalid_output() {
 		let script_content = r#"
-			console.log("debugging...");
-			console.log("finished");
-			console.log("not a boolean");
+		// Read input from stdin
+		let input = '';
+		process.stdin.on('data', (chunk) => {
+			input += chunk;
+		});
+
+		process.stdin.on('end', () => {
+			// Parse and validate input
+			try {
+				const data = JSON.parse(input);
+				console.log("debugging...");
+				console.log("finished");
+				console.log("not a boolean");
+			} catch (err) {
+				console.error(err);
+				process.exit(1);
+			}
+		});
 		"#;
 
 		let executor = JavaScriptScriptExecutor {
