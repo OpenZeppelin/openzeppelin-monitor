@@ -3,50 +3,14 @@
 //! - This module contains the global Prometheus registry.
 //! - Defines specific metrics for the application.
 
-pub mod middleware;
+pub mod server;
 use lazy_static::lazy_static;
-use prometheus::{
-	CounterVec, Encoder, Gauge, HistogramOpts, HistogramVec, Opts, Registry, TextEncoder,
-};
+use prometheus::{Encoder, Gauge, GaugeVec, Opts, Registry, TextEncoder};
 use sysinfo::{Disks, System};
 
 lazy_static! {
 	// Global Prometheus registry.
 	pub static ref REGISTRY: Registry = Registry::new();
-
-	// Counter: Total HTTP requests.
-	pub static ref REQUEST_COUNTER: CounterVec = {
-		let opts = Opts::new("requests_total", "Total number of HTTP requests");
-		let counter_vec = CounterVec::new(opts, &["endpoint", "method", "status"]).unwrap();
-		REGISTRY.register(Box::new(counter_vec.clone())).unwrap();
-		counter_vec
-	};
-
-	// Counter: Total HTTP requests by raw URI.
-	pub static ref RAW_REQUEST_COUNTER: CounterVec = {
-	  let opts = Opts::new("raw_requests_total", "Total number of HTTP requests by raw URI");
-	  let counter_vec = CounterVec::new(opts, &["raw_uri", "method", "status"]).unwrap();
-	  REGISTRY.register(Box::new(counter_vec.clone())).unwrap();
-	  counter_vec
-	};
-
-	// Histogram for request latency in seconds.
-	pub static ref REQUEST_LATENCY: HistogramVec = {
-	  let histogram_opts = HistogramOpts::new("request_latency_seconds", "Request latency in seconds")
-		  .buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0]);
-	  let histogram_vec = HistogramVec::new(histogram_opts, &["endpoint", "method", "status"]).unwrap();
-	  REGISTRY.register(Box::new(histogram_vec.clone())).unwrap();
-	  histogram_vec
-	};
-
-	// Counter for error responses.
-	pub static ref ERROR_COUNTER: CounterVec = {
-		let opts = Opts::new("error_requests_total", "Total number of error responses");
-		// Using "status" to record the HTTP status code (or a special label like "service_error")
-		let counter_vec = CounterVec::new(opts, &["endpoint", "method", "status"]).unwrap();
-		REGISTRY.register(Box::new(counter_vec.clone())).unwrap();
-		counter_vec
-	};
 
 	// Gauge for CPU usage percentage.
 	pub static ref CPU_USAGE: Gauge = {
@@ -95,6 +59,51 @@ lazy_static! {
 	  let gauge = Gauge::new("disk_usage_percentage", "Disk usage percentage").unwrap();
 	  REGISTRY.register(Box::new(gauge.clone())).unwrap();
 	  gauge
+	};
+
+	// Gauge for total number of monitors (active and paused)
+	pub static ref MONITORS_TOTAL: Gauge = {
+		let gauge = Gauge::new("monitors_total", "Total number of configured monitors").unwrap();
+		REGISTRY.register(Box::new(gauge.clone())).unwrap();
+		gauge
+	};
+
+	// Gauge for number of active monitors (not paused)
+	pub static ref MONITORS_ACTIVE: Gauge = {
+		let gauge = Gauge::new("monitors_active", "Number of active monitors").unwrap();
+		REGISTRY.register(Box::new(gauge.clone())).unwrap();
+		gauge
+	};
+
+	// Gauge for total number of triggers
+	pub static ref TRIGGERS_TOTAL: Gauge = {
+		let gauge = Gauge::new("triggers_total", "Total number of configured triggers").unwrap();
+		REGISTRY.register(Box::new(gauge.clone())).unwrap();
+		gauge
+	};
+
+	// Gauge for total number of contracts being monitored (across all monitors)
+	pub static ref CONTRACTS_MONITORED: Gauge = {
+		let gauge = Gauge::new("contracts_monitored", "Total number of contracts being monitored").unwrap();
+		REGISTRY.register(Box::new(gauge.clone())).unwrap();
+		gauge
+	};
+
+	// Gauge for total number of networks being monitored
+	pub static ref NETWORKS_MONITORED: Gauge = {
+		let gauge = Gauge::new("networks_monitored", "Total number of networks being monitored").unwrap();
+		REGISTRY.register(Box::new(gauge.clone())).unwrap();
+		gauge
+	};
+
+	// Gauge Vector for per-network metrics
+	pub static ref NETWORK_MONITORS: GaugeVec = {
+		let gauge = GaugeVec::new(
+			Opts::new("network_monitors", "Number of monitors per network"),
+			&["network"]
+		).unwrap();
+		REGISTRY.register(Box::new(gauge.clone())).unwrap();
+		gauge
 	};
 }
 
@@ -158,66 +167,75 @@ pub fn update_system_metrics() {
 	DISK_USAGE_PERCENT.set(disk_percentage);
 }
 
+/// Updates metrics related to monitors, triggers, networks, and contracts.
+pub fn update_monitoring_metrics(
+	monitors: &std::collections::HashMap<String, crate::models::Monitor>,
+	triggers: &std::collections::HashMap<String, crate::models::Trigger>,
+	networks: &std::collections::HashMap<String, crate::models::Network>,
+) {
+	// Track total and active monitors
+	let total_monitors = monitors.len();
+	let active_monitors = monitors.values().filter(|m| !m.paused).count();
+
+	MONITORS_TOTAL.set(total_monitors as f64);
+	MONITORS_ACTIVE.set(active_monitors as f64);
+
+	// Track total triggers
+	TRIGGERS_TOTAL.set(triggers.len() as f64);
+
+	// Count unique contracts across all monitors
+	let mut unique_contracts = std::collections::HashSet::new();
+	for monitor in monitors.values() {
+		for address in &monitor.addresses {
+			// Create a unique identifier for each contract (network + address)
+			for network in &monitor.networks {
+				// Verify the network exists in our network repository
+				if networks.contains_key(network) {
+					unique_contracts.insert(format!("{}:{}", network, address.address));
+				}
+			}
+		}
+	}
+	CONTRACTS_MONITORED.set(unique_contracts.len() as f64);
+
+	// Count networks being monitored (those with active monitors)
+	let mut networks_with_monitors = std::collections::HashSet::new();
+	for monitor in monitors.values().filter(|m| !m.paused) {
+		for network in &monitor.networks {
+			// Only count networks that exist in our repository
+			if networks.contains_key(network) {
+				networks_with_monitors.insert(network.clone());
+			}
+		}
+	}
+	NETWORKS_MONITORED.set(networks_with_monitors.len() as f64);
+
+	// Reset all network-specific metrics
+	NETWORK_MONITORS.reset();
+
+	// Set per-network monitor counts (only for networks that exist)
+	let mut network_monitor_counts = std::collections::HashMap::<String, usize>::new();
+	for monitor in monitors.values().filter(|m| !m.paused) {
+		for network in &monitor.networks {
+			if networks.contains_key(network) {
+				*network_monitor_counts.entry(network.clone()).or_insert(0) += 1;
+			}
+		}
+	}
+
+	for (network, count) in network_monitor_counts {
+		NETWORK_MONITORS
+			.with_label_values(&[&network])
+			.set(count as f64);
+	}
+}
+
 #[cfg(test)]
-mod actix_tests {
+mod tests {
 	use super::*;
-	use actix_web::{
-		dev::{Service, ServiceRequest, ServiceResponse, Transform},
-		http, test, Error, HttpResponse,
-	};
-	use futures::future::{self};
-	use middleware::MetricsMiddleware;
-	use prometheus::proto::MetricFamily;
-	use std::{
-		pin::Pin,
-		task::{Context, Poll},
-	};
 
-	// Dummy service that always returns a successful response (HTTP 200 OK).
-	struct DummySuccessService;
-
-	impl Service<ServiceRequest> for DummySuccessService {
-		type Response = ServiceResponse;
-		type Error = Error;
-		type Future = Pin<Box<dyn future::Future<Output = Result<Self::Response, Self::Error>>>>;
-
-		fn poll_ready(&self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-			Poll::Ready(Ok(()))
-		}
-
-		fn call(&self, req: ServiceRequest) -> Self::Future {
-			let resp = req.into_response(HttpResponse::Ok().finish());
-			Box::pin(async move { Ok(resp) })
-		}
-	}
-
-	// Dummy service that always returns an error.
-	struct DummyErrorService;
-
-	impl Service<ServiceRequest> for DummyErrorService {
-		type Response = ServiceResponse;
-		type Error = Error;
-		type Future = Pin<Box<dyn future::Future<Output = Result<Self::Response, Self::Error>>>>;
-
-		fn poll_ready(&self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-			Poll::Ready(Ok(()))
-		}
-
-		fn call(&self, _req: ServiceRequest) -> Self::Future {
-			Box::pin(async move { Err(actix_web::error::ErrorInternalServerError("dummy error")) })
-		}
-	}
-
-	// Helper function to find a metric family by name.
-	fn find_metric_family<'a>(
-		name: &str,
-		families: &'a [MetricFamily],
-	) -> Option<&'a MetricFamily> {
-		families.iter().find(|mf| mf.get_name() == name)
-	}
-
-	#[actix_rt::test]
-	async fn test_gather_metrics_contains_expected_names() {
+	#[test]
+	fn test_gather_metrics_contains_expected_names() {
 		update_system_metrics();
 		let metrics = gather_metrics().expect("failed to gather metrics");
 		let output = String::from_utf8(metrics).expect("metrics output is not valid UTF-8");
@@ -225,124 +243,5 @@ mod actix_tests {
 		assert!(output.contains("cpu_usage_percentage"));
 		assert!(output.contains("total_memory_bytes"));
 		assert!(output.contains("disk_usage_bytes"));
-	}
-
-	#[actix_rt::test]
-	async fn test_middleware_success() {
-		let req = test::TestRequest::with_uri("/test_success").to_srv_request();
-
-		let middleware = MetricsMiddleware;
-		let service = middleware.new_transform(DummySuccessService).await.unwrap();
-
-		let resp = service.call(req).await.unwrap();
-		assert_eq!(resp.response().status(), http::StatusCode::OK);
-
-		let families = REGISTRY.gather();
-		let counter_fam = find_metric_family("requests_total", &families)
-			.expect("requests_total metric family not found");
-
-		let mut found = false;
-		for m in counter_fam.get_metric() {
-			let labels = m.get_label();
-			if labels
-				.iter()
-				.any(|l| l.get_name() == "endpoint" && l.get_value() == "/test_success")
-			{
-				found = true;
-				assert!(m.get_counter().get_value() >= 1.0);
-			}
-		}
-		assert!(
-			found,
-			"Expected metric with endpoint '/test_success' not found"
-		);
-	}
-
-	#[actix_rt::test]
-	async fn test_middleware_error() {
-		let req = test::TestRequest::with_uri("/test_error").to_srv_request();
-
-		let middleware = MetricsMiddleware;
-		let service = middleware.new_transform(DummyErrorService).await.unwrap();
-
-		let result = service.call(req).await;
-		assert!(result.is_err());
-
-		let families = REGISTRY.gather();
-		let error_counter_fam = find_metric_family("error_requests_total", &families)
-			.expect("error_requests_total metric family not found");
-
-		let mut found = false;
-		for m in error_counter_fam.get_metric() {
-			let labels = m.get_label();
-			if labels
-				.iter()
-				.any(|l| l.get_name() == "endpoint" && l.get_value() == "/test_error")
-			{
-				found = true;
-				assert!(m.get_counter().get_value() >= 1.0);
-			}
-		}
-		assert!(
-			found,
-			"Expected error metric with endpoint '/test_error' not found"
-		);
-	}
-}
-
-#[cfg(test)]
-mod property_tests {
-	use proptest::{prelude::*, test_runner::Config};
-
-	// A helper function to compute percentage used from total.
-	fn compute_percentage(used: u64, total: u64) -> f64 {
-		if total > 0 {
-			(used as f64 / total as f64) * 100.0
-		} else {
-			0.0
-		}
-	}
-
-	proptest! {
-		// Set the number of cases to 1000
-		#![proptest_config(Config {
-		  cases: 1000, ..Config::default()
-		})]
-
-		#[test]
-		fn prop_compute_percentage((total, used) in {
-			(1u64..1_000_000u64).prop_flat_map(|total| {
-				(Just(total), 0u64..=total)
-			})
-		}) {
-			let percentage = compute_percentage(used, total);
-			prop_assert!(percentage >= 0.0);
-			prop_assert!(percentage <= 100.0);
-		}
-
-		#[test]
-		fn prop_labels_are_reasonable(
-			  endpoint in ".*",
-			  method in prop::sample::select(vec![
-				"GET".to_string(),
-				"POST".to_string(),
-				"PUT".to_string(),
-				"DELETE".to_string()
-				])
-			) {
-			let endpoint_label = if endpoint.is_empty() { "/".to_string() } else { endpoint.clone() };
-			let method_label = method;
-
-			prop_assert!(endpoint_label.chars().count() <= 1024, "Endpoint label too long");
-			prop_assert!(method_label.chars().count() <= 16, "Method label too long");
-
-			let status = "200".to_string();
-			let labels = vec![endpoint_label, method_label, status];
-
-			for label in labels {
-				prop_assert!(!label.is_empty());
-				prop_assert!(label.len() < 1024);
-			}
-		}
 	}
 }

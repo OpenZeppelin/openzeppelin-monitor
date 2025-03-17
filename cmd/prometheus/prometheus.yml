@@ -7,7 +7,7 @@ global:
 scrape_configs:
   - job_name: monitor
     # Prometheus uses this api path to scrape metrics from the monitor container
-    metrics_path: /debug/metrics/scrape
+    metrics_path: /metrics
     scheme: http
     static_configs:
       - targets:

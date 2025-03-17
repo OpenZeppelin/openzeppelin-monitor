@@ -35,16 +35,17 @@ use crate::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
-	utils::logging::setup_logging,
+	utils::{logging::setup_logging, metrics::server::create_metrics_server},
 };
 
 use clap::{Arg, Command};
 use dotenvy::dotenv;
-use log::{debug, error, info};
+use log::{error, info};
 use models::BlockChainType;
 use services::trigger::TriggerExecutionServiceTrait;
+use std::env::{set_var, var};
 use std::sync::Arc;
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 
 /// Main entry point for the blockchain monitoring service.
 ///
@@ -83,35 +84,55 @@ async fn main() -> Result<()> {
 				.help("Maximum log file size in bytes before rolling (default: 1GB)")
 				.value_name("BYTES"),
 		)
+		.arg(
+			Arg::new("metrics-address")
+				.long("metrics-address")
+				.help("Address to start the metrics server on (default: 127.0.0.1:8081)")
+				.value_name("HOST:PORT"),
+		)
+		.arg(
+			Arg::new("metrics")
+				.long("metrics")
+				.help("Enable metrics server")
+				.action(clap::ArgAction::SetTrue),
+		)
 		.get_matches();
 
 	// Load environment variables from .env file
 	dotenv().ok();
 
 	// Only apply CLI options if the corresponding environment variables are NOT already set
-	if matches.get_flag("log-file") && std::env::var("LOG_MODE").is_err() {
-		std::env::set_var("LOG_MODE", "file");
+	if matches.get_flag("log-file") && var("LOG_MODE").is_err() {
+		set_var("LOG_MODE", "file");
 	}
 
 	if let Some(level) = matches.get_one::<String>("log-level") {
-		if std::env::var("LOG_LEVEL").is_err() {
-			std::env::set_var("LOG_LEVEL", level);
+		if var("LOG_LEVEL").is_err() {
+			set_var("LOG_LEVEL", level);
 		}
 	}
 
 	if let Some(path) = matches.get_one::<String>("log-path") {
-		if std::env::var("LOG_FILE_PATH").is_err() {
-			std::env::set_var("LOG_FILE_PATH", path);
+		if var("LOG_FILE_PATH").is_err() {
+			set_var("LOG_FILE_PATH", path);
 		}
 	}
 
 	if let Some(max_size) = matches.get_one::<String>("log-max-size") {
-		if std::env::var("LOG_MAX_SIZE").is_err() {
-			std::env::set_var("LOG_MAX_SIZE", max_size);
+		if var("LOG_MAX_SIZE").is_err() {
+			set_var("LOG_MAX_SIZE", max_size);
 		}
 	}
 
 	setup_logging();
+
+	// Initialize repositories
+	let network_repo = Arc::new(Mutex::new(NetworkRepository::new(None)?));
+	let trigger_repo = Arc::new(Mutex::new(TriggerRepository::new(None)?));
+	let monitor_repo = Arc::new(Mutex::new(MonitorRepository::<
+		NetworkRepository,
+		TriggerRepository,
+	>::new(None, None, None)?));
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
 		initialize_services::<
@@ -120,6 +141,46 @@ async fn main() -> Result<()> {
 			TriggerRepository,
 		>(None, None, None)?;
 
+	// Check if metrics should be enabled from either CLI flag or env var
+	let metrics_enabled =
+		matches.get_flag("metrics") || var("METRICS_ENABLED").map(|v| v == "true").unwrap_or(false);
+
+	// Extract metrics address as a String to avoid borrowing issues
+	let metrics_address = if var("IN_DOCKER").unwrap_or_default() == "true" {
+		// For Docker, use METRICS_PORT env var if available
+		var("METRICS_PORT")
+			.map(|port| format!("0.0.0.0:{}", port))
+			.unwrap_or_else(|_| "0.0.0.0:8081".to_string())
+	} else {
+		// For CLI, use the command line arg or default
+		matches
+			.get_one::<String>("metrics-address")
+			.map(|s| s.to_string())
+			.unwrap_or_else(|| "127.0.0.1:8081".to_string())
+	};
+
+	// Start the metrics server if successful
+	let metrics_server = if metrics_enabled {
+		info!("Metrics server enabled, starting on {}", metrics_address);
+
+		// Create the metrics server future
+		match create_metrics_server(
+			metrics_address,
+			Arc::clone(&monitor_repo),
+			Arc::clone(&network_repo),
+			Arc::clone(&trigger_repo),
+		) {
+			Ok(server) => Some(server),
+			Err(e) => {
+				error!("Failed to create metrics server: {}", e);
+				None
+			}
+		}
+	} else {
+		info!("Metrics server disabled. Use --metrics flag or METRICS_ENABLED=true to enable");
+		None
+	};
+
 	let networks_with_monitors: Vec<Network> = networks
 		.values()
 		.filter(|network| has_active_monitors(&active_monitors.clone(), &network.slug))
@@ -127,7 +188,6 @@ async fn main() -> Result<()> {
 		.collect();
 
 	if networks_with_monitors.is_empty() {
-		debug!("No networks with active monitors found. Exiting...");
 		info!("No networks with active monitors found. Exiting...");
 		return Ok(());
 	}
@@ -183,25 +243,55 @@ async fn main() -> Result<()> {
 	}
 
 	info!("Service started. Press Ctrl+C to shutdown");
-	tokio::select! {
-		_ = tokio::signal::ctrl_c() => {
-			info!("Shutdown signal received, stopping services...");
-			let _ = shutdown_tx.send(true);
+	if let Some(metrics_future) = metrics_server {
+		tokio::select! {
+			_ = tokio::signal::ctrl_c() => {
+				info!("Shutdown signal received, stopping services...");
+				let _ = shutdown_tx.send(true);
 
-			// Create a future for all network shutdown operations
-			let shutdown_futures = networks.values().map(|network| {
-				block_watcher.stop_network_watcher(&network.slug)
-			});
+				// Create a future for all network shutdown operations
+				let shutdown_futures = networks.values().map(|network| {
+					block_watcher.stop_network_watcher(&network.slug)
+				});
 
-			// Wait for all shutdown operations to complete
-			for result in futures::future::join_all(shutdown_futures).await {
+				// Wait for all shutdown operations to complete
+				for result in futures::future::join_all(shutdown_futures).await {
+					if let Err(e) = result {
+						error!("Error during shutdown: {}", e);
+					}
+				}
+
+				// Give some time for in-flight tasks to complete
+				tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+			}
+			result = metrics_future => {
 				if let Err(e) = result {
-					error!("Error during shutdown: {}", e);
+					error!("Metrics server error: {}", e);
 				}
 			}
+		}
+	} else {
+		// No metrics server running
+		tokio::select! {
+			_ = tokio::signal::ctrl_c() => {
+				info!("Shutdown signal received, stopping services...");
+				let _ = shutdown_tx.send(true);
 
-			// Give some time for in-flight tasks to complete
-			tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+				// Create a future for all network shutdown operations
+				let shutdown_futures = networks.values().map(|network| {
+					block_watcher.stop_network_watcher(&network.slug)
+				});
+
+				// Wait for all shutdown operations to complete
+				for result in futures::future::join_all(shutdown_futures).await {
+					if let Err(e) = result {
+						error!("Error during shutdown: {}", e);
+					}
+				}
+
+				// Give some time for in-flight tasks to complete
+				tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+			}
 		}
 	}
 
