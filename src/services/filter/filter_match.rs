@@ -8,13 +8,13 @@
 
 use std::collections::HashMap;
 
-use web3::types::H160;
+use alloy::primitives::Address;
 
 use crate::{
-	models::MonitorMatch,
+	models::{MonitorMatch, ScriptLanguage},
 	services::{
 		filter::{
-			evm_helpers::{h160_to_string, h256_to_string},
+			evm_helpers::{b256_to_string, h160_to_string},
 			FilterError,
 		},
 		trigger::TriggerExecutionServiceTrait,
@@ -30,6 +30,7 @@ use crate::{
 /// # Arguments
 /// * `matching_monitor` - The matched monitor event containing transaction and trigger information
 /// * `trigger_service` - Service responsible for executing triggers
+/// * `trigger_scripts` - Scripts to be executed for each trigger
 ///
 /// # Returns
 /// Result indicating success or failure of trigger execution
@@ -50,17 +51,18 @@ use crate::{
 pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 	matching_monitor: MonitorMatch,
 	trigger_service: &T,
+	trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 ) -> Result<(), FilterError> {
-	match matching_monitor {
+	match &matching_monitor {
 		MonitorMatch::EVM(evm_monitor_match) => {
 			let transaction = evm_monitor_match.transaction.clone();
 			// If sender does not exist, we replace with 0x0000000000000000000000000000000000000000
-			let sender = transaction.sender().unwrap_or(&H160([0; 20]));
+			let sender = transaction.sender().unwrap_or(&Address::ZERO);
 			// Convert transaction data to a HashMap
 			let mut data = HashMap::new();
 			data.insert(
 				"transaction_hash".to_string(),
-				h256_to_string(*transaction.hash()),
+				b256_to_string(*transaction.hash()),
 			);
 			data.insert("transaction_from".to_string(), h160_to_string(*sender));
 			data.insert(
@@ -70,7 +72,10 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 			if let Some(to) = transaction.to() {
 				data.insert("transaction_to".to_string(), h160_to_string(*to));
 			}
-			data.insert("monitor_name".to_string(), evm_monitor_match.monitor.name);
+			data.insert(
+				"monitor_name".to_string(),
+				evm_monitor_match.monitor.name.clone(),
+			);
 
 			let matched_args: HashMap<String, String> =
 				if let Some(args) = &evm_monitor_match.matched_on_args {
@@ -114,6 +119,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				};
 
 			data.extend(matched_args);
+
+			// Swallow any errors since it's logged in the trigger service and we want to continue
+			// processing other matches
 			let _ = trigger_service
 				.execute(
 					&evm_monitor_match
@@ -123,6 +131,8 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 						.map(|s| s.to_string())
 						.collect::<Vec<_>>(),
 					data,
+					&matching_monitor,
+					trigger_scripts,
 				)
 				.await;
 		}
@@ -149,7 +159,7 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 			// }
 			data.insert(
 				"monitor_name".to_string(),
-				stellar_monitor_match.monitor.name,
+				stellar_monitor_match.monitor.name.clone(),
 			);
 
 			let matched_args: HashMap<String, String> =
@@ -194,6 +204,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				};
 
 			data.extend(matched_args);
+
+			// Swallow any errors since it's logged in the trigger service and we want to continue
+			// processing other matches
 			let _ = trigger_service
 				.execute(
 					&stellar_monitor_match
@@ -203,6 +216,8 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 						.map(|s| s.to_string())
 						.collect::<Vec<_>>(),
 					data,
+					&matching_monitor,
+					trigger_scripts,
 				)
 				.await;
 		}

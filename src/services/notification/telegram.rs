@@ -26,6 +26,8 @@ pub struct TelegramNotifier {
 	body_template: String,
 	/// HTTP client for webhook requests
 	client: Client,
+	/// Base URL for the Telegram API
+	base_url: String,
 }
 
 impl TelegramNotifier {
@@ -38,13 +40,15 @@ impl TelegramNotifier {
 	/// * `title` - Title to display in the message
 	/// * `body_template` - Message template with variables
 	pub fn new(
+		base_url: Option<String>,
 		token: String,
 		chat_id: String,
 		disable_web_preview: Option<bool>,
 		title: String,
 		body_template: String,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		Ok(Self {
+			base_url: base_url.unwrap_or("https://api.telegram.org".to_string()),
 			token,
 			chat_id,
 			disable_web_preview: disable_web_preview.unwrap_or(false),
@@ -87,6 +91,7 @@ impl TelegramNotifier {
 				message,
 				disable_web_preview,
 			} => Some(Self {
+				base_url: "https://api.telegram.org".to_string(),
 				token: token.clone(),
 				chat_id: chat_id.clone(),
 				disable_web_preview: disable_web_preview.unwrap_or(false),
@@ -100,7 +105,9 @@ impl TelegramNotifier {
 
 	pub fn construct_url(&self, message: &str) -> String {
 		format!(
-			"https://api.telegram.org/bot{}/sendMessage?text={}&chat_id={}&parse_mode=markdown&disable_web_page_preview={}",
+			"{}/bot{}/sendMessage?text={}&chat_id={}&parse_mode=markdown&\
+			 disable_web_page_preview={}",
+			self.base_url,
 			self.token,
 			urlencoding::encode(message),
 			self.chat_id,
@@ -117,21 +124,25 @@ impl Notifier for TelegramNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let url = self.construct_url(message);
-		let response = self
-			.client
-			.get(&url)
-			.send()
-			.await
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+
+		let response = match self.client.get(&url).send().await {
+			Ok(resp) => resp,
+			Err(e) => {
+				return Err(anyhow::anyhow!(
+					"Failed to send Telegram notification: {}",
+					e
+				));
+			}
+		};
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(format!(
+			return Err(anyhow::anyhow!(
 				"Telegram webhook returned error status: {}",
 				response.status()
-			)));
+			));
 		}
 
 		Ok(())
@@ -146,6 +157,7 @@ mod tests {
 
 	fn create_test_notifier(body_template: &str) -> TelegramNotifier {
 		TelegramNotifier::new(
+			None,
 			"test-token".to_string(),
 			"test-chat-id".to_string(),
 			Some(true),

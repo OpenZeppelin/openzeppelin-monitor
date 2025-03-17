@@ -4,6 +4,8 @@
 //! actions to take when monitor conditions are met. The repository loads trigger
 //! configurations from JSON files.
 
+#![allow(clippy::result_large_err)]
+
 use std::{collections::HashMap, path::Path};
 
 use crate::{
@@ -58,12 +60,20 @@ pub trait TriggerRepositoryTrait: Clone {
 
 impl TriggerRepositoryTrait for TriggerRepository {
 	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path)?;
-		Ok(TriggerRepository { triggers })
+		TriggerRepository::new(path)
 	}
 
 	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
-		Trigger::load_all(path).map_err(|e| RepositoryError::load_error(format!("Failed: {}", e)))
+		Trigger::load_all(path).map_err(|e| {
+			RepositoryError::load_error(
+				"Failed to load triggers",
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.map_or_else(|| "default".to_string(), |p| p.display().to_string()),
+				)])),
+			)
+		})
 	}
 
 	fn get(&self, trigger_id: &str) -> Option<Trigger> {
@@ -112,5 +122,27 @@ impl<T: TriggerRepositoryTrait> TriggerService<T> {
 	/// Get all triggers
 	pub fn get_all(&self) -> HashMap<String, Trigger> {
 		self.repository.get_all()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::repositories::error::RepositoryError;
+	use std::path::PathBuf;
+
+	#[test]
+	fn test_load_error_messages() {
+		// Test with invalid path to trigger load error
+		let invalid_path = PathBuf::from("/non/existent/path");
+		let result = TriggerRepository::load_all(Some(&invalid_path));
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		match err {
+			RepositoryError::LoadError(message) => {
+				assert!(message.to_string().contains("Failed to load triggers"));
+			}
+			_ => panic!("Expected RepositoryError::LoadError"),
+		}
 	}
 }

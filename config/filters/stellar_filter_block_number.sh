@@ -24,7 +24,7 @@ set -e
 
 main() {
     verbose=false
-    
+
     # Read JSON input from stdin
     input_json=$(cat)
 
@@ -63,7 +63,7 @@ main() {
 
     # Check if even or odd using modulo
     is_even=$((ledger_number % 2))
-    
+
     if [ $is_even -eq 0 ]; then
         echo "Ledger number $ledger_number is even"
         echo "Verbose mode: $verbose"

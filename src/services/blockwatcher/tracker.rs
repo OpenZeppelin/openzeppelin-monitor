@@ -28,7 +28,8 @@ use crate::{
 #[async_trait]
 pub trait BlockTrackerTrait<S: BlockStorage> {
 	fn new(history_size: usize, storage: Option<Arc<S>>) -> Self;
-	async fn record_block(&self, network: &Network, block_number: u64);
+	async fn record_block(&self, network: &Network, block_number: u64)
+		-> Result<(), anyhow::Error>;
 	async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
 }
 
@@ -87,7 +88,11 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 	/// # Warning
 	///
 	/// This method will log warnings for out-of-order blocks and errors for missed blocks.
-	async fn record_block(&self, network: &Network, block_number: u64) {
+	async fn record_block(
+		&self,
+		network: &Network,
+		block_number: u64,
+	) -> Result<(), anyhow::Error> {
 		let mut history = self.block_history.lock().await;
 		let network_history = history
 			.entry(network.slug.clone())
@@ -98,28 +103,34 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 			if block_number > last_block + 1 {
 				// Log each missed block number
 				for missed in (last_block + 1)..block_number {
-					BlockWatcherError::block_tracker_error(format!(
-						"Missed block {} on network {}",
-						missed, network.slug
-					));
+					BlockWatcherError::block_tracker_error(
+						format!("Missed block {}", missed),
+						None,
+						None,
+					);
 
 					if network.store_blocks.unwrap_or(false) {
 						if let Some(storage) = &self.storage {
 							// Store the missed block info
-							if let Err(e) = storage.save_missed_block(&network.slug, missed).await {
-								BlockWatcherError::storage_error(format!(
-									"Failed to store missed block {} for network {}: {}",
-									missed, network.slug, e
-								));
+							if (storage.save_missed_block(&network.slug, missed).await).is_err() {
+								BlockWatcherError::storage_error(
+									format!("Failed to store missed block {}", missed),
+									None,
+									None,
+								);
 							}
 						}
 					}
 				}
 			} else if block_number <= last_block {
-				BlockWatcherError::block_tracker_error(format!(
-					"Out of order or duplicate block detected for network {}: received {} after {}",
-					network.slug, block_number, last_block
-				));
+				BlockWatcherError::block_tracker_error(
+					format!(
+						"Out of order or duplicate block detected: received {} after {}",
+						block_number, last_block
+					),
+					None,
+					None,
+				);
 			}
 		}
 
@@ -130,6 +141,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 		while network_history.len() > self.history_size {
 			network_history.pop_front();
 		}
+		Ok(())
 	}
 
 	/// Retrieves the most recently processed block number for a given network.
@@ -163,11 +175,11 @@ mod tests {
 		pub BlockStorage {}
 		#[async_trait::async_trait]
 		impl BlockStorage for BlockStorage {
-			async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
-			async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
-			async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, BlockWatcherError>;
-			async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), BlockWatcherError>;
-			async fn delete_blocks(&self, network_slug: &str) -> Result<(), BlockWatcherError>;
+			async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
+			async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
+			async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, anyhow::Error>;
+			async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), anyhow::Error>;
+			async fn delete_blocks(&self, network_slug: &str) -> Result<(), anyhow::Error>;
 		}
 
 		impl Clone for BlockStorage {
@@ -204,9 +216,9 @@ mod tests {
 		let network = create_test_network("test-net", "test_net", true);
 
 		// Process blocks in sequence
-		tracker.record_block(&network, 1).await;
-		tracker.record_block(&network, 2).await;
-		tracker.record_block(&network, 3).await;
+		tracker.record_block(&network, 1).await.unwrap();
+		tracker.record_block(&network, 2).await.unwrap();
+		tracker.record_block(&network, 3).await.unwrap();
 
 		assert_eq!(tracker.get_last_block("test_net").await, Some(3));
 	}
@@ -220,7 +232,7 @@ mod tests {
 
 		// Process 5 blocks with a history limit of 3
 		for i in 1..=5 {
-			tracker.record_block(&network, i).await;
+			tracker.record_block(&network, i).await.unwrap();
 		}
 
 		let history = tracker.block_history.lock().await;
@@ -252,9 +264,9 @@ mod tests {
 		let network = create_test_network("test-net", "test_net", true);
 
 		// Process block 1
-		tracker.record_block(&network, 1).await;
+		tracker.record_block(&network, 1).await.unwrap();
 		// Skip block 2 and process block 3
-		tracker.record_block(&network, 3).await;
+		tracker.record_block(&network, 3).await.unwrap();
 	}
 
 	#[tokio::test]
@@ -265,8 +277,8 @@ mod tests {
 		let network = create_test_network("test-net", "test_net", true);
 
 		// Process blocks out of order
-		tracker.record_block(&network, 2).await;
-		tracker.record_block(&network, 1).await;
+		tracker.record_block(&network, 2).await.unwrap();
+		tracker.record_block(&network, 1).await.unwrap();
 
 		assert_eq!(tracker.get_last_block("test_net").await, Some(1));
 	}
@@ -280,10 +292,10 @@ mod tests {
 		let network2 = create_test_network("net-2", "net_2", true);
 
 		// Process blocks for both networks
-		tracker.record_block(&network1, 1).await;
-		tracker.record_block(&network2, 100).await;
-		tracker.record_block(&network1, 2).await;
-		tracker.record_block(&network2, 101).await;
+		tracker.record_block(&network1, 1).await.unwrap();
+		tracker.record_block(&network2, 100).await.unwrap();
+		tracker.record_block(&network1, 2).await.unwrap();
+		tracker.record_block(&network2, 101).await.unwrap();
 
 		assert_eq!(tracker.get_last_block("net_1").await, Some(2));
 		assert_eq!(tracker.get_last_block("net_2").await, Some(101));
@@ -312,8 +324,8 @@ mod tests {
 		let network = create_test_network("test-network", "test_network", true);
 
 		// This should trigger save_last_processed_block
-		tracker.record_block(&network, 1).await;
+		tracker.record_block(&network, 1).await.unwrap();
 		// This should trigger save_missed_block for block 2
-		tracker.record_block(&network, 3).await;
+		tracker.record_block(&network, 3).await.unwrap();
 	}
 }

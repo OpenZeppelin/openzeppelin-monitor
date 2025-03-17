@@ -10,9 +10,9 @@ use std::marker::PhantomData;
 
 use async_trait::async_trait;
 use base64::Engine;
-use log::{debug, warn};
 use serde_json::Value;
 use stellar_xdr::curr::{OperationBody, TransactionEnvelope};
+use tracing::instrument;
 
 use crate::{
 	models::{
@@ -381,7 +381,7 @@ impl<T> StellarBlockFilter<T> {
 			let topics = match &event.topic_xdr {
 				Some(topics) => topics,
 				None => {
-					warn!("No topics found in event");
+					tracing::warn!("No topics found in event");
 					continue;
 				}
 			};
@@ -394,17 +394,17 @@ impl<T> StellarBlockFilter<T> {
 						match String::from_utf8(bytes[8..].to_vec()) {
 							Ok(name) => name.trim_matches(char::from(0)).to_string(),
 							Err(e) => {
-								warn!("Failed to decode event name as UTF-8: {}", e);
+								tracing::warn!("Failed to decode event name as UTF-8: {}", e);
 								continue;
 							}
 						}
 					} else {
-						warn!("Event name bytes too short: {}", bytes.len());
+						tracing::warn!("Event name bytes too short: {}", bytes.len());
 						continue;
 					}
 				}
 				Err(e) => {
-					warn!("Failed to decode base64 event name: {}", e);
+					tracing::warn!("Failed to decode base64 event name: {}", e);
 					continue;
 				}
 			};
@@ -419,7 +419,7 @@ impl<T> StellarBlockFilter<T> {
 						}
 					}
 					Err(e) => {
-						warn!("Failed to decode base64 topic: {}", e);
+						tracing::warn!("Failed to decode base64 topic: {}", e);
 						continue;
 					}
 				}
@@ -435,7 +435,7 @@ impl<T> StellarBlockFilter<T> {
 						}
 					}
 					Err(e) => {
-						warn!("Failed to decode base64 event value: {}", e);
+						tracing::warn!("Failed to decode base64 event value: {}", e);
 						continue;
 					}
 				}
@@ -538,7 +538,7 @@ impl<T> StellarBlockFilter<T> {
 			"String" | "string" | "Symbol" | "symbol" | "Address" | "address" | "Bytes"
 			| "bytes" => self.compare_string(param_value, operator, compare_value),
 			_ => {
-				warn!("Unsupported parameter type: {}", param_type);
+				tracing::warn!("Unsupported parameter type: {}", param_type);
 				false
 			}
 		}
@@ -546,18 +546,18 @@ impl<T> StellarBlockFilter<T> {
 
 	fn compare_bool(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		let Ok(param_value) = param_value.parse::<bool>() else {
-			warn!("Failed to parse bool parameter value: {}", param_value);
+			tracing::warn!("Failed to parse bool parameter value: {}", param_value);
 			return false;
 		};
 		let Ok(compare_value) = compare_value.parse::<bool>() else {
-			warn!("Failed to parse bool comparison value: {}", compare_value);
+			tracing::warn!("Failed to parse bool comparison value: {}", compare_value);
 			return false;
 		};
 		match operator {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!("Unsupported operator for bool type: {}", operator);
+				tracing::warn!("Unsupported operator for bool type: {}", operator);
 				false
 			}
 		}
@@ -565,11 +565,11 @@ impl<T> StellarBlockFilter<T> {
 
 	fn compare_u64(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		let Ok(param_value) = param_value.parse::<u64>() else {
-			warn!("Failed to parse u64 parameter value: {}", param_value);
+			tracing::warn!("Failed to parse u64 parameter value: {}", param_value);
 			return false;
 		};
 		let Ok(compare_value) = compare_value.parse::<u64>() else {
-			warn!("Failed to parse u64 comparison value: {}", compare_value);
+			tracing::warn!("Failed to parse u64 comparison value: {}", compare_value);
 			return false;
 		};
 		match operator {
@@ -580,7 +580,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!("Unsupported operator: {}", operator);
+				tracing::warn!("Unsupported operator: {}", operator);
 				false
 			}
 		}
@@ -588,11 +588,11 @@ impl<T> StellarBlockFilter<T> {
 
 	fn compare_u32(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		let Ok(param_value) = param_value.parse::<u32>() else {
-			warn!("Failed to parse u32 parameter value: {}", param_value);
+			tracing::warn!("Failed to parse u32 parameter value: {}", param_value);
 			return false;
 		};
 		let Ok(compare_value) = compare_value.parse::<u32>() else {
-			warn!("Failed to parse u32 comparison value: {}", compare_value);
+			tracing::warn!("Failed to parse u32 comparison value: {}", compare_value);
 			return false;
 		};
 		match operator {
@@ -603,7 +603,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!("Unsupported operator: {}", operator);
+				tracing::warn!("Unsupported operator: {}", operator);
 				false
 			}
 		}
@@ -611,11 +611,11 @@ impl<T> StellarBlockFilter<T> {
 
 	fn compare_i32(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		let Ok(param_value) = param_value.parse::<i32>() else {
-			warn!("Failed to parse i32 parameter value: {}", param_value);
+			tracing::warn!("Failed to parse i32 parameter value: {}", param_value);
 			return false;
 		};
 		let Ok(compare_value) = compare_value.parse::<i32>() else {
-			warn!("Failed to parse i32 comparison value: {}", compare_value);
+			tracing::warn!("Failed to parse i32 comparison value: {}", compare_value);
 			return false;
 		};
 		match operator {
@@ -626,7 +626,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!("Unsupported operator: {}", operator);
+				tracing::warn!("Unsupported operator: {}", operator);
 				false
 			}
 		}
@@ -634,11 +634,11 @@ impl<T> StellarBlockFilter<T> {
 
 	fn compare_i64(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		let Ok(param_value) = param_value.parse::<i64>() else {
-			warn!("Failed to parse i64 parameter value: {}", param_value);
+			tracing::warn!("Failed to parse i64 parameter value: {}", param_value);
 			return false;
 		};
 		let Ok(compare_value) = compare_value.parse::<i64>() else {
-			warn!("Failed to parse i64 comparison value: {}", compare_value);
+			tracing::warn!("Failed to parse i64 comparison value: {}", compare_value);
 			return false;
 		};
 		match operator {
@@ -649,7 +649,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!("Unsupported operator: {}", operator);
+				tracing::warn!("Unsupported operator: {}", operator);
 				false
 			}
 		}
@@ -657,11 +657,11 @@ impl<T> StellarBlockFilter<T> {
 
 	fn compare_u128(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		let Ok(param_value) = param_value.parse::<u128>() else {
-			warn!("Failed to parse u128 parameter value: {}", param_value);
+			tracing::warn!("Failed to parse u128 parameter value: {}", param_value);
 			return false;
 		};
 		let Ok(compare_value) = compare_value.parse::<u128>() else {
-			warn!("Failed to parse u128 comparison value: {}", compare_value);
+			tracing::warn!("Failed to parse u128 comparison value: {}", compare_value);
 			return false;
 		};
 		match operator {
@@ -672,7 +672,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!("Unsupported operator: {}", operator);
+				tracing::warn!("Unsupported operator: {}", operator);
 				false
 			}
 		}
@@ -680,11 +680,11 @@ impl<T> StellarBlockFilter<T> {
 
 	fn compare_i128(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		let Ok(param_value) = param_value.parse::<i128>() else {
-			warn!("Failed to parse i128 parameter value: {}", param_value);
+			tracing::warn!("Failed to parse i128 parameter value: {}", param_value);
 			return false;
 		};
 		let Ok(compare_value) = compare_value.parse::<i128>() else {
-			warn!("Failed to parse i128 comparison value: {}", compare_value);
+			tracing::warn!("Failed to parse i128 comparison value: {}", compare_value);
 			return false;
 		};
 		match operator {
@@ -695,7 +695,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!("Unsupported operator: {}", operator);
+				tracing::warn!("Unsupported operator: {}", operator);
 				false
 			}
 		}
@@ -706,7 +706,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value,
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!(
+				tracing::warn!(
 					"Only == and != operators are supported for i256: {}",
 					operator
 				);
@@ -722,7 +722,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => normalized_param == normalized_compare,
 			"!=" => normalized_param != normalized_compare,
 			_ => {
-				warn!(
+				tracing::warn!(
 					"Only == and != operators are supported for string types: {}",
 					operator
 				);
@@ -742,7 +742,7 @@ impl<T> StellarBlockFilter<T> {
 			"==" => param_value == compare_value, // For exact array match
 			"!=" => param_value != compare_value,
 			_ => {
-				warn!(
+				tracing::warn!(
 					"Only contains, == and != operators are supported for vec type: {}",
 					operator
 				);
@@ -805,7 +805,7 @@ impl<T> StellarBlockFilter<T> {
 			}
 
 			(None, Some(_)) => {
-				debug!("Invalid comparison: non-JSON value compared against JSON value");
+				tracing::debug!("Invalid comparison: non-JSON value compared against JSON value");
 				false
 			}
 
@@ -848,12 +848,12 @@ impl<T> StellarBlockFilter<T> {
 				{
 					vec![left, operator, right]
 				} else {
-					warn!("Invalid expression format: {}", clean_condition);
+					tracing::warn!("Invalid expression format: {}", clean_condition);
 					return false;
 				};
 
 				if parts.len() != 3 {
-					warn!("Invalid expression format: {}", clean_condition);
+					tracing::warn!("Invalid expression format: {}", clean_condition);
 					return false;
 				}
 
@@ -869,14 +869,14 @@ impl<T> StellarBlockFilter<T> {
 						.collect();
 
 					if indices.len() != 2 || indices[0] >= args.len() {
-						debug!("Invalid array indices: {:?}", indices);
+						tracing::debug!("Invalid array indices: {:?}", indices);
 						return false;
 					}
 
 					let param = &args[indices[0]];
 					let array_values: Vec<&str> = param.value.split(',').collect();
 					if indices[1] >= array_values.len() {
-						debug!("Array index out of bounds: {}", indices[1]);
+						tracing::debug!("Array index out of bounds: {}", indices[1]);
 						return false;
 					}
 
@@ -890,20 +890,20 @@ impl<T> StellarBlockFilter<T> {
 					// Map access: map.key
 					let parts: Vec<&str> = param_expr.split('.').collect();
 					if parts.len() != 2 {
-						debug!("Invalid map access format: {}", param_expr);
+						tracing::debug!("Invalid map access format: {}", param_expr);
 						return false;
 					}
 
 					let [map_name, key] = [parts[0], parts[1]];
 
 					let Some(param) = args.iter().find(|p| p.name == map_name) else {
-						debug!("Map {} not found", map_name);
+						tracing::debug!("Map {} not found", map_name);
 						return false;
 					};
 
 					let Ok(mut map_value) = serde_json::from_str::<serde_json::Value>(&param.value)
 					else {
-						debug!("Failed to parse map: {}", param.value);
+						tracing::debug!("Failed to parse map: {}", param.value);
 						return false;
 					};
 
@@ -917,7 +917,7 @@ impl<T> StellarBlockFilter<T> {
 					}
 
 					let Some(key_value) = map_value.get(key) else {
-						debug!("Key {} not found in map", key);
+						tracing::debug!("Key {} not found in map", key);
 						return false;
 					};
 
@@ -930,7 +930,7 @@ impl<T> StellarBlockFilter<T> {
 				} else {
 					// Regular parameter
 					let Some(param) = args.iter().find(|p| p.name == param_expr) else {
-						warn!("Parameter {} not found", param_expr);
+						tracing::warn!("Parameter {} not found", param_expr);
 						return false;
 					};
 
@@ -1024,6 +1024,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 	///
 	/// # Returns
 	/// Result containing vector of matching monitors or a filter error
+	#[instrument(skip_all, fields(network = %_network.slug))]
 	async fn filter_block(
 		&self,
 		client: &Self::Client,
@@ -1036,37 +1037,52 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 			_ => {
 				return Err(FilterError::block_type_mismatch(
 					"Expected Stellar block".to_string(),
-				))
+					None,
+					None,
+				));
 			}
 		};
 
-		let mut matching_results = Vec::new();
-
-		let transactions = client
-			.get_transactions(stellar_block.sequence, None)
-			.await
-			.map_err(|e| {
-				FilterError::network_error(format!("Failed to get transactions: {}", e))
-			})?;
+		let transactions = match client.get_transactions(stellar_block.sequence, None).await {
+			Ok(transactions) => transactions,
+			Err(e) => {
+				return Err(FilterError::network_error(
+					format!(
+						"Failed to get transactions for block {}",
+						stellar_block.sequence
+					),
+					Some(e.into()),
+					None,
+				));
+			}
+		};
 
 		if transactions.is_empty() {
-			debug!("No transactions found for block {}", stellar_block.sequence);
+			tracing::debug!("No transactions found for block {}", stellar_block.sequence);
 			return Ok(vec![]);
 		}
 
-		debug!("Processing {} transaction(s)", transactions.len());
+		tracing::debug!("Processing {} transaction(s)", transactions.len());
 
-		let events = client
-			.get_events(stellar_block.sequence, None)
-			.await
-			.map_err(|e| FilterError::network_error(format!("Failed to get events: {}", e)))?;
+		let events = match client.get_events(stellar_block.sequence, None).await {
+			Ok(events) => events,
+			Err(e) => {
+				return Err(FilterError::network_error(
+					format!("Failed to get events for block {}", stellar_block.sequence),
+					Some(e.into()),
+					None,
+				));
+			}
+		};
 
-		debug!("Processing {} event(s)", events.len());
+		tracing::debug!("Processing {} event(s)", events.len());
+		tracing::debug!("Processing {} monitor(s)", monitors.len());
 
-		debug!("Processing {} monitor(s)", monitors.len());
+		let mut matching_results = Vec::new();
+
 		// Process each monitor first
 		for monitor in monitors {
-			debug!("Processing monitor: {}", monitor.name);
+			tracing::debug!("Processing monitor: {}", monitor.name);
 
 			let monitored_addresses = monitor
 				.addresses
@@ -1086,7 +1102,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 					functions: Some(Vec::new()),
 				};
 
-				debug!("Processing transaction: {:?}", transaction.hash());
+				tracing::debug!("Processing transaction: {:?}", transaction.hash());
 
 				self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
 

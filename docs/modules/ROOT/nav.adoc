@@ -2,4 +2,5 @@
 * xref:quickstart.adoc[Quickstart]
 * xref:structure.adoc[Project Structure]
 * xref:rpc.adoc[RPC Client]
+* xref:error.adoc[Error Handling]
 * link:rust_docs/doc/openzeppelin_monitor/index.html[Technical Rust Documentation]

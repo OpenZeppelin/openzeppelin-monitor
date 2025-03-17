@@ -1,8 +1,8 @@
 use openzeppelin_monitor::{
 	models::{BlockChainType, Network, RpcUrl},
 	services::blockchain::{
-		BlockChainError, ClientPool, ClientPoolTrait, EvmClient, StellarClient,
-		StellarTransportClient, Web3TransportClient,
+		AlloyTransportClient, ClientPool, ClientPoolTrait, EvmClient, StellarClient,
+		StellarTransportClient,
 	},
 };
 
@@ -44,7 +44,7 @@ async fn test_get_evm_client_creates_and_caches() {
 	let client1 = pool.get_evm_client(&network).await.unwrap();
 	assert_eq!(pool.storages.len(), 2); // We have both EVM and Stellar storage types
 	assert_eq!(
-		pool.get_client_count::<EvmClient<Web3TransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	); // But only one EVM client
@@ -57,7 +57,7 @@ async fn test_get_evm_client_creates_and_caches() {
 	// Second request should return cached client
 	let client2 = pool.get_evm_client(&network).await.unwrap();
 	assert_eq!(
-		pool.get_client_count::<EvmClient<Web3TransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	); // Still only one EVM client
@@ -135,7 +135,7 @@ async fn test_different_evm_networks_get_different_clients() {
 	// Should have two different clients
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<Web3TransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
 			.await,
 		2
 	);
@@ -209,7 +209,7 @@ async fn test_concurrent_access() {
 	}
 
 	// Wait for all tasks to complete
-	let clients: Vec<Arc<EvmClient<Web3TransportClient>>> = futures::future::join_all(handles)
+	let clients: Vec<Arc<EvmClient<AlloyTransportClient>>> = futures::future::join_all(handles)
 		.await
 		.into_iter()
 		.map(|r| r.unwrap())
@@ -218,7 +218,7 @@ async fn test_concurrent_access() {
 	// Should only have created one client
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<Web3TransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	);
@@ -238,7 +238,7 @@ async fn test_default_creates_empty_pool() {
 
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<Web3TransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
@@ -267,19 +267,21 @@ async fn test_get_evm_client_handles_errors() {
 
 	// Attempt to get client should result in error
 	let result = pool.get_evm_client(&network).await;
-	assert!(result.is_err());
-
 	if let Err(err) = result {
-		match err {
-			BlockChainError::ClientPoolError(_) => (),
-			other => panic!("Expected ClientPoolError, got: {:?}", other),
-		}
+		assert!(
+			err.to_string()
+				.contains("Failed to get or create EVM client"),
+			"Expected ClientPoolError, got: {}",
+			err
+		);
+	} else {
+		panic!("Expected error, got success");
 	}
 
 	// Pool should remain empty after failed client creation
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<Web3TransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
@@ -309,19 +311,21 @@ async fn test_get_stellar_client_handles_errors() {
 
 	// Attempt to get client should result in error
 	let result = pool.get_stellar_client(&network).await;
-	assert!(result.is_err());
-
 	if let Err(err) = result {
-		match err {
-			BlockChainError::ClientPoolError(_) => (),
-			other => panic!("Expected ClientPoolError, got: {:?}", other),
-		}
+		assert!(
+			err.to_string()
+				.contains("Failed to get or create Stellar client"),
+			"Expected ClientPoolError, got: {}",
+			err
+		);
+	} else {
+		panic!("Expected error, got success");
 	}
 
 	// Pool should remain empty after failed client creation
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<Web3TransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);

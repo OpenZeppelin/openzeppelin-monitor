@@ -12,10 +12,12 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use openzeppelin_monitor::{
-	models::{BlockType, Network, StellarEvent, StellarTransaction},
+	models::{
+		BlockType, EVMReceiptLog, EVMTransactionReceipt, Network, StellarEvent, StellarTransaction,
+	},
 	services::{
 		blockchain::{
-			BlockChainClient, BlockChainError, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
+			BlockChainClient, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
 			StellarClientTrait,
 		},
 		filter::{EVMBlockFilter, StellarBlockFilter},
@@ -25,7 +27,7 @@ use openzeppelin_monitor::{
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
 
-use super::{MockStellarTransportClient, MockWeb3TransportClient};
+use super::{MockAlloyTransportClient, MockStellarTransportClient};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -38,12 +40,12 @@ mock! {
 
 	#[async_trait]
 	impl<T: Send + Sync + Clone + 'static> BlockChainClient for EvmClientTrait<T> {
-		async fn get_latest_block_number(&self) -> Result<u64, BlockChainError>;
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error>;
 		async fn get_blocks(
 			&self,
 			start_block: u64,
 			end_block: Option<u64>,
-		) -> Result<Vec<BlockType>, BlockChainError>;
+		) -> Result<Vec<BlockType>, anyhow::Error>;
 	}
 
 	#[async_trait]
@@ -51,13 +53,13 @@ mock! {
 		async fn get_transaction_receipt(
 			&self,
 			transaction_hash: String,
-		) -> Result<web3::types::TransactionReceipt, BlockChainError>;
+		) -> Result<EVMTransactionReceipt,  anyhow::Error>;
 
 		async fn get_logs_for_blocks(
 			&self,
 			from_block: u64,
 			to_block: u64,
-		) -> Result<Vec<web3::types::Log>, BlockChainError>;
+		) -> Result<Vec<EVMReceiptLog>,  anyhow::Error>;
 	}
 
 	impl<T: Send + Sync + Clone + 'static> Clone for EvmClientTrait<T> {
@@ -78,12 +80,12 @@ mock! {
 
 	#[async_trait]
 	impl<T: Send + Sync + Clone + 'static> BlockChainClient for StellarClientTrait<T> {
-		async fn get_latest_block_number(&self) -> Result<u64, BlockChainError>;
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error>;
 		async fn get_blocks(
 			&self,
 			start_block: u64,
 			end_block: Option<u64>,
-		) -> Result<Vec<BlockType>, BlockChainError>;
+		) -> Result<Vec<BlockType>, anyhow::Error>;
 	}
 
 	#[async_trait]
@@ -92,13 +94,13 @@ mock! {
 			&self,
 			start_sequence: u32,
 			end_sequence: Option<u32>,
-		) -> Result<Vec<StellarTransaction>, BlockChainError>;
+		) -> Result<Vec<StellarTransaction>, anyhow::Error>;
 
 		async fn get_events(
 			&self,
 			start_sequence: u32,
 			end_sequence: Option<u32>,
-		) -> Result<Vec<StellarEvent>, BlockChainError>;
+		) -> Result<Vec<StellarEvent>, anyhow::Error>;
 	}
 
 	impl<T: Send + Sync + Clone + 'static> Clone for StellarClientTrait<T> {
@@ -136,10 +138,10 @@ mock! {
 
 	#[async_trait]
 	impl ClientPoolTrait for ClientPool {
-		type EvmClient = MockEvmClientTrait<MockWeb3TransportClient>;
+		type EvmClient = MockEvmClientTrait<MockAlloyTransportClient>;
 		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
-		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockWeb3TransportClient>>, BlockChainError>;
-		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>, BlockChainError>;
+		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockAlloyTransportClient>>,  anyhow::Error>;
+		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>,  anyhow::Error>;
 	}
 
 	impl Clone for ClientPool {

@@ -3,6 +3,8 @@
 //! Tests the monitoring functionality for the Stellar blockchain,
 //! including contract invocations and transaction filtering.
 
+use std::collections::HashMap;
+
 use openzeppelin_monitor::{
 	models::{
 		BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, StellarEvent,
@@ -15,6 +17,8 @@ use crate::integration::{
 	filters::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
 	mocks::{MockStellarClientTrait, MockStellarTransportClient},
 };
+
+use serde_json::Value;
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.functions = vec![];
@@ -68,9 +72,7 @@ fn make_monitor_with_transactions(mut monitor: Monitor, include_expression: bool
 }
 
 #[tokio::test]
-async fn test_monitor_events_with_no_expressions() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 
@@ -137,9 +139,8 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), FilterError> {
 }
 
 #[tokio::test]
-async fn test_monitor_events_with_expressions() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 
@@ -238,9 +239,8 @@ async fn test_monitor_events_with_expressions() -> Result<(), FilterError> {
 }
 
 #[tokio::test]
-async fn test_monitor_functions_with_no_expressions() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 
@@ -306,9 +306,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), FilterError>
 }
 
 #[tokio::test]
-async fn test_monitor_functions_with_expressions() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 
@@ -397,9 +395,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), FilterError> {
 }
 
 #[tokio::test]
-async fn test_monitor_transactions_with_expressions() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 
@@ -465,9 +461,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), FilterError>
 }
 
 #[tokio::test]
-async fn test_monitor_transactions_with_no_expressions() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 
@@ -530,9 +524,7 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), FilterErr
 }
 
 #[tokio::test]
-async fn test_monitor_with_multiple_conditions() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 
@@ -631,9 +623,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), FilterError> {
 }
 
 #[tokio::test]
-async fn test_monitor_error_cases() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
 	let mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
@@ -660,11 +650,10 @@ async fn test_monitor_error_cases() -> Result<(), FilterError> {
 }
 
 #[tokio::test]
-async fn test_handle_match() -> Result<(), FilterError> {
-	let _ = env_logger::builder().is_test(true).try_init();
-
+async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
+	let trigger_scripts = HashMap::new();
 
 	// Load Stellar-specific test data
 	let events: Vec<StellarEvent> =
@@ -694,7 +683,7 @@ async fn test_handle_match() -> Result<(), FilterError> {
 
 	trigger_execution_service
 		.expect_execute()
-		.withf(|trigger_name, variables| {
+		.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 			trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
@@ -714,12 +703,18 @@ async fn test_handle_match() -> Result<(), FilterError> {
 				&& variables.get("event_0_3") == Some(&"2240".to_string())
 		})
 		.once()
-		.returning(|_, _| Ok(()));
+		.returning(|_, _, _, _| Ok(()));
 
 	trigger_execution_service
 		.expect_execute()
-		.withf(|trigger_name, variables| {
-			trigger_name == ["example_trigger_slack"]
+		.withf(
+			|trigger_name, variables, _monitor_match, _trigger_scripts| {
+				let expected_json: Value =
+					serde_json::from_str("{\"myKey1\":1234,\"myKey2\":\"Hello, world!\"}").unwrap();
+				let actual_json: Value =
+					serde_json::from_str(variables.get("function_0_0").unwrap()).unwrap();
+
+				trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
 				// Transaction variables
@@ -727,10 +722,11 @@ async fn test_handle_match() -> Result<(), FilterError> {
 					== Some(&"FAKE5a3a9153e19002517935a5df291b81a341b98ccd80f0919d78cea5ed29d8".to_string())
 				// Function arguments
 				&& variables.get("function_0_signature") == Some(&"upsert_data(Map)".to_string())
-				&& variables.get("function_0_0") == Some(&"{\"\\\"myKey1\\\"\":1234,\"\\\"myKey2\\\"\":\"Hello, world!\"}".to_string())
-		})
+				&& expected_json == actual_json
+			},
+		)
 		.once()
-		.returning(|_, _| Ok(()));
+		.returning(|_, _, _, _| Ok(()));
 
 	let matches = filter_service
 		.filter_block(
@@ -744,7 +740,12 @@ async fn test_handle_match() -> Result<(), FilterError> {
 	assert!(!matches.is_empty(), "Should have found matches to handle");
 
 	for matching_monitor in matches {
-		let result = handle_match(matching_monitor.clone(), &trigger_execution_service).await;
+		let result = handle_match(
+			matching_monitor.clone(),
+			&trigger_execution_service,
+			&trigger_scripts,
+		)
+		.await;
 		assert!(result.is_ok(), "Handle match should succeed");
 	}
 

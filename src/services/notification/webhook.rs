@@ -65,7 +65,7 @@ impl WebhookNotifier {
 		method: Option<String>,
 		secret: Option<String>,
 		headers: Option<HashMap<String, String>>,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		Ok(Self {
 			url,
 			title,
@@ -124,12 +124,13 @@ impl WebhookNotifier {
 		&self,
 		secret: &str,
 		payload: &WebhookMessage,
-	) -> Result<(String, String), NotificationError> {
+	) -> Result<(String, String), Box<NotificationError>> {
 		let timestamp = Utc::now().timestamp_millis();
 
 		// Create HMAC instance
-		let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-			.map_err(|_| NotificationError::config_error("Invalid secret"))?; // Handle error if secret is invalid
+		let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e| {
+			NotificationError::config_error(format!("Invalid secret: {}", e), None, None)
+		})?; // Handle error if secret is invalid
 
 		// Create the message to sign
 		let message = format!("{:?}{}", payload, timestamp);
@@ -150,8 +151,8 @@ impl Notifier for WebhookNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let payload = WebhookMessage {
 			title: self.title.clone(),
 			body: message.to_string(),
@@ -166,19 +167,19 @@ impl Notifier for WebhookNotifier {
 		let mut headers = HeaderMap::new();
 
 		if let Some(secret) = &self.secret {
-			let (signature, timestamp) = self.sign_request(secret, &payload)?;
+			let (signature, timestamp) = self
+				.sign_request(secret, &payload)
+				.map_err(|e| NotificationError::internal_error(e.to_string(), None, None))?;
 
 			// Handle X-Signature header
 			if let Ok(header_name) = HeaderName::from_bytes(b"X-Signature") {
 				if let Ok(header_value) = HeaderValue::from_str(&signature) {
 					headers.insert(header_name, header_value);
 				} else {
-					return Err(NotificationError::config_error("Invalid signature value"));
+					return Err(anyhow::anyhow!("Invalid signature value",));
 				}
 			} else {
-				return Err(NotificationError::config_error(
-					"Invalid signature header name",
-				));
+				return Err(anyhow::anyhow!("Invalid signature header name",));
 			}
 
 			// Handle X-Timestamp header
@@ -186,47 +187,51 @@ impl Notifier for WebhookNotifier {
 				if let Ok(header_value) = HeaderValue::from_str(&timestamp) {
 					headers.insert(header_name, header_value);
 				} else {
-					return Err(NotificationError::config_error("Invalid timestamp value"));
+					return Err(anyhow::anyhow!("Invalid timestamp value",));
 				}
 			} else {
-				return Err(NotificationError::config_error(
-					"Invalid timestamp header name",
-				));
+				return Err(anyhow::anyhow!("Invalid timestamp header name",));
 			}
 		}
 
 		if let Some(headers_map) = &self.headers {
 			for (key, value) in headers_map {
 				let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
-					return Err(NotificationError::config_error(format!(
-						"Invalid header name: {}",
-						key
-					)));
+					return Err(anyhow::anyhow!("Invalid header name: {}", key));
 				};
 				let Ok(header_value) = HeaderValue::from_str(value) else {
-					return Err(NotificationError::config_error(format!(
+					return Err(anyhow::anyhow!(format!(
 						"Invalid header value for key: {}",
 						key
-					)));
+					),));
 				};
 				headers.insert(header_name, header_value);
 			}
 		}
 
-		let response = self
+		let response = match self
 			.client
 			.request(method, self.url.as_str())
 			.headers(headers)
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+		{
+			Ok(resp) => resp,
+			Err(e) => {
+				// Pass the original error as source instead of just its string representation
+				return Err(anyhow::anyhow!(
+					"Failed to send webhook notification: {}",
+					e
+				));
+			}
+		};
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(format!(
+			return Err(anyhow::anyhow!(
 				"Webhook returned error status: {}",
 				response.status()
-			)));
+			));
 		}
 
 		Ok(())
@@ -418,11 +423,8 @@ mod tests {
 		);
 
 		let result = notifier.notify("Test message").await;
-		assert!(result.is_err());
-		assert!(matches!(result, Err(NotificationError::ConfigError(_))));
-		if let Err(NotificationError::ConfigError(msg)) = result {
-			assert!(msg.contains("Invalid header name"));
-		}
+		let err = result.unwrap_err();
+		assert!(err.to_string().contains("Invalid header name"));
 	}
 
 	#[tokio::test]
@@ -439,11 +441,8 @@ mod tests {
 		);
 
 		let result = notifier.notify("Test message").await;
-		assert!(result.is_err());
-		assert!(matches!(result, Err(NotificationError::ConfigError(_))));
-		if let Err(NotificationError::ConfigError(msg)) = result {
-			assert!(msg.contains("Invalid header value"));
-		}
+		let err = result.unwrap_err();
+		assert!(err.to_string().contains("Invalid header value"));
 	}
 
 	#[tokio::test]

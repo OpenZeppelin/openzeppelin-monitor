@@ -3,8 +3,7 @@
 //! This module implements the ConfigLoader trait for Network configurations,
 //! allowing network definitions to be loaded from JSON files.
 
-use log::warn;
-use std::{path::Path, str::FromStr};
+use std::{collections::HashMap, path::Path, str::FromStr};
 
 use crate::{
 	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network},
@@ -47,11 +46,36 @@ impl ConfigLoader for Network {
 		let mut pairs = Vec::new();
 
 		if !network_dir.exists() {
-			return Err(ConfigError::file_error("networks directory not found"));
+			return Err(ConfigError::file_error(
+				"networks directory not found",
+				None,
+				Some(HashMap::from([(
+					"path".to_string(),
+					network_dir.display().to_string(),
+				)])),
+			));
 		}
 
-		for entry in std::fs::read_dir(network_dir)? {
-			let entry = entry?;
+		for entry in std::fs::read_dir(network_dir).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to read networks directory: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					network_dir.display().to_string(),
+				)])),
+			)
+		})? {
+			let entry = entry.map_err(|e| {
+				ConfigError::file_error(
+					format!("failed to read directory entry: {}", e),
+					Some(Box::new(e)),
+					Some(HashMap::from([(
+						"path".to_string(),
+						network_dir.display().to_string(),
+					)])),
+				)
+			})?;
 			let path = entry.path();
 
 			if !Self::is_json_file(&path) {
@@ -64,9 +88,8 @@ impl ConfigLoader for Network {
 				.unwrap_or("unknown")
 				.to_string();
 
-			if let Ok(network) = Self::load_from_path(&path) {
-				pairs.push((name, network));
-			}
+			let network = Self::load_from_path(&path)?;
+			pairs.push((name, network));
 		}
 
 		Ok(T::from_iter(pairs))
@@ -76,8 +99,26 @@ impl ConfigLoader for Network {
 	///
 	/// Reads and parses a single JSON file as a network configuration.
 	fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigError> {
-		let file = std::fs::File::open(path)?;
-		let config: Network = serde_json::from_reader(file)?;
+		let file = std::fs::File::open(path).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to open network config file: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.display().to_string(),
+				)])),
+			)
+		})?;
+		let config: Network = serde_json::from_reader(file).map_err(|e| {
+			ConfigError::parse_error(
+				format!("failed to parse network config: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.display().to_string(),
+				)])),
+			)
+		})?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -95,13 +136,23 @@ impl ConfigLoader for Network {
 	fn validate(&self) -> Result<(), ConfigError> {
 		// Validate network name
 		if self.name.is_empty() {
-			return Err(ConfigError::validation_error("Network name is required"));
+			return Err(ConfigError::validation_error(
+				"Network name is required",
+				None,
+				None,
+			));
 		}
 
 		// Validate network_type
 		match self.network_type {
 			BlockChainType::EVM | BlockChainType::Stellar => {}
-			_ => return Err(ConfigError::validation_error("Invalid network_type")),
+			_ => {
+				return Err(ConfigError::validation_error(
+					"Invalid network_type",
+					None,
+					None,
+				));
+			}
 		}
 
 		// Validate slug
@@ -112,6 +163,8 @@ impl ConfigLoader for Network {
 		{
 			return Err(ConfigError::validation_error(
 				"Slug must contain only lowercase letters, numbers, and underscores",
+				None,
+				None,
 			));
 		}
 
@@ -122,10 +175,14 @@ impl ConfigLoader for Network {
 			.iter()
 			.all(|rpc_url| supported_types.contains(&rpc_url.type_.as_str()))
 		{
-			return Err(ConfigError::validation_error(format!(
-				"RPC URL type must be one of: {}",
-				supported_types.join(", ")
-			)));
+			return Err(ConfigError::validation_error(
+				format!(
+					"RPC URL type must be one of: {}",
+					supported_types.join(", ")
+				),
+				None,
+				None,
+			));
 		}
 
 		// Validate RPC URLs format
@@ -134,6 +191,8 @@ impl ConfigLoader for Network {
 		}) {
 			return Err(ConfigError::validation_error(
 				"All RPC URLs must start with http:// or https://",
+				None,
+				None,
 			));
 		}
 
@@ -141,6 +200,8 @@ impl ConfigLoader for Network {
 		if !self.rpc_urls.iter().all(|rpc_url| rpc_url.weight <= 100) {
 			return Err(ConfigError::validation_error(
 				"All RPC URL weights must be between 0 and 100",
+				None,
+				None,
 			));
 		}
 
@@ -148,6 +209,8 @@ impl ConfigLoader for Network {
 		if self.block_time_ms < 100 {
 			return Err(ConfigError::validation_error(
 				"Block time must be at least 100ms",
+				None,
+				None,
 			));
 		}
 
@@ -155,6 +218,8 @@ impl ConfigLoader for Network {
 		if self.confirmation_blocks == 0 {
 			return Err(ConfigError::validation_error(
 				"Confirmation blocks must be greater than 0",
+				None,
+				None,
 			));
 		}
 
@@ -162,15 +227,14 @@ impl ConfigLoader for Network {
 		if self.cron_schedule.is_empty() {
 			return Err(ConfigError::validation_error(
 				"Cron schedule must be provided",
+				None,
+				None,
 			));
 		}
 
 		// Add cron schedule format validation
 		if let Err(e) = cron::Schedule::from_str(&self.cron_schedule) {
-			return Err(ConfigError::validation_error(format!(
-				"Invalid cron schedule format: {}",
-				e
-			)));
+			return Err(ConfigError::validation_error(e.to_string(), None, None));
 		}
 
 		// Validate max_past_blocks
@@ -178,16 +242,20 @@ impl ConfigLoader for Network {
 			if max_blocks == 0 {
 				return Err(ConfigError::validation_error(
 					"max_past_blocks must be greater than 0",
+					None,
+					None,
 				));
 			}
 
 			let recommended_blocks = self.get_recommended_past_blocks();
 
 			if max_blocks < recommended_blocks {
-				warn!(
+				tracing::warn!(
 					"Network '{}' max_past_blocks ({}) below recommended {} \
 					 (cron_interval/block_time + confirmations + 1)",
-					self.slug, max_blocks, recommended_blocks
+					self.slug,
+					max_blocks,
+					recommended_blocks
 				);
 			}
 		}
@@ -332,5 +400,53 @@ mod tests {
 			network.validate(),
 			Err(ConfigError::ValidationError(_))
 		));
+	}
+
+	#[test]
+	fn test_validate_empty_cron_schedule() {
+		let mut network = create_valid_network();
+		network.cron_schedule = "".to_string();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_invalid_load_from_path() {
+		let path = Path::new("config/networks/invalid.json");
+		assert!(matches!(
+			Network::load_from_path(path),
+			Err(ConfigError::FileError(_))
+		));
+	}
+
+	#[test]
+	fn test_invalid_config_from_load_from_path() {
+		use std::io::Write;
+		use tempfile::NamedTempFile;
+
+		let mut temp_file = NamedTempFile::new().unwrap();
+		write!(temp_file, "{{\"invalid\": \"json").unwrap();
+
+		let path = temp_file.path();
+
+		assert!(matches!(
+			Network::load_from_path(path),
+			Err(ConfigError::ParseError(_))
+		));
+	}
+
+	#[test]
+	fn test_load_all_directory_not_found() {
+		let non_existent_path = Path::new("non_existent_directory");
+
+		let result: Result<HashMap<String, Network>, ConfigError> =
+			Network::load_all(Some(non_existent_path));
+		assert!(matches!(result, Err(ConfigError::FileError(_))));
+
+		if let Err(ConfigError::FileError(err)) = result {
+			assert!(err.message.contains("networks directory not found"));
+		}
 	}
 }

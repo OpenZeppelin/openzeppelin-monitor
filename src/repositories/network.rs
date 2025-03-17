@@ -4,6 +4,8 @@
 //! blockchain connection details and parameters. The repository loads network
 //! configurations from JSON files.
 
+#![allow(clippy::result_large_err)]
+
 use std::{collections::HashMap, path::Path};
 
 use crate::{
@@ -62,8 +64,16 @@ impl NetworkRepositoryTrait for NetworkRepository {
 	}
 
 	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
-		Network::load_all(path)
-			.map_err(|e| RepositoryError::load_error(format!("Failed to load networks: {}", e)))
+		Network::load_all(path).map_err(|e| {
+			RepositoryError::load_error(
+				"Failed to load networks",
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					path.map_or_else(|| "default".to_string(), |p| p.display().to_string()),
+				)])),
+			)
+		})
 	}
 
 	fn get(&self, network_id: &str) -> Option<Network> {
@@ -113,5 +123,26 @@ impl<T: NetworkRepositoryTrait> NetworkService<T> {
 	/// Get all networks
 	pub fn get_all(&self) -> HashMap<String, Network> {
 		self.repository.get_all()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_load_error_messages() {
+		// Test with invalid path to trigger load error
+		let invalid_path = Path::new("/non/existent/path");
+		let result = NetworkRepository::load_all(Some(invalid_path));
+
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		match err {
+			RepositoryError::LoadError(message) => {
+				assert!(message.to_string().contains("Failed to load networks"));
+			}
+			_ => panic!("Expected RepositoryError::LoadError"),
+		}
 	}
 }
