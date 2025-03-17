@@ -119,6 +119,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				};
 
 			data.extend(matched_args);
+
+			// Swallow any errors since it's logged in the trigger service and we want to continue
+			// processing other matches
 			let _ = trigger_service
 				.execute(
 					&evm_monitor_match
@@ -201,6 +204,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				};
 
 			data.extend(matched_args);
+
+			// Swallow any errors since it's logged in the trigger service and we want to continue
+			// processing other matches
 			let _ = trigger_service
 				.execute(
 					&stellar_monitor_match

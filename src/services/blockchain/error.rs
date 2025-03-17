@@ -1,104 +1,275 @@
-//! Blockchain error types and handling.
+//! Blockchain service error types and handling.
 //!
-//! This module provides a comprehensive error handling system for blockchain operations,
+//! Provides a comprehensive error handling system for blockchain operations,
 //! including network connectivity, request processing, and blockchain-specific errors.
 
-use crate::services::blockwatcher::BlockWatcherError;
-
-use log::error;
+use crate::utils::{ErrorContext, TraceableError};
+use std::collections::HashMap;
+use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Represents possible errors that can occur during blockchain operations
-#[derive(Debug)]
+#[derive(ThisError, Debug)]
 pub enum BlockChainError {
 	/// Errors related to network connectivity issues
-	ConnectionError(String),
+	#[error("Connection error: {0}")]
+	ConnectionError(ErrorContext),
 
 	/// Errors related to malformed requests or invalid responses
-	RequestError(String),
+	#[error("Request error: {0}")]
+	RequestError(ErrorContext),
 
 	/// When a requested block cannot be found on the blockchain
-	///
-	/// Contains the block number that was not found
-	BlockNotFound(u64),
+	#[error("Block not found: {0}")]
+	BlockNotFound(ErrorContext),
 
 	/// Errors related to transaction processing
-	TransactionError(String),
+	#[error("Transaction error: {0}")]
+	TransactionError(ErrorContext),
 
 	/// Internal errors within the blockchain client
-	InternalError(String),
+	#[error("Internal error: {0}")]
+	InternalError(ErrorContext),
 
-	/// Errors related to client pool operations
-	ClientPoolError(String),
+	/// Errors related to client pool
+	#[error("Client pool error: {0}")]
+	ClientPoolError(ErrorContext),
+
+	/// Other errors that don't fit into the categories above
+	#[error(transparent)]
+	Other(#[from] anyhow::Error),
 }
 
 impl BlockChainError {
-	/// Formats the error message based on the error type
-	fn format_message(&self) -> String {
+	// Connection error
+	pub fn connection_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ConnectionError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+
+	// Request error
+	pub fn request_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::RequestError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+
+	// Block not found
+	pub fn block_not_found(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::BlockNotFound(ErrorContext::new_with_log(msg, source, metadata))
+	}
+
+	// Transaction error
+	pub fn transaction_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::TransactionError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+
+	// Internal error
+	pub fn internal_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+
+	// Client pool error
+	pub fn client_pool_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ClientPoolError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+}
+
+impl TraceableError for BlockChainError {
+	fn trace_id(&self) -> String {
 		match self {
-			Self::ConnectionError(msg) => format!("Connection error: {}", msg),
-			Self::RequestError(msg) => format!("Request error: {}", msg),
-			Self::BlockNotFound(number) => format!("Block not found: {}", number),
-			Self::TransactionError(msg) => format!("Transaction error: {}", msg),
-			Self::InternalError(msg) => format!("Internal error: {}", msg),
-			Self::ClientPoolError(msg) => format!("Client pool error: {}", msg),
+			Self::ConnectionError(ctx) => ctx.trace_id.clone(),
+			Self::RequestError(ctx) => ctx.trace_id.clone(),
+			Self::BlockNotFound(ctx) => ctx.trace_id.clone(),
+			Self::TransactionError(ctx) => ctx.trace_id.clone(),
+			Self::InternalError(ctx) => ctx.trace_id.clone(),
+			Self::ClientPoolError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::io::{Error as IoError, ErrorKind};
+
+	#[test]
+	fn test_connection_error_formatting() {
+		let error = BlockChainError::connection_error("test error", None, None);
+		assert_eq!(error.to_string(), "Connection error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockChainError::connection_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Connection error: test error [key1=value1]"
+		);
+	}
+
+	#[test]
+	fn test_request_error_formatting() {
+		let error = BlockChainError::request_error("test error", None, None);
+		assert_eq!(error.to_string(), "Request error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockChainError::request_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(error.to_string(), "Request error: test error [key1=value1]");
+	}
+
+	#[test]
+	fn test_block_not_found_formatting() {
+		let error = BlockChainError::block_not_found("1".to_string(), None, None);
+		assert_eq!(error.to_string(), "Block not found: 1");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockChainError::block_not_found(
+			"1".to_string(),
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(error.to_string(), "Block not found: 1 [key1=value1]");
+	}
+
+	#[test]
+	fn test_transaction_error_formatting() {
+		let error = BlockChainError::transaction_error("test error", None, None);
+		assert_eq!(error.to_string(), "Transaction error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockChainError::transaction_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Transaction error: test error [key1=value1]"
+		);
+	}
+
+	#[test]
+	fn test_internal_error_formatting() {
+		let error = BlockChainError::internal_error("test error", None, None);
+		assert_eq!(error.to_string(), "Internal error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockChainError::internal_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Internal error: test error [key1=value1]"
+		);
+	}
+
+	#[test]
+	fn test_client_pool_error_formatting() {
+		let error = BlockChainError::client_pool_error("test error", None, None);
+		assert_eq!(error.to_string(), "Client pool error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockChainError::client_pool_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Client pool error: test error [key1=value1]"
+		);
+	}
+
+	#[test]
+	fn test_from_anyhow_error() {
+		let anyhow_error = anyhow::anyhow!("test anyhow error");
+		let block_chain_error: BlockChainError = anyhow_error.into();
+		assert!(matches!(block_chain_error, BlockChainError::Other(_)));
+		assert_eq!(block_chain_error.to_string(), "test anyhow error");
+	}
+
+	#[test]
+	fn test_error_source_chain() {
+		let io_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+
+		let outer_error =
+			BlockChainError::request_error("Failed to initialize", Some(Box::new(io_error)), None);
+
+		// Just test the string representation instead of the source chain
+		assert!(outer_error.to_string().contains("Failed to initialize"));
+
+		// For BlockChainError::RequestError, we know the implementation details
+		if let BlockChainError::RequestError(ctx) = &outer_error {
+			// Check that the context has the right message
+			assert_eq!(ctx.message, "Failed to initialize");
+
+			// Check that the context has the source error
+			assert!(ctx.source.is_some());
+
+			if let Some(src) = &ctx.source {
+				assert_eq!(src.to_string(), "while reading config");
+			}
+		} else {
+			panic!("Expected RequestError variant");
 		}
 	}
 
-	/// Creates a new connection error with logging
-	pub fn connection_error(msg: impl Into<String>) -> Self {
-		let error = Self::ConnectionError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
 
-	/// Creates a new request error with logging
-	pub fn request_error(msg: impl Into<String>) -> Self {
-		let error = Self::RequestError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
+		// Wrap it in a BlockChainError
+		let block_chain_error = BlockChainError::RequestError(error_context);
 
-	/// Creates a new block not found error with logging
-	pub fn block_not_found(number: u64) -> Self {
-		let error = Self::BlockNotFound(number);
-		error!("{}", error.format_message());
-		error
-	}
+		// Verify the trace ID is preserved
+		assert_eq!(block_chain_error.trace_id(), original_trace_id);
 
-	/// Creates a new transaction error with logging
-	pub fn transaction_error(msg: impl Into<String>) -> Self {
-		let error = Self::TransactionError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
 
-	/// Creates a new internal error with logging
-	pub fn internal_error(msg: impl Into<String>) -> Self {
-		let error = Self::InternalError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
+		let block_chain_error = BlockChainError::RequestError(error_context);
+		assert_eq!(block_chain_error.trace_id(), original_trace_id);
 
-	/// Creates a new client pool error with logging
-	pub fn client_pool_error(msg: impl Into<String>) -> Self {
-		let error = Self::ClientPoolError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
-}
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let block_chain_error: BlockChainError = anyhow_error.into();
 
-// Standard error trait implementations
-impl std::fmt::Display for BlockChainError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.format_message())
-	}
-}
-
-impl std::error::Error for BlockChainError {}
-
-/// Conversion from BlockChainError to BlockWatcherError
-impl From<BlockChainError> for BlockWatcherError {
-	fn from(err: BlockChainError) -> Self {
-		BlockWatcherError::network_error(err.to_string())
+		// Other variant should generate a new UUID
+		assert!(!block_chain_error.trace_id().is_empty());
 	}
 }

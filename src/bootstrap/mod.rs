@@ -16,7 +16,6 @@
 //!   from the block processing pipeline
 
 use futures::future::BoxFuture;
-use log::{error, info};
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::watch;
 
@@ -27,13 +26,13 @@ use crate::{
 	},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
-		RepositoryError, TriggerRepositoryTrait, TriggerService,
+		TriggerRepositoryTrait, TriggerService,
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
-		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
+		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 	utils::{ScriptError, ScriptExecutorFactory},
 };
@@ -71,8 +70,7 @@ where
 	let network_service = match network_service {
 		Some(service) => service,
 		None => {
-			let repository =
-				N::new(None).map_err(|_| RepositoryError::load_error("Unable to load networks"))?;
+			let repository = N::new(None)?;
 			NetworkService::<N>::new_with_repository(repository)?
 		}
 	};
@@ -80,8 +78,7 @@ where
 	let trigger_service = match trigger_service {
 		Some(service) => service,
 		None => {
-			let repository =
-				T::new(None).map_err(|_| RepositoryError::load_error("Unable to load triggers"))?;
+			let repository = T::new(None)?;
 			TriggerService::<T>::new_with_repository(repository)?
 		}
 	};
@@ -93,8 +90,7 @@ where
 				None,
 				Some(network_service.clone()),
 				Some(trigger_service.clone()),
-			)
-			.map_err(|_| RepositoryError::load_error("Unable to load monitors"))?;
+			)?;
 			MonitorService::<M, N, T>::new_with_repository(repository)?
 		}
 	};
@@ -221,14 +217,13 @@ where
 		result = filter_service.filter_block(client, network, block, applicable_monitors) => {
 			match result {
 				Ok(matches) => Some(matches),
-				Err(e) => {
-					error!("Error filtering block: {}", e);
+				Err(_) => {
 					None
 				}
 			}
 		}
 		_ = shutdown_rx.changed() => {
-			info!("Shutting down block processing task");
+			tracing::info!("Shutting down block processing task");
 			None
 		}
 	}
@@ -263,12 +258,12 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 					let filtered_matches = run_trigger_filters(&block.processing_results, &block.network_slug, &trigger_scripts).await;
 					for monitor_match in &filtered_matches {
 						if let Err(e) = handle_match(monitor_match.clone(), &*trigger_service, &trigger_scripts).await {
-							error!("Error handling trigger: {}", e);
+							TriggerError::execution_error(e.to_string(), None, None);
 						}
 					}
 				} => {}
 				_ = shutdown_rx.changed() => {
-					info!("Shutting down trigger handling task");
+					tracing::info!("Shutting down trigger handling task");
 				}
 			}
 		})
@@ -338,7 +333,7 @@ async fn execute_trigger_condition(
 	match result {
 		Ok(true) => true,
 		Err(e) => {
-			ScriptError::execution_error(e.to_string());
+			ScriptError::execution_error(e.to_string(), None, None);
 			false
 		}
 		_ => false,
@@ -371,7 +366,7 @@ async fn run_trigger_filters(
 					monitor_name, trigger_condition.script_path
 				))
 				.ok_or_else(|| {
-					ScriptError::execution_error("Script content not found".to_string())
+					ScriptError::execution_error("Script content not found".to_string(), None, None)
 				});
 			if let Ok(script_content) = script_content {
 				if execute_trigger_condition(trigger_condition, monitor_match, script_content).await
@@ -650,7 +645,7 @@ input_json = sys.argv[1]
 data = json.loads(input_json)
 print("debugging...")
 def test():
-    return True
+	return True
 result = test()
 print(result)
 "#;
@@ -678,7 +673,7 @@ input_data = sys.stdin.read()
 data = json.loads(input_data)
 print("debugging...")
 def test():
-    return False
+	return False
 result = test()
 print(result)
 "#;
@@ -697,9 +692,7 @@ print(result)
 
 	#[tokio::test]
 	async fn test_execute_trigger_condition_returns_false() {
-		let script_content = r#"
-print(False)  # Script returns false
-"#;
+		let script_content = r#"print(False)  # Script returns false"#;
 		let temp_file = create_temp_script(script_content);
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
@@ -717,9 +710,7 @@ print(False)  # Script returns false
 
 	#[tokio::test]
 	async fn test_execute_trigger_condition_script_error() {
-		let script_content = r#"
-raise Exception("Test error")  # Raise an error
-"#;
+		let script_content = r#"raise Exception("Test error")  # Raise an error"#;
 		let temp_file = create_temp_script(script_content);
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
@@ -788,7 +779,6 @@ raise Exception("Test error")  # Raise an error
 			matched_on_args: None,
 		}));
 
-		// Set up trigger scripts - first one returns false, second returns true
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
 			"monitor_test|test1.py".to_string(),
@@ -801,7 +791,7 @@ import json
 input_data = sys.stdin.read()
 data = json.loads(input_data)
 print(True)
-                "#
+"#
 				.to_string(),
 			),
 		);
@@ -815,7 +805,7 @@ import json
 input_data = sys.stdin.read()
 data = json.loads(input_data)
 print(True)
-                "#
+"#
 				.to_string(),
 			),
 		);
@@ -1119,7 +1109,7 @@ import json
 input_data = sys.stdin.read()
 data = json.loads(input_data)
 print(False)
-                "#
+"#
 				.to_string(),
 			),
 		);
@@ -1138,7 +1128,7 @@ input_json = sys.argv[1]
 data = json.loads(input_json)
 print("debugging...")
 def test():
-    return True
+	return True
 result = test()
 print(result)
 "#;

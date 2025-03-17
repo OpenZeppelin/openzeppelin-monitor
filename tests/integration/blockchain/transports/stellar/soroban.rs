@@ -1,6 +1,6 @@
 use mockito::Server;
 use openzeppelin_monitor::services::blockchain::{
-	BlockChainError, BlockchainTransport, RotatingTransport, StellarTransportClient,
+	BlockchainTransport, RotatingTransport, StellarTransportClient,
 };
 use serde_json::{json, Value};
 
@@ -12,7 +12,6 @@ use crate::integration::mocks::{
 async fn test_client_creation() {
 	let mut server = Server::new_async().await;
 	let mock = create_stellar_valid_server_mock_network_response(&mut server, "soroban");
-
 	let network = create_stellar_test_network_with_urls(vec![&server.url()], "rpc");
 
 	match StellarTransportClient::new(&network).await {
@@ -27,8 +26,8 @@ async fn test_client_creation() {
 	let network = create_stellar_test_network_with_urls(vec!["invalid-url"], "rpc");
 
 	match StellarTransportClient::new(&network).await {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert_eq!(msg, "All Stellar RPC URLs failed to connect");
+		Err(error) => {
+			assert!(error.to_string().contains("All RPC URLs failed to connect"));
 		}
 		_ => panic!("Transport creation should fail"),
 	}
@@ -83,12 +82,8 @@ async fn test_client_update_client() {
 	// Test invalid URL update
 	let result = client.update_client("invalid-url").await;
 	assert!(result.is_err(), "Update with invalid URL should fail");
-	match result {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert_eq!(msg, "Failed to create client");
-		}
-		_ => panic!("Expected ConnectionError"),
-	}
+	let e = result.unwrap_err();
+	assert!(e.to_string().contains("Failed to create client"));
 
 	// Verify both mock was called the expected number of times
 	mock1.assert();
@@ -111,21 +106,13 @@ async fn test_client_try_connect() {
 
 	let result = client.try_connect("invalid-url").await;
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
-	match result {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert_eq!(msg, "Invalid URL");
-		}
-		_ => panic!("Expected ConnectionError"),
-	}
+	let e = result.unwrap_err();
+	assert!(e.to_string().contains("Invalid URL"));
 
 	let result = client.try_connect(&server3.url()).await;
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
-	match result {
-		Err(BlockChainError::ConnectionError(msg)) => {
-			assert_eq!(msg, "Failed to connect");
-		}
-		_ => panic!("Expected ConnectionError"),
-	}
+	let e = result.unwrap_err();
+	assert!(e.to_string().contains("Failed to connect"));
 
 	mock.assert();
 	mock2.assert();

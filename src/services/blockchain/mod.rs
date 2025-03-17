@@ -6,7 +6,7 @@
 //! - Generic blockchain client trait
 //! - EVM and Stellar specific clients
 //! - Network transport implementations
-//! - Client factory for creating appropriate implementations
+//! - Error handling for blockchain operations
 //! - Client pool for managing multiple clients
 
 mod client;

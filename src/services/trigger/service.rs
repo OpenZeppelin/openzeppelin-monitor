@@ -5,6 +5,7 @@
 
 use std::{collections::HashMap, path::Path};
 
+use anyhow::Context;
 use async_trait::async_trait;
 
 use crate::{
@@ -79,7 +80,6 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 	/// # Errors
 	/// - Returns `TriggerError::NotFound` if a trigger cannot be found
 	/// - Returns `TriggerError::ExecutionError` if notification delivery fails
-	/// - Returns `TriggerError::ConfigurationError` if trigger configuration is invalid
 	async fn execute(
 		&self,
 		trigger_slugs: &[String],
@@ -87,40 +87,48 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 		monitor_match: &MonitorMatch,
 		trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 	) -> Result<(), TriggerError> {
-		let mut errors = Vec::new();
+		use futures::future::join_all;
 
-		for trigger_slug in trigger_slugs {
-			let trigger = match self.trigger_service.get(trigger_slug) {
-				Some(trigger) => trigger,
-				None => {
-					errors.push(TriggerError::not_found(trigger_slug.to_string()));
-					continue;
-				}
-			};
+		let futures = trigger_slugs.iter().map(|trigger_slug| async {
+			let trigger = self
+				.trigger_service
+				.get(trigger_slug)
+				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string(), None, None))?;
 
-			if let Err(e) = self
-				.notification_service
+			self.notification_service
 				.execute(&trigger, variables.clone(), monitor_match, trigger_scripts)
 				.await
-			{
-				errors.push(TriggerError::execution_error(e.to_string()));
-				continue;
-			}
-		}
+				// We remove logging capability here since we're logging it further down
+				.map_err(|e| TriggerError::execution_error_without_log(e.to_string(), None, None))
+		});
+
+		let results = join_all(futures).await;
+		let errors: Vec<_> = results.into_iter().filter_map(|r| r.err()).collect();
 
 		if errors.is_empty() {
 			Ok(())
 		} else {
-			let error_msg = if errors.len() == 1 {
-				format!("Trigger failed: {:?}", errors[0])
-			} else {
-				format!(
-					"Multiple triggers failed ({} failures): {:?}",
-					errors.len(),
-					errors
-				)
-			};
-			Err(TriggerError::execution_error(error_msg))
+			Err(TriggerError::execution_error(
+				format!("Some trigger(s) failed ({} failure(s))", errors.len()),
+				// We join all errors into a single string for the source and wrap it as a single
+				// Execution
+				Some(
+					TriggerError::execution_error(
+						format!(
+							"{:#?}",
+							errors
+								.iter()
+								.map(|e| e.to_string())
+								.collect::<Vec<_>>()
+								.join(", ")
+						),
+						None,
+						None,
+					)
+					.into(),
+				),
+				None,
+			))
 		}
 	}
 	/// Loads trigger condition scripts for monitors
@@ -151,12 +159,11 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				let script_path = Path::new(&condition.script_path);
 
 				// Read the script content
-				let content = tokio::fs::read_to_string(script_path).await.map_err(|e| {
-					TriggerError::configuration_error(format!(
-						"Failed to read script file {}: {}",
-						condition.script_path, e
-					))
-				})?;
+				let content = tokio::fs::read_to_string(script_path)
+					.await
+					.with_context(|| {
+						format!("Failed to read script file: {}", condition.script_path)
+					})?;
 				// Store the script content with its language
 				scripts.insert(
 					format!("{}|{}", monitor.name, condition.script_path),
@@ -168,10 +175,11 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 			for trigger in &monitor.triggers {
 				let trigger_config =
 					self.trigger_service.get(trigger.as_str()).ok_or_else(|| {
-						TriggerError::configuration_error(format!(
-							"Failed to get trigger: {}",
-							trigger
-						))
+						TriggerError::configuration_error(
+							format!("Failed to get trigger: {}", trigger),
+							None,
+							None,
+						)
 					})?;
 
 				let TriggerTypeConfig::Script {
@@ -186,11 +194,15 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 
 				let script_path = Path::new(script_path);
 				let content = tokio::fs::read_to_string(script_path).await.map_err(|e| {
-					TriggerError::configuration_error(format!(
-						"Failed to read script file {}: {}",
-						script_path.display(),
-						e
-					))
+					TriggerError::configuration_error(
+						format!(
+							"Failed to read script file {}: {}",
+							script_path.display(),
+							e
+						),
+						None,
+						None,
+					)
 				})?;
 
 				scripts.insert(

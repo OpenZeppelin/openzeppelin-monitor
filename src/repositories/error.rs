@@ -4,72 +4,183 @@
 //! including validation errors, loading errors, and internal errors. It provides
 //! a consistent error handling interface across all repository implementations.
 
-use log::error;
-use std::{error::Error, fmt};
+use crate::utils::{ErrorContext, TraceableError};
+use std::collections::HashMap;
+use thiserror::Error as ThisError;
+use uuid::Uuid;
 
-/// Errors that can occur during repository operations
-#[derive(Debug)]
+/// Represents errors that can occur during repository operations
+#[derive(ThisError, Debug)]
 pub enum RepositoryError {
-	/// Error that occurs when configuration validation fails
-	ValidationError(String),
+	/// Errors related to validation errors
+	#[error("Validation error: {0}")]
+	ValidationError(ErrorContext),
 
-	/// Error that occurs when loading configurations from files
-	LoadError(String),
+	/// Errors related to load errors
+	#[error("Load error: {0}")]
+	LoadError(ErrorContext),
 
-	/// Error that occurs due to internal repository operations
-	InternalError(String),
+	/// Errors related to internal errors
+	#[error("Internal error: {0}")]
+	InternalError(ErrorContext),
+
+	/// Other errors that don't fit into the categories above
+	#[error(transparent)]
+	Other(#[from] anyhow::Error),
 }
 
 impl RepositoryError {
-	/// Format an error message for display
-	///
-	/// Creates a human-readable error message based on the error type.
-	fn format_message(&self) -> String {
+	// Validation error
+	pub fn validation_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::ValidationError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+
+	// Load error
+	pub fn load_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::LoadError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+
+	// Internal error
+	pub fn internal_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
+	}
+}
+
+impl TraceableError for RepositoryError {
+	fn trace_id(&self) -> String {
 		match self {
-			Self::ValidationError(msg) => format!("Validation error: {}", msg),
-			Self::LoadError(msg) => format!("Load error: {}", msg),
-			Self::InternalError(msg) => format!("Internal error: {}", msg),
+			Self::ValidationError(ctx) => ctx.trace_id.clone(),
+			Self::LoadError(ctx) => ctx.trace_id.clone(),
+			Self::InternalError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::io::{Error as IoError, ErrorKind};
+
+	#[test]
+	fn test_validation_error_formatting() {
+		let error = RepositoryError::validation_error("test error", None, None);
+		assert_eq!(error.to_string(), "Validation error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = RepositoryError::validation_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Validation error: test error [key1=value1]"
+		);
+	}
+
+	#[test]
+	fn test_load_error_formatting() {
+		let error = RepositoryError::load_error("test error", None, None);
+		assert_eq!(error.to_string(), "Load error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = RepositoryError::load_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(error.to_string(), "Load error: test error [key1=value1]");
+	}
+
+	#[test]
+	fn test_internal_error_formatting() {
+		let error = RepositoryError::internal_error("test error", None, None);
+		assert_eq!(error.to_string(), "Internal error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = RepositoryError::internal_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Internal error: test error [key1=value1]"
+		);
+	}
+
+	#[test]
+	fn test_from_anyhow_error() {
+		let anyhow_error = anyhow::anyhow!("test anyhow error");
+		let repository_error: RepositoryError = anyhow_error.into();
+		assert!(matches!(repository_error, RepositoryError::Other(_)));
+		assert_eq!(repository_error.to_string(), "test anyhow error");
+	}
+
+	#[test]
+	fn test_error_source_chain() {
+		let io_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+
+		let outer_error =
+			RepositoryError::load_error("Failed to initialize", Some(Box::new(io_error)), None);
+
+		// Just test the string representation instead of the source chain
+		assert!(outer_error.to_string().contains("Failed to initialize"));
+
+		// For RepositoryError::LoadError, we know the implementation details
+		if let RepositoryError::LoadError(ctx) = &outer_error {
+			// Check that the context has the right message
+			assert_eq!(ctx.message, "Failed to initialize");
+
+			// Check that the context has the source error
+			assert!(ctx.source.is_some());
+
+			if let Some(src) = &ctx.source {
+				assert_eq!(src.to_string(), "while reading config");
+			}
+		} else {
+			panic!("Expected LoadError variant");
 		}
 	}
 
-	/// Create a new validation error with the given message
-	///
-	/// Also logs the error message at the error level.
-	pub fn validation_error(msg: impl Into<String>) -> Self {
-		let error = Self::ValidationError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
 
-	/// Create a new load error with the given message
-	///
-	/// Also logs the error message at the error level.
-	pub fn load_error(msg: impl Into<String>) -> Self {
-		let error = Self::LoadError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
+		// Wrap it in a RepositoryError
+		let repository_error = RepositoryError::LoadError(error_context);
 
-	/// Create a new internal error with the given message
-	///
-	/// Also logs the error message at the error level.
-	pub fn internal_error(msg: impl Into<String>) -> Self {
-		let error = Self::InternalError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
-}
+		// Verify the trace ID is preserved
+		assert_eq!(repository_error.trace_id(), original_trace_id);
 
-impl fmt::Display for RepositoryError {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{}", self.format_message())
-	}
-}
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
 
-impl Error for RepositoryError {}
+		let repository_error = RepositoryError::LoadError(error_context);
+		assert_eq!(repository_error.trace_id(), original_trace_id);
 
-impl From<std::io::Error> for RepositoryError {
-	fn from(err: std::io::Error) -> Self {
-		Self::load_error(err.to_string())
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let repository_error: RepositoryError = anyhow_error.into();
+
+		// Other variant should generate a new UUID
+		assert!(!repository_error.trace_id().is_empty());
 	}
 }

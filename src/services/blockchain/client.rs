@@ -5,10 +5,7 @@
 
 use async_trait::async_trait;
 
-use crate::{
-	models::BlockType,
-	services::{blockchain::error::BlockChainError, filter::BlockFilter},
-};
+use crate::{models::BlockType, services::filter::BlockFilter};
 
 /// Defines the core interface for blockchain clients
 ///
@@ -19,8 +16,8 @@ pub trait BlockChainClient: Send + Sync + Clone {
 	/// Retrieves the latest block number from the blockchain
 	///
 	/// # Returns
-	/// * `Result<u64, BlockChainError>` - The latest block number or an error
-	async fn get_latest_block_number(&self) -> Result<u64, BlockChainError>;
+	/// * `Result<u64, anyhow::Error>` - The latest block number or an error
+	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error>;
 
 	/// Retrieves a range of blocks from the blockchain
 	///
@@ -29,7 +26,7 @@ pub trait BlockChainClient: Send + Sync + Clone {
 	/// * `end_block` - Optional ending block number. If None, only fetches start_block
 	///
 	/// # Returns
-	/// * `Result<Vec<BlockType>, BlockChainError>` - Vector of blocks or an error
+	/// * `Result<Vec<BlockType>, anyhow::Error>` - Vector of blocks or an error
 	///
 	/// # Note
 	/// The implementation should handle cases where end_block is None by returning
@@ -38,7 +35,7 @@ pub trait BlockChainClient: Send + Sync + Clone {
 		&self,
 		start_block: u64,
 		end_block: Option<u64>,
-	) -> Result<Vec<BlockType>, BlockChainError>;
+	) -> Result<Vec<BlockType>, anyhow::Error>;
 }
 
 /// Defines the factory interface for creating block filters

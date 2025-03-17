@@ -7,7 +7,7 @@ use openzeppelin_monitor::{
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
 		blockchain::BlockFilterFactory,
-		blockwatcher::{BlockStorage, BlockTrackerTrait, BlockWatcherError},
+		blockwatcher::{BlockStorage, BlockTrackerTrait, JobSchedulerTrait},
 		filter::FilterError,
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionServiceTrait},
@@ -50,11 +50,11 @@ mock! {
 	pub BlockStorage {}
 	#[async_trait]
 	impl BlockStorage for BlockStorage {
-		async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
-		async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), BlockWatcherError>;
-		async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, BlockWatcherError>;
-		async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), BlockWatcherError>;
-		async fn delete_blocks(&self, network_slug: &str) -> Result<(), BlockWatcherError>;
+		async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
+		async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
+		async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, anyhow::Error>;
+		async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), anyhow::Error>;
+		async fn delete_blocks(&self, network_slug: &str) -> Result<(), anyhow::Error>;
 	}
 
 	impl Clone for BlockStorage {
@@ -70,7 +70,30 @@ mock! {
 	#[async_trait]
 	impl<S: BlockStorage + 'static> BlockTrackerTrait<S> for BlockTracker<S> {
 		 fn new(history_size: usize, storage: Option<std::sync::Arc<S> >) -> Self;
-		 async fn record_block(&self, network: &Network, block_number: u64);
+		 async fn record_block(&self, network: &Network, block_number: u64) -> Result<(), anyhow::Error>;
 		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
+	}
+}
+
+mock! {
+	pub JobScheduler {}
+
+	#[async_trait]
+	impl JobSchedulerTrait for JobScheduler {
+		async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+			Ok(Self::default())
+		}
+
+		async fn add(&self, _job: tokio_cron_scheduler::Job) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+			Ok(())
+		}
+
+		async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+			Ok(())
+		}
+
+		async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+			Ok(())
+		}
 	}
 }

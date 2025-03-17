@@ -22,7 +22,7 @@ pub fn monitor_strategy(
 		),
 		prop::collection::vec(
 			prop::sample::select(available_networks),
-			MIN_COLLECTION_SIZE..MAX_COLLECTION_SIZE,
+			1..MAX_COLLECTION_SIZE,
 		),
 		"[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()),
 		proptest::arbitrary::any::<bool>(),

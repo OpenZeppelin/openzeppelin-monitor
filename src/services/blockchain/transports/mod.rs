@@ -13,8 +13,6 @@ mod stellar {
 }
 mod endpoint_manager;
 
-use crate::services::blockchain::BlockChainError;
-
 pub use endpoint_manager::EndpointManager;
 pub use evm::alloy::AlloyTransportClient;
 pub use stellar::{horizon::HorizonTransportClient, soroban::StellarTransportClient};
@@ -38,7 +36,7 @@ pub trait BlockchainTransport: Send + Sync {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone + Serialize;
 
@@ -56,20 +54,21 @@ pub trait BlockchainTransport: Send + Sync {
 		})
 	}
 
+	#[allow(clippy::result_large_err)]
 	/// Sets the retry policy for the transport
-	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff)
-		-> Result<(), BlockChainError>;
+	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error>;
 
+	#[allow(clippy::result_large_err)]
 	/// Gets the retry policy for the transport
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError>;
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error>;
 }
 
 /// Extension trait for transports that support URL rotation
 #[async_trait::async_trait]
 pub trait RotatingTransport: BlockchainTransport {
 	/// Attempts to establish a connection with a new URL
-	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError>;
+	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error>;
 
 	/// Updates the client with a new URL
-	async fn update_client(&self, url: &str) -> Result<(), BlockChainError>;
+	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error>;
 }

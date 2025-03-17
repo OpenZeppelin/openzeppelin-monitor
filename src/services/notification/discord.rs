@@ -87,7 +87,7 @@ impl DiscordNotifier {
 		url: String,
 		title: String,
 		body_template: String,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		Ok(Self {
 			url,
 			title,
@@ -142,8 +142,8 @@ impl Notifier for DiscordNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let payload = DiscordMessage {
 			content: message.to_string(),
 			username: None,
@@ -151,20 +151,28 @@ impl Notifier for DiscordNotifier {
 			embeds: None,
 		};
 
-		let response = self
+		let response = match self
 			.client
 			.post(&self.url)
 			.header("Content-Type", "application/json")
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+		{
+			Ok(resp) => resp,
+			Err(e) => {
+				return Err(anyhow::anyhow!(
+					"Failed to send Discord notification: {}",
+					e
+				));
+			}
+		};
 
 		if !response.status().is_success() {
-			return Err(NotificationError::network_error(format!(
+			return Err(anyhow::anyhow!(
 				"Discord webhook returned error status: {}",
 				response.status()
-			)));
+			));
 		}
 
 		Ok(())

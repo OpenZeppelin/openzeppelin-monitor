@@ -11,6 +11,7 @@ use std::path::Path;
 /// # Returns
 /// * `Ok(())` if validation passes
 /// * `Err(ConfigError)` if any validation fails
+#[allow(clippy::result_large_err)]
 pub fn validate_script_config(
 	script_path: &str,
 	language: &ScriptLanguage,
@@ -18,10 +19,11 @@ pub fn validate_script_config(
 ) -> Result<(), ConfigError> {
 	// Validate script path exists
 	if !Path::new(script_path).exists() {
-		return Err(ConfigError::validation_error(format!(
-			"Script path does not exist: {}",
-			script_path
-		)));
+		return Err(ConfigError::validation_error(
+			format!("Script path does not exist: {}", script_path),
+			None,
+			None,
+		));
 	}
 
 	let script_path_instance = Path::new(script_path);
@@ -38,16 +40,22 @@ pub fn validate_script_config(
 	};
 
 	if !valid_extension {
-		return Err(ConfigError::validation_error(format!(
-			"Script file extension does not match specified language {:?}: {}",
-			language, script_path
-		)));
+		return Err(ConfigError::validation_error(
+			format!(
+				"Script file extension does not match specified language {:?}: {}",
+				language, script_path
+			),
+			None,
+			None,
+		));
 	}
 
 	// Validate timeout
 	if *timeout_ms == 0 {
 		return Err(ConfigError::validation_error(
-			"Timeout must be greater than 0",
+			"Timeout must be greater than 0".to_string(),
+			None,
+			None,
 		));
 	}
 

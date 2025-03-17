@@ -1,9 +1,10 @@
 = RPC Client
 :description: Documentation for the RPC client implementation and endpoint management features.
 
-The OpenZeppelin Monitor includes a robust RPC client implementation with automatic endpoint rotation and fallback capabilities. This ensures reliable blockchain monitoring even when individual RPC endpoints experience issues.
 
-== Features:
+== Overview
+
+The OpenZeppelin Monitor includes a robust RPC client implementation with automatic endpoint rotation and fallback capabilities. This ensures reliable blockchain monitoring even when individual RPC endpoints experience issues.
 
 * Multiple RPC endpoint support with weighted load balancing
 * Automatic fallback on endpoint failures
@@ -11,9 +12,9 @@ The OpenZeppelin Monitor includes a robust RPC client implementation with automa
 * Connection health checks
 * Thread-safe endpoint rotation
 
-== Configuration:
+== Configuration
 
-=== RPC URLs:
+=== RPC URLs
 
 RPC endpoints are configured in the network configuration files with weights for load balancing:
 
@@ -40,7 +41,7 @@ RPC endpoints are configured in the network configuration files with weights for
 For high-availability setups, configure at least 3 RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
 ====
 
-=== Configuration Fields:
+=== Configuration Fields
 
 [cols="1,1,2"]
 |===
@@ -59,49 +60,55 @@ For high-availability setups, configure at least 3 RPC endpoints with appropriat
 |Load balancing weight (0-100)
 |===
 
-== Endpoint Management:
+== Endpoint Management
 
-The endpoint manager handles:
+The endpoint manager handles
 
 * Initial endpoint selection based on weights
 * Automatic rotation on failures
 * Connection health checks
 * Thread-safe endpoint updates
 
-=== Retry and Rotation Behavior:
+=== Rotation Strategy
 
-The RPC client includes an automatic retry mechanism for handling failures:
+The RPC client includes an automatic rotation strategy for handling specific types of failures:
 
 * For 429 (Too Many Requests) responses:
 ** Immediately rotates to a fallback URL
 ** Retries the request with the new endpoint
 ** Continues this process until successful or all endpoints are exhausted
 
-* For connection failures:
-** Immediately attempts to rotate to a fallback URL
-** If the new connection fails, returns the URL to the fallback pool
-** Continues until a successful connection is made or all URLs have been tried
+==== Configuration Options
 
-* For other errors:
-** Uses `reqwest-retry` middleware with exponential backoff strategy
+The error codes that trigger RPC endpoint rotation can be customized in the `src/services/blockchain/transports/mod.rs` file.
+
+[source,rust]
+----
+pub const ROTATE_ON_ERROR_CODES: [u16; 1] = [429];
+----
+
+=== Retry Strategy
+
+Each transport client implements `reqwest-retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
+
+* For transient HTTP errors and network failures:
 ** Retries up to 2 times (configurable via `ExponentialBackoff` builder)
-** Automatically handles transient HTTP errors and network failures
 ** Applies exponential backoff between retry attempts
 ** Returns the final error if all retry attempts fail
 ** Maintains the same URL throughout the retry process
 ** Independent from the endpoint rotation mechanism
 
-==== Retry Strategy
-
-Each transport client implements `reqwest-retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
-
-===== Configuration Options
+==== Configuration Options
 
 The retry policy can be customized using the `ExponentialBackoff` builder in the respective transport client. The default retry policy is:
 
 [source,rust]
 ----
-let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+		let retry_policy = ExponentialBackoff::builder()
+			.base(2)
+			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+			.jitter(Jitter::None)
+			.build_with_max_retries(2);
 ----
 
 The retry policy can be customized with the following options:
@@ -117,8 +124,6 @@ pub struct ExponentialBackoff {
 }
 ----
 
-==== Implementation Details
-
 The retry mechanism is implemented at two levels:
 
 1. *Transport Level*: Each transport client maintains its own retry policy:
@@ -132,9 +137,9 @@ pub struct AlloyTransportClient {
 }
 
 pub struct StellarTransportClient {
-	pub client: Arc<RwLock<StellarHttpClient>>,
-	endpoint_manager: EndpointManager,
-	retry_policy: ExponentialBackoff,
+  pub client: Arc<RwLock<StellarHttpClient>>,
+  endpoint_manager: EndpointManager,
+  retry_policy: ExponentialBackoff,
 }
 ----
 
@@ -147,7 +152,8 @@ let client = ClientBuilder::new(reqwest::Client::new())
     .build();
 ----
 
-This retry strategy ensures optimal handling of different types of failures while maintaining service availability.
+=== Implementation Details
+This retry and rotation strategies ensure optimal handling of different types of failures while maintaining service availability.
 
 [mermaid,width=100%]
 ....
@@ -169,18 +175,7 @@ sequenceDiagram
     end
 
     rect rgb(240, 240, 240)
-        Note over M,F: Case 2: Connection Failure
-        M->>EM: Send Request
-        EM->>P: Try Primary
-        P--xEM: Connection Failed
-        EM->>EM: Rotate URL
-        EM->>F: Try Fallback
-        F-->>EM: Success
-        EM-->>M: Return Response
-    end
-
-    rect rgb(240, 240, 240)
-        Note over M,F: Case 3: Other Errors
+        Note over M,F: Case 2: Other Errors
         M->>EM: Send Request
         EM->>P: Try Primary
         P-->>EM: Error Response

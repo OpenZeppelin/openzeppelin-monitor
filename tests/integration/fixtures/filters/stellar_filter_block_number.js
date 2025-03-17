@@ -4,12 +4,12 @@ try {
     process.stdin.on('data', chunk => {
         inputData += chunk;
     });
-    
+
     process.stdin.on('end', () => {
         const data = JSON.parse(inputData);
         const monitorMatch = data.monitor_match;
         const args = data.args;
-        
+
         // Extract ledger sequence number
         let ledgerNumber = null;
         if (monitorMatch.Stellar) {

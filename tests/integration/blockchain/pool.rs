@@ -1,8 +1,8 @@
 use openzeppelin_monitor::{
 	models::{BlockChainType, Network, RpcUrl},
 	services::blockchain::{
-		AlloyTransportClient, BlockChainError, ClientPool, ClientPoolTrait, EvmClient,
-		StellarClient, StellarTransportClient,
+		AlloyTransportClient, ClientPool, ClientPoolTrait, EvmClient, StellarClient,
+		StellarTransportClient,
 	},
 };
 
@@ -267,13 +267,15 @@ async fn test_get_evm_client_handles_errors() {
 
 	// Attempt to get client should result in error
 	let result = pool.get_evm_client(&network).await;
-	assert!(result.is_err());
-
 	if let Err(err) = result {
-		match err {
-			BlockChainError::ClientPoolError(_) => (),
-			other => panic!("Expected ClientPoolError, got: {:?}", other),
-		}
+		assert!(
+			err.to_string()
+				.contains("Failed to get or create EVM client"),
+			"Expected ClientPoolError, got: {}",
+			err
+		);
+	} else {
+		panic!("Expected error, got success");
 	}
 
 	// Pool should remain empty after failed client creation
@@ -309,13 +311,15 @@ async fn test_get_stellar_client_handles_errors() {
 
 	// Attempt to get client should result in error
 	let result = pool.get_stellar_client(&network).await;
-	assert!(result.is_err());
-
 	if let Err(err) = result {
-		match err {
-			BlockChainError::ClientPoolError(_) => (),
-			other => panic!("Expected ClientPoolError, got: {:?}", other),
-		}
+		assert!(
+			err.to_string()
+				.contains("Failed to get or create Stellar client"),
+			"Expected ClientPoolError, got: {}",
+			err
+		);
+	} else {
+		panic!("Expected error, got success");
 	}
 
 	// Pool should remain empty after failed client creation

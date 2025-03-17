@@ -8,11 +8,12 @@
 //! - ABI-based decoding of function calls and events
 
 use alloy::primitives::U64;
+use anyhow::Context;
 use async_trait::async_trait;
 use ethabi::Contract;
-use log::{debug, warn};
 use serde_json::Value;
 use std::{marker::PhantomData, str::FromStr};
+use tracing::instrument;
 
 use crate::{
 	models::{
@@ -147,82 +148,71 @@ impl<T> EVMBlockFilter<T> {
 				// Process the matching address's ABI
 				if let Some(abi) = &monitored_addr.abi {
 					// Create contract object from ABI
-					if let Ok(contract) = Contract::load(abi.to_string().as_bytes()) {
-						// Get the function selector (first 4 bytes of input data)
-						if input_data.0.len() >= 4 {
-							let selector = &input_data.0[..4];
+					let contract = match Contract::load(abi.to_string().as_bytes()) {
+						Ok(c) => c,
+						Err(e) => {
+							FilterError::internal_error(
+								format!("Failed to parse ABI: {}", e),
+								None,
+								None,
+							);
+							return;
+						}
+					};
 
-							// Try to find matching function in ABI
-							if let Some(function) = contract
-								.functions()
-								.find(|f| f.short_signature().as_slice() == selector)
-							{
-								let function_signature_with_params = format!(
-									"{}({})",
-									function.name,
-									function
+					// Get the function selector (first 4 bytes of input data)
+					if input_data.0.len() >= 4 {
+						let selector = &input_data.0[..4];
+
+						// Try to find matching function in ABI
+						if let Some(function) = contract
+							.functions()
+							.find(|f| f.short_signature().as_slice() == selector)
+						{
+							let function_signature_with_params = format!(
+								"{}({})",
+								function.name,
+								function
+									.inputs
+									.iter()
+									.map(|p| p.kind.to_string())
+									.collect::<Vec<String>>()
+									.join(",")
+							);
+
+							// Check each function condition
+							for condition in &monitor.match_conditions.functions {
+								if are_same_signature(
+									&condition.signature,
+									&function_signature_with_params,
+								) {
+									let decoded = function
+										.decode_input(&input_data.0[4..])
+										.unwrap_or_else(|e| {
+											FilterError::internal_error(
+												format!("Failed to decode function input: {}", e),
+												None,
+												None,
+											);
+											vec![]
+										});
+
+									let params: Vec<EVMMatchParamEntry> = function
 										.inputs
 										.iter()
-										.map(|p| p.kind.to_string())
-										.collect::<Vec<String>>()
-										.join(",")
-								);
-
-								// Check each function condition
-								for condition in &monitor.match_conditions.functions {
-									if are_same_signature(
-										&condition.signature,
-										&function_signature_with_params,
-									) {
-										let decoded = function
-											.decode_input(&input_data.0[4..])
-											.unwrap_or_else(|e| {
-												FilterError::internal_error(format!(
-													"Failed to decode function input: {}",
-													e
-												));
-												vec![]
-											});
-
-										let params: Vec<EVMMatchParamEntry> = function
-											.inputs
-											.iter()
-											.zip(decoded.iter())
-											.map(|(input, value)| EVMMatchParamEntry {
-												name: input.name.clone(),
-												value: format_token_value(value),
-												kind: input.kind.to_string(),
-												indexed: false,
-											})
-											.collect();
-										if let Some(expr) = &condition.expression {
-											if self.evaluate_expression(expr, &Some(params.clone()))
-											{
-												matched_functions.push(FunctionCondition {
-													signature: function_signature_with_params
-														.clone(),
-													expression: Some(expr.to_string()),
-												});
-												if let Some(functions) =
-													&mut matched_on_args.functions
-												{
-													functions.push(EVMMatchParamsMap {
-														signature: function_signature_with_params
-															.clone(),
-														args: Some(params.clone()),
-														hex_signature: Some(format!(
-															"0x{}",
-															hex::encode(function.short_signature())
-														)),
-													});
-												}
-												break;
-											}
-										} else {
-											// No expression, just match on function name
+										.zip(decoded.iter())
+										.map(|(input, value)| EVMMatchParamEntry {
+											name: input.name.clone(),
+											value: format_token_value(value),
+											kind: input.kind.to_string(),
+											indexed: false,
+										})
+										.collect();
+									if let Some(expr) = &condition.expression {
+										if self.evaluate_expression(expr, &Some(params.clone())) {
 											matched_functions.push(FunctionCondition {
 												signature: function_signature_with_params.clone(),
-												expression: None,
+												expression: Some(expr.to_string()),
 											});
 											if let Some(functions) = &mut matched_on_args.functions
 											{
@@ -230,13 +220,30 @@ impl<T> EVMBlockFilter<T> {
 													signature: function_signature_with_params
 														.clone(),
 													args: Some(params.clone()),
-													hex_signature: Some(hex::encode(
-														function.short_signature(),
+													hex_signature: Some(format!(
+														"0x{}",
+														hex::encode(function.short_signature())
 													)),
 												});
 											}
 											break;
 										}
+									} else {
+										// No expression, just match on function name
+										matched_functions.push(FunctionCondition {
+											signature: function_signature_with_params.clone(),
+											expression: None,
+										});
+										if let Some(functions) = &mut matched_on_args.functions {
+											functions.push(EVMMatchParamsMap {
+												signature: function_signature_with_params.clone(),
+												args: Some(params.clone()),
+												hex_signature: Some(hex::encode(
+													function.short_signature(),
+												)),
+											});
+										}
+										break;
 									}
 								}
 							}
@@ -370,12 +377,12 @@ impl<T> EVMBlockFilter<T> {
 				{
 					vec![left, operator, right]
 				} else {
-					warn!("Invalid expression format: {}", clean_condition);
+					tracing::warn!("Invalid expression format: {}", clean_condition);
 					return false;
 				};
 
 				if parts.len() != 3 {
-					warn!("Invalid expression format: {}", clean_condition);
+					tracing::warn!("Invalid expression format: {}", clean_condition);
 					return false;
 				}
 
@@ -383,7 +390,7 @@ impl<T> EVMBlockFilter<T> {
 
 				// Find the parameter in args
 				let Some(param) = args.iter().find(|p| p.name == param_name) else {
-					warn!("Parameter {} not found in event args", param_name);
+					tracing::warn!("Parameter {} not found in event args", param_name);
 					return false;
 				};
 
@@ -391,11 +398,11 @@ impl<T> EVMBlockFilter<T> {
 				match param.kind.as_str() {
 					"uint256" | "uint" => {
 						let Ok(param_value) = u128::from_str(&param.value) else {
-							warn!("Failed to parse parameter value: {}", param.value);
+							tracing::warn!("Failed to parse parameter value: {}", param.value);
 							return false;
 						};
 						let Ok(compare_value) = u128::from_str(value) else {
-							warn!("Failed to parse comparison value: {}", value);
+							tracing::warn!("Failed to parse comparison value: {}", value);
 							return false;
 						};
 
@@ -407,7 +414,7 @@ impl<T> EVMBlockFilter<T> {
 							"==" => param_value == compare_value,
 							"!=" => param_value != compare_value,
 							_ => {
-								warn!("Unsupported operator: {}", operator);
+								tracing::warn!("Unsupported operator: {}", operator);
 								false
 							}
 						}
@@ -416,12 +423,12 @@ impl<T> EVMBlockFilter<T> {
 						"==" => are_same_address(&param.value, value),
 						"!=" => !are_same_address(&param.value, value),
 						_ => {
-							warn!("Unsupported operator for address type: {}", operator);
+							tracing::warn!("Unsupported operator for address type: {}", operator);
 							false
 						}
 					},
 					_ => {
-						warn!("Unsupported parameter type: {}", param.kind);
+						tracing::warn!("Unsupported parameter type: {}", param.kind);
 						false
 					}
 				}
@@ -452,7 +459,7 @@ impl<T> EVMBlockFilter<T> {
 	) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = Contract::load(abi.to_string().as_bytes())
-			.map_err(|e| FilterError::internal_error(format!("Failed to parse ABI: {}", e)))
+			.with_context(|| "Failed to parse ABI")
 			.ok()?;
 
 		let decoded_log = contract
@@ -522,6 +529,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 	///
 	/// # Returns
 	/// Vector of matches found in the block
+	#[instrument(skip_all, fields(network = %_network.slug))]
 	async fn filter_block(
 		&self,
 		client: &T,
@@ -533,12 +541,14 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			BlockType::EVM(block) => block,
 			_ => {
 				return Err(FilterError::block_type_mismatch(
-					"Expected EVM block".to_string(),
+					"Expected EVM block",
+					None,
+					None,
 				))
 			}
 		};
 
-		debug!(
+		tracing::debug!(
 			"Processing block {}",
 			evm_block.number.unwrap_or(U64::from(0))
 		);
@@ -549,24 +559,31 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			.iter()
 			.map(|transaction| {
 				let tx_hash = b256_to_string(transaction.hash);
-				client.get_transaction_receipt(tx_hash)
+				// Capture transaction hash in the closure for better error context
+				async move { client.get_transaction_receipt(tx_hash.clone()).await }
 			})
 			.collect();
 
-		let receipts: Vec<_> = futures::future::join_all(receipt_futures)
+		let receipts = match futures::future::join_all(receipt_futures)
 			.await
 			.into_iter()
-			.filter_map(|result| match result {
-				Ok(receipt) => Some(receipt),
-				Err(e) => {
-					warn!("Failed to get transaction receipt: {}", e);
-					None
-				}
-			})
-			.collect();
+			.collect::<Result<Vec<_>, _>>()
+		{
+			Ok(receipts) => receipts,
+			Err(e) => {
+				return Err(FilterError::network_error(
+					format!(
+						"Failed to get transaction receipts for block {}",
+						evm_block.number.unwrap_or(U64::from(0))
+					),
+					Some(e.into()),
+					None,
+				));
+			}
+		};
 
 		if receipts.is_empty() {
-			debug!(
+			tracing::debug!(
 				"No transactions found for block {}",
 				evm_block.number.unwrap_or(U64::from(0))
 			);
@@ -575,17 +592,17 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 		let mut matching_results = Vec::new();
 
-		debug!("Processing {} monitor(s)", monitors.len());
+		tracing::debug!("Processing {} monitor(s)", monitors.len());
 
 		for monitor in monitors {
-			debug!("Processing monitor: {:?}", monitor.name);
+			tracing::debug!("Processing monitor: {:?}", monitor.name);
 			let monitored_addresses: Vec<String> = monitor
 				.addresses
 				.iter()
 				.map(|a| a.address.clone())
 				.collect();
 			// Check each receipt and transaction for matches
-			debug!("Processing {} receipt(s)", receipts.len());
+			tracing::debug!("Processing {} receipt(s)", receipts.len());
 			for receipt in &receipts {
 				let matching_transaction = evm_block
 					.transactions

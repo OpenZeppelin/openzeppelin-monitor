@@ -4,19 +4,16 @@
 //! via alloy, supporting connection management and raw JSON-RPC request functionality.
 
 use alloy::rpc::client::{ClientBuilder, RpcClient};
-use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::{policies::ExponentialBackoff, Jitter};
 use serde::Serialize;
 use serde_json::Value;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use url::Url;
 
 use crate::{
 	models::Network,
-	services::blockchain::{
-		transports::{BlockchainTransport, EndpointManager, RotatingTransport},
-		BlockChainError,
-	},
+	services::blockchain::transports::{BlockchainTransport, EndpointManager, RotatingTransport},
 };
 
 /// A client for interacting with EVM-compatible blockchain nodes via alloy
@@ -40,8 +37,8 @@ impl AlloyTransportClient {
 	/// * `network` - Network configuration containing RPC URLs
 	///
 	/// # Returns
-	/// * `Result<Self, BlockChainError>` - A new client instance or connection error
-	pub async fn new(network: &Network) -> Result<Self, BlockChainError> {
+	/// * `Result<Self, anyhow::Error>` - A new client instance or connection error
+	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let mut rpc_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
@@ -50,8 +47,12 @@ impl AlloyTransportClient {
 
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
-		// Default retry policy for alloy transport
-		let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+		// Default retry policy for Alloy transport
+		let retry_policy = ExponentialBackoff::builder()
+			.base(2)
+			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+			.jitter(Jitter::None)
+			.build_with_max_retries(2);
 
 		for rpc_url in rpc_urls.iter() {
 			let url = match Url::parse(&rpc_url.url) {
@@ -79,9 +80,7 @@ impl AlloyTransportClient {
 			}
 		}
 
-		Err(BlockChainError::connection_error(
-			"All RPC URLs failed to connect".to_string(),
-		))
+		Err(anyhow::anyhow!("All RPC URLs failed to connect"))
 	}
 }
 
@@ -105,25 +104,28 @@ impl BlockchainTransport for AlloyTransportClient {
 	/// * `params` - Vector of parameters to pass to the method
 	///
 	/// # Returns
-	/// * `Result<Value, BlockChainError>` - JSON response or error
+	/// * `Result<Value, anyhow::Error>` - JSON response or error
 	async fn send_raw_request<P>(
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, BlockChainError>
+	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		self.endpoint_manager
+		let response = self
+			.endpoint_manager
 			.send_raw_request(self, method, params)
-			.await
+			.await?;
+
+		Ok(response)
 	}
 
 	/// Gets the retry policy for the transport
 	///
 	/// # Returns
-	/// * `Result<ExponentialBackoff, BlockChainError>` - The retry policy
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, BlockChainError> {
+	/// * `Result<ExponentialBackoff, anyhow::Error>` - The retry policy
+	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
 		Ok(self.retry_policy)
 	}
 
@@ -133,11 +135,8 @@ impl BlockchainTransport for AlloyTransportClient {
 	/// * `retry_policy` - The retry policy to set
 	///
 	/// # Returns
-	/// * `Result<(), BlockChainError>` - The result of setting the retry policy
-	fn set_retry_policy(
-		&mut self,
-		retry_policy: ExponentialBackoff,
-	) -> Result<(), BlockChainError> {
+	/// * `Result<(), anyhow::Error>` - The result of setting the retry policy
+	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
 		self.retry_policy = retry_policy;
 		Ok(())
 	}
@@ -145,26 +144,28 @@ impl BlockchainTransport for AlloyTransportClient {
 
 #[async_trait::async_trait]
 impl RotatingTransport for AlloyTransportClient {
-	async fn try_connect(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
 		let url = match Url::parse(url) {
 			Ok(url) => url,
-			Err(_) => return Err(BlockChainError::connection_error("Invalid URL".to_string())),
+			Err(_) => return Err(anyhow::anyhow!("Invalid URL: {}", url.to_string())),
 		};
 
+		let url_clone = url.clone();
 		let client = ClientBuilder::default().http(url);
 
 		match client.request_noparams::<String>("net_version").await {
 			Ok(_) => Ok(()),
-			Err(_) => Err(BlockChainError::connection_error(
-				"Failed to connect".to_string(),
+			Err(_) => Err(anyhow::anyhow!(
+				"Failed to connect: {}",
+				url_clone.to_string()
 			)),
 		}
 	}
 
-	async fn update_client(&self, url: &str) -> Result<(), BlockChainError> {
+	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
 		let parsed_url = match Url::parse(url) {
 			Ok(url) => url,
-			Err(_) => return Err(BlockChainError::connection_error("Invalid URL".to_string())),
+			Err(_) => return Err(anyhow::anyhow!("Invalid URL: {}", url)),
 		};
 		let new_client = ClientBuilder::default().http(parsed_url);
 

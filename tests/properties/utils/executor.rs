@@ -1,5 +1,5 @@
 use crate::properties::strategies::process_output_strategy;
-use openzeppelin_monitor::utils::{process_script_output, ScriptError};
+use openzeppelin_monitor::utils::process_script_output;
 use proptest::{prelude::*, test_runner::Config};
 use std::os::unix::process::ExitStatusExt;
 
@@ -26,19 +26,13 @@ proptest! {
 		} else {
 			prop_assert!(result.is_err());
 			if let Err(err) = result {
-				match err {
-					ScriptError::ExecutionError(msg) => {
-						prop_assert_eq!(msg, String::from_utf8_lossy(&output.stderr).to_string());
-					},
-					ScriptError::ParseError(msg) => {
-						prop_assert!(msg == "Last line of output is not a valid boolean");
-					},
-					ScriptError::NotFound(msg) => {
-						prop_assert_eq!(msg, String::from_utf8_lossy(&output.stderr).to_string());
-					},
-					ScriptError::SystemError(msg) => {
-						prop_assert_eq!(msg, String::from_utf8_lossy(&output.stderr).to_string());
-					},
+				let err_msg = err.to_string();
+				if err_msg.contains("Last line of output is not a valid boolean") {
+					prop_assert!(true);
+				} else if output.stderr.is_empty() {
+					prop_assert!(!err_msg.is_empty(), "Error should have a message");
+				} else {
+					prop_assert!(err_msg.contains(&*String::from_utf8_lossy(&output.stderr)));
 				}
 			}
 		}
@@ -83,11 +77,20 @@ proptest! {
 			stderr: error_msg.clone().into_bytes(),
 		};
 
+		let output_clone = output.clone();
+
 		let result = process_script_output(output, false);
 		prop_assert!(result.is_err());
 
-		if let Err(ScriptError::ExecutionError(msg)) = result {
-			prop_assert_eq!(msg, error_msg);
+		if let Err(err) = result {
+			let err_msg = err.to_string();
+			if err_msg.contains("Failed to process script output") {
+				prop_assert!(true);
+			} else if output_clone.stderr.is_empty() {
+				prop_assert!(!err_msg.is_empty(), "Error should have a message");
+			} else {
+				prop_assert!(err_msg.contains(&*String::from_utf8_lossy(&output_clone.stderr)));
+			}
 		} else {
 			prop_assert!(false, "Expected ExecutionError");
 		}
@@ -139,9 +142,8 @@ proptest! {
 			prop_assert!(result.unwrap());
 		} else {
 			prop_assert!(result.is_err());
-			if let Err(ScriptError::ExecutionError(_)) = result {
-				// Expected error type
-				prop_assert!(true);
+			if let Err(e) = result {
+				prop_assert!(e.to_string().contains("Script execution failed"));
 			} else {
 				prop_assert!(false, "Expected ExecutionError");
 			}

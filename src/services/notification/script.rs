@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
-	services::notification::{NotificationError, ScriptExecutor},
+	services::notification::ScriptExecutor,
 	utils::ScriptExecutorFactory,
 };
 
@@ -29,7 +29,7 @@ impl ScriptExecutor for ScriptNotifier {
 		&self,
 		monitor_match: &MonitorMatch,
 		script_content: &(ScriptLanguage, String),
-	) -> Result<(), NotificationError> {
+	) -> Result<(), anyhow::Error> {
 		match &self.config {
 			TriggerTypeConfig::Script {
 				script_path: _,
@@ -50,18 +50,14 @@ impl ScriptExecutor for ScriptNotifier {
 
 				match result {
 					Ok(true) => Ok(()),
+					Ok(false) => Err(anyhow::anyhow!("Trigger script execution failed")),
 					Err(e) => {
-						return Err(NotificationError::execution_error(e.to_string()));
-					}
-					_ => {
-						return Err(NotificationError::execution_error(
-							"Trigger script execution error",
-						))
+						return Err(anyhow::anyhow!("Trigger script execution error: {}", e));
 					}
 				}
 			}
-			_ => Err(NotificationError::config_error(
-				"Invalid configuration type for ScriptNotifier".to_string(),
+			_ => Err(anyhow::anyhow!(
+				"Invalid configuration type for ScriptNotifier"
 			)),
 		}
 	}

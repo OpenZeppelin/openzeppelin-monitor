@@ -3,12 +3,15 @@
 //! This module provides traits and implementations for loading and validating
 //! configuration files for networks, monitors, and triggers.
 
+#![allow(clippy::result_large_err)]
+
 use std::path::Path;
 
 mod error;
 mod monitor_config;
 mod network_config;
 mod trigger_config;
+
 pub use error::ConfigError;
 /// Common interface for loading configuration files
 pub trait ConfigLoader: Sized {

@@ -35,15 +35,16 @@ use crate::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 	},
+	utils::setup_logging,
 };
 
 use clap::Command;
 use dotenvy::dotenv;
-use log::{error, info};
 use models::BlockChainType;
 use services::trigger::TriggerExecutionServiceTrait;
 use std::sync::Arc;
 use tokio::sync::watch;
+use tokio_cron_scheduler::JobScheduler;
 
 /// Main entry point for the blockchain monitoring service.
 ///
@@ -62,7 +63,10 @@ async fn main() -> Result<()> {
 
 	// Load environment variables from .env file
 	dotenv().ok();
-	env_logger::init();
+	// Setup logging to stdout
+	setup_logging().unwrap_or_else(|e| {
+		tracing::error!("Failed to setup logging: {}", e);
+	});
 
 	let (filter_service, trigger_execution_service, active_monitors, networks) =
 		initialize_services::<
@@ -78,7 +82,7 @@ async fn main() -> Result<()> {
 		.collect();
 
 	if networks_with_monitors.is_empty() {
-		info!("No networks with active monitors found. Exiting...");
+		tracing::info!("No networks with active monitors found. Exiting...");
 		return Ok(());
 	}
 
@@ -103,7 +107,7 @@ async fn main() -> Result<()> {
 	);
 
 	let file_block_storage = Arc::new(FileBlockStorage::default());
-	let block_watcher = BlockWatcherService::new(
+	let block_watcher = BlockWatcherService::<FileBlockStorage, _, _, JobScheduler>::new(
 		file_block_storage.clone(),
 		block_handler,
 		trigger_handler,
@@ -117,14 +121,24 @@ async fn main() -> Result<()> {
 				if let Ok(client) = client_pool.get_evm_client(&network).await {
 					let _ = block_watcher
 						.start_network_watcher(&network, (*client).clone())
-						.await;
+						.await
+						.inspect_err(|e| {
+							tracing::error!("Failed to start EVM network watcher: {}", e);
+						});
+				} else {
+					tracing::error!("Failed to get EVM client for network: {}", network.slug);
 				}
 			}
 			BlockChainType::Stellar => {
 				if let Ok(client) = client_pool.get_stellar_client(&network).await {
 					let _ = block_watcher
 						.start_network_watcher(&network, (*client).clone())
-						.await;
+						.await
+						.inspect_err(|e| {
+							tracing::error!("Failed to start Stellar network watcher: {}", e);
+						});
+				} else {
+					tracing::error!("Failed to get Stellar client for network: {}", network.slug);
 				}
 			}
 			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),
@@ -132,10 +146,10 @@ async fn main() -> Result<()> {
 		}
 	}
 
-	info!("Service started. Press Ctrl+C to shutdown");
+	tracing::info!("Service started. Press Ctrl+C to shutdown");
 	tokio::select! {
 		_ = tokio::signal::ctrl_c() => {
-			info!("Shutdown signal received, stopping services...");
+			tracing::info!("Shutdown signal received, stopping services...");
 			let _ = shutdown_tx.send(true);
 
 			// Create a future for all network shutdown operations
@@ -146,7 +160,7 @@ async fn main() -> Result<()> {
 			// Wait for all shutdown operations to complete
 			for result in futures::future::join_all(shutdown_futures).await {
 				if let Err(e) = result {
-					error!("Error during shutdown: {}", e);
+					tracing::error!("Error during shutdown: {}", e);
 				}
 			}
 
@@ -155,6 +169,6 @@ async fn main() -> Result<()> {
 		}
 	}
 
-	info!("Shutdown complete");
+	tracing::info!("Shutdown complete");
 	Ok(())
 }

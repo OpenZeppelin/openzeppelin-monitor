@@ -8,7 +8,7 @@ use email_address::EmailAddress;
 use lettre::{
 	message::{
 		header::{self, ContentType},
-		Mailboxes,
+		Mailbox, Mailboxes,
 	},
 	transport::smtp::authentication::Credentials,
 	Message, SmtpTransport, Transport,
@@ -87,10 +87,14 @@ impl EmailNotifier<SmtpTransport> {
 	pub fn new(
 		smtp_config: SmtpConfig,
 		email_content: EmailContent,
-	) -> Result<Self, NotificationError> {
+	) -> Result<Self, Box<NotificationError>> {
 		let client = SmtpTransport::relay(&smtp_config.host)
 			.map_err(|e| {
-				NotificationError::internal_error(format!("Failed to create SMTP relay: {}", e))
+				NotificationError::internal_error(
+					format!("Failed to create SMTP relay: {}", e),
+					None,
+					None,
+				)
 			})?
 			.port(smtp_config.port)
 			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
@@ -170,8 +174,8 @@ where
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
 		let recipients_str = self
 			.recipients
 			.iter()
@@ -179,29 +183,33 @@ where
 			.collect::<Vec<_>>()
 			.join(", ");
 
-		let mailboxes: Mailboxes = recipients_str.parse().map_err(|e| {
-			NotificationError::internal_error(format!("Failed to parse email recipients: {}", e))
-		})?;
+		let mailboxes: Mailboxes = recipients_str
+			.parse::<Mailboxes>()
+			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 		let recipients_header: header::To = mailboxes.into();
 
 		let email = Message::builder()
 			.mailbox(recipients_header)
-			.from(self.sender.to_string().parse().map_err(|e| {
-				NotificationError::internal_error(format!("Failed to parse email sender: {}", e))
-			})?)
-			.reply_to(self.sender.to_string().parse().map_err(|e| {
-				NotificationError::internal_error(format!("Failed to parse email sender: {}", e))
-			})?)
+			.from(
+				self.sender
+					.to_string()
+					.parse::<Mailbox>()
+					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
+			)
+			.reply_to(
+				self.sender
+					.to_string()
+					.parse::<Mailbox>()
+					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
+			)
 			.subject(&self.subject)
 			.header(ContentType::TEXT_PLAIN)
 			.body(message.to_owned())
-			.map_err(|e| {
-				NotificationError::internal_error(format!("Failed to build email: {}", e))
-			})?;
+			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
 		self.client
 			.send(&email)
-			.map_err(|e| NotificationError::network_error(e.to_string()))?;
+			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
 		Ok(())
 	}

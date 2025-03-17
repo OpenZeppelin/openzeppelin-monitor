@@ -25,14 +25,24 @@ The main source code directory contains the core implementation files organized 
 
 * `services/`: Core business logic
 ** `blockchain/`: Blockchain client interfaces
+*** `transports/`: Transport clients
+**** `evm/`: Ethereum Virtual Machine transport client
+**** `stellar/`: Stellar transport client
+*** `clients/`: Client implementations
+**** `evm/`: Ethereum Virtual Machine client
+**** `stellar/`: Stellar client
 ** `blockwatcher/`: Block monitoring and processing
 ** `filter/`: Transaction and event filtering
+*** `filters/`: Filter implementations
+**** `evm/`: Ethereum Virtual Machine filter
+**** `stellar/`: Stellar filter
 ** `notification/`: Alert handling
 ** `trigger/`: Trigger evaluation and execution
 
 * `utils/`: Helper functions
-** `cron_utils/`: Cron schedule utilities
-** `expression/`: Expression evaluation
+** `cron_utils`: Cron schedule utilities
+** `expression`: Expression evaluation
+** `error`: Error handling
 
 == Configuration and Data:
 

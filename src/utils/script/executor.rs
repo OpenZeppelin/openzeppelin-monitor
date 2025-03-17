@@ -1,4 +1,5 @@
-use crate::{models::MonitorMatch, utils::script::error::ScriptError};
+use crate::models::MonitorMatch;
+use anyhow::Context;
 use async_trait::async_trait;
 use std::{any::Any, process::Stdio, time::Duration};
 use tokio::{io::AsyncWriteExt, time::timeout};
@@ -13,18 +14,19 @@ pub trait ScriptExecutor: Send + Sync + Any {
 	///
 	/// # Arguments
 	/// * `input` - A MonitorMatch instance containing the data to be processed by the script
+	/// * `timeout_ms` - The timeout for the script execution in milliseconds
 	/// * `args` - Additional arguments passed to the script
 	/// * `from_custom_notification` - Whether the script is from a custom notification
 	///
 	/// # Returns
-	/// * `Result<bool, ScriptError>` - Returns true/false based on script execution or an error
+	/// * `Result<bool, anyhow::Error>` - Returns true/false based on script execution or an error
 	async fn execute(
 		&self,
 		input: MonitorMatch,
 		timeout_ms: &u32,
 		args: Option<&[String]>,
 		from_custom_notification: bool,
-	) -> Result<bool, ScriptError>;
+	) -> Result<bool, anyhow::Error>;
 }
 
 /// Executes Python scripts using the python3 interpreter.
@@ -38,22 +40,21 @@ impl ScriptExecutor for PythonScriptExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
-
 	async fn execute(
 		&self,
 		input: MonitorMatch,
 		timeout_ms: &u32,
 		args: Option<&[String]>,
 		from_custom_notification: bool,
-	) -> Result<bool, ScriptError> {
+	) -> Result<bool, anyhow::Error> {
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
 			"args": args
 		});
 		let input_json = serde_json::to_string(&combined_input)
-			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
-		let mut cmd = tokio::process::Command::new("python3")
+		let cmd = tokio::process::Command::new("python3")
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -61,33 +62,9 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.stderr(Stdio::piped())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.with_context(|| "Failed to spawn python3 process")?;
 
-		// Write the input_json to stdin
-		if let Some(mut stdin) = cmd.stdin.take() {
-			stdin
-				.write_all(input_json.as_bytes())
-				.await
-				.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-		} else {
-			return Err(ScriptError::parse_error(
-				"Failed to get stdin handle".to_string(),
-			));
-		}
-
-		// Define a timeout duration
-		let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
-
-		// Apply timeout to script execution
-		match timeout(timeout_duration, cmd.wait_with_output()).await {
-			Ok(result) => {
-				let output = result.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-				process_script_output(output, from_custom_notification)
-			}
-			Err(_) => Err(ScriptError::execution_error(
-				"Script execution timed out".to_string(),
-			)),
-		}
+		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
 
@@ -108,16 +85,16 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		timeout_ms: &u32,
 		args: Option<&[String]>,
 		from_custom_notification: bool,
-	) -> Result<bool, ScriptError> {
+	) -> Result<bool, anyhow::Error> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
 			"args": args
 		});
 		let input_json = serde_json::to_string(&combined_input)
-			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
-		let mut cmd = tokio::process::Command::new("node")
+		let cmd = tokio::process::Command::new("node")
 			.arg("-e")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -125,33 +102,9 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.with_context(|| "Failed to spawn node process")?;
 
-		// Write the input_json to stdin
-		if let Some(mut stdin) = cmd.stdin.take() {
-			stdin
-				.write_all(input_json.as_bytes())
-				.await
-				.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-		} else {
-			return Err(ScriptError::parse_error(
-				"Failed to get stdin handle".to_string(),
-			));
-		}
-
-		// Define a timeout duration
-		let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
-
-		// Apply timeout to script execution
-		match timeout(timeout_duration, cmd.wait_with_output()).await {
-			Ok(result) => {
-				let output = result.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-				process_script_output(output, from_custom_notification)
-			}
-			Err(_) => Err(ScriptError::execution_error(
-				"Script execution timed out".to_string(),
-			)),
-		}
+		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
 
@@ -172,7 +125,7 @@ impl ScriptExecutor for BashScriptExecutor {
 		timeout_ms: &u32,
 		args: Option<&[String]>,
 		from_custom_notification: bool,
-	) -> Result<bool, ScriptError> {
+	) -> Result<bool, anyhow::Error> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
@@ -180,9 +133,9 @@ impl ScriptExecutor for BashScriptExecutor {
 		});
 
 		let input_json = serde_json::to_string(&combined_input)
-			.map_err(|e| ScriptError::parse_error(e.to_string()))?;
+			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
-		let mut cmd = tokio::process::Command::new("sh")
+		let cmd = tokio::process::Command::new("sh")
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -190,33 +143,9 @@ impl ScriptExecutor for BashScriptExecutor {
 			.stderr(Stdio::null())
 			.kill_on_drop(true)
 			.spawn()
-			.map_err(|e| ScriptError::execution_error(e.to_string()))?;
+			.with_context(|| "Failed to spawn shell process")?;
 
-		// Write the input_json to stdin
-		if let Some(mut stdin) = cmd.stdin.take() {
-			stdin
-				.write_all(input_json.as_bytes())
-				.await
-				.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-		} else {
-			return Err(ScriptError::parse_error(
-				"Failed to get stdin handle".to_string(),
-			));
-		}
-
-		// Define a timeout duration
-		let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
-
-		// Apply timeout to script execution
-		match timeout(timeout_duration, cmd.wait_with_output()).await {
-			Ok(result) => {
-				let output = result.map_err(|e| ScriptError::execution_error(e.to_string()))?;
-				process_script_output(output, from_custom_notification)
-			}
-			Err(_) => Err(ScriptError::execution_error(
-				"Script execution timed out".to_string(),
-			)),
-		}
+		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
 
@@ -226,20 +155,23 @@ impl ScriptExecutor for BashScriptExecutor {
 /// * `output` - The process output containing stdout, stderr, and status
 /// * `from_custom_notification` - Whether the script is from a custom notification
 /// # Returns
-/// * `Result<bool, ScriptError>` - Returns parsed boolean result or error
+/// * `Result<bool, anyhow::Error>` - Returns parsed boolean result or error
 ///
 /// # Errors
 /// Returns an error if:
 /// * The script execution was not successful (non-zero exit code)
 /// * The output cannot be parsed as a boolean
 /// * The script produced no output
+#[allow(clippy::result_large_err)]
 pub fn process_script_output(
 	output: std::process::Output,
 	from_custom_notification: bool,
-) -> Result<bool, ScriptError> {
+) -> Result<bool, anyhow::Error> {
 	if !output.status.success() {
-		return Err(ScriptError::execution_error(
-			String::from_utf8_lossy(&output.stderr).to_string(),
+		let error_message = String::from_utf8_lossy(&output.stderr).to_string();
+		return Err(anyhow::anyhow!(
+			"Script execution failed: {}",
+			error_message
 		));
 	}
 
@@ -252,23 +184,51 @@ pub fn process_script_output(
 	let stdout = String::from_utf8_lossy(&output.stdout);
 
 	if stdout.trim().is_empty() {
-		return Err(ScriptError::parse_error(
-			"Script produced no output".to_string(),
-		));
+		return Err(anyhow::anyhow!("Script produced no output"));
 	}
 
 	let last_line = stdout
 		.lines()
 		.last()
-		.ok_or_else(|| ScriptError::parse_error("No output from script".to_string()))?
+		.ok_or_else(|| anyhow::anyhow!("No output from script"))?
 		.trim();
 
 	match last_line.to_lowercase().as_str() {
 		"true" => Ok(true),
 		"false" => Ok(false),
-		_ => Err(ScriptError::parse_error(
-			"Last line of output is not a valid boolean".to_string(),
+		_ => Err(anyhow::anyhow!(
+			"Last line of output is not a valid boolean: {}",
+			last_line
 		)),
+	}
+}
+
+async fn process_command(
+	mut cmd: tokio::process::Child,
+	input_json: &str,
+	timeout_ms: &u32,
+	from_custom_notification: bool,
+) -> Result<bool, anyhow::Error> {
+	if let Some(mut stdin) = cmd.stdin.take() {
+		stdin
+			.write_all(input_json.as_bytes())
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to write input to script: {}", e))?;
+	} else {
+		return Err(anyhow::anyhow!("Failed to get stdin handle"));
+	}
+
+	// Define a timeout duration
+	let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
+
+	// Apply timeout to script execution
+	match timeout(timeout_duration, cmd.wait_with_output()).await {
+		Ok(result) => {
+			let output =
+				result.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))?;
+			process_script_output(output, from_custom_notification)
+		}
+		Err(_) => Err(anyhow::anyhow!("Script execution timed out")),
 	}
 }
 
@@ -425,10 +385,13 @@ print(result)
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		match result {
-			Err(ScriptError::ParseError(msg)) => {
-				assert!(msg.contains("Last line of output is not a valid boolean"));
+			Err(err) => {
+				let err_msg = err.to_string();
+				assert!(
+					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
+				);
 			}
-			_ => panic!("Expected ParseError"),
+			_ => panic!("Expected error"),
 		}
 	}
 
@@ -481,9 +444,9 @@ print("true")
 	#[tokio::test]
 	async fn test_javascript_script_executor_invalid_output() {
 		let script_content = r#"
-		console.log("debugging...");
-		console.log("finished");
-		console.log("not a boolean");
+			console.log("debugging...");
+			console.log("finished");
+			console.log("not a boolean");
 		"#;
 
 		let executor = JavaScriptScriptExecutor {
@@ -494,10 +457,13 @@ print("true")
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		match result {
-			Err(ScriptError::ParseError(msg)) => {
-				assert!(msg.contains("Last line of output is not a valid boolean"));
+			Err(err) => {
+				let err_msg = err.to_string();
+				assert!(
+					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
+				);
 			}
-			_ => panic!("Expected ParseError"),
+			_ => panic!("Expected error"),
 		}
 	}
 
@@ -515,20 +481,9 @@ echo "true"
 		};
 
 		let input = create_mock_monitor_match();
-		for _ in 0..3 {
-			// Retry logic for flaky tests
-			match executor.execute(input.clone(), &1000, None, false).await {
-				Ok(result) => {
-					assert!(result);
-					return;
-				}
-				Err(e) => {
-					eprintln!("Test attempt failed: {}", e);
-					tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-				}
-			}
-		}
-		panic!("Test failed after 3 retries");
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
 	}
 
 	#[tokio::test]
@@ -546,23 +501,18 @@ echo "not a boolean"
 		};
 
 		let input = create_mock_monitor_match();
-		for _ in 0..3 {
-			// Retry logic for flaky tests
-			match executor.execute(input.clone(), &1000, None, false).await {
-				Err(ScriptError::ParseError(msg)) => {
-					assert!(msg.contains("Last line of output is not a valid boolean"));
-					return;
-				}
-				Ok(_) => {
-					panic!("Expected ParseError, got success");
-				}
-				Err(e) => {
-					eprintln!("Test attempt failed with unexpected error: {}", e);
-					tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-				}
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_err());
+		match result {
+			Err(e) => {
+				assert!(e
+					.to_string()
+					.contains("Last line of output is not a valid boolean"));
+			}
+			Ok(_) => {
+				panic!("Expected ParseError, got success");
 			}
 		}
-		panic!("Test failed after 3 retries");
 	}
 
 	#[tokio::test]
@@ -579,10 +529,10 @@ echo "not a boolean"
 		let result = executor.execute(input, &1000, None, false).await;
 
 		match result {
-			Err(ScriptError::ParseError(msg)) => {
-				assert!(msg.contains("Script produced no output"));
+			Err(e) => {
+				assert!(e.to_string().contains("Script produced no output"));
 			}
-			_ => panic!("Expected ParseError"),
+			_ => panic!("Expected error"),
 		}
 	}
 
@@ -839,8 +789,8 @@ sys.exit(1)
 
 		assert!(result.is_err());
 		match result {
-			Err(ScriptError::ExecutionError(msg)) => {
-				assert!(msg.contains("Error: something went wrong"));
+			Err(e) => {
+				assert!(e.to_string().contains("Error: something went wrong"));
 			}
 			_ => panic!("Expected ExecutionError"),
 		}

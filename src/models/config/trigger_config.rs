@@ -30,23 +30,79 @@ impl ConfigLoader for Trigger {
 		T: FromIterator<(String, Self)>,
 	{
 		let config_dir = path.unwrap_or(Path::new("config/triggers"));
-		let entries = fs::read_dir(config_dir)?;
+
+		if !config_dir.exists() {
+			return Err(ConfigError::file_error(
+				"triggers directory not found",
+				None,
+				Some(HashMap::from([(
+					"path".to_string(),
+					config_dir.display().to_string(),
+				)])),
+			));
+		}
+
+		let entries = fs::read_dir(config_dir).map_err(|e| {
+			ConfigError::file_error(
+				format!("failed to read triggers directory: {}", e),
+				Some(Box::new(e)),
+				Some(HashMap::from([(
+					"path".to_string(),
+					config_dir.display().to_string(),
+				)])),
+			)
+		})?;
 
 		let mut trigger_pairs = Vec::new();
 		for entry in entries {
-			let entry = entry?;
+			let entry = entry.map_err(|e| {
+				ConfigError::file_error(
+					format!("failed to read directory entry: {}", e),
+					Some(Box::new(e)),
+					Some(HashMap::from([(
+						"path".to_string(),
+						config_dir.display().to_string(),
+					)])),
+				)
+			})?;
 			if Self::is_json_file(&entry.path()) {
-				let content = fs::read_to_string(entry.path())?;
-				let file_triggers: TriggerConfigFile = serde_json::from_str(&content)
-					.map_err(|e| ConfigError::parse_error(e.to_string()))?;
+				let file_path = entry.path();
+				let content = fs::read_to_string(&file_path).map_err(|e| {
+					ConfigError::file_error(
+						format!("failed to read trigger config file: {}", e),
+						Some(Box::new(e)),
+						Some(HashMap::from([(
+							"path".to_string(),
+							file_path.display().to_string(),
+						)])),
+					)
+				})?;
+				let file_triggers: TriggerConfigFile =
+					serde_json::from_str(&content).map_err(|e| {
+						ConfigError::parse_error(
+							format!("failed to parse trigger config: {}", e),
+							Some(Box::new(e)),
+							Some(HashMap::from([(
+								"path".to_string(),
+								file_path.display().to_string(),
+							)])),
+						)
+					})?;
 
 				// Validate each trigger before adding it
 				for (name, trigger) in file_triggers.triggers {
 					if let Err(validation_error) = trigger.validate() {
-						return Err(ConfigError::validation_error(format!(
-							"Validation failed for trigger '{}': {}",
-							name, validation_error
-						)));
+						return Err(ConfigError::validation_error(
+							format!(
+								"Validation failed for trigger '{}': {}",
+								name, validation_error
+							),
+							Some(Box::new(validation_error)),
+							Some(HashMap::from([
+								("path".to_string(), file_path.display().to_string()),
+								("trigger_name".to_string(), name.clone()),
+							])),
+						));
 					}
 					trigger_pairs.push((name, trigger));
 				}
@@ -59,8 +115,10 @@ impl ConfigLoader for Trigger {
 	///
 	/// Reads and parses a single JSON file as a trigger configuration.
 	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
-		let file = std::fs::File::open(path)?;
-		let config: Trigger = serde_json::from_reader(file)?;
+		let file = std::fs::File::open(path)
+			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
+		let config: Trigger = serde_json::from_reader(file)
+			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -79,7 +137,11 @@ impl ConfigLoader for Trigger {
 	fn validate(&self) -> Result<(), ConfigError> {
 		// Validate trigger name
 		if self.name.is_empty() {
-			return Err(ConfigError::validation_error("Trigger cannot be empty"));
+			return Err(ConfigError::validation_error(
+				"Trigger cannot be empty",
+				None,
+				None,
+			));
 		}
 
 		match &self.trigger_type {
@@ -89,15 +151,25 @@ impl ConfigLoader for Trigger {
 					if !slack_url.starts_with("https://hooks.slack.com/") {
 						return Err(ConfigError::validation_error(
 							"Invalid Slack webhook URL format",
+							None,
+							None,
 						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(ConfigError::validation_error("Title cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Title cannot be empty",
+							None,
+							None,
+						));
 					}
 					// Validate template is not empty
 					if message.body.trim().is_empty() {
-						return Err(ConfigError::validation_error("Body cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Body cannot be empty",
+							None,
+							None,
+						));
 					}
 				}
 			}
@@ -114,7 +186,11 @@ impl ConfigLoader for Trigger {
 				{
 					// Validate host
 					if host.trim().is_empty() {
-						return Err(ConfigError::validation_error("Host cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Host cannot be empty",
+							None,
+							None,
+						));
 					}
 					// Validate host format
 					if !host.contains('.')
@@ -122,36 +198,58 @@ impl ConfigLoader for Trigger {
 							.chars()
 							.all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 					{
-						return Err(ConfigError::validation_error("Invalid SMTP host format"));
+						return Err(ConfigError::validation_error(
+							"Invalid SMTP host format",
+							None,
+							None,
+						));
 					}
 
 					// Basic username validation
 					if username.is_empty() {
 						return Err(ConfigError::validation_error(
 							"SMTP username cannot be empty",
+							None,
+							None,
 						));
 					}
 					if username.chars().any(|c| c.is_control()) {
 						return Err(ConfigError::validation_error(
 							"SMTP username contains invalid control characters",
+							None,
+							None,
 						));
 					}
 					// Validate password
 					if password.trim().is_empty() {
-						return Err(ConfigError::validation_error("Password cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Password cannot be empty",
+							None,
+							None,
+						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(ConfigError::validation_error("Title cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Title cannot be empty",
+							None,
+							None,
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(ConfigError::validation_error("Body cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Body cannot be empty",
+							None,
+							None,
+						));
 					}
 					// Validate subject according to RFC 5322
 					// Max length of 998 characters, no control chars except whitespace
 					if message.title.len() > 998 {
 						return Err(ConfigError::validation_error(
 							"Subject exceeds maximum length of 998 characters",
+							None,
+							None,
 						));
 					}
 					if message
@@ -161,12 +259,16 @@ impl ConfigLoader for Trigger {
 					{
 						return Err(ConfigError::validation_error(
 							"Subject contains invalid control characters",
+							None,
+							None,
 						));
 					}
 					// Add minimum length check after trim
 					if message.title.trim().is_empty() {
 						return Err(ConfigError::validation_error(
 							"Subject must contain at least 1 character",
+							None,
+							None,
 						));
 					}
 
@@ -179,27 +281,35 @@ impl ConfigLoader for Trigger {
 					{
 						return Err(ConfigError::validation_error(
 							"Body contains invalid control characters",
+							None,
+							None,
 						));
 					}
 
 					// Validate sender
 					if !EmailAddress::is_valid(sender.as_str()) {
-						return Err(ConfigError::validation_error(format!(
-							"Invalid sender email address: {}",
-							sender
-						)));
+						return Err(ConfigError::validation_error(
+							format!("Invalid sender email address: {}", sender),
+							None,
+							None,
+						));
 					}
 
 					// Validate recipients
 					if recipients.is_empty() {
-						return Err(ConfigError::validation_error("Recipients cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Recipients cannot be empty",
+							None,
+							None,
+						));
 					}
 					for recipient in recipients {
 						if !EmailAddress::is_valid(recipient.as_str()) {
-							return Err(ConfigError::validation_error(format!(
-								"Invalid recipient email address: {}",
-								recipient
-							)));
+							return Err(ConfigError::validation_error(
+								format!("Invalid recipient email address: {}", recipient),
+								None,
+								None,
+							));
 						}
 					}
 				}
@@ -214,21 +324,39 @@ impl ConfigLoader for Trigger {
 				{
 					// Validate URL format
 					if !url.starts_with("http://") && !url.starts_with("https://") {
-						return Err(ConfigError::validation_error("Invalid webhook URL format"));
+						return Err(ConfigError::validation_error(
+							"Invalid webhook URL format",
+							None,
+							None,
+						));
 					}
 					// Validate HTTP method
 					if let Some(method) = method {
 						match method.to_uppercase().as_str() {
 							"GET" | "POST" | "PUT" | "DELETE" => {}
-							_ => return Err(ConfigError::validation_error("Invalid HTTP method")),
+							_ => {
+								return Err(ConfigError::validation_error(
+									"Invalid HTTP method",
+									None,
+									None,
+								));
+							}
 						}
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(ConfigError::validation_error("Title cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Title cannot be empty",
+							None,
+							None,
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(ConfigError::validation_error("Body cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Body cannot be empty",
+							None,
+							None,
+						));
 					}
 				}
 			}
@@ -243,34 +371,55 @@ impl ConfigLoader for Trigger {
 					// Validate token
 					// /^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$/ regex
 					if token.trim().is_empty() {
-						return Err(ConfigError::validation_error("Token cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Token cannot be empty",
+							None,
+							None,
+						));
 					}
 
 					// Safely compile and use the regex
 					match regex::Regex::new(r"^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$") {
 						Ok(re) => {
 							if !re.is_match(token) {
-								return Err(ConfigError::validation_error("Invalid token format"));
+								return Err(ConfigError::validation_error(
+									"Invalid token format",
+									None,
+									None,
+								));
 							}
 						}
 						Err(e) => {
-							return Err(ConfigError::validation_error(format!(
-								"Failed to validate token format: {}",
-								e
-							)));
+							return Err(ConfigError::validation_error(
+								format!("Failed to validate token format: {}", e),
+								None,
+								None,
+							));
 						}
 					}
 
 					// Validate chat ID
 					if chat_id.trim().is_empty() {
-						return Err(ConfigError::validation_error("Chat ID cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Chat ID cannot be empty",
+							None,
+							None,
+						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(ConfigError::validation_error("Title cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Title cannot be empty",
+							None,
+							None,
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(ConfigError::validation_error("Body cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Body cannot be empty",
+							None,
+							None,
+						));
 					}
 				}
 			}
@@ -285,14 +434,24 @@ impl ConfigLoader for Trigger {
 					if !discord_url.starts_with("https://discord.com/api/webhooks/") {
 						return Err(ConfigError::validation_error(
 							"Invalid Discord webhook URL format",
+							None,
+							None,
 						));
 					}
 					// Validate message
 					if message.title.trim().is_empty() {
-						return Err(ConfigError::validation_error("Title cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Title cannot be empty",
+							None,
+							None,
+						));
 					}
 					if message.body.trim().is_empty() {
-						return Err(ConfigError::validation_error("Body cannot be empty"));
+						return Err(ConfigError::validation_error(
+							"Body cannot be empty",
+							None,
+							None,
+						));
 					}
 				}
 			}
@@ -319,6 +478,8 @@ mod tests {
 		core::{Trigger, TriggerType},
 		NotificationMessage, ScriptLanguage,
 	};
+	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
+	use tempfile::TempDir;
 
 	#[test]
 	fn test_slack_trigger_validation() {
@@ -510,6 +671,63 @@ mod tests {
 		};
 		assert!(empty_title.validate().is_err());
 
+		// Test title has no control characters
+		let invalid_title = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "\0".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_title.validate().is_err());
+
+		// Test title has atleast one character
+		let invalid_title = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: " ".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_title.validate().is_err());
+
+		// Test body has no control characters
+		let invalid_body = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "\0".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_body.validate().is_err());
+
 		// Test empty body
 		let empty_body = Trigger {
 			name: "test_email".to_string(),
@@ -528,6 +746,63 @@ mod tests {
 			},
 		};
 		assert!(empty_body.validate().is_err());
+
+		// Test empty username
+		let empty_username = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(empty_username.validate().is_err());
+
+		// Test invalid control characters
+		let invalid_control_characters = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "\0".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+		assert!(invalid_control_characters.validate().is_err());
+
+		// Test invalid email recipient
+		let invalid_recipient = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(587),
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test Subject".to_string(),
+					body: "Test Body".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("invalid-email")],
+			},
+		};
+		assert!(invalid_recipient.validate().is_err());
 	}
 
 	#[test]
@@ -704,6 +979,7 @@ mod tests {
 				},
 			},
 		};
+
 		assert!(invalid_token.validate().is_err());
 
 		// Test invalid chat ID
@@ -727,7 +1003,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(), // noboost
+				token: "11234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
 				chat_id: "1730223038".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
@@ -742,7 +1018,7 @@ mod tests {
 			name: "test_telegram".to_string(),
 			trigger_type: TriggerType::Telegram,
 			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(), // noboost
+				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
 				chat_id: "1730223038".to_string(),
 				disable_web_preview: Some(true),
 				message: NotificationMessage {
@@ -751,6 +1027,7 @@ mod tests {
 				},
 			},
 		};
+
 		assert!(invalid_body_message.validate().is_err());
 	}
 
@@ -786,5 +1063,79 @@ mod tests {
 		assert!(invalid_path.validate().is_err());
 
 		std::fs::remove_file(script_path).unwrap();
+	}
+
+	#[test]
+	fn test_invalid_load_from_path() {
+		let path = Path::new("config/triggers/invalid.json");
+		assert!(matches!(
+			Trigger::load_from_path(path),
+			Err(ConfigError::FileError(_))
+		));
+	}
+
+	#[test]
+	fn test_invalid_config_from_load_from_path() {
+		use std::io::Write;
+		use tempfile::NamedTempFile;
+
+		let mut temp_file = NamedTempFile::new().unwrap();
+		write!(temp_file, "{{\"invalid\": \"json").unwrap();
+
+		let path = temp_file.path();
+
+		assert!(matches!(
+			Trigger::load_from_path(path),
+			Err(ConfigError::ParseError(_))
+		));
+	}
+
+	#[test]
+	fn test_load_all_directory_not_found() {
+		let non_existent_path = Path::new("non_existent_directory");
+
+		let result: Result<HashMap<String, Trigger>, ConfigError> =
+			Trigger::load_all(Some(non_existent_path));
+		assert!(matches!(result, Err(ConfigError::FileError(_))));
+
+		if let Err(ConfigError::FileError(err)) = result {
+			assert!(err.message.contains("triggers directory not found"));
+		}
+	}
+
+	#[test]
+	#[cfg(unix)] // This test is Unix-specific due to permission handling
+	fn test_load_all_unreadable_file() {
+		// Create a temporary directory for our test
+		let temp_dir = TempDir::new().unwrap();
+		let config_dir = temp_dir.path().join("triggers");
+		std::fs::create_dir(&config_dir).unwrap();
+
+		// Create a JSON file with valid content but unreadable permissions
+		let file_path = config_dir.join("unreadable.json");
+		{
+			let mut file = File::create(&file_path).unwrap();
+			writeln!(file, r#"{{ "test_trigger": {{ "name": "test", "trigger_type": "Slack", "config": {{ "slack_url": "https://hooks.slack.com/services/xxx", "message": {{ "title": "Alert", "body": "Test message" }} }} }} }}"#).unwrap();
+		}
+
+		// Change permissions to make the file unreadable
+		let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
+		perms.set_mode(0o000); // No permissions
+		std::fs::set_permissions(&file_path, perms).unwrap();
+
+		// Try to load triggers from the directory
+		let result: Result<HashMap<String, Trigger>, ConfigError> =
+			Trigger::load_all(Some(&config_dir));
+
+		// Verify we get the expected error
+		assert!(matches!(result, Err(ConfigError::FileError(_))));
+		if let Err(ConfigError::FileError(err)) = result {
+			assert!(err.message.contains("failed to read trigger config file"));
+		}
+
+		// Clean up by making the file deletable
+		let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
+		perms.set_mode(0o644);
+		std::fs::set_permissions(&file_path, perms).unwrap();
 	}
 }

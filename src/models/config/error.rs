@@ -3,95 +3,172 @@
 //! This module defines the error types that can occur during configuration
 //! loading and validation.
 
-use log::error;
-use std::{error::Error, fmt};
+use crate::utils::{ErrorContext, TraceableError};
+use std::collections::HashMap;
+use thiserror::Error as ThisError;
+use uuid::Uuid;
 
-/// Errors that can occur during configuration operations
-#[derive(Debug)]
-#[allow(clippy::enum_variant_names)]
+/// Represents errors that can occur during configuration operations
+#[derive(ThisError, Debug)]
 pub enum ConfigError {
-	/// Configuration validation failed
-	ValidationError(String),
+	/// Errors related to validation failures
+	#[error("Validation error: {0}")]
+	ValidationError(ErrorContext),
 
-	/// Failed to parse configuration file
-	ParseError(String),
+	/// Errors related to parsing failures
+	#[error("Parse error: {0}")]
+	ParseError(ErrorContext),
 
-	/// File system error during configuration loading
-	FileError(String),
+	/// Errors related to file system errors
+	#[error("File error: {0}")]
+	FileError(ErrorContext),
+
+	/// Other errors that don't fit into the categories above
+	#[error(transparent)]
+	Other(#[from] anyhow::Error),
 }
 
 impl ConfigError {
-	/// Format the error message for display
-	fn format_message(&self) -> String {
+	// Validation error
+	pub fn validation_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		// We explicitly do not use new_with_log here because we want to log the error
+		// at from the context of the repository
+		Self::ValidationError(ErrorContext::new(msg, source, metadata))
+	}
+
+	// Parse error
+	pub fn parse_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		// We explicitly do not use new_with_log here because we want to log the error
+		// at from the context of the repository
+		Self::ParseError(ErrorContext::new(msg, source, metadata))
+	}
+
+	// File error
+	pub fn file_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		// We explicitly do not use new_with_log here because we want to log the error
+		// at from the context of the repository
+		Self::FileError(ErrorContext::new(msg, source, metadata))
+	}
+}
+
+impl TraceableError for ConfigError {
+	fn trace_id(&self) -> String {
 		match self {
-			Self::ValidationError(msg) => format!("Validation error: {}", msg),
-			Self::ParseError(msg) => format!("Parse error: {}", msg),
-			Self::FileError(msg) => format!("File error: {}", msg),
+			Self::ValidationError(ctx) => ctx.trace_id.clone(),
+			Self::ParseError(ctx) => ctx.trace_id.clone(),
+			Self::FileError(ctx) => ctx.trace_id.clone(),
+			Self::Other(_) => Uuid::new_v4().to_string(),
 		}
 	}
-
-	/// Create a new validation error and log it
-	pub fn validation_error(msg: impl Into<String>) -> Self {
-		let error = Self::ValidationError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
-
-	/// Create a new parse error and log it
-	pub fn parse_error(msg: impl Into<String>) -> Self {
-		let error = Self::ParseError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
-
-	/// Create a new file error and log it
-	pub fn file_error(msg: impl Into<String>) -> Self {
-		let error = Self::FileError(msg.into());
-		error!("{}", error.format_message());
-		error
-	}
 }
-
-impl fmt::Display for ConfigError {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{}", self.format_message())
-	}
-}
-
-impl Error for ConfigError {}
 
 impl From<std::io::Error> for ConfigError {
 	fn from(err: std::io::Error) -> Self {
-		Self::file_error(err.to_string())
+		Self::file_error(err.to_string(), None, None)
 	}
 }
 
 impl From<serde_json::Error> for ConfigError {
 	fn from(err: serde_json::Error) -> Self {
-		Self::parse_error(err.to_string())
+		Self::parse_error(err.to_string(), None, None)
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::io::{Error as IoError, ErrorKind};
 
 	#[test]
 	fn test_validation_error_formatting() {
-		let error = ConfigError::validation_error("invalid config");
-		assert_eq!(error.to_string(), "Validation error: invalid config");
+		let error = ConfigError::validation_error("test error", None, None);
+		assert_eq!(error.to_string(), "Validation error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = ConfigError::validation_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Validation error: test error [key1=value1]"
+		);
 	}
 
 	#[test]
-	fn test_parse_error_formatting() {
-		let error = ConfigError::parse_error("malformed json");
-		assert_eq!(error.to_string(), "Parse error: malformed json");
+	fn test_execution_error_formatting() {
+		let error = ConfigError::parse_error("test error", None, None);
+		assert_eq!(error.to_string(), "Parse error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = ConfigError::parse_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(error.to_string(), "Parse error: test error [key1=value1]");
 	}
 
 	#[test]
-	fn test_file_error_formatting() {
-		let error = ConfigError::file_error("file not found");
-		assert_eq!(error.to_string(), "File error: file not found");
+	fn test_internal_error_formatting() {
+		let error = ConfigError::file_error("test error", None, None);
+		assert_eq!(error.to_string(), "File error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = ConfigError::file_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+
+		assert_eq!(error.to_string(), "File error: test error [key1=value1]");
+	}
+
+	#[test]
+	fn test_from_anyhow_error() {
+		let anyhow_error = anyhow::anyhow!("test anyhow error");
+		let config_error: ConfigError = anyhow_error.into();
+		assert!(matches!(config_error, ConfigError::Other(_)));
+		assert_eq!(config_error.to_string(), "test anyhow error");
+	}
+
+	#[test]
+	fn test_error_source_chain() {
+		let io_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+
+		let outer_error =
+			ConfigError::file_error("Failed to initialize", Some(Box::new(io_error)), None);
+
+		// Just test the string representation instead of the source chain
+		assert!(outer_error.to_string().contains("Failed to initialize"));
+
+		// For ConfigError::FileError, we know the implementation details
+		if let ConfigError::FileError(ctx) = &outer_error {
+			// Check that the context has the right message
+			assert_eq!(ctx.message, "Failed to initialize");
+
+			// Check that the context has the source error
+			assert!(ctx.source.is_some());
+
+			if let Some(src) = &ctx.source {
+				assert_eq!(src.to_string(), "while reading config");
+			}
+		} else {
+			panic!("Expected FileError variant");
+		}
 	}
 
 	#[test]
@@ -107,5 +184,33 @@ mod tests {
 		let serde_error = serde_json::from_str::<serde_json::Value>(json).unwrap_err();
 		let config_error: ConfigError = serde_error.into();
 		assert!(matches!(config_error, ConfigError::ParseError(_)));
+	}
+
+	#[test]
+	fn test_trace_id_propagation() {
+		// Create an error context with a known trace ID
+		let error_context = ErrorContext::new("Inner error", None, None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		// Wrap it in a ConfigError
+		let config_error = ConfigError::FileError(error_context);
+
+		// Verify the trace ID is preserved
+		assert_eq!(config_error.trace_id(), original_trace_id);
+
+		// Test trace ID propagation through error chain
+		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		let config_error = ConfigError::FileError(error_context);
+		assert_eq!(config_error.trace_id(), original_trace_id);
+
+		// Test Other variant
+		let anyhow_error = anyhow::anyhow!("Test anyhow error");
+		let config_error: ConfigError = anyhow_error.into();
+
+		// Other variant should generate a new UUID
+		assert!(!config_error.trace_id().is_empty());
 	}
 }

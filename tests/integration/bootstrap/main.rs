@@ -18,10 +18,9 @@ use openzeppelin_monitor::{
 		TriggerTypeConfig,
 	},
 	services::{
-		blockchain::BlockChainError,
 		filter::FilterService,
 		notification::NotificationService,
-		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait},
+		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 };
 
@@ -319,11 +318,9 @@ async fn test_create_block_handler_evm_client_error() {
 
 	let mut mock_pool = MockClientPool::new();
 
-	mock_pool.expect_get_evm_client().return_once(move |_| {
-		Err(BlockChainError::client_pool_error(
-			"Failed to get EVM client".to_string(),
-		))
-	});
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Err(anyhow::anyhow!("Failed to get EVM client")));
 
 	let client_pool = Arc::new(mock_pool);
 
@@ -360,11 +357,9 @@ async fn test_create_block_handler_stellar_client_error() {
 
 	let mut mock_pool = MockClientPool::new();
 
-	mock_pool.expect_get_stellar_client().return_once(move |_| {
-		Err(BlockChainError::client_pool_error(
-			"Failed to get Stellar client".to_string(),
-		))
-	});
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Err(anyhow::anyhow!("Failed to get Stellar client")));
 
 	let client_pool = Arc::new(mock_pool);
 
@@ -606,14 +601,8 @@ async fn test_load_scripts_error() {
 	// Test loading scripts
 	let result = trigger_execution_service.load_scripts(&monitors).await;
 	assert!(result.is_err());
-
-	match result {
-		Err(e) => {
-			assert!(matches!(e, TriggerError::ConfigurationError(_)));
-			assert!(e.to_string().contains("Failed to read script file"));
-		}
-		_ => panic!("Expected error"),
-	}
+	let error = result.unwrap_err();
+	assert!(error.to_string().contains("Failed to read script file"));
 }
 
 #[tokio::test]
@@ -764,7 +753,6 @@ async fn test_load_scripts_for_custom_triggers_notifications_error() {
 
 	match result {
 		Err(e) => {
-			assert!(matches!(e, TriggerError::ConfigurationError(_)));
 			assert!(e.to_string().contains("Failed to read script file"));
 		}
 		_ => panic!("Expected error"),
@@ -817,7 +805,6 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 	assert!(result.is_err());
 	match result {
 		Err(e) => {
-			assert!(matches!(e, TriggerError::ConfigurationError(_)));
 			assert!(e.to_string().contains("Failed to get trigger"));
 		}
 		_ => panic!("Expected error"),
@@ -904,18 +891,12 @@ async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 		.execute(&triggers, variables, &monitor_match, &HashMap::new())
 		.await;
 	assert!(result.is_err());
+
 	match result {
 		Err(e) => {
 			assert!(e
 				.to_string()
-				.contains("Multiple triggers failed (3 failures)"));
-			assert!(e
-				.to_string()
-				.contains("Webhook returned error status: 404 Not Found"));
-			assert!(e.to_string().contains("Script content not found"));
-			assert!(e
-				.to_string()
-				.contains("Slack webhook returned error status: 500 Internal Server Error"));
+				.contains("Some trigger(s) failed (3 failure(s))"));
 		}
 		_ => panic!("Expected error"),
 	}
@@ -1087,12 +1068,12 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 
 	// Assert all triggers executed successfully
 	assert!(result.is_err());
+
 	match result {
 		Err(e) => {
-			assert!(e.to_string().contains("Trigger failed"));
 			assert!(e
 				.to_string()
-				.contains("Slack webhook returned error status: 500 Internal Server Error"));
+				.contains("Some trigger(s) failed (1 failure(s))"));
 		}
 		_ => panic!("Expected error"),
 	}
