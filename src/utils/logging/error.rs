@@ -273,26 +273,19 @@ pub fn metadata_to_fields(metadata: &Option<HashMap<String, String>>) -> Vec<(&s
 
 /// Log the error with structured fields
 fn log_error(error: &ErrorContext) {
-	let fields = metadata_to_fields(&error.metadata);
-
-	// Record additional fields from metadata
-	for (key, value) in fields {
-		tracing::Span::current().record(key, value);
-	}
-
 	if let Some(err) = &error.source {
 		tracing::error!(
-			%error.message,
-			%error.trace_id,
-			%error.timestamp,
+			message = error.format_with_metadata(),
+			trace_id = %error.trace_id,
+			timestamp = %error.timestamp,
 			error.chain = %format_error_chain(&**err),
 			"Error occurred"
 		);
 	} else {
 		tracing::error!(
-			%error.message,
-			%error.trace_id,
-			%error.timestamp,
+			message = error.format_with_metadata(),
+			trace_id = %error.trace_id,
+			timestamp = %error.timestamp,
 			"Error occurred"
 		);
 	}
