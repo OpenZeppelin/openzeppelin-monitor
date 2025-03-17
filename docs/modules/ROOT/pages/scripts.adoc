@@ -1,9 +1,9 @@
 = Custom scripts
-:description: Documentation for the custom scripts implementation for filtering matches and handle custom notifications.
+:description: Documentation for implementing custom scripts to filter matches and handle notifications in OpenZeppelin Monitor.
 
-The OpenZeppelin Monitor includes the possibility of adding scripts to add extra filtering conditions to monitor matches and also to handle custom notifications.
+The OpenZeppelin Monitor allows you to implement custom scripts for additional filtering conditions on monitor matches and custom notification handling.
 
-== Custom Scripts for triggers
+== Custom Scripts for filters
 
 Custom scripts can be used to apply additional filtering conditions to the matches detected by the monitor. This allows users to refine the alerts they receive based on specific criteria relevant to their use case.
 
@@ -14,6 +14,11 @@ Create the script in one of the supported languages:
 - Bash
 - Python
 - JavaScript
+
+[WARNING]
+====
+Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
+====
 
 The script will receive a JSON object with the following structure:
 [source,json]
@@ -300,11 +305,6 @@ main() {
 main
 ----
 
-[WARNING]
-====
-Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
-====
-
 This script demonstrates a basic block number filter that processes EVM transactions based on their block number.
 It includes:
 
@@ -316,7 +316,7 @@ It includes:
 
 The script should print a boolean indicating whether the match should be filtered. Print `true` if the match needs to be filtered, otherwise print `false`. Only the LAST printed line will be considered for evaluation.
 
-* Performance considerations:
+=== Performance considerations:
 
 When running multiple scripts in parallel (the blocks are processed in parallel), it’s important to consider your operating system’s file descriptor limit. A file descriptor is a reference to an open file or resource, and most operating systems impose a limit on how many can be open simultaneously. To prevent issues, ensure that your system allows at least 2,048 file descriptors to be opened. If necessary, adjust this limit to accommodate the workload efficiently
 
@@ -392,11 +392,6 @@ main() {
 # Call main function
 main
 ----
-
-[WARNING]
-====
-Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
-====
 
 This script demonstrates how we can read the input.
 It includes:
