@@ -1,18 +1,18 @@
 = Quick Start Guide
-:description: This guide provides step-by-step instructions for setting up OpenZeppelin Monitor. It includes prerequisites, installation, and configuration examples.
+:description: This guide provides step-by-step instructions for setting up OpenZeppelin Monitor, including prerequisites, installation, and configuration examples.
 
 This guide provides step-by-step instructions for setting up OpenZeppelin Monitor. It includes prerequisites, installation, and configuration examples.
 
-== Prerequisites:
+== Prerequisites
 
 * Rust 2021 edition
 * Docker (optional, for containerized deployment)
 
-== Environment Configuration:
+== Environment Configuration
 
-=== Configuration Instructions:
+=== Logging Configuration
 
-Modify the configuration files with your preferred verbosity level:
+Configure the logging verbosity level:
 
 1. Error
 2. Warn
@@ -25,7 +25,7 @@ Modify the configuration files with your preferred verbosity level:
 RUST_LOG=info
 ----
 
-=== Local Configuration:
+=== Local Configuration
 
 Copy the example environment file and update values according to your needs
 
@@ -34,9 +34,9 @@ Copy the example environment file and update values according to your needs
 cp .env.example .env
 ----
 
-== Installation:
+== Installation
 
-=== Local Installation:
+=== Local Installation
 
 . Clone the repository:
 +
@@ -53,72 +53,72 @@ cd openzeppelin-monitor
 cargo build
 ----
 
-=== Standalone CLI
+=== Standalone CLI Usage
 
-. If you are directly using `openzeppelin-monitor` binary/cli. Please see list of options using:
+. View available options:
 +
 [source,bash]
 ----
 ./openzeppelin-monitor --help
 ----
 
-. To turn on log file mode you will need to pass `--log-file`.
+. Enable logging to file with `--log-file`
+. Enable metrics server with `--metrics`
 
-. To turn on metrics server, you will need to pass `--metrics`.
+=== Docker Installation
 
-=== Docker Installation:
+==== Basic Setup
 
-. Based on your `.env` file, docker compose may or may not start the metrics server (within monitor app container), prometheus and grafana.
-
-. If you want to start the metrics server, prometheus and grafana, make sure to set `METRICS_ENABLED=true` in your `.env` file.
-
-. If you want to start the services using make file target, you can use the following command to start the services:
+. Start the services using the make target:
 +
 [source,bash]
 ----
-# To Build image and run containers
 cargo make docker-compose-up
 ----
 
 [NOTE]
 ====
-By default docker compose command uses Dockerfile.development to build the image. If you want to use Dockerfile.production, you can set: `DOCKERFILE=Dockerfile.production` before running `cargo make docker-compose-up`.
+By default, Docker Compose uses `Dockerfile.development`. To use production settings, set:
+`DOCKERFILE=Dockerfile.production` before running the command.
 ====
 
-. We have a make file target to start the services with docker compose with metrics profile based on your `.env` file.
+==== Metrics Configuration
 
-. For metrics server you will need to make sure `METRICS_ENABLED=true` is set in your `.env` file. If you want to start the services directly using docker compose, you can use the following command:
-+
+The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
+
+You can start services directly with Docker Compose:
+
 [source,bash]
 ----
-# without metrics profile ( METRICS_ENABLED=false by default )
-# will only start the relayer app container and redis container
+# Without metrics (default)
 docker compose up -d
-# or with metrics profile ( METRICS_ENABLED=true in .env file )
-# docker compose --profile metrics up -d
+
+# With metrics enabled
+docker compose --profile metrics up -d
 ----
 
-. Make sure the containers are running without any restarts/issues:
+==== Management Commands
+
+. Verify container status:
 +
 [source,bash]
 ----
 docker ps -a
 ----
 
-. To stop the services, run the following command:
+. Stop services:
 +
 [source,bash]
 ----
 cargo make docker-compose-down
-# or
-# using docker compose without make target
+# or using docker compose directly:
 # without metrics profile
-# docker compose down
+docker compose down
 # or with metrics profile
-# docker compose --profile metrics down
+docker compose --profile metrics down
 ----
 
-. To check the logs of the services/containers, run the following command ( if running in default/stdout mode ):
+. View logs (stdout):
 +
 [source,bash]
 ----
@@ -127,10 +127,9 @@ docker compose logs -f
 
 [NOTE]
 ====
-By default we won't persist monitor data between container restarts, to do so:
+To persist monitor data between container restarts:
 [source,bash]
 ----
-# Create a Docker volume to persist monitor data between container restarts (optional)
 docker volume create openzeppelin-monitor-data
 ----
 ====

@@ -173,7 +173,7 @@ _Interactive HTML Report_
 RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
 ```
 
-_Terminal Report_
+_CLI Report_
 
 ```sh
 RUST_TEST_THREADS=1 cargo +stable llvm-cov
