@@ -456,6 +456,10 @@ print("true")
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
+		println!(
+			"result test_javascript_script_executor_success ====>: {:?}",
+			result
+		);
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -495,6 +499,10 @@ print("true")
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
+		println!(
+			"result test_javascript_script_executor_invalid_output ====>: {:?}",
+			result
+		);
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
