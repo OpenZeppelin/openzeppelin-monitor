@@ -3,6 +3,11 @@
 
 The OpenZeppelin Monitor allows you to implement custom scripts for additional filtering conditions on monitor matches and custom notification handling.
 
+[WARNING]
+====
+Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
+====
+
 == Custom Scripts for filters
 
 Custom scripts can be used to apply additional filtering conditions to the matches detected by the monitor. This allows users to refine the alerts they receive based on specific criteria relevant to their use case.
@@ -14,11 +19,6 @@ Create the script in one of the supported languages:
 - Bash
 - Python
 - JavaScript
-
-[WARNING]
-====
-Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
-====
 
 The script will receive a JSON object with the following structure:
 [source,json]
