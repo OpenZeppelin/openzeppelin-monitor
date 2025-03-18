@@ -214,14 +214,18 @@ async fn process_command(
 			.write_all(input_json.as_bytes())
 			.await
 			.map_err(|e| anyhow::anyhow!("Failed to write input to script: {}", e))?;
+
+		// Explicitly close stdin
+		stdin
+			.shutdown()
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to close stdin: {}", e))?;
 	} else {
 		return Err(anyhow::anyhow!("Failed to get stdin handle"));
 	}
 
-	// Define a timeout duration
 	let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
 
-	// Apply timeout to script execution
 	match timeout(timeout_duration, cmd.wait_with_output()).await {
 		Ok(result) => {
 			let output =
@@ -470,22 +474,18 @@ print("true")
 		// Read input from stdin
 		(async () => {
 			let input = '';
-
 			await new Promise((resolve, reject) => {
-				process.stdin.on('data', (chunk) => {
-					input += chunk;
-				});
-
+				process.stdin.on('data', chunk => input += chunk);
 				process.stdin.on('end', resolve);
-
 				process.stdin.on('error', reject);
 			});
 
 			try {
-				const data = JSON.parse(input);
+				JSON.parse(input);
 				console.log("debugging...");
 				console.log("finished");
 				console.log("not a boolean");
+				process.exit(0);
 			} catch (err) {
 				console.error(err);
 				process.exit(1);
