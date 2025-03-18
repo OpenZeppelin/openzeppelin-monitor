@@ -6,13 +6,13 @@
 //! - LOG_FILE_PATH: when using file mode, the path of the log file (default "logs/monitor.log")
 
 use chrono::Utc;
-use log::info;
 use simplelog::{Config, LevelFilter, SimpleLogger, WriteLogger};
 use std::{
 	env,
 	fs::{create_dir_all, metadata, File, OpenOptions},
 	path::Path,
 };
+use tracing::info;
 pub mod error;
 use super::error::ErrorContext;
 use std::collections::HashMap;
@@ -60,7 +60,7 @@ pub fn space_based_rolling(
 }
 
 /// Sets up logging by reading configuration from environment variables.
-pub fn setup_logging() {
+pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 	let log_mode = env::var("LOG_MODE").unwrap_or_else(|_| "stdout".to_string());
 
 	let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
@@ -140,6 +140,7 @@ pub fn setup_logging() {
 	}
 
 	info!("Logging is successfully configured (mode: {})", log_mode);
+	Ok(())
 }
 
 // Log errors

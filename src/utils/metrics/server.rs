@@ -4,9 +4,9 @@
 
 use actix_web::middleware::{Compress, DefaultHeaders, NormalizePath};
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{error, info};
 
 use crate::{
 	repositories::{

@@ -126,7 +126,9 @@ async fn main() -> Result<()> {
 	}
 
 	// Setup logging to stdout
-	setup_logging();
+	setup_logging().unwrap_or_else(|e| {
+		error!("Failed to setup logging: {}", e);
+	});
 
 	// Initialize repositories
 	let network_repo = Arc::new(Mutex::new(NetworkRepository::new(None)?));
@@ -255,57 +257,44 @@ async fn main() -> Result<()> {
 	}
 
 	info!("Service started. Press Ctrl+C to shutdown");
+
+	let ctrl_c = tokio::signal::ctrl_c();
+
 	if let Some(metrics_future) = metrics_server {
 		tokio::select! {
-			_ = tokio::signal::ctrl_c() => {
-				info!("Shutdown signal received, stopping services...");
-				let _ = shutdown_tx.send(true);
-
-				// Create a future for all network shutdown operations
-				let shutdown_futures = networks.values().map(|network| {
-					block_watcher.stop_network_watcher(&network.slug)
-				});
-
-				// Wait for all shutdown operations to complete
-				for result in futures::future::join_all(shutdown_futures).await {
+				result = ctrl_c => {
 					if let Err(e) = result {
-						error!("Error during shutdown: {}", e);
-					}
-				}
-
-				// Give some time for in-flight tasks to complete
-				tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+			  error!("Error waiting for Ctrl+C: {}", e);
 			}
-			result = metrics_future => {
-				if let Err(e) = result {
-					error!("Metrics server error: {}", e);
-				}
+			info!("Shutdown signal received, stopping services...");
+		  }
+		  result = metrics_future => {
+			if let Err(e) = result {
+			  error!("Metrics server error: {}", e);
 			}
+			info!("Metrics server stopped, shutting down services...");
+		  }
 		}
 	} else {
-		// No metrics server running
-		tokio::select! {
-			_ = tokio::signal::ctrl_c() => {
-				info!("Shutdown signal received, stopping services...");
-				let _ = shutdown_tx.send(true);
+		let _ = ctrl_c.await;
+		info!("Shutdown signal received, stopping services...");
+	}
 
-				// Create a future for all network shutdown operations
-				let shutdown_futures = networks.values().map(|network| {
-					block_watcher.stop_network_watcher(&network.slug)
-				});
+	// Common shutdown logic
+	let _ = shutdown_tx.send(true);
 
-				// Wait for all shutdown operations to complete
-				for result in futures::future::join_all(shutdown_futures).await {
-					if let Err(e) = result {
-						error!("Error during shutdown: {}", e);
-					}
-				}
+	// Create a future for all network shutdown operations
+	let shutdown_futures = networks
+		.values()
+		.map(|network| block_watcher.stop_network_watcher(&network.slug));
 
-				// Give some time for in-flight tasks to complete
-				tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-			}
+	for result in futures::future::join_all(shutdown_futures).await {
+		if let Err(e) = result {
+			error!("Error during shutdown: {}", e);
 		}
 	}
+
+	tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
 	info!("Shutdown complete");
 	Ok(())

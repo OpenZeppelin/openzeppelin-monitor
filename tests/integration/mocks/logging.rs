@@ -25,7 +25,7 @@ use lazy_static::lazy_static;
 lazy_static! {
 	// This will call setup_logging() the first time INIT_LOGGING is dereferenced.
 	static ref INIT_LOGGING: () = {
-		setup_logging();
+		let _ = setup_logging();
 	};
 }
 
@@ -49,7 +49,7 @@ fn test_invalid_log_max_size() {
 	env::set_var("LOG_MAX_SIZE", "invalid_value");
 
 	// Initialize separate from lazy static.
-	setup_logging();
+	let _ = setup_logging();
 }
 
 // This integration test simulates file logging
