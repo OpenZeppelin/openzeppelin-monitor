@@ -127,16 +127,22 @@ graph TD
 
 ### Project Structure
 
-- `src/`: Source code
-  - `models/`: Data structures and types
-  - `repositories/`: Configuration storage
-  - `services/`: Core business logic
-  - `utils/`: Helper functions
-- `config/`: Configuration files
-- `tests/`: Integration tests
-- `data/`: Runtime data storage
-- `docs/`: Documentation
-- `scripts/`: Utility scripts
+```
+project-root/
+├── src/                # Source code
+│   ├── bootstrap/      # Bootstrap functions for the application
+│   ├── models/         # Data structures and types
+│   ├── repositories/   # Configuration storage
+│   ├── services/       # Core business logic
+│   ├── utils/          # Helper functions
+│
+├── config/             # Configuration files
+├── tests/              # Integration and property-based tests
+├── data/               # Runtime data storage
+├── docs/               # Documentation
+├── scripts/            # Utility scripts
+├── cmd/                # Metrics and monitoring
+```
 
 ### Setup
 

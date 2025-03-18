@@ -42,7 +42,9 @@ The main source code directory contains the core implementation files organized 
 * `utils/`: Helper functions
 ** `cron_utils`: Cron schedule utilities
 ** `expression`: Expression evaluation
-** `error`: Error handling
+** `logging/`: Logging utilities
+** `metrics/`: Metrics utilities
+** `script/`: Script execution utilities
 
 == Configuration and Data:
 
@@ -59,7 +61,10 @@ Contains JSON configuration files for:
 
 * Trigger configurations (`triggers/`)
 ** Notification settings
-** Action definitions
+** Script definitions
+
+* Filter configurations (`filters/`)
+** Match filter scripts
 
 === `data/` Directory:
 Runtime data storage:
@@ -72,6 +77,16 @@ Runtime data storage:
 ====
 The `data/` and `config/` directories are gitignored except for example files. This directory is typically mounted as a Docker volume in production.
 ====
+
+== Metrics and Monitoring:
+
+=== `cmd/prometheus/` Directory:
+Prometheus exporters:
+
+* `dashboards/`: Grafana dashboards
+* `datasources/`: Prometheus datasources
+* `prometheus.yml`: Prometheus configuration
+* `grafana.ini`: Grafana configuration
 
 == Testing and Documentation:
 
