@@ -425,13 +425,19 @@ print("true")
 	async fn test_javascript_script_executor_success() {
 		let script_content = r#"
 		// Read input from stdin
-		let input = '';
-		process.stdin.on('data', (chunk) => {
-			input += chunk;
-		});
+		(async () => {
+			let input = '';
 
-		process.stdin.on('end', () => {
-			// Parse and validate input
+			await new Promise((resolve, reject) => {
+				process.stdin.on('data', (chunk) => {
+					input += chunk;
+				});
+
+				process.stdin.on('end', resolve);
+
+				process.stdin.on('error', reject);
+			});
+
 			try {
 				const data = JSON.parse(input);
 				console.log("debugging...");
@@ -441,7 +447,7 @@ print("true")
 				console.error(err);
 				process.exit(1);
 			}
-		});
+		})();
 		"#;
 
 		let executor = JavaScriptScriptExecutor {
@@ -458,13 +464,19 @@ print("true")
 	async fn test_javascript_script_executor_invalid_output() {
 		let script_content = r#"
 		// Read input from stdin
-		let input = '';
-		process.stdin.on('data', (chunk) => {
-			input += chunk;
-		});
+		(async () => {
+			let input = '';
 
-		process.stdin.on('end', () => {
-			// Parse and validate input
+			await new Promise((resolve, reject) => {
+				process.stdin.on('data', (chunk) => {
+					input += chunk;
+				});
+
+				process.stdin.on('end', resolve);
+
+				process.stdin.on('error', reject);
+			});
+
 			try {
 				const data = JSON.parse(input);
 				console.log("debugging...");
@@ -474,7 +486,7 @@ print("true")
 				console.error(err);
 				process.exit(1);
 			}
-		});
+		})();
 		"#;
 
 		let executor = JavaScriptScriptExecutor {
