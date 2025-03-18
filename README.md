@@ -85,6 +85,7 @@ graph TD
         Discord
         Telegram
         Webhook
+        Script
     end
 
     %% Block Processing Flow
@@ -109,6 +110,7 @@ graph TD
     NS --> Discord
     NS --> Telegram
     NS --> Webhook
+    NS --> Script
 
     style STL fill:#f0f0f0
 
@@ -120,7 +122,7 @@ graph TD
     class ETH,POL,BSC rpc
     class BS storage
     class BW,FS,TS,NS service
-    class Slack,Email,Discord,Telegram,Webhook notification
+    class Slack,Email,Discord,Telegram,Webhook,Script notification
 ```
 
 ### Project Structure
