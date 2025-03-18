@@ -44,7 +44,7 @@ use models::BlockChainType;
 use services::trigger::TriggerExecutionServiceTrait;
 use std::env::{set_var, var};
 use std::sync::Arc;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::watch;
 use tokio_cron_scheduler::JobScheduler;
 use tracing::{error, info};
 
@@ -130,20 +130,20 @@ async fn main() -> Result<()> {
 		error!("Failed to setup logging: {}", e);
 	});
 
-	// Initialize repositories
-	let network_repo = Arc::new(Mutex::new(NetworkRepository::new(None)?));
-	let trigger_repo = Arc::new(Mutex::new(TriggerRepository::new(None)?));
-	let monitor_repo = Arc::new(Mutex::new(MonitorRepository::<
+	let (
+		filter_service,
+		trigger_execution_service,
+		active_monitors,
+		networks,
+		monitor_repo,
+		network_repo,
+		trigger_repo,
+	) = initialize_services::<
+		MonitorRepository<NetworkRepository, TriggerRepository>,
 		NetworkRepository,
 		TriggerRepository,
-	>::new(None, None, None)?));
-
-	let (filter_service, trigger_execution_service, active_monitors, networks) =
-		initialize_services::<
-			MonitorRepository<NetworkRepository, TriggerRepository>,
-			NetworkRepository,
-			TriggerRepository,
-		>(None, None, None)?;
+	>(None, None, None)
+	.await?;
 
 	// Check if metrics should be enabled from either CLI flag or env var
 	let metrics_enabled =
@@ -283,7 +283,7 @@ async fn main() -> Result<()> {
 	// Common shutdown logic
 	let _ = shutdown_tx.send(true);
 
-	// Create a future for all network shutdown operations
+	// Future for all network shutdown operations
 	let shutdown_futures = networks
 		.values()
 		.map(|network| block_watcher.stop_network_watcher(&network.slug));

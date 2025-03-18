@@ -85,8 +85,8 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 	}
 }
 
-#[test]
-fn test_initialize_services() {
+#[tokio::test]
+async fn test_initialize_services() {
 	let mut mocked_networks = HashMap::new();
 	mocked_networks.insert(
 		"ethereum_mainnet".to_string(),
@@ -115,13 +115,21 @@ fn test_initialize_services() {
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
 	// Initialize services
-	let (filter_service, trigger_execution_service, active_monitors, networks) =
-		initialize_services(
-			Some(mock_monitor_service),
-			Some(mock_network_service),
-			Some(mock_trigger_service),
-		)
-		.expect("Failed to initialize services");
+	let (
+		filter_service,
+		trigger_execution_service,
+		active_monitors,
+		networks,
+		monitor_repo,
+		network_repo,
+		trigger_repo,
+	) = initialize_services(
+		Some(mock_monitor_service),
+		Some(mock_network_service),
+		Some(mock_trigger_service),
+	)
+	.await
+	.expect("Failed to initialize services");
 
 	assert!(
 		Arc::strong_count(&filter_service) == 1,
@@ -137,6 +145,10 @@ fn test_initialize_services() {
 		&& m.triggers
 			.contains(&"evm_large_transfer_usdc_slack".to_string())));
 	assert!(networks.contains_key("ethereum_mainnet"));
+
+	assert!(Arc::strong_count(&monitor_repo) >= 1);
+	assert!(Arc::strong_count(&network_repo) >= 1);
+	assert!(Arc::strong_count(&trigger_repo) >= 1);
 }
 
 #[tokio::test]

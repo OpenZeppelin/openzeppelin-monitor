@@ -17,7 +17,7 @@
 
 use futures::future::BoxFuture;
 use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 
 use crate::{
 	models::{
@@ -39,11 +39,15 @@ use crate::{
 
 /// Type alias for handling ServiceResult
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
-type ServiceResult<T> = Result<(
+
+type ServiceResult<M, N, T> = Result<(
 	Arc<FilterService>,
 	Arc<TriggerExecutionService<T>>,
 	Vec<Monitor>,
 	HashMap<String, Network>,
+	Arc<Mutex<M>>,
+	Arc<Mutex<N>>,
+	Arc<Mutex<T>>,
 )>;
 
 /// Initializes all required services for the blockchain monitor.
@@ -54,45 +58,48 @@ type ServiceResult<T> = Result<(
 /// - TriggerExecutionService: Manages trigger execution
 /// - `Vec<Monitor>`: List of active monitors
 /// - `HashMap<String, Network>`: Available networks indexed by slug
-///
+/// - `Arc<Mutex<M>>`: Data access for monitor configs
+/// - `Arc<Mutex<N>>`: Data access for network configs
+/// - `Arc<Mutex<T>>`: Data access for trigger configs
 /// # Errors
 /// Returns an error if any service initialization fails
-pub fn initialize_services<M, N, T>(
+pub async fn initialize_services<M, N, T>(
 	monitor_service: Option<MonitorService<M, N, T>>,
 	network_service: Option<NetworkService<N>>,
 	trigger_service: Option<TriggerService<T>>,
-) -> ServiceResult<T>
+) -> ServiceResult<M, N, T>
 where
-	M: MonitorRepositoryTrait<N, T>,
-	N: NetworkRepositoryTrait,
-	T: TriggerRepositoryTrait,
+	M: MonitorRepositoryTrait<N, T> + Send + 'static,
+	N: NetworkRepositoryTrait + Send + 'static,
+	T: TriggerRepositoryTrait + Send + 'static,
 {
+	// Create repositories
+	let network_repo = Arc::new(Mutex::new(N::new(None)?));
+	let trigger_repo = Arc::new(Mutex::new(T::new(None)?));
+
 	let network_service = match network_service {
 		Some(service) => service,
-		None => {
-			let repository = N::new(None)?;
-			NetworkService::<N>::new_with_repository(repository)?
-		}
+		None => NetworkService::<N>::new_with_repository(network_repo.lock().await.clone())?,
 	};
 
 	let trigger_service = match trigger_service {
 		Some(service) => service,
-		None => {
-			let repository = T::new(None)?;
-			TriggerService::<T>::new_with_repository(repository)?
-		}
+		None => TriggerService::<T>::new_with_repository(trigger_repo.lock().await.clone())?,
 	};
 
-	let monitor_service = match monitor_service {
+	let monitor_repo = Arc::new(Mutex::new(M::new(
+		None,
+		Some(network_service.clone()),
+		Some(trigger_service.clone()),
+	)?));
+
+	// Get data from repositories
+	let networks = network_repo.lock().await.get_all();
+	let monitors = monitor_repo.lock().await.get_all();
+
+	let _monitor_service = match monitor_service {
 		Some(service) => service,
-		None => {
-			let repository = M::new(
-				None,
-				Some(network_service.clone()),
-				Some(trigger_service.clone()),
-			)?;
-			MonitorService::<M, N, T>::new_with_repository(repository)?
-		}
+		None => MonitorService::<M, N, T>::new_with_repository(monitor_repo.lock().await.clone())?,
 	};
 
 	let notification_service = NotificationService::new();
@@ -103,15 +110,16 @@ where
 		notification_service,
 	));
 
-	let monitors = monitor_service.get_all();
 	let active_monitors = filter_active_monitors(monitors);
-	let networks = network_service.get_all();
 
 	Ok((
 		filter_service,
 		trigger_execution_service,
 		active_monitors,
 		networks,
+		monitor_repo,
+		network_repo,
+		trigger_repo,
 	))
 }
 
