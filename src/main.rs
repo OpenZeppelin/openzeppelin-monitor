@@ -142,8 +142,7 @@ async fn main() -> Result<()> {
 		MonitorRepository<NetworkRepository, TriggerRepository>,
 		NetworkRepository,
 		TriggerRepository,
-	>(None, None, None)
-	.await?;
+	>(None, None, None)?;
 
 	// Check if metrics should be enabled from either CLI flag or env var
 	let metrics_enabled =

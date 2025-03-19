@@ -63,44 +63,42 @@ type ServiceResult<M, N, T> = Result<(
 /// - `Arc<Mutex<T>>`: Data access for trigger configs
 /// # Errors
 /// Returns an error if any service initialization fails
-pub async fn initialize_services<M, N, T>(
+pub fn initialize_services<M, N, T>(
 	monitor_service: Option<MonitorService<M, N, T>>,
 	network_service: Option<NetworkService<N>>,
 	trigger_service: Option<TriggerService<T>>,
 ) -> ServiceResult<M, N, T>
 where
-	M: MonitorRepositoryTrait<N, T> + Send + 'static,
-	N: NetworkRepositoryTrait + Send + 'static,
-	T: TriggerRepositoryTrait + Send + 'static,
+	M: MonitorRepositoryTrait<N, T>,
+	N: NetworkRepositoryTrait,
+	T: TriggerRepositoryTrait,
 {
-	// Create repositories
-	let network_repo = Arc::new(Mutex::new(N::new(None)?));
-	let trigger_repo = Arc::new(Mutex::new(T::new(None)?));
-
 	let network_service = match network_service {
 		Some(service) => service,
-		None => NetworkService::<N>::new_with_repository(network_repo.lock().await.clone())?,
+		None => {
+			let repository = N::new(None)?;
+			NetworkService::<N>::new_with_repository(repository)?
+		}
 	};
 
 	let trigger_service = match trigger_service {
 		Some(service) => service,
-		None => TriggerService::<T>::new_with_repository(trigger_repo.lock().await.clone())?,
+		None => {
+			let repository = T::new(None)?;
+			TriggerService::<T>::new_with_repository(repository)?
+		}
 	};
 
-	let monitor_repo = Arc::new(Mutex::new(M::new(
-		None,
-		Some(network_service.clone()),
-		Some(trigger_service.clone()),
-	)?));
-
-	// Get data from repositories
-	let _ = network_repo.lock().await.get_all();
-	let _ = monitor_repo.lock().await.get_all();
-
-	let monitors = match monitor_service.as_ref() {
-		Some(service) => service.get_all(),
-		None => MonitorService::<M, N, T>::new_with_repository(monitor_repo.lock().await.clone())?
-			.get_all(),
+	let monitor_service = match monitor_service {
+		Some(service) => service,
+		None => {
+			let repository = M::new(
+				None,
+				Some(network_service.clone()),
+				Some(trigger_service.clone()),
+			)?;
+			MonitorService::<M, N, T>::new_with_repository(repository)?
+		}
 	};
 
 	let notification_service = NotificationService::new();
@@ -111,6 +109,7 @@ where
 		notification_service,
 	));
 
+	let monitors = monitor_service.get_all();
 	let active_monitors = filter_active_monitors(monitors);
 	let networks = network_service.get_all();
 
@@ -119,7 +118,7 @@ where
 		trigger_execution_service,
 		active_monitors,
 		networks,
-		Arc::new(Mutex::new(monitor_service.unwrap())),
+		Arc::new(Mutex::new(monitor_service)),
 		Arc::new(Mutex::new(network_service)),
 		Arc::new(Mutex::new(trigger_service)),
 	))

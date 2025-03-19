@@ -138,7 +138,6 @@ async fn test_initialize_services() {
 		Some(mock_network_service),
 		Some(mock_trigger_service),
 	)
-	.await
 	.expect("Failed to initialize services");
 
 	assert!(
