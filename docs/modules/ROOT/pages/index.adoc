@@ -669,8 +669,6 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 **Security Risk**: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
 ====
 
-For detailed information about custom scripts, see xref:scripts.adoc[Custom Scripts Section].
-
 ==== Available Template Variables
 
 ===== Common Variables
