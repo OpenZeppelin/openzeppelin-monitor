@@ -5,8 +5,8 @@ use crate::integration::{
 	},
 	mocks::{
 		create_test_block, create_test_network, create_test_transaction, MockAlloyTransportClient,
-		MockClientPool, MockEvmClientTrait, MockStellarClientTrait, MockTriggerExecutionService,
-		MockTriggerRepository,
+		MockClientPool, MockEvmClientTrait, MockMonitorRepository, MockNetworkRepository,
+		MockStellarClientTrait, MockTriggerExecutionService, MockTriggerRepository,
 	},
 };
 use openzeppelin_monitor::{
@@ -114,16 +114,26 @@ async fn test_initialize_services() {
 	let mock_trigger_service = setup_trigger_service(mocked_triggers);
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
+	// MockNetworkRepository::new_context()
+	//   .expect()
+	//   .withf(|path: &Option<&Path>| path.is_none())
+	//   .times(1)
+	//   .returning(|_path| Ok(MockNetworkRepository::default()));
+
 	// Initialize services
 	let (
 		filter_service,
 		trigger_execution_service,
 		active_monitors,
 		networks,
-		monitor_repo,
-		network_repo,
-		trigger_repo,
-	) = initialize_services(
+		monitor_service,
+		network_service,
+		trigger_service,
+	) = initialize_services::<
+		MockMonitorRepository<MockNetworkRepository, MockTriggerRepository>,
+		MockNetworkRepository,
+		MockTriggerRepository,
+	>(
 		Some(mock_monitor_service),
 		Some(mock_network_service),
 		Some(mock_trigger_service),
@@ -146,9 +156,9 @@ async fn test_initialize_services() {
 			.contains(&"evm_large_transfer_usdc_slack".to_string())));
 	assert!(networks.contains_key("ethereum_mainnet"));
 
-	assert!(Arc::strong_count(&monitor_repo) >= 1);
-	assert!(Arc::strong_count(&network_repo) >= 1);
-	assert!(Arc::strong_count(&trigger_repo) >= 1);
+	assert!(Arc::strong_count(&monitor_service) >= 1);
+	assert!(Arc::strong_count(&network_service) >= 1);
+	assert!(Arc::strong_count(&trigger_service) >= 1);
 }
 
 #[tokio::test]
