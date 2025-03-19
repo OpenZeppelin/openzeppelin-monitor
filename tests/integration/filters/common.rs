@@ -4,7 +4,7 @@
 //! test environments for both EVM and Stellar chain tests.
 
 use openzeppelin_monitor::{
-	models::{BlockType, Monitor, Network, Trigger},
+	models::{BlockType, EVMTransactionReceipt, Monitor, Network, Trigger},
 	repositories::{MonitorService, NetworkService, TriggerRepositoryTrait, TriggerService},
 	services::notification::NotificationService,
 };
@@ -17,10 +17,12 @@ use crate::integration::mocks::{
 
 pub const TEST_FIXTURES_BASE: &str = "tests/integration/fixtures";
 
+#[derive(Clone)]
 pub struct TestData {
 	pub blocks: Vec<BlockType>,
 	pub monitor: Monitor,
 	pub network: Network,
+	pub receipts: Vec<EVMTransactionReceipt>,
 }
 
 pub fn load_test_data(chain: &str) -> TestData {
@@ -30,10 +32,17 @@ pub fn load_test_data(chain: &str) -> TestData {
 	let monitor: Monitor = read_and_parse_json(&format!("{}/monitors/monitor.json", base_path));
 	let network: Network = read_and_parse_json(&format!("{}/networks/network.json", base_path));
 
+	let receipts: Vec<EVMTransactionReceipt> = if chain == "evm" {
+		read_and_parse_json(&format!("{}/transaction_receipts.json", base_path))
+	} else {
+		Vec::new()
+	};
+
 	TestData {
 		blocks,
 		monitor,
 		network,
+		receipts,
 	}
 }
 

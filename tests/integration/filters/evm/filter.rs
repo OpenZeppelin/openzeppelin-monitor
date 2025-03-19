@@ -3,6 +3,7 @@
 //! Tests the monitoring functionality for EVM-compatible blockchains,
 //! including event and transaction filtering.
 
+use serde_json::json;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
@@ -16,7 +17,32 @@ use openzeppelin_monitor::{
 	},
 };
 
-use crate::integration::filters::common::{load_test_data, setup_trigger_execution_service};
+use crate::integration::{
+	filters::common::{load_test_data, setup_trigger_execution_service, TestData},
+	mocks::MockAlloyTransportClient,
+};
+
+fn setup_mock_transport(test_data: TestData) -> MockAlloyTransportClient {
+	let mut mock_transport = MockAlloyTransportClient::new();
+	let counter = std::sync::atomic::AtomicUsize::new(0);
+	let receipts = test_data.receipts;
+
+	mock_transport
+		.expect_send_raw_request()
+		.times(3)
+		.returning(move |method, _params| {
+			let current = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+			match (method, current) {
+				("net_version", _) => Ok(json!({"result": "1"})),
+				("eth_getTransactionReceipt", i) => Ok(json!({
+					"result": &receipts[i]
+				})),
+				_ => Err(anyhow::anyhow!("Unexpected method call")),
+			}
+		});
+
+	mock_transport
+}
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.functions = vec![];
@@ -75,7 +101,9 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 
 	let monitor = make_monitor_with_events(test_data.monitor, false);
 
@@ -120,7 +148,9 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 
 	let monitor = make_monitor_with_events(test_data.monitor, true);
 
@@ -185,7 +215,9 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 
 	let monitor = make_monitor_with_functions(test_data.monitor, false);
 
@@ -228,7 +260,9 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 
 	let monitor = make_monitor_with_functions(test_data.monitor, true);
 
@@ -284,7 +318,9 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 
 	let monitor = make_monitor_with_transactions(test_data.monitor, false);
 
@@ -325,7 +361,9 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 
 	let monitor = make_monitor_with_transactions(test_data.monitor, true);
 
@@ -368,7 +406,9 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 
 	let matches = filter_service
 		.filter_block(
@@ -452,7 +492,9 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
 	let test_data = load_test_data("evm");
 	let filter_service = FilterService::new();
-	let client = EvmClient::new(&test_data.network).await.unwrap();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
 	let trigger_scripts = HashMap::new();
 
 	let mut trigger_execution_service =
