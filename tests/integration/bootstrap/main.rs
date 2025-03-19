@@ -114,12 +114,6 @@ async fn test_initialize_services() {
 	let mock_trigger_service = setup_trigger_service(mocked_triggers);
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
-	// MockNetworkRepository::new_context()
-	//   .expect()
-	//   .withf(|path: &Option<&Path>| path.is_none())
-	//   .times(1)
-	//   .returning(|_path| Ok(MockNetworkRepository::default()));
-
 	// Initialize services
 	let (
 		filter_service,
