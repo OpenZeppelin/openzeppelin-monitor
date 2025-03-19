@@ -199,8 +199,6 @@ RUST_TEST_THREADS=1 cargo +stable llvm-cov
   - Event-triggered notifications only populate event variables.
   - Function-triggered notifications only populate function variables.
   - Mixing contexts results in empty values.
-- Custom scripts for notifications:
-  - Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
 
 ## Contributing
 

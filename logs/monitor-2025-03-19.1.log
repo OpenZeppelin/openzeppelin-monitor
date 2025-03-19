@@ -1,0 +1,67 @@
+2025-03-19T14:56:42.336314Z  INFO openzeppelin_monitor::utils::logging: Logging is successfully configured (mode: file)
+2025-03-19T14:56:42.359380Z  INFO openzeppelin_monitor: Metrics server disabled. Use --metrics flag or METRICS_ENABLED=true to enable
+2025-03-19T14:56:43.576014Z  INFO tokio_cron_scheduler::job_scheduler: Uninited
+2025-03-19T14:56:43.577936Z  INFO tokio_cron_scheduler::job_scheduler: Job creator created
+2025-03-19T14:56:43.578469Z  INFO openzeppelin_monitor::services::blockwatcher::service: Started block watcher for network: stellar_mainnet
+2025-03-19T14:56:44.789615Z  INFO tokio_cron_scheduler::job_scheduler: Uninited
+2025-03-19T14:56:44.790283Z  INFO tokio_cron_scheduler::job_scheduler: Job creator created
+2025-03-19T14:56:44.790800Z  INFO openzeppelin_monitor::services::blockwatcher::service: Started block watcher for network: ethereum_mainnet
+2025-03-19T14:56:45.768462Z  INFO tokio_cron_scheduler::job_scheduler: Uninited
+2025-03-19T14:56:45.768779Z  INFO tokio_cron_scheduler::job_scheduler: Job creator created
+2025-03-19T14:56:45.768988Z  INFO openzeppelin_monitor::services::blockwatcher::service: Started block watcher for network: unichain_sepolia
+2025-03-19T14:56:45.769134Z  INFO openzeppelin_monitor: Service started. Press Ctrl+C to shutdown
+2025-03-19T14:57:01.238410Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processing blocks:
+	Last processed block: 56222977
+	Latest confirmed block: 56222998
+	Start block: 56222978
+	Confirmations required: 2
+	Max past blocks: 20 network: "stellar_mainnet"
+2025-03-19T14:57:01.418511Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processing blocks:
+	Last processed block: 15543667
+	Latest confirmed block: 15543790
+	Start block: 15543728 (skipped 60 blocks)
+	Confirmations required: 1
+	Max past blocks: 62 network: "unichain_sepolia"
+2025-03-19T14:57:01.551901Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processing blocks:
+	Last processed block: 22081632
+	Latest confirmed block: 22081642
+	Start block: 22081633
+	Confirmations required: 12
+	Max past blocks: 18 network: "ethereum_mainnet"
+2025-03-19T14:57:06.618133Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processed 63 blocks in 6288ms network: "unichain_sepolia"
+2025-03-19T14:57:08.752265Z  WARN filter_block:get_transactions: reqwest_retry::middleware: Retry attempt #0. Sleeping 99.999ms before the next attempt network: stellar_mainnet
+2025-03-19T14:57:08.758654Z  WARN filter_block:get_transactions: reqwest_retry::middleware: Retry attempt #0. Sleeping 100ms before the next attempt network: stellar_mainnet
+2025-03-19T14:57:09.021654Z  WARN filter_block:get_transactions: reqwest_retry::middleware: Retry attempt #0. Sleeping 100ms before the next attempt network: stellar_mainnet
+2025-03-19T14:57:09.053842Z  WARN filter_block:get_transactions: reqwest_retry::middleware: Retry attempt #0. Sleeping 100ms before the next attempt network: stellar_mainnet
+2025-03-19T14:57:10.183322Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processed 10 blocks in 9825ms network: "ethereum_mainnet"
+2025-03-19T14:57:11.707679Z  WARN filter_block:get_events: reqwest_retry::middleware: Retry attempt #0. Sleeping 99.999ms before the next attempt network: stellar_mainnet
+2025-03-19T14:57:13.717567Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processed 21 blocks in 13567ms network: "stellar_mainnet"
+2025-03-19T14:58:01.323195Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processing blocks:
+	Last processed block: 22081642
+	Latest confirmed block: 22081646
+	Start block: 22081643
+	Confirmations required: 12
+	Max past blocks: 18 network: "ethereum_mainnet"
+2025-03-19T14:58:01.350933Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processing blocks:
+	Last processed block: 15543790
+	Latest confirmed block: 15543850
+	Start block: 15543791
+	Confirmations required: 1
+	Max past blocks: 62 network: "unichain_sepolia"
+2025-03-19T14:58:01.551065Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processing blocks:
+	Last processed block: 56222998
+	Latest confirmed block: 56223009
+	Start block: 56222999
+	Confirmations required: 2
+	Max past blocks: 20 network: "stellar_mainnet"
+2025-03-19T14:58:02.886995Z ERROR openzeppelin_monitor::utils::logging::error: Error occurred, Failed to process blocks [network=unichain_sepolia], trace_id: 8e4e6e98-fa33-4c3d-b32d-f0e784780ce9, timestamp: 2025-03-19T14:58:02.886740+00:00, error.chain: Failed to get blocks from 15543791 to 15543850
+	Caused by: Failed to get block: 15543849
+	Caused by: HTTP error 400 Bad Request: {"jsonrpc":"2.0","error":{"code":-32019,"message":"block is out of range"},"id":1}
+
+2025-03-19T14:58:06.427812Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processed 4 blocks in 6352ms network: "ethereum_mainnet"
+2025-03-19T14:58:11.873959Z  INFO process_new_blocks: openzeppelin_monitor::services::blockwatcher::service: Processed 11 blocks in 11509ms network: "stellar_mainnet"
+2025-03-19T14:58:51.817144Z  INFO openzeppelin_monitor: Shutdown signal received, stopping services...
+2025-03-19T14:58:51.818071Z  INFO openzeppelin_monitor::services::blockwatcher::service: Stopped block watcher for network: stellar_mainnet
+2025-03-19T14:58:51.818751Z  INFO openzeppelin_monitor::services::blockwatcher::service: Stopped block watcher for network: ethereum_mainnet
+2025-03-19T14:58:51.819286Z  INFO openzeppelin_monitor::services::blockwatcher::service: Stopped block watcher for network: unichain_sepolia
+2025-03-19T14:58:52.821552Z  INFO openzeppelin_monitor: Shutdown complete
