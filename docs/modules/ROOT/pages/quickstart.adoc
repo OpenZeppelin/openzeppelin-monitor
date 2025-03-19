@@ -90,7 +90,7 @@ You can start services directly with Docker Compose:
 
 [source,bash]
 ----
-# Without metrics (default)
+# without metrics profile ( METRICS_ENABLED=false by default )
 docker compose up -d
 
 # With metrics enabled

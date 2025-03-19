@@ -135,9 +135,9 @@ async fn main() -> Result<()> {
 		trigger_execution_service,
 		active_monitors,
 		networks,
-		monitor_repo,
-		network_repo,
-		trigger_repo,
+		monitor_service,
+		network_service,
+		trigger_service,
 	) = initialize_services::<
 		MonitorRepository<NetworkRepository, TriggerRepository>,
 		NetworkRepository,
@@ -170,9 +170,9 @@ async fn main() -> Result<()> {
 		// Create the metrics server future
 		match create_metrics_server(
 			metrics_address,
-			Arc::clone(&monitor_repo),
-			Arc::clone(&network_repo),
-			Arc::clone(&trigger_repo),
+			monitor_service.clone(),
+			network_service.clone(),
+			trigger_service.clone(),
 		) {
 			Ok(server) => Some(server),
 			Err(e) => {

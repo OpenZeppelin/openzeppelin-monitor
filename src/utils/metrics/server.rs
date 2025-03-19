@@ -10,26 +10,64 @@ use tracing::{error, info};
 
 use crate::{
 	repositories::{
-		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkRepositoryTrait,
-		TriggerRepository, TriggerRepositoryTrait,
+		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
+		TriggerService,
 	},
 	utils::metrics::{gather_metrics, update_monitoring_metrics, update_system_metrics},
 };
 
+// Type aliases to simplify complex types in function signatures
+
+//  MonitorService
+pub type MonitorServiceData = web::Data<
+	Arc<
+		Mutex<
+			MonitorService<
+				MonitorRepository<NetworkRepository, TriggerRepository>,
+				NetworkRepository,
+				TriggerRepository,
+			>,
+		>,
+	>,
+>;
+
+// NetworkService
+pub type NetworkServiceData = web::Data<Arc<Mutex<NetworkService<NetworkRepository>>>>;
+
+// TriggerService
+pub type TriggerServiceData = web::Data<Arc<Mutex<TriggerService<TriggerRepository>>>>;
+
+// For Arc<Mutex<...>> MonitorService
+pub type MonitorServiceArc = Arc<
+	Mutex<
+		MonitorService<
+			MonitorRepository<NetworkRepository, TriggerRepository>,
+			NetworkRepository,
+			TriggerRepository,
+		>,
+	>,
+>;
+
+// For Arc<Mutex<...>> NetworkService
+pub type NetworkServiceArc = Arc<Mutex<NetworkService<NetworkRepository>>>;
+
+// For Arc<Mutex<...>> TriggerService
+pub type TriggerServiceArc = Arc<Mutex<TriggerService<TriggerRepository>>>;
+
 /// Metrics endpoint handler
 async fn metrics_handler(
-	monitor_repo: web::Data<Arc<Mutex<MonitorRepository<NetworkRepository, TriggerRepository>>>>,
-	network_repo: web::Data<Arc<Mutex<NetworkRepository>>>,
-	trigger_repo: web::Data<Arc<Mutex<TriggerRepository>>>,
+	monitor_service: MonitorServiceData,
+	network_service: NetworkServiceData,
+	trigger_service: TriggerServiceData,
 ) -> impl Responder {
 	// Update system metrics
 	update_system_metrics();
 
 	// Get current state and update metrics
 	{
-		let monitors = monitor_repo.lock().await.get_all();
-		let networks = network_repo.lock().await.get_all();
-		let triggers = trigger_repo.lock().await.get_all();
+		let monitors = monitor_service.lock().await.get_all();
+		let networks = network_service.lock().await.get_all();
+		let triggers = trigger_service.lock().await.get_all();
 
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 	}
@@ -49,9 +87,9 @@ async fn metrics_handler(
 // Create metrics server
 pub fn create_metrics_server(
 	bind_address: String,
-	monitor_repo: Arc<Mutex<MonitorRepository<NetworkRepository, TriggerRepository>>>,
-	network_repo: Arc<Mutex<NetworkRepository>>,
-	trigger_repo: Arc<Mutex<TriggerRepository>>,
+	monitor_service: MonitorServiceArc,
+	network_service: NetworkServiceArc,
+	trigger_service: TriggerServiceArc,
 ) -> std::io::Result<actix_web::dev::Server> {
 	let actual_bind_address = if std::env::var("IN_DOCKER").unwrap_or_default() == "true" {
 		if let Some(port) = bind_address.split(':').nth(1) {
@@ -73,9 +111,9 @@ pub fn create_metrics_server(
 			.wrap(Compress::default())
 			.wrap(NormalizePath::trim())
 			.wrap(DefaultHeaders::new())
-			.app_data(web::Data::new(Arc::clone(&monitor_repo)))
-			.app_data(web::Data::new(Arc::clone(&network_repo)))
-			.app_data(web::Data::new(Arc::clone(&trigger_repo)))
+			.app_data(web::Data::new(monitor_service.clone()))
+			.app_data(web::Data::new(network_service.clone()))
+			.app_data(web::Data::new(trigger_service.clone()))
 			.route("/metrics", web::get().to(metrics_handler))
 	})
 	.workers(2)

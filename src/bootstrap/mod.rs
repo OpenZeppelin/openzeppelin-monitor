@@ -45,9 +45,9 @@ type ServiceResult<M, N, T> = Result<(
 	Arc<TriggerExecutionService<T>>,
 	Vec<Monitor>,
 	HashMap<String, Network>,
-	Arc<Mutex<M>>,
-	Arc<Mutex<N>>,
-	Arc<Mutex<T>>,
+	Arc<Mutex<MonitorService<M, N, T>>>,
+	Arc<Mutex<NetworkService<N>>>,
+	Arc<Mutex<TriggerService<T>>>,
 )>;
 
 /// Initializes all required services for the blockchain monitor.
@@ -94,32 +94,34 @@ where
 	)?));
 
 	// Get data from repositories
-	let networks = network_repo.lock().await.get_all();
-	let monitors = monitor_repo.lock().await.get_all();
+	let _ = network_repo.lock().await.get_all();
+	let _ = monitor_repo.lock().await.get_all();
 
-	let _monitor_service = match monitor_service {
-		Some(service) => service,
-		None => MonitorService::<M, N, T>::new_with_repository(monitor_repo.lock().await.clone())?,
+	let monitors = match monitor_service.as_ref() {
+		Some(service) => service.get_all(),
+		None => MonitorService::<M, N, T>::new_with_repository(monitor_repo.lock().await.clone())?
+			.get_all(),
 	};
 
 	let notification_service = NotificationService::new();
 
 	let filter_service = Arc::new(FilterService::new());
 	let trigger_execution_service = Arc::new(TriggerExecutionService::new(
-		trigger_service,
+		trigger_service.clone(),
 		notification_service,
 	));
 
 	let active_monitors = filter_active_monitors(monitors);
+	let networks = network_service.get_all();
 
 	Ok((
 		filter_service,
 		trigger_execution_service,
 		active_monitors,
 		networks,
-		monitor_repo,
-		network_repo,
-		trigger_repo,
+		Arc::new(Mutex::new(monitor_service.unwrap())),
+		Arc::new(Mutex::new(network_service)),
+		Arc::new(Mutex::new(trigger_service)),
 	))
 }
 
