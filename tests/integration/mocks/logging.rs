@@ -6,8 +6,9 @@
 //! - LOG_FILE_PATH: when using file mode, the path of the log file (default "logs/monitor.log")
 //!   Refer to `src/logging/mod.rs` for more details.
 use chrono::Utc;
-use openzeppelin_monitor::utils::logging::{
-	setup_logging, space_based_rolling, time_based_rolling,
+use openzeppelin_monitor::utils::{
+	compute_rolled_file_path,
+	logging::{setup_logging, space_based_rolling},
 };
 use std::{
 	env, fs,
@@ -30,7 +31,7 @@ lazy_static! {
 }
 
 pub fn compute_final_log_path(base_file_path: &str, date_str: &str, max_size: u64) -> String {
-	let time_based_path = time_based_rolling(base_file_path, date_str, 1);
+	let time_based_path = compute_rolled_file_path(base_file_path, date_str, 1);
 	space_based_rolling(&time_based_path, base_file_path, date_str, max_size)
 }
 
@@ -81,7 +82,7 @@ fn test_setup_logging_file_mode_creates_log_file() {
 	let date_str = now.format("%Y-%m-%d").to_string();
 	let expected_path: String = {
 		let base = format!("{}/monitor.log", temp_log_dir);
-		time_based_rolling(&base, &date_str, 1)
+		compute_rolled_file_path(&base, &date_str, 1)
 	};
 
 	assert!(
@@ -145,7 +146,7 @@ fn test_space_based_rolling_returns_original_when_under_max_size() {
 	let base_file_path = format!("{}/test_monitor.log", temp_log_dir);
 	let now = Utc::now();
 	let date_str = now.format("%Y-%m-%d").to_string();
-	let time_based_path = time_based_rolling(&base_file_path, &date_str, 1);
+	let time_based_path = compute_rolled_file_path(&base_file_path, &date_str, 1);
 
 	// Clean up any previous logs and create the log directory.
 	let _ = remove_dir_all(temp_log_dir);

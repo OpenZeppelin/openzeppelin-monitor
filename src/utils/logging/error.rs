@@ -252,7 +252,7 @@ fn format_error_chain(err: &dyn std::error::Error) -> String {
 	let mut source = err.source();
 
 	while let Some(err) = source {
-		result.push_str("\n  Caused by: ");
+		result.push_str("\n\tCaused by: ");
 		result.push_str(&sanitize_error_message(&err.to_string()));
 		source = err.source();
 	}

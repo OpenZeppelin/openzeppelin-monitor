@@ -5,32 +5,77 @@
 //! - LOG_LEVEL: log level ("trace", "debug", "info", "warn", "error"); default is "info"
 //! - LOG_FILE_PATH: when using file mode, the path of the log file (default "logs/monitor.log")
 
+pub mod error;
+
+use super::error::ErrorContext;
 use chrono::Utc;
-use simplelog::{Config, LevelFilter, SimpleLogger, WriteLogger};
+use std::collections::HashMap;
 use std::{
 	env,
-	fs::{create_dir_all, metadata, File, OpenOptions},
+	fs::{create_dir_all, metadata},
 	path::Path,
 };
 use tracing::info;
-pub mod error;
-use super::error::ErrorContext;
-use std::collections::HashMap;
+use tracing_appender;
+use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
-/// Computes the path of the rolled log file given the base file path and the date string.
-pub fn compute_rolled_file_path(base_file_path: &str, date_str: &str, index: u32) -> String {
-	if base_file_path.ends_with(".log") {
-		let trimmed = base_file_path.strip_suffix(".log").unwrap();
-		format!("{}-{}.{}.log", trimmed, date_str, index)
-	} else {
-		format!("{}-{}.{}.log", base_file_path, date_str, index)
+use tracing::Subscriber;
+use tracing_subscriber::fmt::format::Writer;
+use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
+use tracing_subscriber::registry::LookupSpan;
+
+/// Custom formatter that strips ANSI escape codes from log output
+struct StripAnsiFormatter<T> {
+	inner: T,
+}
+
+impl<T> StripAnsiFormatter<T> {
+	fn new(inner: T) -> Self {
+		Self { inner }
 	}
 }
 
-/// Generates a time-based log file name.
-/// This is simply a wrapper around `compute_rolled_file_path` for clarity.
-pub fn time_based_rolling(base_file_path: &str, date_str: &str, index: u32) -> String {
-	compute_rolled_file_path(base_file_path, date_str, index)
+impl<S, N, T> FormatEvent<S, N> for StripAnsiFormatter<T>
+where
+	S: Subscriber + for<'a> LookupSpan<'a>,
+	N: for<'a> FormatFields<'a> + 'static,
+	T: FormatEvent<S, N>,
+{
+	fn format_event(
+		&self,
+		ctx: &FmtContext<'_, S, N>,
+		mut writer: Writer<'_>,
+		event: &tracing::Event<'_>,
+	) -> std::fmt::Result {
+		// Create a buffer to capture the formatted output
+		let mut buf = String::new();
+		let string_writer = Writer::new(&mut buf);
+
+		// Format the event using the inner formatter
+		self.inner.format_event(ctx, string_writer, event)?;
+
+		// Strip ANSI escape codes
+		let stripped = strip_ansi_escapes(&buf);
+
+		// Write the stripped string to the output
+		write!(writer, "{}", stripped)
+	}
+}
+
+/// Strips ANSI escape codes from a string
+fn strip_ansi_escapes(s: &str) -> String {
+	// Simple regex to match ANSI escape sequences
+	// This matches the most common escape sequences like color codes
+	let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+	re.replace_all(s, "").to_string()
+}
+
+/// Computes the path of the rolled log file given the base file path and the date string.
+pub fn compute_rolled_file_path(base_file_path: &str, date_str: &str, index: u32) -> String {
+	let trimmed = base_file_path
+		.strip_suffix(".log")
+		.unwrap_or(base_file_path);
+	format!("{}-{}.{}.log", trimmed, date_str, index)
 }
 
 /// Checks if the given log file exceeds the maximum allowed size (in bytes).
@@ -59,23 +104,39 @@ pub fn space_based_rolling(
 	final_path
 }
 
+/// Creates a log format with configurable ANSI support
+fn create_log_format(with_ansi: bool) -> fmt::format::Format<fmt::format::Compact> {
+	fmt::format()
+		.with_level(true)
+		.with_target(true)
+		.with_thread_ids(false)
+		.with_thread_names(false)
+		.with_ansi(with_ansi)
+		.compact()
+}
+
 /// Sets up logging by reading configuration from environment variables.
 pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 	let log_mode = env::var("LOG_MODE").unwrap_or_else(|_| "stdout".to_string());
-
 	let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
 
-	// Parse the log level into LevelFilter
+	// Parse the log level
 	let level_filter = match log_level.to_lowercase().as_str() {
-		"trace" => LevelFilter::Trace,
-		"debug" => LevelFilter::Debug,
-		"info" => LevelFilter::Info,
-		"warn" => LevelFilter::Warn,
-		"error" => LevelFilter::Error,
-		_ => LevelFilter::Info,
+		"trace" => tracing::Level::TRACE,
+		"debug" => tracing::Level::DEBUG,
+		"info" => tracing::Level::INFO,
+		"warn" => tracing::Level::WARN,
+		"error" => tracing::Level::ERROR,
+		_ => tracing::Level::INFO,
 	};
 
-	// Only run if log_mode is "file"
+	// Create a format with ANSI disabled for file logging and enabled for stdout
+	let with_ansi = log_mode.to_lowercase() != "file";
+	let format = create_log_format(with_ansi);
+
+	// Create a subscriber with the specified log level
+	let subscriber = tracing_subscriber::registry().with(EnvFilter::new(level_filter.to_string()));
+
 	if log_mode.to_lowercase() == "file" {
 		info!("Logging to file: {}", log_level);
 
@@ -87,6 +148,7 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 		} else {
 			format!("{}/", log_dir)
 		};
+
 		// set dates
 		let now = Utc::now();
 		let date_str = now.format("%Y-%m-%d").to_string();
@@ -103,7 +165,7 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 		}
 
 		// Time-based rolling: compute file name based on the current UTC date.
-		let time_based_path = time_based_rolling(&base_file_path, &date_str, 1);
+		let time_based_path = compute_rolled_file_path(&base_file_path, &date_str, 1);
 
 		// Ensure parent directory exists.
 		if let Some(parent) = Path::new(&time_based_path).parent() {
@@ -121,22 +183,31 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 		let final_path =
 			space_based_rolling(&time_based_path, &base_file_path, &date_str, max_size);
 
-		// Append if it exists otherwise, create it.
-		let log_file = if Path::new(&final_path).exists() {
-			OpenOptions::new()
-				.append(true)
-				.open(&final_path)
-				.unwrap_or_else(|e| panic!("Unable to open log file {}: {}", final_path, e))
-		} else {
-			File::create(&final_path)
-				.unwrap_or_else(|e| panic!("Unable to create log file {}: {}", final_path, e))
-		};
-		WriteLogger::init(level_filter, Config::default(), log_file)
-			.expect("Failed to initialize file logger");
+		// Create a file appender
+		let file_appender = tracing_appender::rolling::never(
+			Path::new(&final_path).parent().unwrap_or(Path::new(".")),
+			Path::new(&final_path).file_name().unwrap_or_default(),
+		);
+
+		let ansi_stripped_format = StripAnsiFormatter::new(format);
+
+		subscriber
+			.with(
+				fmt::layer()
+					.event_format(ansi_stripped_format)
+					.with_writer(file_appender)
+					.fmt_fields(fmt::format::PrettyFields::new()),
+			)
+			.init();
 	} else {
-		// Default to stdout logging
-		SimpleLogger::init(level_filter, Config::default())
-			.expect("Failed to initialize simple logger");
+		// Initialize the subscriber with stdout
+		subscriber
+			.with(
+				fmt::layer()
+					.event_format(format)
+					.fmt_fields(fmt::format::PrettyFields::new()),
+			)
+			.init();
 	}
 
 	info!("Logging is successfully configured (mode: {})", log_mode);
@@ -171,5 +242,60 @@ pub fn log_error_to_file(
 			timestamp,
 			msg
 		);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::fs::File;
+	use std::io::Write;
+	use tempfile::tempdir;
+
+	#[test]
+	fn test_strip_ansi_escapes() {
+		let input = "\x1b[31mRed text\x1b[0m and \x1b[32mgreen text\x1b[0m";
+		let expected = "Red text and green text";
+		assert_eq!(strip_ansi_escapes(input), expected);
+	}
+
+	#[test]
+	fn test_compute_rolled_file_path() {
+		// Test with .log suffix
+		let result = compute_rolled_file_path("app.log", "2023-01-01", 1);
+		assert_eq!(result, "app-2023-01-01.1.log");
+
+		// Test without .log suffix
+		let result = compute_rolled_file_path("app", "2023-01-01", 2);
+		assert_eq!(result, "app-2023-01-01.2.log");
+
+		// Test with path
+		let result = compute_rolled_file_path("logs/app.log", "2023-01-01", 3);
+		assert_eq!(result, "logs/app-2023-01-01.3.log");
+	}
+
+	#[test]
+	fn test_space_based_rolling() {
+		// Create a temporary directory for our test files
+		let dir = tempdir().expect("Failed to create temp directory");
+		let base_path = dir.path().join("test.log").to_str().unwrap().to_string();
+		let date_str = "2023-01-01";
+
+		// Create an initial file that's larger than our max size
+		let initial_path = compute_rolled_file_path(&base_path, date_str, 1);
+		{
+			let mut file = File::create(&initial_path).expect("Failed to create test file");
+			// Write 100 bytes to the file
+			file.write_all(&[0; 100])
+				.expect("Failed to write to test file");
+		}
+
+		// Test with a max size of 50 bytes (our file is 100 bytes, so it should roll)
+		let result = space_based_rolling(&initial_path, &base_path, date_str, 50);
+		assert_eq!(result, compute_rolled_file_path(&base_path, date_str, 2));
+
+		// Test with a max size of 200 bytes (our file is 100 bytes, so it should not roll)
+		let result = space_based_rolling(&initial_path, &base_path, date_str, 200);
+		assert_eq!(result, initial_path);
 	}
 }
