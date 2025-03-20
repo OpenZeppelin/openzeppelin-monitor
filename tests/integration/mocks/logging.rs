@@ -88,9 +88,6 @@ fn test_setup_logging_file_mode_creates_log_file() {
 		compute_rolled_file_path(&base, &date_str, 1)
 	};
 
-	println!("Temporary log directory: {}", temp_log_dir);
-	println!("Expected log file path: {}", expected_path);
-
 	assert!(
 		Path::new(&expected_path).exists(),
 		"Expected log file {} does not exist",

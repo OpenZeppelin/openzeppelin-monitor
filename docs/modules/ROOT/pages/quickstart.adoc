@@ -34,7 +34,7 @@ Copy the example environment file and update values according to your needs
 cp .env.example .env
 ----
 
-FOr details on the supported values see xref:index.adoc[User Documentation]
+For details on the supported values see xref:index.adoc[User Documentation]
 
 == Installation
 
