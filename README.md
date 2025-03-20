@@ -234,7 +234,7 @@ If you have any questions, first see if the answer to your question can be found
 
 If the answer is not there:
 
-- Join the [Telegram](https://t.me/zeppelinos) to get help, or
+- Join the [Telegram](https://t.me/openzeppelin_tg/4) to get help, or
 - Open an issue with [the bug](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml)
 
 We encourage you to reach out with any questions or feedback.
