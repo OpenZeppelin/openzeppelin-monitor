@@ -146,12 +146,12 @@ For detailed information about each directory and its contents, see xref:structu
 * Rust 2021 edition
 * Docker (optional, for containerized deployment)
 
-=== Installation
+== Installation
 
-==== Local Setup
+=== Local Installation
 
 . Clone the repository:
-
++
 [source,bash]
 ----
 git clone https://github.com/openzeppelin/openzeppelin-monitor
@@ -159,11 +159,84 @@ cd openzeppelin-monitor
 ----
 
 . Install dependencies:
-
++
 [source,bash]
 ----
 cargo build
 ----
+
+=== Standalone CLI Usage
+
+. View available options:
++
+[source,bash]
+----
+./openzeppelin-monitor --help
+----
+
+. Enable logging to file with `--log-file`
+. Enable metrics server with `--metrics`
+
+=== Docker Installation
+
+==== Basic Setup
+
+. Start the services using the make target:
++
+[source,bash]
+----
+cargo make docker-compose-up
+----
+
+[NOTE]
+====
+By default, Docker Compose uses `Dockerfile.development`. To use production settings, set:
+`DOCKERFILE=Dockerfile.production` before running the command.
+====
+
+==== Metrics Configuration
+
+The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
+
+You can start services directly with Docker Compose:
+
+[source,bash]
+----
+# without metrics profile ( METRICS_ENABLED=false by default )
+docker compose up -d
+
+# With metrics enabled
+docker compose --profile metrics up -d
+----
+
+==== Management Commands
+
+. Verify container status:
++
+[source,bash]
+----
+docker ps -a
+----
+
+. Stop services:
++
+[source,bash]
+----
+cargo make docker-compose-down
+# or using docker compose directly:
+# without metrics profile
+docker compose down
+# or with metrics profile
+docker compose --profile metrics down
+----
+
+. View logs (stdout):
++
+[source,bash]
+----
+docker compose logs -f
+----
+
 
 === Configuration Guidelines
 
@@ -221,12 +294,55 @@ Ensure all referenced slugs and trigger keys exist in their respective configura
 
 * Set up environment variables:
 
+Copy the example environment file and update values according to your needs
+
 [source,bash]
 ----
 cp .env.example .env
 ----
 
-* Change the `RUST_LOG=info` environment variable to your preferred verbosity level.
+This table lists the environment variables and their default values.
+
+[cols="1,1,2,3", options="header"]
+|===
+| Environment Variable | Default Value | Accepted Values | Description
+
+| `RUST_LOG`
+| `info`
+| `info, debug, warn, error, trace`
+| Log level.
+
+| `LOG_MODE`
+| `stdout`
+| `stdout, file`
+| Write logs either to console or to file.
+
+| `LOG_DATA_DIR`
+| `logs/`
+| `<any file path>`
+| Directory to write log files on host.
+
+| `MONITOR_DATA_DIR`
+| `null`
+| `<any file path>`
+| Persist monitor data between container restarts.
+
+| `LOG_MAX_SIZE (in bytes)`
+| `1073741824`
+| `<any value in bytes>`
+| Size after which logs needs to be rolled.
+
+| `METRICS_ENABLED`
+| `false`
+| `true`
+| Enable metrics server for external tools to scrape metrics.
+
+| `METRICS_PORT`
+| `8081`
+| `<any tcp port (preferably choose non-privileged ports i.e. (1024-65535))>`
+| Port to use for metrics server.
+|===
+
 * Copy and configure example files:
 
 [source,bash]
@@ -1008,54 +1124,79 @@ The monitor can be run as either a development or production container using the
 
 ==== Environment Configuration
 
-* Edit `env_dev` or `env_prod` at the root of the repository to adjust environment variables
-* The appropriate .env file will be included during image build
+* Copy .env.example to .env and change values according to your needs.
 
-==== Building the Image
+==== Build Image and Run Containers
 
-You can build using either standard Docker build or buildx:
+You can build and run containers using single command:
 
 [source,bash]
 ----
-# Standard build
-docker build --tag <your_image_tag> -f Dockerfile.<development | production> .
-
-# Or using buildx
-docker buildx build -f Dockerfile.<development | production> -t <name_of_image:tag> .
+cargo make docker-compose-up
 ----
+
+[NOTE]
+====
+By default, Docker Compose uses `Dockerfile.development`. To use production settings, set:
+`DOCKERFILE=Dockerfile.production` before running the command.
+====
+
+==== Metrics Configuration
+
+The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
+
+You can start services directly with Docker Compose:
+
+[source,bash]
+----
+# without metrics profile ( METRICS_ENABLED=false by default )
+docker compose up -d
+
+# With metrics enabled
+docker compose --profile metrics up -d
+----
+
+==== Management Commands
+
+. Verify container status:
++
+[source,bash]
+----
+docker ps -a
+----
+
+. Stop services:
++
+[source,bash]
+----
+cargo make docker-compose-down
+# or using docker compose directly:
+# without metrics profile
+docker compose down
+# or with metrics profile
+docker compose --profile metrics down
+----
+
 
 The build process will include:
 
 * The appropriate .env file
 * Configurations from the ./config folder
 
+To modify configurations without rebuilding:
+
+* Restart the container
+
+[source,bash]
+----
+docker compose restart monitor
+----
+
 ==== Data Persistence (Optional)
 
-Create a Docker volume to persist monitor data between container restarts:
+* Set `LOG_MODE` as file will persist the log data in `logs/` on host. To change it to a different directory use `LOG_DATA_DIR`.
 
-[source,bash]
-----
-docker volume create <volume_tag>
-----
-
-==== Running the Container
-
-Basic run with volume:
-
-[source,bash]
-----
-docker run --volume <volume_tag>:/app/data <your_image_tag>
-----
-
-To modify configurations without rebuilding, bind mount your local config directory:
-
-[source,bash]
-----
-docker run \
-  --mount type=bind,src=./config,dst=/app/config,ro \
-  --volume <volume_tag>:/app/data \
-  <your_image_tag>
-----
+* Set `MONITOR_DATA_DIR` to specific dir on your host system which will persist data between container restarts.
 
 == Error Handling
 
