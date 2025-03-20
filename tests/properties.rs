@@ -23,6 +23,7 @@ mod properties {
 	}
 	mod utils {
 		mod executor;
+		mod logging;
 	}
 	mod strategies;
 }

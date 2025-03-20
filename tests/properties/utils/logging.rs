@@ -5,7 +5,7 @@
 //! The tests ensure that the logging system handles template variables correctly
 //! and produces consistent, well-formed output across various input combinations.
 //!
-//!   Refer to `src/logging/mod.rs` for more details.
+//!   Refer to `src/utils/logging/mod.rs` for more details.
 use openzeppelin_monitor::utils::logging::compute_rolled_file_path;
 use proptest::{prelude::*, test_runner::Config};
 
