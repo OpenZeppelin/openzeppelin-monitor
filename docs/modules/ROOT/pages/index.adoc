@@ -209,6 +209,12 @@ docker compose up -d
 docker compose --profile metrics up -d
 ----
 
+To view prometheus metrics in a UI, you can use `http://localhost:9090` on your browser.
+
+To view grafana dashboard, you can use `http://localhost:3000` on your browser.
+
+By default, predefined metrics within a dashboard is populated in grafana.
+
 ==== Management Commands
 
 . Verify container status:
@@ -236,7 +242,6 @@ docker compose --profile metrics down
 ----
 docker compose logs -f
 ----
-
 
 === Configuration Guidelines
 
