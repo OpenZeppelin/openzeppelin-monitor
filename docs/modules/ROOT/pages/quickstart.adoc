@@ -181,6 +181,11 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
 }
 ----
 
+[NOTE]
+====
+Remove the `trigger_conditions` array to disable additional filtering.
+====
+
 ==== 3. Notification Configuration:
 
 ===== For Slack Notifications:
@@ -363,6 +368,11 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/
   ]
 }
 ----
+
+[NOTE]
+====
+Remove the `trigger_conditions` array to disable additional filtering.
+====
 
 ==== 3. Notification Configuration:
 

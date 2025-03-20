@@ -215,9 +215,7 @@ async fn test_create_trigger_handler_empty_matches() {
 	ctx.expect()
 		.with(mockall::predicate::always(), mockall::predicate::always())
 		.returning(|_trigger_service, _notification_service| {
-			let mut mock = MockTriggerExecutionService::default();
-			mock.expect_execute().times(0);
-			mock
+			MockTriggerExecutionService::default()
 		});
 
 	// Setup test triggers in JSON with known configurations
