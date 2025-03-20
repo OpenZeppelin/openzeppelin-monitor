@@ -4,10 +4,6 @@
 //! chains (EVM and Stellar) and mock implementations for testing.
 
 mod properties {
-	mod chain {
-		mod evm;
-		mod stellar;
-	}
 	mod filters {
 		mod evm {
 			mod filter;

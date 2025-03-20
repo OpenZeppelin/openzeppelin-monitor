@@ -742,7 +742,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |===
 
 
-===== Script Notifications
+===== Custom Script Notifications
 [source,json]
 ----
 {
@@ -757,6 +757,14 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 [cols="1,2,3"]
 |===
 |Field |Type |Description
+
+|name
+|String
+|Human-readable name for the notification
+
+|trigger_type
+|String
+|Must be "script" for Custom Script notifications
 
 |language
 |String
@@ -775,7 +783,9 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 |The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed.
 |===
 
-==== Important Considerations about script notification:
+[NOTE]
+====
+Important Considerations about script notification:
 
 * Input: The script receives a JSON object containing two fields: `monitor_match` and `args`. The `monitor_match` field contains the monitor match data and the `args` (array of strings) field contains the arguments of the script.
 * Output: If the script exits with a non-zero code, the error message from stderr will be logged.
@@ -785,11 +795,14 @@ You can write custom filters in any of the following languages:
 * Python
 * JavaScript
 * Bash
+====
 
 [WARNING]
 ====
 Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
 ====
+
+For detailed information about custom scripts, see xref:scripts.adoc[Custom Scripts Section].
 
 ==== Available Template Variables
 
@@ -1214,7 +1227,7 @@ The monitor implements a comprehensive error handling system with rich context a
 ** Too low settings may result in missed blocks.
 * Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _**temporarily**_ increase it with `ulimit -n 2048`.
 * Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
-* HTTP requests to RPC endpoints may consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
+* See performance considerations about custom scripts xref:scripts.adoc#performance_considerations[here].
 
 === Notification Considerations
 

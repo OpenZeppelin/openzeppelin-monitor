@@ -1,0 +1,403 @@
+= Custom scripts
+:description: Documentation for implementing custom scripts to filter matches and handle notifications in OpenZeppelin Monitor.
+
+The OpenZeppelin Monitor allows you to implement custom scripts for additional filtering conditions on monitor matches and custom notification handling.
+
+[WARNING]
+====
+Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
+====
+
+== Custom Scripts for filters
+
+Custom scripts can be used to apply additional filtering conditions to the matches detected by the monitor. This allows users to refine the alerts they receive based on specific criteria relevant to their use case.
+
+=== How to Implement
+
+Create the script in one of the supported languages:
+
+- Bash
+- Python
+- JavaScript
+
+The script will receive a JSON object with the following structure:
+[source,json]
+----
+// Example for EVM MATCH
+{
+  "args": ["--verbose"],
+  "monitor_match": {
+    "EVM": {
+      "matched_on": {
+        "events": [],
+        "functions": [
+          {
+            "expression": null,
+            "signature": "transfer(address,uint256)"
+          }
+        ],
+        "transactions": [
+          {
+            "expression": null,
+            "status": "Success"
+          }
+        ]
+      },
+      "matched_on_args": {
+        "events": null,
+        "functions": [
+          {
+            "args": [
+              {
+                "indexed": false,
+                "kind": "address",
+                "name": "to",
+                "value": "0x94d953b148d4d7143028f397de3a65a1800f97b3"
+              },
+              {
+                "indexed": false,
+                "kind": "uint256",
+                "name": "value",
+                "value": "434924400"
+              }
+            ],
+            "hex_signature": "a9059cbb",
+            "signature": "transfer(address,uint256)"
+          }
+        ]
+      },
+      "monitor": {
+        "addresses": [
+          {
+            "abi": null,
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          }
+        ],
+        "match_conditions": {
+          "events": [
+            {
+              "expression": "value > 10000000000",
+              "signature": "Transfer(address,address,uint256)"
+            }
+          ],
+          "functions": [
+            {
+              "expression": null,
+              "signature": "transfer(address,uint256)"
+            }
+          ],
+          "transactions": [
+            {
+              "expression": null,
+              "status": "Success"
+            }
+          ]
+        },
+        "name": "Large Transfer of USDC Token",
+        "networks": ["ethereum_mainnet"],
+        "paused": false,
+        "trigger_conditions": [
+          {
+            "arguments": ["--verbose"],
+            "language": "Bash",
+            "script_path": "./config/filters/evm_filter_block_number.sh",
+            "timeout_ms": 1000
+          }
+        ],
+        "triggers": ["evm_large_transfer_usdc_script"]
+      },
+      "receipt": {
+        "blockHash": "0x...",
+        "blockNumber": "0x...",
+        "contractAddress": null,
+        "cumulativeGasUsed": "0x...",
+        "effectiveGasPrice": "0x...",
+        "from": "0x...",
+        "gasUsed": "0xb068",
+        "status": "0x1",
+        "to": "0x...",
+        "transactionHash": "0x...",
+        "transactionIndex": "0x1fc",
+        "type": "0x2"
+      },
+      "transaction": {
+        "accessList": [],
+        "blockHash": "0x...",
+        "blockNumber": "0x1506545",
+        "chainId": "0x1",
+        "from": "0x...",
+        "gas": "0x7a120",
+        "gasPrice": "0x...",
+        "hash": "0x...",
+        "maxFeePerGas": "0x...",
+        "maxPriorityFeePerGas": "0x...",
+        "nonce": "0x14779f",
+        "to": "0x...",
+        "transactionIndex": "0x...",
+        "type": "0x2",
+        "value": "0x0"
+      }
+    }
+  }
+}
+
+// Example for STELLAR MATCH
+{
+  "args": ["--verbose"],
+  "monitor_match": {
+    "Stellar": {
+      "monitor": {
+        "name": "Large Swap By Dex",
+        "networks": ["stellar_mainnet"],
+        "paused": false,
+        "addresses": [
+          {
+            "address": "GCXYK...",
+            "abi": null
+          }
+        ],
+        "match_conditions": {
+          "functions": [
+            {
+              "signature": "swap(Address,U32,U32,U128,U128)",
+              "expression": "4 > 1000000000"
+            }
+          ],
+          "events": [],
+          "transactions": []
+        },
+        "trigger_conditions": [
+          {
+            "arguments": ["--verbose"],
+            "language": "Bash",
+            "script_path": "./config/filters/stellar_filter_block_number.sh",
+            "timeout_ms": 1000
+          }
+        ],
+        "triggers": ["stellar_large_transfer_usdc_script"]
+      },
+      "transaction": {
+        "status": "SUCCESS",
+        "txHash": "2b5a0c...",
+        "applicationOrder": 3,
+        "feeBump": false,
+        "envelopeXdr": "AAAAAA...",
+        "envelopeJson": {
+          "type": "ENVELOPE_TYPE_TX",
+          "tx": {/* transaction details */}
+        },
+        "resultXdr": "AAAAAA...",
+        "resultJson": {/* result details */},
+        "resultMetaXdr": "AAAAAA...",
+        "resultMetaJson": {/* metadata details */},
+        "diagnosticEventsXdr": ["AAAAAA..."],
+        "diagnosticEventsJson": [{/* event details */}],
+        "ledger": 123456,
+        "createdAt": 1679644800,
+        "decoded": {
+          "envelope": {/* decoded envelope */},
+          "result": {/* decoded result */},
+          "meta": {/* decoded metadata */}
+        }
+      },
+      "ledger": {
+        "hash": "abc1...",
+        "sequence": 123456,
+        "ledgerCloseTime": "2024-03-20T10:00:00Z",
+        "headerXdr": "AAAAAA...",
+        "headerJson": {/* header details */},
+        "metadataXdr": "AAAAAA...",
+        "metadataJSON": {/* metadata details */}
+      },
+      "matched_on": {
+        "functions": [
+          {
+            "signature": "swap(Address,U32,U32,U128,U128)",
+            "expression": "4 > 1000000000"
+          }
+        ],
+        "events": [],
+        "transactions": []
+      },
+      "matched_on_args": {
+        "functions": [],
+        "events": null
+      }
+    }
+  }
+}
+----
+Example script using Bash:
+
+[source,bash]
+----
+#!/bin/bash
+
+main() {
+    # Read JSON input from stdin
+    input_json=$(cat)
+
+    # Parse arguments from the input JSON and initialize verbose flag
+    verbose=false
+    args=$(echo "$input_json" | jq -r '.args[]? // empty')
+    if [ ! -z "$args" ]; then
+        while IFS= read -r arg; do
+            if [ "$arg" = "--verbose" ]; then
+                verbose=true
+                echo "Verbose mode enabled"
+            fi
+        done <<< "$args"
+    fi
+
+    # Extract the monitor match data from the input
+    monitor_data=$(echo "$input_json" | jq -r '.monitor_match')
+
+    if [ "$verbose" = true ]; then
+        echo "Input JSON received:"
+    fi
+
+    # Extract blockNumber from the EVM receipt or transaction
+    block_number_hex=$(echo "$monitor_data" | jq -r '.EVM.transaction.blockNumber' || echo "")
+
+    # Validate that block_number_hex is not empty
+    if [ -z "$block_number_hex" ]; then
+        echo "Invalid JSON or missing blockNumber"
+        echo "false"
+        exit 1
+    fi
+
+    # Remove 0x prefix if present and clean the string
+    block_number_hex=$(echo "$block_number_hex" | tr -d '\n' | tr -d ' ')
+    block_number_hex=${block_number_hex#0x}
+
+    if [ "$verbose" = true ]; then
+        echo "Extracted block number (hex): $block_number_hex"
+    fi
+
+    # Convert hex to decimal with error checking
+    if ! block_number=$(printf "%d" $((16#${block_number_hex})) 2>/dev/null); then
+        echo "Failed to convert hex to decimal"
+        echo "false"
+        exit 1
+    fi
+
+    if [ "$verbose" = true ]; then
+        echo "Converted block number (decimal): $block_number"
+    fi
+
+    # Check if even or odd using modulo
+    is_even=$((block_number % 2))
+
+    if [ $is_even -eq 0 ]; then
+        echo "Block number $block_number is even"
+        echo "Verbose mode: $verbose"
+        echo "true"
+        exit 0
+    else
+        echo "Block number $block_number is odd"
+        echo "Verbose mode: $verbose"
+        echo "false"
+        exit 0
+    fi
+}
+
+# Call main function
+main
+----
+
+This script demonstrates a basic block number filter that processes EVM transactions based on their block number.
+It includes:
+
+* Filters transactions based on whether they occur in even or odd block numbers
+* Accepts a `--verbose` flag for detailed logging
+* Processes JSON input containing transaction data
+* Returns `true` for even block numbers and `false` for odd block numbers
+* Important considerations about the script `output`:
+
+The script should print a boolean indicating whether the match should be filtered. Print `true` if the match needs to be filtered, otherwise print `false`. Only the LAST printed line will be considered for evaluation.
+
+=== Performance considerations:
+
+When running multiple scripts in parallel (the blocks are processed in parallel), it’s important to consider your operating system’s file descriptor limit. A file descriptor is a reference to an open file or resource, and most operating systems impose a limit on how many can be open simultaneously. To prevent issues, ensure that your system allows at least 2,048 file descriptors to be opened. If necessary, adjust this limit to accommodate the workload efficiently
+
+Integrate with Monitor: Ensure the script is integrated with the monitor by following the integration xref:index.adoc#configuration_guidelines[guidelines].
+
+== Custom Script for notifications
+
+Custom scripts for notifications allow users to define how they are alerted when specific conditions are met. For example, this can include sending alerts to different channels or formatting the notifications in a particular way.
+
+=== How to Implement
+
+* Create a script in one of the supported languages.
+* The script input is the same for custom scripts for triggers, a JSON containing a monitor match and the arguments.
+
+Example script using Bash:
+
+[source,bash]
+----
+#!/bin/bash
+
+main() {
+    # Read JSON input from stdin
+    input_json=$(cat)
+
+    # Parse arguments from the input JSON and initialize verbose flag
+    verbose=false
+    args=$(echo "$input_json" | jq -r '.args[]? // empty')
+    if [ ! -z "$args" ]; then
+        while IFS= read -r arg; do
+            if [ "$arg" = "--verbose" ]; then
+                verbose=true
+                echo "Verbose mode enabled"
+            fi
+        done <<< "$args"
+    fi
+
+    # Extract the monitor match data from the input
+    monitor_data=$(echo "$input_json" | jq -r '.monitor_match')
+
+    # Validate input
+    if [ -z "$input_json" ]; then
+        echo "No input JSON provided"
+        exit 1
+    fi
+
+    # Validate JSON structure
+    if ! echo "$input_json" | jq . >/dev/null 2>&1; then
+        echo "Invalid JSON input"
+        exit 1
+    fi
+
+    if [ "$verbose" = true ]; then
+        echo "Input JSON received:"
+        echo "$input_json" | jq '.'
+        echo "Monitor match data:"
+        echo "$monitor_data" | jq '.'
+    fi
+
+    # Process args if they exist
+    args_data=$(echo "$input_json" | jq -r '.args')
+    if [ "$args_data" != "null" ]; then
+        echo "Args: $args_data"
+    fi
+
+    # If we made it here, everything worked
+    echo "Verbose mode: $verbose"
+    # return a non zero exit code and an error message
+    echo "Error: This is a test error" >&2
+    exit 1
+
+}
+
+# Call main function
+main
+----
+
+This script demonstrates how we can read the input.
+It includes:
+
+* Accepts a `--verbose` flag for detailed logging
+* Processes JSON input containing transaction data
+* Important considerations about the script `output`:
+
+A non-zero exit code indicates that an error occurred, and the `stderr` content will be displayed. Otherwise, the script execution is considered successful. The example above is returning an error code with message.

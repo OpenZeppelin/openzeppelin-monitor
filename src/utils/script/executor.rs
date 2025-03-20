@@ -99,7 +99,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
-			.stderr(Stdio::null())
+			.stderr(Stdio::piped())
 			.kill_on_drop(true)
 			.spawn()
 			.with_context(|| "Failed to spawn node process")?;
@@ -140,7 +140,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
-			.stderr(Stdio::null())
+			.stderr(Stdio::piped())
 			.kill_on_drop(true)
 			.spawn()
 			.with_context(|| "Failed to spawn shell process")?;
@@ -214,14 +214,18 @@ async fn process_command(
 			.write_all(input_json.as_bytes())
 			.await
 			.map_err(|e| anyhow::anyhow!("Failed to write input to script: {}", e))?;
+
+		// Explicitly close stdin
+		stdin
+			.shutdown()
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to close stdin: {}", e))?;
 	} else {
 		return Err(anyhow::anyhow!("Failed to get stdin handle"));
 	}
 
-	// Define a timeout duration
 	let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
 
-	// Apply timeout to script execution
 	match timeout(timeout_duration, cmd.wait_with_output()).await {
 		Ok(result) => {
 			let output =
@@ -369,7 +373,7 @@ print(result)
 	async fn test_python_script_executor_invalid_output() {
 		let script_content = r#"
 import sys
-
+input_json = sys.stdin.read()
 print("debugging...")
 def test():
     return "not a boolean"
@@ -424,10 +428,30 @@ print("true")
 	#[tokio::test]
 	async fn test_javascript_script_executor_success() {
 		let script_content = r#"
-		// Do something with input and return true/false
-		console.log("debugging...");
-		console.log("finished");
-		console.log("true");
+		// Read input from stdin
+		(async () => {
+			let input = '';
+
+			await new Promise((resolve, reject) => {
+				process.stdin.on('data', (chunk) => {
+					input += chunk;
+				});
+
+				process.stdin.on('end', resolve);
+
+				process.stdin.on('error', reject);
+			});
+
+			try {
+				const data = JSON.parse(input);
+				console.log("debugging...");
+				console.log("finished");
+				console.log("true");
+			} catch (err) {
+				console.error(err);
+				process.exit(1);
+			}
+		})();
 		"#;
 
 		let executor = JavaScriptScriptExecutor {
@@ -435,7 +459,6 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -444,9 +467,26 @@ print("true")
 	#[tokio::test]
 	async fn test_javascript_script_executor_invalid_output() {
 		let script_content = r#"
-			console.log("debugging...");
-			console.log("finished");
-			console.log("not a boolean");
+		// Read input from stdin
+		(async () => {
+			let input = '';
+			await new Promise((resolve, reject) => {
+				process.stdin.on('data', chunk => input += chunk);
+				process.stdin.on('end', resolve);
+				process.stdin.on('error', reject);
+			});
+
+			try {
+				JSON.parse(input);
+				console.log("debugging...");
+				console.log("finished");
+				console.log("not a boolean");
+				process.exit(0);
+			} catch (err) {
+				console.error(err);
+				process.exit(1);
+			}
+		})();
 		"#;
 
 		let executor = JavaScriptScriptExecutor {
@@ -472,6 +512,7 @@ print("true")
 		let script_content = r#"
 #!/bin/bash
 set -e  # Exit on any error
+input_json=$(cat)
 sleep 0.1  # Small delay to ensure process startup
 echo "debugging..."
 echo "true"
@@ -491,6 +532,7 @@ echo "true"
 		let script_content = r#"
 #!/bin/bash
 set -e  # Exit on any error
+input_json=$(cat)
 sleep 0.1  # Small delay to ensure process startup
 echo "debugging..."
 echo "not a boolean"
@@ -518,8 +560,10 @@ echo "not a boolean"
 	#[tokio::test]
 	async fn test_script_executor_empty_output() {
 		let script_content = r#"
-	# This script produces no output
-	"#;
+import sys
+input_json = sys.stdin.read()
+# This script produces no output
+"#;
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
@@ -539,6 +583,8 @@ echo "not a boolean"
 	#[tokio::test]
 	async fn test_script_executor_whitespace_output() {
 		let script_content = r#"
+import sys
+input_json = sys.stdin.read()
 print("   ")
 print("     true    ")  # Should handle whitespace correctly
 "#;
@@ -744,6 +790,7 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_wrong_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
+		println!("script_content ====>: {:?}", script_content);
 		let executor = PythonScriptExecutor { script_content };
 
 		let input = create_mock_monitor_match();
@@ -759,8 +806,9 @@ else:
 	#[tokio::test]
 	async fn test_script_executor_with_ignore_output() {
 		let script_content = r#"
-		# This script produces no output
-		"#;
+import sys
+input_json = sys.stdin.read()
+"#;
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
@@ -776,6 +824,7 @@ else:
 	async fn test_script_executor_with_non_zero_exit() {
 		let script_content = r#"
 import sys
+input_json = sys.stdin.read()
 sys.stderr.write("Error: something went wrong\n")
 sys.exit(1)
 		"#;
@@ -790,7 +839,9 @@ sys.exit(1)
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e.to_string().contains("Error: something went wrong"));
+				assert!(e
+					.to_string()
+					.contains("Script execution failed: Error: something went wrong"));
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
@@ -801,6 +852,7 @@ sys.exit(1)
 		let script_content = r#"
 import sys
 import time
+input_json = sys.stdin.read()
 time.sleep(0.3)
 		"#;
 
@@ -825,6 +877,7 @@ time.sleep(0.3)
 		let script_content = r#"
 import sys
 import time
+input_json = sys.stdin.read()
 time.sleep(0.5)
 		"#;
 
@@ -840,5 +893,101 @@ time.sleep(0.5)
 		assert!(result.is_err());
 		// Verify that execution took at least 300ms (the sleep time)
 		assert!(elapsed.as_millis() >= 400 && elapsed.as_millis() < 600);
+	}
+
+	#[tokio::test]
+	async fn test_script_python_fails_with_non_zero_exit() {
+		let script_content = r#"
+import sys
+import time
+input_json = sys.stdin.read()
+print("This is a python test error message!", file=sys.stderr)
+sys.exit(1)
+		"#;
+
+		let executor = PythonScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(e) => {
+				assert!(e
+					.to_string()
+					.contains("Script execution failed: This is a python test error message!"));
+			}
+			_ => panic!("Expected ExecutionError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_script_javascript_fails_with_non_zero_exit() {
+		let script_content = r#"
+		// Read input from stdin
+		let input = '';
+		process.stdin.on('data', (chunk) => {
+			input += chunk;
+		});
+
+		process.stdin.on('end', () => {
+			// Parse and validate input
+			try {
+				const data = JSON.parse(input);
+				console.error("This is a JS test error message!");
+				process.exit(1);
+			} catch (err) {
+				console.error(err);
+				process.exit(1);
+			}
+		});
+		"#;
+
+		let executor = JavaScriptScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+
+		assert!(result.is_err());
+		match result {
+			Err(e) => {
+				assert!(e
+					.to_string()
+					.contains("Script execution failed: This is a JS test error message!"));
+			}
+			_ => panic!("Expected ExecutionError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_script_bash_fails_with_non_zero_exit() {
+		let script_content = r#"
+#!/bin/bash
+# Read input from stdin
+input_json=$(cat)
+echo "This is a bash test error message!" >&2
+exit 1
+"#;
+
+		let executor = BashScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+		println!("result ====>: {:?}", result);
+		assert!(result.is_err());
+		match result {
+			Err(e) => {
+				assert!(e
+					.to_string()
+					.contains("Script execution failed: This is a bash test error message!"));
+			}
+			_ => panic!("Expected ExecutionError"),
+		}
 	}
 }

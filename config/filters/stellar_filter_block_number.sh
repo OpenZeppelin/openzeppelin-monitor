@@ -23,43 +23,44 @@
 set -e
 
 main() {
-    verbose=false
-
     # Read JSON input from stdin
     input_json=$(cat)
 
-    # Parse arguments from the input JSON
-    args=$(echo "$input_json" | jq -r '.args // empty')
+    # Parse arguments from the input JSON and initialize verbose flag
+    verbose=false
+    args=$(echo "$input_json" | jq -r '.args[]? // empty')
     if [ ! -z "$args" ]; then
-        if [[ $args == *"--verbose"* ]]; then
-            verbose=true
-            echo "Verbose mode enabled"
-        fi
+        while IFS= read -r arg; do
+            if [ "$arg" = "--verbose" ]; then
+                verbose=true
+                echo "Verbose mode enabled"
+            fi
+        done <<< "$args"
     fi
 
+    # Extract the monitor match data from the input
+    monitor_data=$(echo "$input_json" | jq -r '.monitor_match')
+
     # Validate input
-    if [ -z "$input_json" ]; then
+    if [ -z "$monitor_data" ]; then
         echo "No input JSON provided"
         echo "false"
         exit 1
     fi
 
-    if [ "$verbose" = true ]; then
-        echo "Input JSON received:"
-    fi
-
-    # Extract ledger number from the nested monitor_match.Stellar structure
-    ledger_number=$(echo "$input_json" | jq -r '.monitor_match.Stellar.ledger.sequence // empty')
+    # Extract ledger Number
+    ledger_number=$(echo "$monitor_data" | jq -r '.Stellar.ledger.sequence' || echo "")
 
     # Validate ledger number
-    if [ -z "$ledger_number" ]; then
+    if [ -z "$ledger_number" ] || [ "$ledger_number" = "null" ]; then
         echo "Invalid JSON or missing sequence number"
         echo "false"
         exit 1
     fi
 
-    # Remove any whitespace
-    ledger_number=$(echo "$ledger_number" | tr -d '\n' | tr -d ' ')
+    if [ "$verbose" = true ]; then
+        echo "Ledger number: $ledger_number"
+    fi
 
     # Check if even or odd using modulo
     is_even=$((ledger_number % 2))
@@ -77,5 +78,5 @@ main() {
     fi
 }
 
-# Call main function without arguments, input will be read from stdin
+# Call main function
 main
