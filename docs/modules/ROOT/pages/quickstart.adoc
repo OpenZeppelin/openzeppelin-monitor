@@ -34,6 +34,8 @@ Copy the example environment file and update values according to your needs
 cp .env.example .env
 ----
 
+For details on the supported values see xref:index.adoc[User Documentation]
+
 == Installation
 
 === Local Installation
@@ -97,6 +99,12 @@ docker compose up -d
 docker compose --profile metrics up -d
 ----
 
+To view prometheus metrics in a UI, you can use `http://localhost:9090` on your browser.
+
+To view grafana dashboard, you can use `http://localhost:3000` on your browser.
+
+By default, predefined metrics within a dashboard is populated in grafana.
+
 ==== Management Commands
 
 . Verify container status:
@@ -124,15 +132,6 @@ docker compose --profile metrics down
 ----
 docker compose logs -f
 ----
-
-[NOTE]
-====
-To persist monitor data between container restarts:
-[source,bash]
-----
-docker volume create openzeppelin-monitor-data
-----
-====
 
 == Examples:
 
@@ -322,11 +321,8 @@ cargo run
 
 [source,bash]
 ----
-docker run \
-  --mount type=bind,src=./config,dst=/app/config,ro \
-  --volume openzeppelin-monitor-data:/app/data \
-  openzeppelin-monitor
-----
+cargo make docker-compose-up
+---
 
 
 The monitor will now:
@@ -471,12 +467,8 @@ cargo run
 
 [source,bash]
 ----
-docker run \
-  --mount type=bind,src=./config,dst=/app/config,ro \
-  --volume openzeppelin-monitor-data:/app/data \
-  openzeppelin-monitor
+cargo make docker-compose-up
 ----
-
 
 The monitor will now:
 

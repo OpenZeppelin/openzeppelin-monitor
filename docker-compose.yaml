@@ -1,5 +1,5 @@
 ---
-# Ports `8080` for monitor server.
+# Ports `8081` for metrics server.
 
 services:
   monitor:
@@ -7,7 +7,6 @@ services:
       context: .
       dockerfile: ${DOCKERFILE:-Dockerfile.development}
     environment:
-      APP_PORT: ${APP_PORT:-8080}
       METRICS_PORT: ${METRICS_PORT:-8081}
       METRICS_ENABLED: ${METRICS_ENABLED:-false}
       # Options: trace, debug, info, warn, error
@@ -16,8 +15,6 @@ services:
       # Options: stdout, file
       # Default: stdout
       LOG_MODE: ${LOG_MODE:-stdout}
-      # Default: logs/
-      LOG_FILE_PATH: ${LOG_FILE_PATH:-logs/}
       # Only used if LOG_MODE is file
       # Default: 1GB (1073741824 bytes)
       LOG_MAX_SIZE: ${LOG_MAX_SIZE:-1073741824}
@@ -28,10 +25,8 @@ services:
       - no-new-privileges
     volumes:
       - ./config:/app/config/:ro
-      # Uncomment to persist data
-      #- ${MONITOR_DATA_DIR:-./data}:/app/data
-      # Uncomment to persist logs (file mode)
-      - ${LOGS_DATA_DIR:-./logs}:/app/logs
+      - ${MONITOR_DATA_DIR:-/dev/null}:/app/data
+      - ${LOG_DATA_DIR:-./logs}:/app/logs
     networks:
       - monitor-network
       - metrics-network

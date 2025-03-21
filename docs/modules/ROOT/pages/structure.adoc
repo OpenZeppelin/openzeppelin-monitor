@@ -75,7 +75,7 @@ Runtime data storage:
 
 [NOTE]
 ====
-The `data/` and `config/` directories are gitignored except for example files. This directory is typically mounted as a Docker volume in production.
+The `data/`, `logs/` and `config/` directories are gitignored except for example files. These directories mounted to persist the configs and runtime data.
 ====
 
 == Metrics and Monitoring:
@@ -134,9 +134,9 @@ Core build files:
 
 The project includes Docker configurations for different environments:
 
-* `Dockerfile.development`: Development container setup
-* `Dockerfile.production`: Production-ready container
-* Environment-specific configurations (`env_dev`, `env_prod`)
+* `Dockerfile.development`: Development container setup.
+* `Dockerfile.production`: Production-ready container.
+* Before running the docker compose set your env variables in `.env` according to your needs.
 
 [TIP]
 ====

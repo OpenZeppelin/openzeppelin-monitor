@@ -3,7 +3,6 @@
 //! Environment variables used:
 //! - LOG_MODE: "stdout" (default) or "file"
 //! - LOG_LEVEL: log level ("trace", "debug", "info", "warn", "error"); default is "info"
-//! - LOG_FILE_PATH: when using file mode, the path of the log file (default "logs/monitor.log")
 
 pub mod error;
 
@@ -140,15 +139,14 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 	if log_mode.to_lowercase() == "file" {
 		info!("Logging to file: {}", log_level);
 
-		// Read LOG_FILE_PATH from environment or use default
-		let log_dir = env::var("LOG_FILE_PATH").unwrap_or_else(|_| "logs/".to_string());
-		// Ensure the directory ends with a '/'.
-		let log_dir = if log_dir.ends_with('/') {
-			log_dir
-		} else {
-			format!("{}/", log_dir)
-		};
+		// Use logs/ directly in container path, otherwise use LOG_DATA_DIR or default to logs/ for host path
+		let log_dir = env::var("IN_DOCKER")
+			.map(|val| val == "true")
+			.unwrap_or(false)
+			.then(|| "logs/".to_string())
+			.unwrap_or_else(|| env::var("LOG_DATA_DIR").unwrap_or_else(|_| "logs/".to_string()));
 
+		let log_dir = format!("{}/", log_dir.trim_end_matches('/'));
 		// set dates
 		let now = Utc::now();
 		let date_str = now.format("%Y-%m-%d").to_string();

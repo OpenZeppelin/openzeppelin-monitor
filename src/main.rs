@@ -114,8 +114,8 @@ async fn main() -> Result<()> {
 	}
 
 	if let Some(path) = matches.get_one::<String>("log-path") {
-		if var("LOG_FILE_PATH").is_err() {
-			set_var("LOG_FILE_PATH", path);
+		if var("LOG_DATA_DIR").is_err() {
+			set_var("LOG_DATA_DIR", path);
 		}
 	}
 

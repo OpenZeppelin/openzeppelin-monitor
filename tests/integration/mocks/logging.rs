@@ -3,7 +3,7 @@
 //! Environment variables used:
 //! - LOG_MODE: "stdout" (default) or "file"
 //! - LOG_LEVEL: log level ("trace", "debug", "info", "warn", "error"); default is "info"
-//! - LOG_FILE_PATH: when using file mode, the path of the log file (default "logs/monitor.log")
+//! - LOG_DATA_DIR: when using file mode, the path of the log file (default "logs/monitor.log")
 //!   Refer to `src/logging/mod.rs` for more details.
 use chrono::Utc;
 use openzeppelin_monitor::utils::{
@@ -46,7 +46,7 @@ fn test_invalid_log_max_size() {
 	// Set LOG_MAX_SIZE to an invalid value.
 	env::set_var("LOG_MODE", "file");
 	env::set_var("LOG_LEVEL", "debug");
-	env::set_var("LOG_FILE_PATH", format!("{}/", temp_log_dir));
+	env::set_var("LOG_DATA_DIR", format!("{}/", temp_log_dir));
 	env::set_var("LOG_MAX_SIZE", "invalid_value");
 
 	// Initialize separate from lazy static.
@@ -65,10 +65,13 @@ fn test_setup_logging_file_mode_creates_log_file() {
 	env::remove_var("LOG_MAX_SIZE");
 	env::set_var("LOG_MODE", "file");
 	env::set_var("LOG_LEVEL", "debug");
-	env::set_var("LOG_FILE_PATH", format!("{}/", temp_log_dir));
+	env::set_var("LOG_DATA_DIR", format!("{}/", temp_log_dir));
 
 	// Clean up any previous logs and create the log directory.
 	let _ = remove_dir_all(temp_log_dir);
+
+	thread::sleep(Duration::from_millis(200));
+
 	create_dir_all(temp_log_dir).expect("Failed to create log directory");
 
 	// Force the lazy_static to initialize logging.
@@ -105,7 +108,7 @@ fn test_log_file_rolls_when_existing() {
 	// Setup environment variables for file logging.
 	env::set_var("LOG_MODE", "file");
 	env::set_var("LOG_LEVEL", "debug");
-	env::set_var("LOG_FILE_PATH", temp_log_dir.to_str().unwrap());
+	env::set_var("LOG_DATA_DIR", temp_log_dir.to_str().unwrap());
 
 	// Clean up any previous logs in the temporary directory.
 	let _ = fs::remove_dir_all(temp_log_dir);

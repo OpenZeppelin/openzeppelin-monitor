@@ -16,6 +16,8 @@ mod transports;
 #[allow(unused_imports)]
 pub use clients::*;
 #[allow(unused_imports)]
+pub use logging::*;
+#[allow(unused_imports)]
 pub use models::*;
 #[allow(unused_imports)]
 pub use repositories::*;
