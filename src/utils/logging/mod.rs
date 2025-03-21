@@ -3,12 +3,13 @@
 //! Environment variables used:
 //! - LOG_MODE: "stdout" (default) or "file"
 //! - LOG_LEVEL: log level ("trace", "debug", "info", "warn", "error"); default is "info"
+//! - LOG_DATA_DIR: directory for log files; default is "logs/"
+//! - LOG_MAX_SIZE: maximum size of log files in bytes; default is 1GB
+//! - IN_DOCKER: "true" if running in Docker; default is "false"
 
 pub mod error;
 
-use super::error::ErrorContext;
 use chrono::Utc;
-use std::collections::HashMap;
 use std::{
 	env,
 	fs::{create_dir_all, metadata},
@@ -210,37 +211,6 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 
 	info!("Logging is successfully configured (mode: {})", log_mode);
 	Ok(())
-}
-
-// Log errors
-pub fn log_error_to_file(
-	message: impl Into<String>,
-	source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
-	metadata: Option<HashMap<String, String>>,
-) {
-	let error_context = ErrorContext::new(message, source, metadata);
-
-	// Use the regular logging mechanisms to log the error
-	let trace_id = &error_context.trace_id;
-	let timestamp = &error_context.timestamp;
-	let msg = error_context.format_with_metadata();
-
-	if let Some(err) = &error_context.source {
-		log::error!(
-			"Error [trace_id={}, timestamp={}]: {} - Caused by: {}",
-			trace_id,
-			timestamp,
-			msg,
-			err
-		);
-	} else {
-		log::error!(
-			"Error [trace_id={}, timestamp={}]: {}",
-			trace_id,
-			timestamp,
-			msg
-		);
-	}
 }
 
 #[cfg(test)]
