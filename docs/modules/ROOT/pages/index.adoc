@@ -1248,7 +1248,7 @@ RUST_TEST_THREADS=1 cargo +stable llvm-cov
 
 == Support
 
-For support or inquiries, contact us on [Telegram](https://t.me/openzeppelin_tg/4).
+For support or inquiries, contact us on link:https://t.me/openzeppelin_tg/4[Telegram].
 
 == License
 This project is licensed under the GNU Affero General Public License v3.0 - see the LICENSE file for details.

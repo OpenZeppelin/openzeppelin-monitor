@@ -6,6 +6,11 @@ use crate::{
 	utils::ScriptExecutorFactory,
 };
 
+/// A notification handler that executes scripts when triggered
+///
+/// This notifier takes a script configuration and executes the specified script
+/// when a monitor match occurs. It supports different script languages and
+/// allows passing arguments and setting timeouts for script execution.
 pub struct ScriptNotifier {
 	config: TriggerTypeConfig,
 }

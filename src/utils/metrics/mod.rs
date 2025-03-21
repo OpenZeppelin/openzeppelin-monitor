@@ -9,94 +9,123 @@ use prometheus::{Encoder, Gauge, GaugeVec, Opts, Registry, TextEncoder};
 use sysinfo::{Disks, System};
 
 lazy_static! {
-	// Global Prometheus registry.
+	/// Global Prometheus registry.
+	///
+	/// This registry holds all metrics defined in this module and is used
+	/// to gather metrics for exposure via the metrics endpoint.
 	pub static ref REGISTRY: Registry = Registry::new();
 
-	// Gauge for CPU usage percentage.
+	/// Gauge for CPU usage percentage.
+	///
+	/// Tracks the current CPU usage as a percentage (0-100) across all cores.
 	pub static ref CPU_USAGE: Gauge = {
 	  let gauge = Gauge::new("cpu_usage_percentage", "Current CPU usage percentage").unwrap();
 	  REGISTRY.register(Box::new(gauge.clone())).unwrap();
 	  gauge
 	};
 
-	// Gauge for memory usage percentage.
+	/// Gauge for memory usage percentage.
+	///
+	/// Tracks the percentage (0-100) of total system memory currently in use.
 	pub static ref MEMORY_USAGE_PERCENT: Gauge = {
 	  let gauge = Gauge::new("memory_usage_percentage", "Memory usage percentage").unwrap();
 	  REGISTRY.register(Box::new(gauge.clone())).unwrap();
 	  gauge
 	};
 
-	// Gauge for memory usage in bytes.
+	/// Gauge for memory usage in bytes.
+	///
+	/// Tracks the absolute amount of memory currently in use by the system in bytes.
 	pub static ref MEMORY_USAGE: Gauge = {
 		let gauge = Gauge::new("memory_usage_bytes", "Memory usage in bytes").unwrap();
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
 
-	// Gauge for total memory in bytes.
+	/// Gauge for total memory in bytes.
+	///
+	/// Tracks the total amount of physical memory available on the system in bytes.
 	pub static ref TOTAL_MEMORY: Gauge = {
 	  let gauge = Gauge::new("total_memory_bytes", "Total memory in bytes").unwrap();
 	  REGISTRY.register(Box::new(gauge.clone())).unwrap();
 	  gauge
 	};
 
-	// Gauge for available memory in bytes.
+	/// Gauge for available memory in bytes.
+	///
+	/// Tracks the amount of memory currently available for allocation in bytes.
 	pub static ref AVAILABLE_MEMORY: Gauge = {
 		let gauge = Gauge::new("available_memory_bytes", "Available memory in bytes").unwrap();
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
 
-	// Gauge for used disk space in bytes.
+	/// Gauge for used disk space in bytes.
+	///
+	/// Tracks the total amount of disk space currently in use across all mounted filesystems in bytes.
 	pub static ref DISK_USAGE: Gauge = {
 	  let gauge = Gauge::new("disk_usage_bytes", "Used disk space in bytes").unwrap();
 	  REGISTRY.register(Box::new(gauge.clone())).unwrap();
 	  gauge
 	};
 
-	// Gauge for disk usage percentage.
+	/// Gauge for disk usage percentage.
+	///
+	/// Tracks the percentage (0-100) of total disk space currently in use across all mounted filesystems.
 	pub static ref DISK_USAGE_PERCENT: Gauge = {
 	  let gauge = Gauge::new("disk_usage_percentage", "Disk usage percentage").unwrap();
 	  REGISTRY.register(Box::new(gauge.clone())).unwrap();
 	  gauge
 	};
 
-	// Gauge for total number of monitors (active and paused)
+	/// Gauge for total number of monitors (active and paused).
+	///
+	/// Tracks the total count of all configured monitors in the system, regardless of their active state.
 	pub static ref MONITORS_TOTAL: Gauge = {
 		let gauge = Gauge::new("monitors_total", "Total number of configured monitors").unwrap();
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
 
-	// Gauge for number of active monitors (not paused)
+	/// Gauge for number of active monitors (not paused).
+	///
+	/// Tracks the count of monitors that are currently active (not in paused state).
 	pub static ref MONITORS_ACTIVE: Gauge = {
 		let gauge = Gauge::new("monitors_active", "Number of active monitors").unwrap();
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
 
-	// Gauge for total number of triggers
+	/// Gauge for total number of triggers.
+	///
+	/// Tracks the total count of all configured triggers in the system.
 	pub static ref TRIGGERS_TOTAL: Gauge = {
 		let gauge = Gauge::new("triggers_total", "Total number of configured triggers").unwrap();
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
 
-	// Gauge for total number of contracts being monitored (across all monitors)
+	/// Gauge for total number of contracts being monitored (across all monitors).
+	///
+	/// Tracks the total count of unique contracts (network + address combinations) being monitored.
 	pub static ref CONTRACTS_MONITORED: Gauge = {
 		let gauge = Gauge::new("contracts_monitored", "Total number of contracts being monitored").unwrap();
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
 
-	// Gauge for total number of networks being monitored
+	/// Gauge for total number of networks being monitored.
+	///
+	/// Tracks the count of unique blockchain networks that have at least one active monitor.
 	pub static ref NETWORKS_MONITORED: Gauge = {
 		let gauge = Gauge::new("networks_monitored", "Total number of networks being monitored").unwrap();
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
 
-	// Gauge Vector for per-network metrics
+	/// Gauge Vector for per-network metrics.
+	///
+	/// Tracks the number of active monitors for each network, with the network name as a label.
 	pub static ref NETWORK_MONITORS: GaugeVec = {
 		let gauge = GaugeVec::new(
 			Opts::new("network_monitors", "Number of monitors per network"),
