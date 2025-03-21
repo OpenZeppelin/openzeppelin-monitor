@@ -339,7 +339,7 @@ This table lists the environment variables and their default values.
 
 | `METRICS_ENABLED`
 | `false`
-| `true`
+| `true`, `false`
 | Enable metrics server for external tools to scrape metrics.
 
 | `METRICS_PORT`
