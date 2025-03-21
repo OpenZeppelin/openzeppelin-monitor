@@ -128,7 +128,7 @@ graph TD
 ### Project Structure
 
 ```
-project-root/
+openzeppelin-monitor/
 ├── src/                # Source code
 │   ├── bootstrap/      # Bootstrap functions for the application
 │   ├── models/         # Data structures and types
@@ -142,6 +142,7 @@ project-root/
 ├── docs/               # Documentation
 ├── scripts/            # Utility scripts
 ├── cmd/                # Metrics and monitoring
+└── ... other root files (Cargo.toml, README.md, etc.)
 ```
 
 ### Setup
