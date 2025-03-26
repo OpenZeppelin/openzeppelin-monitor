@@ -225,14 +225,6 @@ async fn test_create_trigger_handler() {
 
 #[tokio::test]
 async fn test_create_trigger_handler_empty_matches() {
-	// Set up expectation for the constructor first
-	let ctx = MockTriggerExecutionService::<MockTriggerRepository>::new_context();
-	ctx.expect()
-		.with(mockall::predicate::always(), mockall::predicate::always())
-		.returning(|_trigger_service, _notification_service| {
-			MockTriggerExecutionService::default()
-		});
-
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
 		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
