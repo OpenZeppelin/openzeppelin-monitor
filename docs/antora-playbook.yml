@@ -1,7 +1,7 @@
 ---
 site:
   title: OpenZeppelin Monitor
-  start_page: openzeppelin_monitor:ROOT:index.adoc
+  start_page: openzeppelin-monitor:ROOT:index.adoc
 
 content:
   sources:

@@ -383,7 +383,7 @@ Testing is the responsibility of all contributors as such all contributions must
 
 ## Documentation
 
-- See [User Documentation](https://openzeppelin-monitor.netlify.app/openzeppelin_monitor/0.1.0/).
+- See [User Documentation](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/).
 
 ## Issue and Pull Request Labeling Guidelines
 
