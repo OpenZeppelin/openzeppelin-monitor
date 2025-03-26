@@ -6,7 +6,7 @@
 
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
-[Install](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/#getting_started) | [User Docs](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/) | [Quickstart](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/quickstart) | [Crate Docs](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/rust_docs/doc/openzeppelin-monitor/)
+[Install](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/#getting_started) | [User Docs](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/) | [Quickstart](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/quickstart) | [Crate Docs](https://openzeppelin-monitor.netlify.app/openzeppelin-monitor/0.1.0/rust_docs/doc/openzeppelin_monitor/)
 
 ## Features
 
