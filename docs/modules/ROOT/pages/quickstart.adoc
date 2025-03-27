@@ -34,7 +34,7 @@ Copy the example environment file and update values according to your needs
 cp .env.example .env
 ----
 
-For details on the supported values see xref:index.adoc[User Documentation]
+For details on the supported values see xref:index.adoc#basic_configuration[User Documentation - Basic Configuratoin]
 
 == Installation
 
@@ -71,11 +71,11 @@ cargo build
 
 ==== Basic Setup
 
-. Start the services using the make target:
+. Start the services using docker compose:
 +
 [source,bash]
 ----
-cargo make docker-compose-up
+docker compose up
 ----
 
 [NOTE]
@@ -118,10 +118,9 @@ docker ps -a
 +
 [source,bash]
 ----
-cargo make docker-compose-down
-# or using docker compose directly:
 # without metrics profile
 docker compose down
+
 # or with metrics profile
 docker compose --profile metrics down
 ----
