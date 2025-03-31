@@ -48,7 +48,7 @@ stellar-horizon = "0.7.1"
 stellar-rpc-client = "22.0.0"
 stellar-strkey = "0.0.12"
 stellar-xdr = "22.1.0"
-sysinfo = "0.33"
+sysinfo = "0.34"
 thiserror = "2.0.12"
 tokio = { version = "1.0", features = ["full"] }
 tokio-cron-scheduler = "0.13.0"
