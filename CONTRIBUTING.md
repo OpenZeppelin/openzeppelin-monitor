@@ -6,7 +6,12 @@ There are many ways to contribute, regardless of your experience level. Whether 
 
 If you are looking for a good place to start, find a good first issue [here](https://github.com/openzeppelin/openzeppelin-monitor/issues?q=is%3Aissue%20is%3Aopen%20label%3Agood-first-issue).
 
+## Sign the CLA
+
+You must sign the [Contributor License Agreement](https://github.com/OpenZeppelin/cla-assistant/blob/main/openzeppelin_2025_cla.md) in order to contribute. The easiest way to do so is to open a PR against the [monitor repo](https://github.com/OpenZeppelin/openzeppelin-monitor) by forking the repo. See [GitHub workflow](#github-workflow) for more details.
+
 - [Contributing](#contributing)
+  - [Sign the CLA](#sign-the-cla)
   - [Communication](#communication)
   - [Development Workflow](#development-workflow)
   - [GitHub workflow](#github-workflow)
