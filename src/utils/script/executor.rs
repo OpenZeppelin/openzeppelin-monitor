@@ -449,7 +449,6 @@ print("true")
 				console.log("true");
 			} catch (err) {
 				console.error(err);
-				process.exit(1);
 			}
 		})();
 		"#;
@@ -481,10 +480,8 @@ print("true")
 				console.log("debugging...");
 				console.log("finished");
 				console.log("not a boolean");
-				process.exit(0);
 			} catch (err) {
 				console.error(err);
-				process.exit(1);
 			}
 		})();
 		"#;
