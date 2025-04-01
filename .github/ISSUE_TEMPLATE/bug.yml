@@ -70,6 +70,10 @@ body:
     validations:
       required: true
   - type: textarea
+    id: additional
+    attributes:
+      label: Any other context that we need to know specific to the bug?
+  - type: textarea
     id: version
     attributes:
       label: Version Information
