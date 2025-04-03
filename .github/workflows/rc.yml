@@ -78,7 +78,6 @@ jobs:
           commit_sha="${{ github.sha }}"
           if [ "${{ steps.check_branch.outputs.exists }}" = "true" ]; then
             echo "Branch '$branch' already exists. Exiting with error."
-            exit 1
           else
             echo "Branch '$branch' does not exist. Creating new branch from commit $commit_sha."
             git checkout -b $branch $commit_sha
