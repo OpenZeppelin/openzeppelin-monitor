@@ -224,12 +224,7 @@ where
 {
 	tokio::select! {
 		result = filter_service.filter_block(client, network, block, applicable_monitors) => {
-			match result {
-				Ok(matches) => Some(matches),
-				Err(_) => {
-					None
-				}
-			}
+			result.ok()
 		}
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");

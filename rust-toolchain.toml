@@ -1,4 +1,12 @@
 [toolchain]
 channel = "stable"
-versioned = "1.85.1"
-components = ["rustc", "cargo", "rustfmt", "clippy", "rust-docs", "llvm-tools", "rust-src"]
+versioned = "1.86.0"
+components = [
+    "rustc",
+    "cargo",
+    "rustfmt",
+    "clippy",
+    "rust-docs",
+    "llvm-tools",
+    "rust-src",
+]
