@@ -1,11 +1,19 @@
 # Metrics
 
-- This folder contains middleware that is used to intercept the requests for all the endpoints as well as the definition of the metrics that are collected.
+## Overview
 
-- Metrics server is started on port `8081` which collects the metrics from the monitor app and exposes them on the `/metrics` endpoint.
+The metrics system provides monitoring capabilities for the OpenZeppelin Monitor application through Prometheus and Grafana integration.
 
-- We use `prometheus` to collect metrics from the application. The list of metrics are exposed on the `/metrics` endpoint.
+## Architecture
 
-- To view prometheus metrics in a UI, you can use `http://localhost:9090` on your browser.
+- A metrics server runs on port `8081`
+- Middleware intercepts requests across all endpoints
+- Metrics are exposed via the `/metrics` endpoint
+- Prometheus collects and stores the metrics data
+- Grafana provides visualization through customizable dashboards
 
-- To view grafana dashboard, you can use `http://localhost:3000` on your browser.
+## Access Points
+
+- Prometheus UI: `http://localhost:9090`
+- Grafana Dashboard: `http://localhost:3000`
+- Raw Metrics: `http://localhost:8081/metrics`

@@ -326,8 +326,7 @@ cargo run
 [source,bash]
 ----
 cargo make docker-compose-up
----
-
+----
 
 The monitor will now:
 
@@ -459,7 +458,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
         "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
       }
     }
-  },
+  }
 }
 ----
 
