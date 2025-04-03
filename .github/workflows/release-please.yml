@@ -5,6 +5,18 @@ on:
   push:
     branches:
       - release-v*
+
+
+permissions:
+  contents: write
+  pull-requests: write
+
+
+# run concurrency group for the workflow
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
@@ -15,13 +27,55 @@ jobs:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
-      - name: Checkout repository at commit SHA
+      - name: Checkout release branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
           token: ${{ steps.gh-app-token.outputs.token }}
 
-      - uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445  # v4.2.0
+      - name: Check release branch
+        id: check_branch
+        run: |
+          RELEASE_BRANCH=${{ github.ref_name }}
+          CURRENT_VERSION=$(echo "$RELEASE_BRANCH" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+          echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+          # Sort release branches
+          HIGHER_BRANCHES=$(git branch -r | grep release-v | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n +2)
+          if [[ -n "$HIGHER_BRANCHES" ]]; then
+            # Extract the highest version
+            HIGHEST_VERSION=$(echo "$HIGHER_BRANCHES" | tail -n 1)
+            if [[ "$CURRENT_VERSION" == "$HIGHEST_VERSION" ]]; then
+              echo "run_release_please=true" >> $GITHUB_OUTPUT
+            else
+              echo "run_release_please=false" >> $GITHUB_OUTPUT
+              echo "Release-please skipped for branch: $RELEASE_BRANCH. Higher versioned release branches exist."
+            fi
+          else
+            echo "run_release_please=true" >> $GITHUB_OUTPUT  # if no higher version branch exists run release-please.
+          fi
+      - name: Start release please action
+        id: release-please
+        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445  # v4.2.0
+        if: ${{ steps.check_branch.outputs.run_release_please == 'true' }}
         with:
           token: ${{ steps.gh-app-token.outputs.token }}
-          release-type: rust
+          target-branch: ${{ github.ref_name }}
+          config-file: .release-config.json
+          manifest-file: .release-manifest.json
+
+
+      - name: Cargo Update and Commit
+        if: ${{ steps.release-please.outputs.prs_created && steps.check_branch.outputs.run_release_please
+          == 'true' }}
+        run: |
+          cargo update
+          git add Cargo.lock
+          if git diff --cached --exit-code Cargo.lock; then
+            echo "Cargo.lock has no changes, skipping commit and push."
+          else
+            git commit -S -m "chore: Update Cargo.lock after release-please"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+        env:
+          GITHUB_TOKEN: ${{ steps.gh-app-token.outputs.token }}
