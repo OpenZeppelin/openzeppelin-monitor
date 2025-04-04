@@ -64,12 +64,20 @@ jobs:
           config-file: .release-config.json
           manifest-file: .release-manifest.json
 
+      - name: Get GitHub App User ID
+        id: get-user-id
+        run: echo "user-id=$(gh api "/users/${{ steps.gh-app-token.outputs.app-slug
+          }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
 
       - name: Cargo Update and Commit
         if: ${{ steps.release-please.outputs.prs_created && steps.check_branch.outputs.run_release_please
           == 'true' }}
-        run: |
+        run: |-
           cargo update
+          git config --global user.name '${{ steps.gh-app-token.outputs.app-slug }}[bot]'
+          git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.gh-app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
           git add Cargo.lock
           if git diff --cached --exit-code Cargo.lock; then
             echo "Cargo.lock has no changes, skipping commit and push."
@@ -77,5 +85,3 @@ jobs:
             git commit -S -m "chore: Update Cargo.lock after release-please"
             git push origin HEAD:${{ github.ref_name }}
           fi
-        env:
-          GITHUB_TOKEN: ${{ steps.gh-app-token.outputs.token }}
