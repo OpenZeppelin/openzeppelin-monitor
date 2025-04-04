@@ -107,6 +107,8 @@ jobs:
         if: ${{ steps.release-please.outputs.prs_created }}
         id: lock-file-commit
         run: |-
+          cargo update
+          git add Cargo.lock
           if ! git diff --cached --quiet Cargo.lock; then
             auto_release_pr_number=$(gh pr list --label "autorelease: pending" --state "open" --json number --jq '.[0].number')
             echo "autoreleaseprnumber=${auto_release_pr_number}" >> $GITHUB_OUTPUT
