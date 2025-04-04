@@ -73,7 +73,7 @@ jobs:
           echo "Found merged PR number: $PR_NUMBER"
 
           # Fetch PR details and extract labels
-          PR_LABELS=$(gh api --jq '.labels.[].name' /repos/OpenZeppelin/openzeppelin-monitor/pulls/129)
+          PR_LABELS=$(gh api --jq '.labels.[].name' /repos/OpenZeppelin/openzeppelin-monitor/pulls/$PR_NUMBER)
 
           echo "PR labels: $PR_LABELS"
 
@@ -104,25 +104,27 @@ jobs:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
 
       - name: Cargo Update
-        if: ${{ steps.release-please.outputs.prs_created && steps.check_branch.outputs.run_release_please
-          == 'true' }}
+        if: ${{ steps.release-please.outputs.prs_created }}
         id: lock-file-commit
         run: |-
+          prnumber="$(gh pr list --label "autorelease: pending" --state "open" --json number --jq '.[] | .number')"
           cargo update
           git add Cargo.lock
           if git diff --cached --exit-code Cargo.lock; then
             echo "Cargo.lock has no changes, skipping commit and push."
           else
-            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "prnumber=$prnumber" >> $GITHUB_OUTPUT
           fi
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
 
       - name: Commit cargo update
-        if: ${{ steps.lock-file-commit.outputs.changes == 'true' }}
+        if: ${{ steps.lock-file-commit.outputs.prnumber != '' }}
         uses: iarekylew00t/verified-bot-commit@849c406ce58dfd17ed6a8b981448968d4d0f2012  # v1.3.2
         with:
           message: 'chore: Updating lock file'
           token: ${{ steps.gh-app-token.outputs.token }}
-          ref: refs/pull/${{ steps.release-please.outputs.pr.number }}/head
+          ref: refs/pull/${{ steps.lock-file-commit.outputs.prnumber }}/head
           files: |-
             Cargo.lock
 
