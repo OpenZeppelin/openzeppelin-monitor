@@ -8,6 +8,7 @@ on:
 
 
 permissions:
+  actions: read
   contents: write
   pull-requests: write
 
@@ -54,6 +55,37 @@ jobs:
           else
             echo "run_release_please=true" >> $GITHUB_OUTPUT  # if no higher version branch exists run release-please.
           fi
+
+      - name: Get merged PR number from commit
+        id: get_pr
+        run: |
+          commit_sha="${{ github.sha }}"
+          pr_number=$(gh pr list --search "${commit_sha}" --state merged --json number | jq '.[0].number // empty')
+          echo "pr_number_output=${pr_number:-}" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
+
+
+      - name: Check for label and unlock conversation
+        if: steps.get_pr.outputs.pr_number_output != ''
+        run: |
+          PR_NUMBER=${{ steps.get_pr.outputs.pr_number_output }}
+          echo "Found merged PR number: $PR_NUMBER"
+
+          # Fetch PR details and extract labels
+          PR_LABELS=$(gh api --jq '.labels.[].name' /repos/OpenZeppelin/openzeppelin-monitor/pulls/$PR_NUMBER)
+
+          echo "PR labels: $PR_LABELS"
+
+          if echo "$PR_LABELS" | grep -q "autorelease: pending"; then
+            echo "Label 'autorelease: pending' found. Unlocking conversation..."
+            gh issue unlock $PR_NUMBER
+          else
+            echo "Label 'autorelease: pending' not found. Skipping unlock."
+          fi
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
+
       - name: Start release please action
         id: release-please
         uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445  # v4.2.0
@@ -71,17 +103,45 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
 
-      - name: Cargo Update and Commit
-        if: ${{ steps.release-please.outputs.prs_created && steps.check_branch.outputs.run_release_please
-          == 'true' }}
+      - name: Cargo Update
+        if: ${{ steps.release-please.outputs.prs_created }}
+        id: lock-file-commit
         run: |-
-          cargo update
-          git config --global user.name '${{ steps.gh-app-token.outputs.app-slug }}[bot]'
-          git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.gh-app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
-          git add Cargo.lock
-          if git diff --cached --exit-code Cargo.lock; then
-            echo "Cargo.lock has no changes, skipping commit and push."
+          if ! git diff --cached --quiet Cargo.lock; then
+            auto_release_pr_number=$(gh pr list --label "autorelease: pending" --state "open" --json number --jq '.[0].number')
+            echo "autoreleaseprnumber=${auto_release_pr_number}" >> $GITHUB_OUTPUT
           else
-            git commit -m "chore: Update Cargo.lock after release-please"
-            git push origin HEAD:${{ github.ref_name }}
+            echo "Cargo.lock has no changes, skipping commit and push."
           fi
+          echo "PR number >>>>> ${auto_release_pr_number:-}"
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
+
+      - name: Commit cargo update
+        if: ${{ steps.lock-file-commit.outputs.autoreleaseprnumber != '' }}
+        uses: iarekylew00t/verified-bot-commit@849c406ce58dfd17ed6a8b981448968d4d0f2012  # v1.3.2
+        with:
+          message: 'chore: Updating lock file'
+          token: ${{ steps.gh-app-token.outputs.token }}
+          ref: refs/pull/${{ steps.lock-file-commit.outputs.autoreleaseprnumber }}/head
+          files: |-
+            Cargo.lock
+
+      - name: Run SBOM
+        if: ${{ steps.release-please.outputs.release_created }}
+        uses: anchore/sbom-action@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0  # v0.18.0
+        with:
+          upload-artifact-retention: 7
+          upload-release-assets: false
+          github-token: ${{ steps.gh-app-token.outputs.token }}
+          output-file: openzeppelin-monitor-${{ steps.release-please.outputs.version
+            }}-spdx.json
+          artifact-name: openzeppelin-monitor-${{ steps.release-please.outputs.version
+            }}-spdx.json
+
+      - name: Upload Release Artifact
+        if: ${{ steps.release-please.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
+        run: gh release upload ${{ steps.release-please.outputs.tag_name }} ./openzeppelin-monitor-${{
+          steps.release-please.outputs.version }}-spdx.json

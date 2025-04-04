@@ -7,7 +7,6 @@
   "include-component-in-tag": false,
   "pull-request-title-pattern": "chore: Release version ${version}",
   "pull-request-header": "🤖 Created a Release ⚡ ⚡",
-  "draft": true,
   "always-update": true,
   "changelog-sections": [
     {
