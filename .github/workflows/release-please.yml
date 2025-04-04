@@ -8,6 +8,7 @@ on:
 
 
 permissions:
+  actions: read
   contents: write
   pull-requests: write
 
@@ -72,24 +73,18 @@ jobs:
           echo "Found merged PR number: $PR_NUMBER"
 
           # Fetch PR details and extract labels
-          PR_LABELS=$(curl -s \
-            -H "Authorization: Bearer ${{ steps.gh-app-token.outputs.token }}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER" | jq -r '.labels[].name')
+          PR_LABELS=$(gh api --jq '.labels.[].name' /repos/OpenZeppelin/openzeppelin-monitor/pulls/129)
 
           echo "PR labels: $PR_LABELS"
 
           if echo "$PR_LABELS" | grep -q "autorelease: pending"; then
             echo "Label 'autorelease: pending' found. Unlocking conversation..."
-            curl -L \
-              -X DELETE \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ steps.gh-app-token.outputs.token }}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/lock"
+            gh issue unlock $PR_NUMBER
           else
             echo "Label 'autorelease: pending' not found. Skipping unlock."
           fi
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
 
       - name: Start release please action
         id: release-please
@@ -118,7 +113,6 @@ jobs:
           if git diff --cached --exit-code Cargo.lock; then
             echo "Cargo.lock has no changes, skipping commit and push."
           else
-            git restore --staged Cargo.lock
             echo "changes=true" >> $GITHUB_OUTPUT
           fi
 
@@ -126,8 +120,26 @@ jobs:
         if: ${{ steps.lock-file-commit.outputs.changes == 'true' }}
         uses: iarekylew00t/verified-bot-commit@849c406ce58dfd17ed6a8b981448968d4d0f2012  # v1.3.2
         with:
-          auto-stage: false
           message: 'chore: Updating lock file'
           token: ${{ steps.gh-app-token.outputs.token }}
           files: |-
             Cargo.lock
+
+      - name: Run SBOM
+        if: ${{ steps.release-please.outputs.release_created }}
+        uses: anchore/sbom-action@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0  # v0.18.0
+        with:
+          upload-artifact-retention: 7
+          upload-release-assets: false
+          github-token: ${{ steps.gh-app-token.outputs.token }}
+          output-file: openzeppelin-monitor-${{ steps.release-please.outputs.version
+            }}-spdx.json
+          artifact-name: openzeppelin-monitor-${{ steps.release-please.outputs.version
+            }}-spdx.json
+
+      - name: Upload Release Artifact
+        if: ${{ steps.release-please.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
+        run: gh release upload ${{ steps.release-please.outputs.tag_name }} ./openzeppelin-monitor-${{
+          steps.release-please.outputs.version }}-spdx.json
