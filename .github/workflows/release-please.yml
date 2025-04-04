@@ -122,6 +122,7 @@ jobs:
         with:
           message: 'chore: Updating lock file'
           token: ${{ steps.gh-app-token.outputs.token }}
+          ref: refs/pull/${{ steps.release-please.outputs.pr.number }}/head
           files: |-
             Cargo.lock
 
