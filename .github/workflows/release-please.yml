@@ -63,6 +63,7 @@ jobs:
           echo "pr_number_output=$pr_number" >> $GITHUB_OUTPUT
 
       - name: Check for label and unlock conversation
+        if: steps.get_pr.outputs.pr_number_output != ''
         run: |
           PR_NUMBER=${{ steps.get_pr.outputs.pr_number_output }}
           echo "Found merged PR number: $PR_NUMBER"
