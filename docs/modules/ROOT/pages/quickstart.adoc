@@ -38,7 +38,7 @@ For details on the supported values see xref:index.adoc#basic_configuration[User
 
 == Installation
 
-=== Local Installation
+=== Run Locally
 
 . Clone the repository:
 +
@@ -52,22 +52,30 @@ cd openzeppelin-monitor
 +
 [source,bash]
 ----
-cargo build
+cargo build --release
 ----
 
-=== Standalone CLI Usage
+. Move the binary to the project root (so that it can access the `./config` folder)
++
+[source,bash]
+----
+mv ./target/release/openzeppelin-monitor .
+----
 
 . View available options:
 +
 [source,bash]
 ----
 ./openzeppelin-monitor --help
+
+# Enable logging to file
+./openzeppelin-monitor --log-file
+
+# Enable metrics server
+./openzeppelin-monitor --metrics
 ----
 
-. Enable logging to file with `--log-file`
-. Enable metrics server with `--metrics`
-
-=== Docker Installation
+=== Run with Docker
 
 ==== Basic Setup
 

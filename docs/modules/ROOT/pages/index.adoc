@@ -149,7 +149,7 @@ For detailed information about each directory and its contents, see xref:structu
 
 == Installation
 
-=== Option 1: Install Locally
+=== Run Locally
 . Clone the repository:
 +
 [source,bash]
@@ -162,21 +162,30 @@ cd openzeppelin-monitor
 +
 [source,bash]
 ----
-cargo build
+cargo build --release
 ----
 
-==== Run the CLI:
+. Move the binary to the project root (so that it can access the `./config` folder)
++
+[source,bash]
+----
+mv ./target/release/openzeppelin-monitor .
+----
+
 . View available options:
 +
 [source,bash]
 ----
 ./openzeppelin-monitor --help
-----
-+
-. Use `--log-file` to enable file-based logging.
-. Use `--metrics` to enable the metrics server.
 
-=== Option 2: Run with Docker
+# Enable logging to file
+./openzeppelin-monitor --log-file
+
+# Enable metrics server
+./openzeppelin-monitor --metrics
+----
+
+=== Run with Docker
 
 ==== Basic Setup
 
