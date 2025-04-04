@@ -54,6 +54,39 @@ jobs:
           else
             echo "run_release_please=true" >> $GITHUB_OUTPUT  # if no higher version branch exists run release-please.
           fi
+
+      - name: Get merged PR number from commit
+        id: get_pr
+        run: |
+          commit_sha="${{ github.sha }}"
+          pr_number=$(gh pr list --search "${commit_sha}" --state merged --json number | jq '.[0].number')
+          echo "pr_number_output=$pr_number" >> $GITHUB_OUTPUT
+
+      - name: Check for label and unlock conversation
+        run: |
+          PR_NUMBER=${{ steps.get_pr.outputs.pr_number_output }}
+          echo "Found merged PR number: $PR_NUMBER"
+
+          # Fetch PR details and extract labels
+          PR_LABELS=$(curl -s \
+            -H "Authorization: Bearer ${{ steps.gh-app-token.outputs.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER" | jq -r '.labels[].name')
+
+          echo "PR labels: $PR_LABELS"
+
+          if echo "$PR_LABELS" | grep -q "autorelease: pending"; then
+            echo "Label 'autorelease: pending' found. Unlocking conversation..."
+            curl -L \
+              -X DELETE \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ steps.gh-app-token.outputs.token }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/lock"
+          else
+            echo "Label 'autorelease: pending' not found. Skipping unlock."
+          fi
+
       - name: Start release please action
         id: release-please
         uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445  # v4.2.0
