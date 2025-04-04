@@ -4,11 +4,10 @@
     ".": {}
   },
   "release-type": "rust",
-  "draft-pull-request": true,
+  "include-component-in-tag": false,
   "pull-request-title-pattern": "chore: Release version ${version}",
   "pull-request-header": "🤖 Created a Release ⚡ ⚡",
-  "pull-request-footer": "",
-  "always-update": true,
+  "pull-request-footer": "Merge this pull request to trigger the next release.",
   "changelog-sections": [
     {
       "type": "feat",
