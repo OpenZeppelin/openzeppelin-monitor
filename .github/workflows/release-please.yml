@@ -22,7 +22,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.releases_created }}
       pr_created: ${{ steps.release.outputs.prs_created }}
-      release_branch: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+      release_branch: ${{ steps.get_release_branch.outputs.release_branch }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
@@ -100,6 +100,12 @@ jobs:
           target-branch: ${{ github.ref_name }}
           config-file: .release-config.json
           manifest-file: .release-manifest.json
+
+      - name: Get release branch name
+        if: steps.release.outputs.prs_created
+        id: get_release_branch
+        run: |
+          echo "release_branch=${{ fromJSON(steps.release.outputs.pr).headBranchName }}" >> $GITHUB_OUTPUT
 
   update-cargo-lockfile:
     runs-on: ubuntu-latest
