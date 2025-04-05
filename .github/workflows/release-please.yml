@@ -22,7 +22,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.releases_created }}
       pr_created: ${{ steps.release.outputs.prs_created }}
-      release_head_branch: ${{ steps.release.outputs.pr.headBranchName }}
+      pr_details: ${{ steps.release.outputs.pr }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
@@ -113,12 +113,18 @@ jobs:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
+      - name: Get PR details
+        id: release-branch
+        run: |
+          echo "pr head branch name: >>>>> ${{ toJson(needs.release-please.outputs.pr_details).headBranchName }}"
+          echo "release_branch_name=${{ toJson(needs.release-please.outputs.pr_details).headBranchName }}" >> GITHUB_OUTPUT
+
       - name: Checkout release branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 2
           token: ${{ steps.gh-app-token.outputs.token }}
-          ref: ${{ needs.release-please.outputs.release_head_branch }}
+          ref: ${{ steps.release-branch.outputs.release_branch_name }}
 
       - name: Get GitHub App User ID
         id: get-user-id
