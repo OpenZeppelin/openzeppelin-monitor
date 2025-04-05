@@ -22,7 +22,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.releases_created }}
       pr_created: ${{ steps.release.outputs.prs_created }}
-      release_branch: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+      release_branch: ${{ steps.get_release_branch.outputs.release_branch }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
@@ -77,16 +77,34 @@ jobs:
           PR_NUMBER=${{ steps.get_pr.outputs.pr_number_output }}
           echo "Found merged PR number: $PR_NUMBER"
 
-          # Fetch PR details and extract labels
-          PR_LABELS=$(gh api --jq '.labels.[].name' /repos/OpenZeppelin/openzeppelin-monitor/pulls/$PR_NUMBER)
+          retries=3
+          wait=2
 
-          echo "PR labels: $PR_LABELS"
+          while [[ $retries -gt 0 ]]; do
+            # Fetch PR details and extract labels
+            PR_LABELS=$(gh api --jq '.labels.[].name' /repos/${{ github.repository }}/pulls/$PR_NUMBER)
 
-          if echo "$PR_LABELS" | grep -q "autorelease: pending"; then
-            echo "Label 'autorelease: pending' found. Unlocking conversation..."
-            gh pr unlock $PR_NUMBER
-          else
-            echo "Label 'autorelease: pending' not found. Skipping unlock."
+            if echo "$PR_LABELS" | grep -q "autorelease: pending"; then
+              echo "Label 'autorelease: pending' found. Attempting to unlock..."
+              gh pr unlock $PR_NUMBER
+              if [[ $? -eq 0 ]]; then
+                echo "PR unlocked successfully."
+                break
+              else
+                echo "Failed to unlock PR. Retrying in $wait seconds..."
+                sleep $wait
+                wait=$((wait * 2))
+                retries=$((retries - 1))
+              fi
+            else
+              echo "Label 'autorelease: pending' not found. Skipping unlock."
+              break
+            fi
+          done
+
+          if [[ $retries -eq 0 ]]; then
+            echo "Failed to unlock PR after multiple retries."
+            exit 1  # Fail the step if unlocking consistently fails
           fi
         env:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
@@ -101,10 +119,17 @@ jobs:
           config-file: .release-config.json
           manifest-file: .release-manifest.json
 
+      - name: Get release branch name on release please prs
+        if: ${{ steps.release.outputs.releases_created == false }}
+        id: get_release_branch
+        run: |
+          echo "release_branch=${{ fromJSON(steps.release.outputs.pr).headBranchName }}" >> $GITHUB_OUTPUT
+
+
   update-cargo-lockfile:
     runs-on: ubuntu-latest
     needs: release-please
-    if: ${{ needs.release-please.outputs.pr_created == 'true' }}
+    if: ${{ needs.release-please.outputs.release_created == 'false' }}
     steps:
       - name: Get github app token
         uses: actions/create-github-app-token@af35edadc00be37caa72ed9f3e6d5f7801bfdf09  # v1.11.7
