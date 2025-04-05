@@ -11,6 +11,7 @@ permissions:
   contents: write
   pull-requests: write
   attestations: write
+  packages: write
 
 # run concurrency group for the workflow
 concurrency:
