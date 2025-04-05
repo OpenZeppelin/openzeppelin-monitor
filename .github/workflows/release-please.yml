@@ -77,16 +77,34 @@ jobs:
           PR_NUMBER=${{ steps.get_pr.outputs.pr_number_output }}
           echo "Found merged PR number: $PR_NUMBER"
 
-          # Fetch PR details and extract labels
-          PR_LABELS=$(gh api --jq '.labels.[].name' /repos/OpenZeppelin/openzeppelin-monitor/pulls/$PR_NUMBER)
+          retries=3
+          wait=2
 
-          echo "PR labels: $PR_LABELS"
+          while [[ $retries -gt 0 ]]; do
+            # Fetch PR details and extract labels
+            PR_LABELS=$(gh api --jq '.labels.[].name' /repos/${{ github.repository }}/pulls/$PR_NUMBER)
 
-          if echo "$PR_LABELS" | grep -q "autorelease: pending"; then
-            echo "Label 'autorelease: pending' found. Unlocking conversation..."
-            gh pr unlock $PR_NUMBER
-          else
-            echo "Label 'autorelease: pending' not found. Skipping unlock."
+            if echo "$PR_LABELS" | grep -q "autorelease: pending"; then
+              echo "Label 'autorelease: pending' found. Attempting to unlock..."
+              gh pr unlock $PR_NUMBER
+              if [[ $? -eq 0 ]]; then
+                echo "PR unlocked successfully."
+                break
+              else
+                echo "Failed to unlock PR. Retrying in $wait seconds..."
+                sleep $wait
+                wait=$((wait * 2))
+                retries=$((retries - 1))
+              fi
+            else
+              echo "Label 'autorelease: pending' not found. Skipping unlock."
+              break
+            fi
+          done
+
+          if [[ $retries -eq 0 ]]; then
+            echo "Failed to unlock PR after multiple retries."
+            exit 1  # Fail the step if unlocking consistently fails
           fi
         env:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
