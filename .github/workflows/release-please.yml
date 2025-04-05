@@ -10,6 +10,7 @@ permissions:
   actions: read
   contents: write
   pull-requests: write
+  attestations: write
 
 # run concurrency group for the workflow
 concurrency:
