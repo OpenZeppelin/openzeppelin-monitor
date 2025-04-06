@@ -3,7 +3,8 @@
 
 services:
   monitor:
-    image: openzeppelin/openzeppelin-monitor:v0.1.0
+    # Needs docker hub registry to be public
+    image: openzeppelin/openzeppelin-monitor:latest
     build:
       context: .
       dockerfile: ${DOCKERFILE:-Dockerfile.development}

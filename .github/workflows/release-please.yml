@@ -127,7 +127,7 @@ jobs:
         with:
           token: ${{ steps.gh-app-token.outputs.token }}
           target-branch: ${{ github.ref_name }}
-          config-file: .github/release-please/config.json
+          config-file: .github/release-please/.config.json
           manifest-file: .github/release-please/manifest.json
 
       - name: Get release branch name on release please prs
