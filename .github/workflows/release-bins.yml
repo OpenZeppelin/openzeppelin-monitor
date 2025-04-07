@@ -17,9 +17,8 @@ jobs:
         include:
           - arch: x86_64-unknown-linux-gnu
             platform: ubuntu-22.04
-          # TODO: uncomment once public
-          # - arch: aarch64-unknown-linux-gnu
-          #   platform: ubuntu-22.04-arm
+          - arch: aarch64-unknown-linux-gnu
+            platform: ubuntu-22.04-arm
           - arch: x86_64-apple-darwin
             platform: macos-latest
           - arch: aarch64-apple-darwin
@@ -93,12 +92,11 @@ jobs:
         with:
           pattern: openzeppelin-monitor-*
           path: artifacts
-      # TODO - Uncomment after public
-      # - name: Binaries attestation
-      #   uses: actions/attest-build-provenance@d3b713ade6128010830a9be91a036ed11e065550  # main
-      #   with:
-      #     subject-path: artifacts/**/openzeppelin-monitor
-      #     github-token: ${{ steps.gh-app-token.outputs.token }}
+      - name: Binaries attestation
+        uses: actions/attest-build-provenance@d3b713ade6128010830a9be91a036ed11e065550  # main
+        with:
+          subject-path: artifacts/**/openzeppelin-monitor
+          github-token: ${{ steps.gh-app-token.outputs.token }}
 
       - name: Update release please artifacts
         uses: softprops/action-gh-release@ab50eebb6488051c6788d97fa95232267c6a4e23  # main

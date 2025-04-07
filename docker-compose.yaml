@@ -3,7 +3,6 @@
 
 services:
   monitor:
-    # Needs docker hub registry to be public
     image: openzeppelin/openzeppelin-monitor:latest
     build:
       context: .
