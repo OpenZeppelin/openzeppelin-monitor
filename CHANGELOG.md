@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v0.1.0...v0.1.1) (2025-04-07)
+
+
+### 🐛 Bug Fixes
+
+* Docs ([#164](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/164)) ([893ed7a](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/893ed7ae99ed4958c46b58fee5c9694b09232f99))
+
 ## 0.1.0 (2025-04-07)
 
 
