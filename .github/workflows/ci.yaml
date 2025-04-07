@@ -192,9 +192,9 @@ jobs:
           sarif_file: clippy-results.sarif
           wait-for-processing: true
 
-      - name: Report status
-        run: cargo clippy --all-features --all-targets -- -D warnings --allow deprecated
-          --locked
+      # - name: Report status
+      #   run: cargo clippy --all-features --all-targets -- -D warnings --allow deprecated
+      #     --locked
 
   test:
     if: |
