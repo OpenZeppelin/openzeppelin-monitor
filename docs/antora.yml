@@ -1,6 +1,6 @@
 ---
-name: openzeppelin-monitor
-title: OpenZeppelin Monitor
+name: monitor
+title: Monitor
 version: 0.1.0
 nav:
   - modules/ROOT/nav.adoc

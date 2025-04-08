@@ -1,0 +1,106 @@
+---
+name: Release binaries
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        description: The tag to use for releasing binaries.
+        required: true
+
+jobs:
+  build:
+    name: Build binaries
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64-unknown-linux-gnu
+            platform: ubuntu-22.04
+          - arch: aarch64-unknown-linux-gnu
+            platform: ubuntu-22.04-arm
+          - arch: x86_64-apple-darwin
+            platform: macos-latest
+          - arch: aarch64-apple-darwin
+            platform: macos-latest
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Get github app token
+        uses: actions/create-github-app-token@af35edadc00be37caa72ed9f3e6d5f7801bfdf09  # v1.11.7
+        id: gh-app-token
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+
+      - name: Checkout sources
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ inputs.tag }}
+          token: ${{ steps.gh-app-token.outputs.token }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@fcf085fcb4b4b8f63f96906cd713eb52181b5ea4  # stable
+        with:
+          toolchain: stable
+          target: ${{ matrix.arch }}
+
+      - name: Build monitor for ${{ matrix.arch }}
+        run: |
+          cargo build --bin openzeppelin-monitor --release --target ${{ matrix.arch }}
+
+      - name: Pack monitor
+        run: |
+          tar -C ./target/${{ matrix.arch }}/release -czf \
+            openzeppelin-monitor-${{ inputs.tag }}-${{ matrix.arch }}.tar.gz \
+            openzeppelin-monitor
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: openzeppelin-monitor-${{ matrix.arch }}
+          path: |
+            openzeppelin-monitor-${{ inputs.tag }}-${{ matrix.arch }}.tar.gz
+            ./target/${{ matrix.arch }}/release/openzeppelin-monitor
+          retention-days: 7
+
+  upload-binaries:
+    name: Upload binaries
+    permissions:
+      contents: write
+      pull-requests: write
+      attestations: write
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get github app token
+        uses: actions/create-github-app-token@af35edadc00be37caa72ed9f3e6d5f7801bfdf09  # v1.11.7
+        id: gh-app-token
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout sources
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ inputs.tag }}
+          token: ${{ steps.gh-app-token.outputs.token }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e  # v4.2.1
+        with:
+          pattern: openzeppelin-monitor-*
+          path: artifacts
+      - name: Binaries attestation
+        uses: actions/attest-build-provenance@d3b713ade6128010830a9be91a036ed11e065550  # main
+        with:
+          subject-path: artifacts/**/openzeppelin-monitor
+          github-token: ${{ steps.gh-app-token.outputs.token }}
+
+      - name: Update release please artifacts
+        uses: softprops/action-gh-release@ab50eebb6488051c6788d97fa95232267c6a4e23  # main
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: artifacts/**/openzeppelin-monitor*.tar.gz
+          token: ${{ steps.gh-app-token.outputs.token }}

@@ -3,6 +3,7 @@
 
 services:
   monitor:
+    image: openzeppelin/openzeppelin-monitor:latest
     build:
       context: .
       dockerfile: ${DOCKERFILE:-Dockerfile.development}
