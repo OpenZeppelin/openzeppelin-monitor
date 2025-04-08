@@ -104,11 +104,11 @@ The retry policy can be customized using the `ExponentialBackoff` builder in the
 
 [source,rust]
 ----
-		let retry_policy = ExponentialBackoff::builder()
-			.base(2)
-			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
-			.jitter(Jitter::None)
-			.build_with_max_retries(2);
+let retry_policy = ExponentialBackoff::builder()
+  .base(2)
+  .retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+  .jitter(Jitter::None)
+  .build_with_max_retries(2);
 ----
 
 The retry policy can be customized with the following options:
@@ -116,11 +116,11 @@ The retry policy can be customized with the following options:
 [source,rust]
 ----
 pub struct ExponentialBackoff {
-    pub max_n_retries: Option<u32>,     // Maximum number of allowed retries attempts.
-    pub min_retry_interval: Duration,   // Minimum waiting time between two retry attempts (it can end up being lower when using full jitter).
-    pub max_retry_interval: Duration,   // Maximum waiting time between two retry attempts.
-    pub jitter: Jitter,                 // How we apply jitter to the calculated backoff intervals.
-    pub base: u32,                      // Base of the exponential.
+  pub max_n_retries: Option<u32>,     // Maximum number of allowed retries attempts.
+  pub min_retry_interval: Duration,   // Minimum waiting time between two retry attempts (it can end up being lower when using full jitter).
+  pub max_retry_interval: Duration,   // Maximum waiting time between two retry attempts.
+  pub jitter: Jitter,                 // How we apply jitter to the calculated backoff intervals.
+  pub base: u32,                      // Base of the exponential.
 }
 ----
 
@@ -148,8 +148,8 @@ pub struct StellarTransportClient {
 [source,rust]
 ----
 let client = ClientBuilder::new(reqwest::Client::new())
-    .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-    .build();
+  .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+  .build();
 ----
 
 === Implementation Details

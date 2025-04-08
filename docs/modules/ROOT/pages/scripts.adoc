@@ -15,15 +15,15 @@ Custom filter scripts allow you to apply additional conditions to matches detect
 === Implementation Guide
 
 1. Create a script in one of the supported languages:
-   * Bash
-   * Python
-   * JavaScript
+  * Bash
+  * Python
+  * JavaScript
 
 2. Your script will receive a JSON object with the following structure:
-
+  * EVM
++
 [source,json]
 ----
-// Example for EVM MATCH
 {
   "args": ["--verbose"],
   "monitor_match": {
@@ -140,8 +140,12 @@ Custom filter scripts allow you to apply additional conditions to matches detect
     }
   }
 }
+----
 
-// Example for STELLAR MATCH
+  * Stellar
++
+[source,json]
+----
 {
   "args": ["--verbose"],
   "monitor_match": {

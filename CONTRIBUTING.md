@@ -388,7 +388,7 @@ Testing is the responsibility of all contributors as such all contributions must
 
 ## Documentation
 
-- See [User Documentation](https://docs.openzeppelin.com/monitor/0.1.0/).
+- See [User Documentation](https://docs.openzeppelin.com/monitor).
 
 ## Issue and Pull Request Labeling Guidelines
 
