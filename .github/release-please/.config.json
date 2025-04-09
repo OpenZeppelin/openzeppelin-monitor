@@ -61,5 +61,17 @@
       "section": "🥏 Continuous Integration",
       "hidden": true
     }
+  ],
+  "extra-files": [
+		{
+      "type": "toml",
+			"path": "Cargo.toml",
+			"jsonpath": "package.version"
+    },
+    {
+      "type": "generic",
+			"path": "docs/antora.yml"
+    }
   ]
+
 }
