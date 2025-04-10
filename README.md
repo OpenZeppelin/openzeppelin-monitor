@@ -6,7 +6,7 @@
 
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
-[Install](https://docs.openzeppelin.com/monitor/0.1.0/#getting_started) | [User Docs](https://docs.openzeppelin.com/monitor/0.1.0/) | [Quickstart](https://docs.openzeppelin.com/monitor/0.1.0/quickstart) | [Crate Docs](https://docs.openzeppelin.com/monitor/0.1.0/rust_docs/doc/openzeppelin_monitor/)
+See [OpenZeppelin Monitor](https://docs.openzeppelin.com/monitor/) for more information.
 
 ## Features
 
@@ -33,11 +33,11 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 ### Installation
 
-View the [Installation](https://docs.openzeppelin.com/monitor/0.1.0/#getting_started) documentation for detailed information. For a quicker introduction, check out the [Quickstart](https://docs.openzeppelin.com/monitor/0.1.0/quickstart) guide.
+View the "Get Started" details in [documentation](https://docs.openzeppelin.com/monitor/) for detailed information. For a quicker introduction, check out the "Quick Start" guide in documentation.
 
 ### Usage
 
-View the [Usage](https://docs.openzeppelin.com/monitor/0.1.0/#running_the_monitor) documentation for more information.
+View the "Usage" details in [documentation](https://docs.openzeppelin.com/monitor) documentation for more information.
 
 ## For Developers
 
@@ -237,7 +237,7 @@ For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 ## Get Help
 
-If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor/0.1.0/).
+If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor/).
 
 If the answer is not there:
 
