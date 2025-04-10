@@ -29,19 +29,21 @@ use crate::{
 		create_block_handler, create_trigger_handler, has_active_monitors, initialize_services,
 		Result,
 	},
-	models::Network,
+	models::{BlockChainType, Network},
 	repositories::{MonitorRepository, NetworkRepository, TriggerRepository},
 	services::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
+		trigger::TriggerExecutionServiceTrait,
 	},
-	utils::{logging::setup_logging, metrics::server::create_metrics_server},
+	utils::{
+		constants::DOCUMENTATION_URL, logging::setup_logging,
+		metrics::server::create_metrics_server,
+	},
 };
 
 use clap::{Arg, Command};
 use dotenvy::dotenv;
-use models::BlockChainType;
-use services::trigger::TriggerExecutionServiceTrait;
 use std::env::{set_var, var};
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -142,7 +144,8 @@ async fn main() -> Result<()> {
 		MonitorRepository<NetworkRepository, TriggerRepository>,
 		NetworkRepository,
 		TriggerRepository,
-	>(None, None, None)?;
+	>(None, None, None)
+	.map_err(|e| anyhow::anyhow!("Failed to initialize services: {}. Please refer to the documentation quickstart ({}) on how to configure the service.", e, DOCUMENTATION_URL))?;
 
 	// Check if metrics should be enabled from either CLI flag or env var
 	let metrics_enabled =

@@ -6,7 +6,7 @@
 
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
-See [OpenZeppelin Monitor](https://docs.openzeppelin.com/monitor/) for more information.
+[Install](https://docs.openzeppelin.com/monitor#getting_started) | [User Docs](https://docs.openzeppelin.com/monitor) | [Quickstart](https://docs.openzeppelin.com/monitor/quickstart) | [Crate Docs](https://docs.openzeppelin.com/monitor/rust_docs/doc/openzeppelin_monitor/)
 
 ## Features
 
@@ -33,11 +33,11 @@ See [OpenZeppelin Monitor](https://docs.openzeppelin.com/monitor/) for more info
 
 ### Installation
 
-View the "Get Started" details in [documentation](https://docs.openzeppelin.com/monitor/) for detailed information. For a quicker introduction, check out the "Quick Start" guide in documentation.
+View the [Installation](https://docs.openzeppelin.com/monitor#getting_started) documentation for detailed information. For a quicker introduction, check out the [Quickstart](https://docs.openzeppelin.com/monitor/quickstart) guide.
 
 ### Usage
 
-View the "Usage" details in [documentation](https://docs.openzeppelin.com/monitor) documentation for more information.
+View the [Usage](https://docs.openzeppelin.com/monitor#running_the_monitor) documentation for more information.
 
 ## For Developers
 
@@ -127,7 +127,7 @@ graph TD
 
 ### Project Structure
 
-```
+```sh
 openzeppelin-monitor/
 ├── src/                # Source code
 │   ├── bootstrap/      # Bootstrap functions for the application
@@ -237,7 +237,8 @@ For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 ## Get Help
 
-If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor/).
+
+If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor).
 
 If the answer is not there:
 

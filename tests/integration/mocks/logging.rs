@@ -6,9 +6,8 @@
 //! - LOG_DATA_DIR: when using file mode, the path of the log file (default "logs/monitor.log")
 //!   Refer to `src/logging/mod.rs` for more details.
 use chrono::Utc;
-use openzeppelin_monitor::utils::{
-	compute_rolled_file_path,
-	logging::{setup_logging, space_based_rolling},
+use openzeppelin_monitor::utils::logging::{
+	compute_rolled_file_path, setup_logging, space_based_rolling,
 };
 use std::{
 	env, fs,
