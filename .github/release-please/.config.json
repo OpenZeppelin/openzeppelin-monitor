@@ -24,7 +24,7 @@
     {
       "type": "docs",
       "section": "📚 Documentation",
-      "hidden": false
+      "hidden": true
     },
     {
       "type": "refactor",

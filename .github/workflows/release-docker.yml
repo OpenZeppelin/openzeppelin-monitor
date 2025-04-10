@@ -54,8 +54,10 @@ jobs:
             type=raw,value=latest
           labels: |
             org.opencontainers.image.created={{commit_date 'YYYY-MM-DDTHH:mm:ss.SSS[Z]'}}
-            org.opencontainers.image.title=openzeppelin-monitor
-            org.opencontainers.image.vendor=openzeppelin
+            org.opencontainers.image.title="openzeppelin-monitor"
+            org.opencontainers.image.vendor="openzeppelin"
+            org.opencontainers.image.description="Blockchain monitoring service that watches for specific onchain activities and triggers notifications based on configurable conditions."
+            org.opencontainers.image.documentation="https://docs.openzeppelin.com/monitor"
         env:
           DOCKER_METADATA_SHORT_SHA_LENGTH: 10
 

@@ -71,6 +71,8 @@ jobs:
       contents: write
       pull-requests: write
       attestations: write
+      packages: write
+      id-token: write
     needs: build
     runs-on: ubuntu-latest
     steps:
