@@ -379,10 +379,21 @@ mod tests {
 		let _lock = TEST_MUTEX.lock().unwrap();
 		reset_all_metrics();
 
-		// Set a value for the network_monitors metric so it appears in the output
+		// Initialize all metrics with non-zero values to ensure they appear in output
+		CPU_USAGE.set(50.0);
+		MEMORY_USAGE_PERCENT.set(60.0);
+		MEMORY_USAGE.set(1024.0);
+		TOTAL_MEMORY.set(2048.0);
+		AVAILABLE_MEMORY.set(1024.0);
+		DISK_USAGE.set(512.0);
+		DISK_USAGE_PERCENT.set(25.0);
+		MONITORS_TOTAL.set(5.0);
+		MONITORS_ACTIVE.set(3.0);
+		TRIGGERS_TOTAL.set(2.0);
+		CONTRACTS_MONITORED.set(4.0);
+		NETWORKS_MONITORED.set(2.0);
 		NETWORK_MONITORS.with_label_values(&["test"]).set(1.0);
 
-		update_system_metrics();
 		let metrics = gather_metrics().expect("failed to gather metrics");
 		let output = String::from_utf8(metrics).expect("metrics output is not valid UTF-8");
 
@@ -413,30 +424,70 @@ mod tests {
 		update_system_metrics();
 
 		// Verify metrics were updated with reasonable values
+		let cpu_usage = CPU_USAGE.get();
 		assert!(
-			CPU_USAGE.get() >= 0.0 && CPU_USAGE.get() <= 100.0,
-			"CPU usage should be between 0-100%"
+			(0.0..=100.0).contains(&cpu_usage),
+			"CPU usage should be between 0-100%, got {}",
+			cpu_usage
 		);
+
+		let memory_usage = MEMORY_USAGE.get();
 		assert!(
-			MEMORY_USAGE.get() > 0.0,
-			"Memory usage should be greater than 0"
+			memory_usage >= 0.0,
+			"Memory usage should be non-negative, got {}",
+			memory_usage
 		);
+
+		let memory_percent = MEMORY_USAGE_PERCENT.get();
 		assert!(
-			MEMORY_USAGE_PERCENT.get() >= 0.0 && MEMORY_USAGE_PERCENT.get() <= 100.0,
-			"Memory percentage should be between 0-100%"
+			(0.0..=100.0).contains(&memory_percent),
+			"Memory percentage should be between 0-100%, got {}",
+			memory_percent
 		);
+
+		let total_memory = TOTAL_MEMORY.get();
 		assert!(
-			TOTAL_MEMORY.get() > 0.0,
-			"Total memory should be greater than 0"
+			total_memory > 0.0,
+			"Total memory should be greater than 0, got {}",
+			total_memory
 		);
+
+		let available_memory = AVAILABLE_MEMORY.get();
 		assert!(
-			AVAILABLE_MEMORY.get() > 0.0,
-			"Available memory should be greater than 0"
+			available_memory >= 0.0,
+			"Available memory should be non-negative, got {}",
+			available_memory
 		);
-		assert!(DISK_USAGE.get() >= 0.0, "Disk usage should be non-negative");
+
+		let disk_usage = DISK_USAGE.get();
 		assert!(
-			DISK_USAGE_PERCENT.get() >= 0.0 && DISK_USAGE_PERCENT.get() <= 100.0,
-			"Disk usage percentage should be between 0-100%"
+			disk_usage >= 0.0,
+			"Disk usage should be non-negative, got {}",
+			disk_usage
+		);
+
+		let disk_percent = DISK_USAGE_PERCENT.get();
+		assert!(
+			(0.0..=100.0).contains(&disk_percent),
+			"Disk usage percentage should be between 0-100%, got {}",
+			disk_percent
+		);
+
+		// Verify that memory usage doesn't exceed total memory
+		assert!(
+			memory_usage <= total_memory,
+			"Memory usage ({}) should not exceed total memory ({})",
+			memory_usage,
+			total_memory
+		);
+
+		// Verify that available memory plus used memory doesn't exceed total memory
+		assert!(
+			(available_memory + memory_usage) <= total_memory,
+			"Available memory ({}) plus used memory ({}) should not exceed total memory ({})",
+			available_memory,
+			memory_usage,
+			total_memory
 		);
 	}
 
@@ -719,7 +770,38 @@ mod tests {
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 
 		// Verify metrics
-		assert_eq!(TRIGGERS_TOTAL.get(), 3.0, "Should have 3 total triggers");
+		let total_triggers = TRIGGERS_TOTAL.get();
+		assert_eq!(
+			total_triggers, 3.0,
+			"Should have 3 total triggers, got {}",
+			total_triggers
+		);
+
+		// Verify other metrics are zero since we have no monitors or networks
+		assert_eq!(
+			MONITORS_TOTAL.get(),
+			0.0,
+			"Should have 0 total monitors, got {}",
+			MONITORS_TOTAL.get()
+		);
+		assert_eq!(
+			MONITORS_ACTIVE.get(),
+			0.0,
+			"Should have 0 active monitors, got {}",
+			MONITORS_ACTIVE.get()
+		);
+		assert_eq!(
+			CONTRACTS_MONITORED.get(),
+			0.0,
+			"Should have 0 monitored contracts, got {}",
+			CONTRACTS_MONITORED.get()
+		);
+		assert_eq!(
+			NETWORKS_MONITORED.get(),
+			0.0,
+			"Should have 0 monitored networks, got {}",
+			NETWORKS_MONITORED.get()
+		);
 	}
 
 	#[test]

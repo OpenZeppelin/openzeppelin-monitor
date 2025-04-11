@@ -183,6 +183,16 @@ pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepository
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<HashMap<String, Monitor>, RepositoryError>;
 
+	/// Load a monitor from a specific path
+	///
+	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
+	fn load_from_path(
+		&self,
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Monitor, RepositoryError>;
+
 	/// Get a specific monitor by ID
 	///
 	/// Returns None if the monitor doesn't exist.
@@ -253,6 +263,72 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 
 		Self::validate_monitor_references(&monitors, &triggers, &networks)?;
 		Ok(monitors)
+	}
+
+	/// Load a monitor from a specific path
+	///
+	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
+	fn load_from_path(
+		&self,
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Monitor, RepositoryError> {
+		match path {
+			Some(path) => {
+				let monitor = Monitor::load_from_path(path).map_err(|e| {
+					RepositoryError::load_error(
+						"Failed to load monitors",
+						Some(Box::new(e)),
+						Some(HashMap::from([(
+							"path".to_string(),
+							path.display().to_string(),
+						)])),
+					)
+				})?;
+
+				let networks = match network_service {
+					Some(service) => service.get_all(),
+					None => {
+						NetworkRepository::new(None)
+							.map_err(|e| {
+								RepositoryError::load_error(
+									"Failed to load networks for monitor validation",
+									Some(Box::new(e)),
+									None,
+								)
+							})?
+							.networks
+					}
+				};
+
+				let triggers = match trigger_service {
+					Some(service) => service.get_all(),
+					None => {
+						TriggerRepository::new(None)
+							.map_err(|e| {
+								RepositoryError::load_error(
+									"Failed to load triggers for monitor validation",
+									Some(Box::new(e)),
+									None,
+								)
+							})?
+							.triggers
+					}
+				};
+				let monitors = HashMap::from([(monitor.name.clone(), monitor)]);
+				Self::validate_monitor_references(&monitors, &triggers, &networks)?;
+				match monitors.values().next() {
+					Some(monitor) => Ok(monitor.clone()),
+					None => Err(RepositoryError::load_error("No monitors found", None, None)),
+				}
+			}
+			None => Err(RepositoryError::load_error(
+				"Failed to load monitors",
+				None,
+				None,
+			)),
+		}
 	}
 
 	fn get(&self, monitor_id: &str) -> Option<Monitor> {
@@ -336,6 +412,19 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	/// Returns a copy of the monitor map to prevent external mutation.
 	pub fn get_all(&self) -> HashMap<String, Monitor> {
 		self.repository.get_all()
+	}
+
+	/// Load a monitor from a specific path
+	///
+	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
+	pub fn load_from_path(
+		&self,
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Monitor, RepositoryError> {
+		self.repository
+			.load_from_path(path, network_service, trigger_service)
 	}
 }
 

@@ -172,12 +172,7 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 		}
 
 		// Space-based rolling: if an existing log file exceeds 1GB, adopt a new file name.
-		let max_size: u64 = env::var("LOG_MAX_SIZE")
-			.map(|s| {
-				s.parse::<u64>()
-					.expect("LOG_MAX_SIZE must be a valid u64 if set")
-			})
-			.unwrap_or(1_073_741_824);
+		let max_size = parse_log_max_size();
 
 		let final_path =
 			space_based_rolling(&time_based_path, &base_file_path, &date_str, max_size);
@@ -211,6 +206,15 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
 
 	info!("Logging is successfully configured (mode: {})", log_mode);
 	Ok(())
+}
+
+fn parse_log_max_size() -> u64 {
+	env::var("LOG_MAX_SIZE")
+		.map(|s| {
+			s.parse::<u64>()
+				.expect("LOG_MAX_SIZE must be a valid u64 if set")
+		})
+		.unwrap_or(1_073_741_824)
 }
 
 #[cfg(test)]
@@ -265,5 +269,13 @@ mod tests {
 		// Test with a max size of 200 bytes (our file is 100 bytes, so it should not roll)
 		let result = space_based_rolling(&initial_path, &base_path, date_str, 200);
 		assert_eq!(result, initial_path);
+	}
+
+	// This test checks if the LOG_MAX_SIZE environment variable is set to a valid u64 value.
+	#[test]
+	#[should_panic(expected = "LOG_MAX_SIZE must be a valid u64 if set")]
+	fn test_invalid_log_max_size_panics() {
+		std::env::set_var("LOG_MAX_SIZE", "not_a_number");
+		let _ = parse_log_max_size(); // should panic here
 	}
 }

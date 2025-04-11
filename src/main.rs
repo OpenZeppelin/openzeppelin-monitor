@@ -30,15 +30,19 @@ use crate::{
 		Result,
 	},
 	models::{BlockChainType, Network},
-	repositories::{MonitorRepository, NetworkRepository, TriggerRepository},
+	repositories::{
+		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
+	},
 	services::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
+		filter::FilterService,
 		trigger::TriggerExecutionServiceTrait,
 	},
 	utils::{
 		constants::DOCUMENTATION_URL, logging::setup_logging,
-		metrics::server::create_metrics_server,
+		metrics::server::create_metrics_server, monitor::execution::execute_monitor,
+		monitor::MonitorExecutionError,
 	},
 };
 
@@ -46,9 +50,62 @@ use clap::{Arg, Command};
 use dotenvy::dotenv;
 use std::env::{set_var, var};
 use std::sync::Arc;
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 use tokio_cron_scheduler::JobScheduler;
 use tracing::{error, info};
+
+type MonitorServiceType = MonitorService<
+	MonitorRepository<NetworkRepository, TriggerRepository>,
+	NetworkRepository,
+	TriggerRepository,
+>;
+
+// Function to test monitor execution
+//
+// This function is used to test the monitor execution by executing the monitor from a given path.
+// It is useful for debugging and testing the monitor execution.
+async fn test_monitor_execution(
+	path: String,
+	network_slug: Option<String>,
+	block_number: Option<u64>,
+	monitor_service: Arc<Mutex<MonitorServiceType>>,
+	network_service: Arc<Mutex<NetworkService<NetworkRepository>>>,
+	filter_service: Arc<FilterService>,
+) -> Result<()> {
+	if block_number.is_some() && network_slug.is_none() {
+		return Err(Box::new(MonitorExecutionError::execution_error(
+			"Network name is required when executing a monitor for a specific block",
+			None,
+			None,
+		)));
+	}
+
+	info!("Executing monitor from path: '{}'", path);
+	let client_pool = ClientPool::new();
+	let result = execute_monitor(
+		&path,
+		network_slug.as_ref(),
+		block_number.as_ref(),
+		monitor_service.clone(),
+		network_service.clone(),
+		filter_service.clone(),
+		client_pool,
+	)
+	.await;
+	match result {
+		Ok(matches) => {
+			info!("Monitor execution completed");
+			println!("Execution result: {:?}", matches);
+			Ok(())
+		}
+		Err(e) => Err(MonitorExecutionError::execution_error(
+			format!("Monitor execution failed: {}", e),
+			None,
+			None,
+		)
+		.into()),
+	}
+}
 
 /// Main entry point for the blockchain monitoring service.
 ///
@@ -99,6 +156,24 @@ async fn main() -> Result<()> {
 				.help("Enable metrics server")
 				.action(clap::ArgAction::SetTrue),
 		)
+		.arg(
+			Arg::new("monitorPath")
+				.long("monitorPath")
+				.help("Path to the monitor to execute")
+				.value_name("MONITOR_PATH"),
+		)
+		.arg(
+			Arg::new("network")
+				.long("network")
+				.help("Network to execute the monitor for")
+				.value_name("NETWORK_SLUG"),
+		)
+		.arg(
+			Arg::new("block")
+				.long("block")
+				.help("Block number to execute the monitor for")
+				.value_name("BLOCK_NUMBER"),
+		)
 		.get_matches();
 
 	// Load environment variables from .env file
@@ -146,6 +221,35 @@ async fn main() -> Result<()> {
 		TriggerRepository,
 	>(None, None, None)
 	.map_err(|e| anyhow::anyhow!("Failed to initialize services: {}. Please refer to the documentation quickstart ({}) on how to configure the service.", e, DOCUMENTATION_URL))?;
+
+	// Read CLI arguments to determine if we should test monitor execution
+	let monitor_path = matches
+		.get_one::<String>("monitorPath")
+		.map(|s| s.to_string());
+	let network_slug = matches.get_one::<String>("network").map(|s| s.to_string());
+	let block_number = matches
+		.get_one::<String>("block")
+		.map(|s| {
+			s.parse::<u64>().map_err(|e| {
+				error!("Failed to parse block number: {}", e);
+				e
+			})
+		})
+		.transpose()?;
+
+	let should_test_monitor_execution = monitor_path.is_some();
+	// If monitor path is provided, test monitor execution else start the service
+	if should_test_monitor_execution {
+		return test_monitor_execution(
+			monitor_path.unwrap(),
+			network_slug,
+			block_number,
+			monitor_service,
+			network_service,
+			filter_service,
+		)
+		.await;
+	}
 
 	// Check if metrics should be enabled from either CLI flag or env var
 	let metrics_enabled =
@@ -300,4 +404,77 @@ async fn main() -> Result<()> {
 
 	info!("Shutdown complete");
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn test_monitor_execution_without_network_slug_with_block_number() {
+		// Initialize services
+		let (filter_service, _, _, _, monitor_service, network_service, _) = initialize_services::<
+			MonitorRepository<NetworkRepository, TriggerRepository>,
+			NetworkRepository,
+			TriggerRepository,
+		>(None, None, None)
+		.unwrap();
+
+		let path = "test_monitor.json".to_string();
+		let block_number = Some(12345);
+
+		// Execute test
+		let result = test_monitor_execution(
+			path,
+			None,
+			block_number,
+			monitor_service,
+			network_service,
+			filter_service,
+		)
+		.await;
+
+		// Verify result and error logging
+		assert!(result.is_err());
+		assert!(result
+			.err()
+			.unwrap()
+			.to_string()
+			.contains("Network name is required when executing a monitor for a specific block"));
+	}
+
+	#[tokio::test]
+	async fn test_monitor_execution_with_invalid_path() {
+		// Initialize services
+		let (filter_service, _, _, _, monitor_service, network_service, _) = initialize_services::<
+			MonitorRepository<NetworkRepository, TriggerRepository>,
+			NetworkRepository,
+			TriggerRepository,
+		>(None, None, None)
+		.unwrap();
+
+		// Test parameters
+		let path = "nonexistent_monitor.json".to_string();
+		let network_slug = Some("test_network".to_string());
+		let block_number = Some(12345);
+
+		// Execute test
+		let result = test_monitor_execution(
+			path,
+			network_slug,
+			block_number,
+			monitor_service,
+			network_service,
+			filter_service,
+		)
+		.await;
+
+		// Verify result
+		assert!(result.is_err());
+		assert!(result
+			.err()
+			.unwrap()
+			.to_string()
+			.contains("Monitor execution failed"));
+	}
 }

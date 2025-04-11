@@ -1,0 +1,535 @@
+use crate::integration::{
+	filters::common::{
+		load_test_data, setup_monitor_service, setup_network_service, setup_trigger_service,
+	},
+	mocks::{
+		create_test_network, MockClientPool, MockEvmClientTrait, MockNetworkRepository,
+		MockStellarClientTrait,
+	},
+};
+use mockall::predicate;
+use openzeppelin_monitor::{
+	models::{
+		BlockChainType, EVMTransactionReceipt, Monitor, NotificationMessage, Trigger, TriggerType,
+		TriggerTypeConfig,
+	},
+	repositories::NetworkService,
+	services::filter::FilterService,
+	utils::monitor::execution::execute_monitor,
+};
+use std::collections::HashMap;
+use std::fs;
+use std::sync::Arc;
+use tempfile::TempDir;
+use tokio::sync::Mutex;
+
+fn setup_mocked_networks(
+	network_name: &str,
+	network_slug: &str,
+	block_chain_type: BlockChainType,
+) -> NetworkService<MockNetworkRepository> {
+	let mut mocked_networks = HashMap::new();
+	mocked_networks.insert(
+		network_slug.to_string(),
+		create_test_network(network_name, network_slug, block_chain_type),
+	);
+	setup_network_service(mocked_networks)
+}
+
+// Helper to create a valid monitor JSON file
+fn create_test_monitor_file(dir: &TempDir, name: &str) -> std::path::PathBuf {
+	let monitor_path = dir.path().join(format!("{}.json", name));
+	let monitor_json = serde_json::json!({
+		"name": name,
+		"networks": ["ethereum_mainnet"],
+		"triggers": ["test-trigger"],
+		"match_conditions": {},
+		"trigger_conditions": []
+	});
+	fs::write(&monitor_path, monitor_json.to_string()).unwrap();
+	monitor_path
+}
+
+fn create_test_trigger(name: &str) -> Trigger {
+	Trigger {
+		name: name.to_string(),
+		trigger_type: TriggerType::Email,
+		config: TriggerTypeConfig::Email {
+			host: "smtp.example.com".to_string(),
+			port: Some(465),
+			username: "user@example.com".to_string(),
+			password: "password123".to_string(),
+			message: NotificationMessage {
+				title: "Alert".to_string(),
+				body: "Something happened!".to_string(),
+			},
+			sender: "alerts@example.com".parse().unwrap(),
+			recipients: vec!["user@example.com".parse().unwrap()],
+		},
+	}
+}
+
+fn create_test_monitor(
+	name: &str,
+	networks: Vec<&str>,
+	paused: bool,
+	triggers: Vec<&str>,
+) -> Monitor {
+	Monitor {
+		name: name.to_string(),
+		networks: networks.into_iter().map(|s| s.to_string()).collect(),
+		paused,
+		triggers: triggers.into_iter().map(|s| s.to_string()).collect(),
+		..Default::default()
+	}
+}
+
+#[tokio::test]
+async fn test_execute_monitor_evm() {
+	let test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockEvmClientTrait::new();
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(21305050u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
+
+	let receipts = test_data.receipts.clone();
+	let receipt_map: std::collections::HashMap<String, EVMTransactionReceipt> = receipts
+		.iter()
+		.map(|r| (format!("0x{:x}", r.transaction_hash), r.clone()))
+		.collect();
+
+	let receipt_map = Arc::new(receipt_map);
+	mock_client
+		.expect_get_transaction_receipt()
+		.returning(move |hash| {
+			let receipt_map = Arc::clone(&receipt_map);
+			Ok(receipt_map
+				.get(&hash)
+				.cloned()
+				.unwrap_or_else(|| panic!("Receipt not found for hash: {}", hash)))
+		});
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 21305050;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"ethereum_mainnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(
+		result.is_ok(),
+		"Monitor execution failed: {:?}",
+		result.err()
+	);
+
+	// Parse the JSON result and add more specific assertions based on expected matches
+	let matches: Vec<serde_json::Value> = serde_json::from_str(&result.unwrap()).unwrap();
+	assert!(matches.len() == 1);
+}
+
+#[tokio::test]
+async fn test_execute_monitor_evm_wrong_network() {
+	let test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	let mock_client = MockEvmClientTrait::new();
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 22197425;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"ethereum_goerli".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_evm_wrong_block_number() {
+	let test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	let mut mock_client = MockEvmClientTrait::new();
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(1u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(vec![]));
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 1;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"ethereum_mainnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
+	let test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	let mut mock_client = MockEvmClientTrait::new();
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(1u64), predicate::eq(None))
+		.return_once(move |_, _| Err(anyhow::anyhow!("Failed to get block by number")));
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 1;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"ethereum_mainnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_evm_failed_to_get_evm_client() {
+	let test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Err(anyhow::anyhow!("Failed to get evm client")));
+
+	let block_number = 1;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"ethereum_mainnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_stellar() {
+	let test_data = load_test_data("stellar");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockStellarClientTrait::new();
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(172627u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
+	mock_client
+		.expect_get_transactions()
+		.return_once(move |_, _| Ok(test_data.stellar_transactions.clone()));
+	mock_client
+		.expect_get_events()
+		.return_once(move |_, _| Ok(test_data.stellar_events.clone()));
+
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 172627;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"stellar_testnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(
+		result.is_ok(),
+		"Monitor execution failed: {:?}",
+		result.err()
+	);
+
+	// Parse the JSON result and add more specific assertions based on expected matches
+	let matches: Vec<serde_json::Value> = serde_json::from_str(&result.unwrap()).unwrap();
+	assert!(matches.len() == 1);
+}
+
+#[tokio::test]
+async fn test_execute_monitor_failed_to_get_block() {
+	let test_data = load_test_data("stellar");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockStellarClientTrait::new();
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(172627u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(vec![]));
+
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 172627;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"stellar_testnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_failed_to_get_stellar_client() {
+	let test_data = load_test_data("stellar");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+	let mut mock_pool = MockClientPool::new();
+
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Err(anyhow::anyhow!("Failed to get stellar client")));
+
+	let block_number = 172627;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"stellar_testnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_failed_to_get_block_by_number() {
+	let test_data = load_test_data("stellar");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockStellarClientTrait::new();
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(172627u64), predicate::eq(None))
+		.return_once(move |_, _| Err(anyhow::anyhow!("Failed to get block by number")));
+
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 172627;
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"stellar_testnet".to_string()),
+		Some(&block_number),
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_get_latest_block_number_failed() {
+	let test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	let mut mock_client = MockEvmClientTrait::new();
+
+	mock_client
+		.expect_get_latest_block_number()
+		.return_once(move || Err(anyhow::anyhow!("Failed to get latest block number")));
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let result = execute_monitor(
+		&test_data.monitor.name,
+		Some(&"ethereum_mainnet".to_string()),
+		None,
+		Arc::new(Mutex::new(mock_monitor_service)),
+		Arc::new(Mutex::new(mock_network_service)),
+		Arc::new(FilterService::new()),
+		mock_pool,
+	)
+	.await;
+	assert!(result.is_err());
+}
+
+#[test]
+fn test_load_from_path_with_services() {
+	// Setup temporary directory and files
+	let temp_dir = TempDir::new().unwrap();
+	let monitor_path = create_test_monitor_file(&temp_dir, "monitor");
+
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert("test-trigger".to_string(), create_test_trigger("test"));
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert(
+		"monitor".to_string(),
+		create_test_monitor(
+			"monitor",
+			vec!["ethereum_mainnet"],
+			false,
+			vec!["test-trigger"],
+		),
+	);
+
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let result = mock_monitor_service.load_from_path(
+		Some(&monitor_path),
+		Some(mock_network_service),
+		Some(mock_trigger_service),
+	);
+
+	assert!(result.is_ok());
+	let monitor = result.unwrap();
+	assert_eq!(monitor.name, "monitor");
+	assert!(monitor.networks.contains(&"ethereum_mainnet".to_string()));
+	assert!(monitor.triggers.contains(&"test-trigger".to_string()));
+}
+
+#[test]
+fn test_load_from_path_with_services_error() {
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert("test-trigger".to_string(), create_test_trigger("test"));
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert(
+		"monitor".to_string(),
+		create_test_monitor(
+			"monitor",
+			vec!["ethereum_mainnet"],
+			false,
+			vec!["test-trigger"],
+		),
+	);
+
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let result = mock_monitor_service.load_from_path(
+		None,
+		Some(mock_network_service),
+		Some(mock_trigger_service),
+	);
+
+	assert!(result.is_err());
+}
