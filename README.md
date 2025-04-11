@@ -142,6 +142,7 @@ openzeppelin-monitor/
 ├── docs/               # Documentation
 ├── scripts/            # Utility scripts
 ├── cmd/                # Metrics and monitoring
+├── examples/           # Example configuration files
 └── ... other root files (Cargo.toml, README.md, etc.)
 ```
 
