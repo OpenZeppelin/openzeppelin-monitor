@@ -38,13 +38,14 @@ The main source code directory contains the core implementation files organized 
 **** `stellar/`: Stellar filter
 ** `notification/`: Alert handling
 ** `trigger/`: Trigger evaluation and execution
+**** `script/`: Script execution utilities
+
 
 * `utils/`: Helper functions
 ** `cron_utils`: Cron schedule utilities
 ** `expression`: Expression evaluation
 ** `logging/`: Logging utilities
 ** `metrics/`: Metrics utilities
-** `script/`: Script execution utilities
 
 == Configuration and Data:
 

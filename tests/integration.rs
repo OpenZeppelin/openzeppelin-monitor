@@ -13,6 +13,9 @@ mod integration {
 			mod stellar {
 				mod client;
 			}
+			mod midnight {
+				mod client;
+			}
 		}
 		mod transports {
 			mod evm {
@@ -41,6 +44,9 @@ mod integration {
 			mod filter;
 		}
 		mod stellar {
+			mod filter;
+		}
+		mod midnight {
 			mod filter;
 		}
 	}

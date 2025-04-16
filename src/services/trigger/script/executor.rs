@@ -1,3 +1,7 @@
+//! Trigger script executor implementation.
+//!
+//! This module provides functionality to execute scripts in different languages.
+
 use crate::models::MonitorMatch;
 use anyhow::Context;
 use async_trait::async_trait;

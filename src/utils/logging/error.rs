@@ -228,7 +228,7 @@ fn try_extract_trace_id(err: &(dyn std::error::Error + 'static)) -> Option<Strin
 		crate::services::blockwatcher::BlockWatcherError,
 		crate::services::blockchain::BlockChainError,
 		crate::repositories::RepositoryError,
-		crate::utils::script::ScriptError,
+		crate::services::trigger::ScriptError,
 		crate::models::ConfigError
 	);
 

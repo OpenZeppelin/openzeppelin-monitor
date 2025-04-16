@@ -32,9 +32,11 @@ use crate::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
-		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait},
+		trigger::{
+			ScriptError, ScriptExecutorFactory, TriggerError, TriggerExecutionService,
+			TriggerExecutionServiceTrait,
+		},
 	},
-	utils::{ScriptError, ScriptExecutorFactory},
 };
 
 /// Type alias for handling ServiceResult

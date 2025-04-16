@@ -1,3 +1,7 @@
+//! Trigger script validation implementation.
+//!
+//! This module provides functionality to validate script configuration parameters.
+
 use crate::models::{ConfigError, ScriptLanguage};
 use std::path::Path;
 

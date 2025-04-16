@@ -106,7 +106,6 @@ async fn test_client_try_connect() {
 	assert!(e.to_string().contains("Invalid URL"));
 
 	let result = client.try_connect(&server3.url()).await;
-	println!("result: {:?}", result);
 	assert!(result.is_err(), "Try connect with invalid URL should fail");
 	let e = result.unwrap_err();
 	assert!(e.to_string().contains("Failed to connect"));
