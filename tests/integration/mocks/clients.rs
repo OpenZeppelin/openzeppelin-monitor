@@ -27,7 +27,7 @@ use openzeppelin_monitor::{
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
 
-use super::{MockAlloyTransportClient, MockStellarTransportClient};
+use super::{MockEVMTransportClient, MockStellarTransportClient};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -138,9 +138,9 @@ mock! {
 
 	#[async_trait]
 	impl ClientPoolTrait for ClientPool {
-		type EvmClient = MockEvmClientTrait<MockAlloyTransportClient>;
+		type EvmClient = MockEvmClientTrait<MockEVMTransportClient>;
 		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
-		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockAlloyTransportClient>>,  anyhow::Error>;
+		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockEVMTransportClient>>,  anyhow::Error>;
 		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>,  anyhow::Error>;
 	}
 

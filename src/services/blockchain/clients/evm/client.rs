@@ -17,7 +17,7 @@ use crate::{
 	services::{
 		blockchain::{
 			client::BlockChainClient,
-			transports::{AlloyTransportClient, BlockchainTransport},
+			transports::{BlockchainTransport, EVMTransportClient},
 			BlockFilterFactory,
 		},
 		filter::{evm_helpers::string_to_h256, EVMBlockFilter},
@@ -26,22 +26,21 @@ use crate::{
 
 /// Client implementation for Ethereum Virtual Machine (EVM) compatible blockchains
 ///
-/// Provides high-level access to EVM blockchain data and operations through Alloy
-/// transport layer.
+/// Provides high-level access to EVM blockchain data and operations through HTTP transport.
 #[derive(Clone)]
 pub struct EvmClient<T: Send + Sync + Clone> {
-	/// The underlying Alloy transport client for RPC communication
-	alloy_client: T,
+	/// The underlying HTTP transport client for RPC communication
+	http_client: T,
 }
 
 impl<T: Send + Sync + Clone> EvmClient<T> {
 	/// Creates a new EVM client instance with a specific transport client
-	pub fn new_with_transport(alloy_client: T) -> Self {
-		Self { alloy_client }
+	pub fn new_with_transport(http_client: T) -> Self {
+		Self { http_client }
 	}
 }
 
-impl EvmClient<AlloyTransportClient> {
+impl EvmClient<EVMTransportClient> {
 	/// Creates a new EVM client instance
 	///
 	/// # Arguments
@@ -50,8 +49,8 @@ impl EvmClient<AlloyTransportClient> {
 	/// # Returns
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
-		let alloy_client = AlloyTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(alloy_client))
+		let http_client = EVMTransportClient::new(network).await?;
+		Ok(Self::new_with_transport(http_client))
 	}
 }
 
@@ -111,7 +110,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 			.to_vec();
 
 		let response = self
-			.alloy_client
+			.http_client
 			.send_raw_request(
 				"eth_getTransactionReceipt",
 				Some(serde_json::Value::Array(params)),
@@ -157,7 +156,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 		.to_vec();
 
 		let response = self
-			.alloy_client
+			.http_client
 			.send_raw_request("eth_getLogs", Some(params))
 			.await
 			.with_context(|| {
@@ -183,7 +182,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 	#[instrument(skip(self))]
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
-			.alloy_client
+			.http_client
 			.send_raw_request::<serde_json::Value>("eth_blockNumber", None)
 			.await
 			.with_context(|| "Failed to get latest block number")?;
@@ -215,7 +214,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 					format!("0x{:x}", block_number),
 					true // include full transaction objects
 				]);
-				let client = self.alloy_client.clone();
+				let client = self.http_client.clone();
 
 				async move {
 					let response = client

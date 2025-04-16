@@ -10,7 +10,7 @@ use openzeppelin_monitor::{
 		FunctionCondition, MatchConditions, Monitor, TransactionCondition, TransactionStatus,
 	},
 	services::{
-		blockchain::{AlloyTransportClient, EvmClient},
+		blockchain::{EVMTransportClient, EvmClient},
 		filter::{
 			evm_helpers::{
 				are_same_address, are_same_signature, normalize_address, normalize_signature,
@@ -308,7 +308,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -343,7 +343,7 @@ proptest! {
 			indexed: false,
 		}];
 
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -387,7 +387,7 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -414,7 +414,7 @@ proptest! {
 			indexed: false,
 		}];
 
-			let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -466,7 +466,7 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 		let result = filter.evaluate_expression(&expr, &Some(params));
@@ -503,7 +503,7 @@ proptest! {
 			}
 		];
 
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -531,7 +531,7 @@ proptest! {
 		tx in generate_transaction(),
 		monitor in generate_monitor_with_transaction()
 	) {
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 
@@ -576,7 +576,7 @@ proptest! {
 	fn test_find_matching_transaction_empty_conditions(
 		tx in generate_transaction()
 	) {
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 		let mut matched_transactions = Vec::new();
@@ -612,7 +612,7 @@ proptest! {
 	fn test_find_matching_function_for_transaction(
 		monitor in generate_monitor_with_function()
 	) {
-		let filter = EVMBlockFilter::<EvmClient<AlloyTransportClient>> {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
 			_client: PhantomData,
 		};
 		let mut matched_functions = Vec::new();

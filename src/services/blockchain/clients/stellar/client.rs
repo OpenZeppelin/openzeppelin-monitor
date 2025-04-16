@@ -2,7 +2,6 @@
 //!
 //! This module provides functionality to interact with the Stellar blockchain,
 //! supporting operations like block retrieval, transaction lookup, and event filtering.
-//! It works with both Stellar Core nodes and Horizon API endpoints.
 
 use std::marker::PhantomData;
 
@@ -27,18 +26,17 @@ use crate::{
 
 /// Client implementation for the Stellar blockchain
 ///
-/// Provides high-level access to Stellar blockchain data and operations through
-/// both Stellar Core RPC and Horizon API endpoints.
+/// Provides high-level access to Stellar blockchain data and operations through HTTP transport.
 #[derive(Clone)]
 pub struct StellarClient<T: Send + Sync + Clone> {
 	/// The underlying Stellar transport client for RPC communication
-	stellar_client: T,
+	http_client: T,
 }
 
 impl<T: Send + Sync + Clone> StellarClient<T> {
 	/// Creates a new Stellar client instance with a specific transport client
-	pub fn new_with_transport(stellar_client: T) -> Self {
-		Self { stellar_client }
+	pub fn new_with_transport(http_client: T) -> Self {
+		Self { http_client }
 	}
 }
 
@@ -51,8 +49,8 @@ impl StellarClient<StellarTransportClient> {
 	/// # Returns
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
-		let stellar_client: StellarTransportClient = StellarTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(stellar_client))
+		let http_client = StellarTransportClient::new(network).await?;
+		Ok(Self::new_with_transport(http_client))
 	}
 }
 
@@ -139,7 +137,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 			};
 
 			let response = self
-				.stellar_client
+				.http_client
 				.send_raw_request("getTransactions", Some(params))
 				.await
 				.with_context(|| {
@@ -230,7 +228,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 			};
 
 			let response = self
-				.stellar_client
+				.http_client
 				.send_raw_request("getEvents", Some(params))
 				.await
 				.with_context(|| {
@@ -283,7 +281,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 	#[instrument(skip(self))]
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
-			.stellar_client
+			.http_client
 			.send_raw_request::<serde_json::Value>("getLatestLedger", None)
 			.await
 			.with_context(|| "Failed to get latest ledger")?;
@@ -348,7 +346,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 			};
 
 			let response = self
-				.stellar_client
+				.http_client
 				.send_raw_request("getLedgers", Some(params))
 				.await
 				.with_context(|| {

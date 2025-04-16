@@ -130,7 +130,7 @@ The retry mechanism is implemented at two levels:
 +
 [source,rust]
 ----
-pub struct AlloyTransportClient {
+pub struct EVMTransportClient {
   client: Arc<RwLock<RpcClient>>,
   endpoint_manager: EndpointManager,
   retry_policy: ExponentialBackoff,

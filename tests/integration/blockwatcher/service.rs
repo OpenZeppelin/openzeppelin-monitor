@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio_cron_scheduler::JobScheduler;
 
 use crate::integration::mocks::{
-	create_test_block, create_test_network, MockAlloyTransportClient, MockBlockStorage,
-	MockBlockTracker, MockEvmClientTrait, MockJobScheduler,
+	create_test_block, create_test_network, MockBlockStorage, MockBlockTracker,
+	MockEVMTransportClient, MockEvmClientTrait, MockJobScheduler,
 };
 use openzeppelin_monitor::{
 	models::{BlockChainType, BlockType, Network, ProcessedBlock},
@@ -34,7 +34,7 @@ fn setup_mocks(
 ) -> (
 	Arc<MockBlockStorage>,
 	MockBlockTracker<MockBlockStorage>,
-	MockEvmClientTrait<MockAlloyTransportClient>,
+	MockEvmClientTrait<MockEVMTransportClient>,
 ) {
 	// Setup mock block storage
 	let mut block_storage = MockBlockStorage::new();
@@ -725,7 +725,7 @@ async fn test_process_new_blocks_storage_error() {
 		.withf(|_, _| true)
 		.returning(|_, _| MockBlockTracker::<MockBlockStorage>::default());
 
-	let rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 
 	let block_handler = Arc::new(|_: BlockType, network: Network| {
 		Box::pin(async move {
@@ -769,7 +769,7 @@ async fn test_process_new_blocks_network_errors() {
 	let block_storage = Arc::new(block_storage);
 
 	// Setup mock RPC client that fails
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Err(anyhow::anyhow!("RPC error")))
@@ -817,7 +817,7 @@ async fn test_process_new_blocks_get_blocks_error() {
 	let block_storage = Arc::new(block_storage);
 
 	// Setup mock RPC client that fails on get_blocks
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Ok(105))
@@ -885,7 +885,7 @@ async fn test_process_new_blocks_storage_save_error() {
 		.times(1);
 
 	// Setup mock RPC client
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Ok(105))
@@ -948,7 +948,7 @@ async fn test_process_new_blocks_save_last_processed_error() {
 		.times(1);
 
 	// Setup mock RPC client
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Ok(105))
@@ -1014,7 +1014,7 @@ async fn test_process_new_blocks_storage_delete_error() {
 		.times(1);
 
 	// Setup mock RPC client
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Ok(105))
@@ -1113,7 +1113,7 @@ async fn test_network_block_watcher_start_stop() {
 	.await;
 
 	// Setup mock RPC client
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Ok(100))
@@ -1155,7 +1155,7 @@ async fn test_block_watcher_service_start_stop_network() {
 	.await;
 
 	// Setup mock RPC client
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Ok(100))
@@ -1241,7 +1241,7 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 	let block_storage = Arc::new(block_storage);
 
 	// Setup mock RPC client that succeeds for latest block but fails for get_blocks
-	let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	rpc_client
 		.expect_get_latest_block_number()
 		.returning(|| Ok(100))
@@ -1311,10 +1311,10 @@ async fn test_scheduler_errors() {
 		.await
 		.unwrap();
 
-		let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 		rpc_client
 			.expect_clone()
-			.returning(MockEvmClientTrait::<MockAlloyTransportClient>::new);
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
 
 		let result = service.start_network_watcher(&network, rpc_client).await;
 
@@ -1344,10 +1344,10 @@ async fn test_scheduler_errors() {
 		.await
 		.unwrap();
 
-		let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 		rpc_client
 			.expect_clone()
-			.returning(MockEvmClientTrait::<MockAlloyTransportClient>::new);
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
 
 		let result = service.start_network_watcher(&network, rpc_client).await;
 
@@ -1380,10 +1380,10 @@ async fn test_scheduler_errors() {
 		.await
 		.unwrap();
 
-		let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 		rpc_client
 			.expect_clone()
-			.returning(MockEvmClientTrait::<MockAlloyTransportClient>::new);
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
 
 		let result = service.start_network_watcher(&network, rpc_client).await;
 
@@ -1416,10 +1416,10 @@ async fn test_scheduler_errors() {
 		.await
 		.unwrap();
 
-		let mut rpc_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 		rpc_client
 			.expect_clone()
-			.returning(MockEvmClientTrait::<MockAlloyTransportClient>::new);
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
 
 		let _ = service.start_network_watcher(&network, rpc_client).await;
 
