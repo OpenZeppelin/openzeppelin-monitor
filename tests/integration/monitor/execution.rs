@@ -4,7 +4,7 @@ use crate::integration::{
 	},
 	mocks::{
 		create_test_network, MockClientPool, MockEvmClientTrait, MockNetworkRepository,
-		MockStellarClientTrait,
+		MockStellarClientTrait, MockTriggerRepository,
 	},
 };
 use mockall::predicate;
@@ -13,13 +13,11 @@ use openzeppelin_monitor::{
 		BlockChainType, EVMTransactionReceipt, Monitor, NotificationMessage, Trigger, TriggerType,
 		TriggerTypeConfig,
 	},
-	repositories::NetworkService,
+	repositories::{MonitorRepository, MonitorRepositoryTrait, NetworkService},
 	services::filter::FilterService,
 	utils::monitor::execution::execute_monitor,
 };
-use std::collections::HashMap;
-use std::fs;
-use std::sync::Arc;
+use std::{collections::HashMap, fs, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 
@@ -41,10 +39,16 @@ fn create_test_monitor_file(dir: &TempDir, name: &str) -> std::path::PathBuf {
 	let monitor_path = dir.path().join(format!("{}.json", name));
 	let monitor_json = serde_json::json!({
 		"name": name,
+		"paused": false,
 		"networks": ["ethereum_mainnet"],
+		"addresses": [],
+		"match_conditions": {
+			"functions": [],
+			"events": [],
+			"transactions": []
+		},
+		"trigger_conditions": [],
 		"triggers": ["test-trigger"],
-		"match_conditions": {},
-		"trigger_conditions": []
 	});
 	fs::write(&monitor_path, monitor_json.to_string()).unwrap();
 	monitor_path
@@ -465,6 +469,36 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 }
 
 #[test]
+fn test_load_from_path() {
+	// Setup temporary directory and files
+	let temp_dir = TempDir::new().unwrap();
+	let monitor_path = create_test_monitor_file(&temp_dir, "monitor");
+
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert(
+		"monitor".to_string(),
+		create_test_monitor(
+			"monitor",
+			vec!["ethereum_mainnet"],
+			false,
+			vec!["test-trigger"],
+		),
+	);
+
+	// Create monitor service
+	let monitor_service = setup_monitor_service(mocked_monitors);
+
+	// Test loading from path
+	let result = monitor_service.load_from_path(Some(&monitor_path), None, None);
+
+	assert!(result.is_ok());
+	let monitor = result.unwrap();
+	assert_eq!(monitor.name, "monitor");
+	assert!(monitor.networks.contains(&"ethereum_mainnet".to_string()));
+	assert!(monitor.triggers.contains(&"test-trigger".to_string()));
+}
+
+#[test]
 fn test_load_from_path_with_services() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
@@ -532,4 +566,50 @@ fn test_load_from_path_with_services_error() {
 	);
 
 	assert!(result.is_err());
+}
+
+#[test]
+fn test_load_from_path_trait_implementation() {
+	// Setup temporary directory and files
+	let temp_dir = TempDir::new().unwrap();
+	let monitor_path = create_test_monitor_file(&temp_dir, "monitor");
+
+	let mock_network_service =
+		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert("test-trigger".to_string(), create_test_trigger("test"));
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert(
+		"monitor".to_string(),
+		create_test_monitor(
+			"monitor",
+			vec!["ethereum_mainnet"],
+			false,
+			vec!["test-trigger"],
+		),
+	);
+
+	// Create repository directly
+	let repository = MonitorRepository::new_with_monitors(mocked_monitors);
+
+	// Test the trait implementation directly
+	let result =
+		<MonitorRepository<MockNetworkRepository, MockTriggerRepository> as MonitorRepositoryTrait<
+			MockNetworkRepository,
+			MockTriggerRepository,
+		>>::load_from_path(
+			&repository,
+			Some(&monitor_path),
+			Some(mock_network_service),
+			Some(mock_trigger_service),
+		);
+
+	assert!(result.is_ok());
+	let monitor = result.unwrap();
+	assert_eq!(monitor.name, "monitor");
+	assert!(monitor.networks.contains(&"ethereum_mainnet".to_string()));
+	assert!(monitor.triggers.contains(&"test-trigger".to_string()));
 }
