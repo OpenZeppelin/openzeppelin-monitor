@@ -60,10 +60,27 @@ type MonitorServiceType = MonitorService<
 	TriggerRepository,
 >;
 
-// Function to test monitor execution
-//
-// This function is used to test the monitor execution by executing the monitor from a given path.
-// It is useful for debugging and testing the monitor execution.
+/// Tests the execution of a blockchain monitor configuration file.
+///
+/// This function loads and executes a monitor configuration from the specified path,
+/// allowing for optional network and block number specifications. It's primarily used
+/// for testing and debugging monitor configurations before deploying them.
+///
+/// # Arguments
+/// * `path` - Path to the monitor configuration file
+/// * `network_slug` - Optional network identifier to run the monitor against
+/// * `block_number` - Optional specific block number to test the monitor against
+/// * `monitor_service` - Service handling monitor operations
+/// * `network_service` - Service handling network operations
+/// * `filter_service` - Service handling filter operations
+/// * `raw_output` - Whether to print the raw output of the monitor execution
+///
+/// # Returns
+/// * `Result<()>` - Ok(()) if execution succeeds, or an error if execution fails
+///
+/// # Errors
+/// * Returns an error if network slug is missing when block number is specified
+/// * Returns an error if monitor execution fails for any reason (invalid path, network issues, etc.)
 async fn test_monitor_execution(
 	path: String,
 	network_slug: Option<String>,
@@ -71,6 +88,7 @@ async fn test_monitor_execution(
 	monitor_service: Arc<Mutex<MonitorServiceType>>,
 	network_service: Arc<Mutex<NetworkService<NetworkRepository>>>,
 	filter_service: Arc<FilterService>,
+	raw_output: bool,
 ) -> Result<()> {
 	if block_number.is_some() && network_slug.is_none() {
 		return Err(Box::new(MonitorExecutionError::execution_error(
@@ -80,7 +98,14 @@ async fn test_monitor_execution(
 		)));
 	}
 
-	info!("Executing monitor from path: '{}'", path);
+	tracing::info!("Executing monitor from path: '{}'", path);
+	if block_number.is_some() && network_slug.is_some() {
+		tracing::info!(
+			"Executing monitor for block number: {} on network: {}",
+			block_number.unwrap_or(0),
+			network_slug.clone().unwrap_or("unknown".to_string())
+		);
+	}
 	let client_pool = ClientPool::new();
 	let result = execute_monitor(
 		&path,
@@ -94,8 +119,175 @@ async fn test_monitor_execution(
 	.await;
 	match result {
 		Ok(matches) => {
-			info!("Monitor execution completed");
-			println!("Execution result: {:?}", matches);
+			tracing::info!("Monitor execution completed successfully");
+			tracing::info!("=========== Execution Results ===========");
+			if matches.is_empty() {
+				tracing::info!("No matches found");
+			} else if raw_output {
+				tracing::info!("{}", matches);
+			} else {
+				// Parse and extract relevant information
+				match serde_json::from_str::<serde_json::Value>(&matches) {
+					Ok(json) => {
+						if let Some(matches_array) = json.as_array() {
+							tracing::info!("Found {} matches:", matches_array.len());
+							for (idx, match_result) in matches_array.iter().enumerate() {
+								tracing::info!("Match #{}", idx + 1);
+								tracing::info!("-------------");
+
+								// Handle any network type (EVM, Stellar, etc.)
+								for (network_type, details) in
+									match_result.as_object().unwrap_or(&serde_json::Map::new())
+								{
+									// Get monitor name
+									if let Some(monitor) = details.get("monitor") {
+										if let Some(name) =
+											monitor.get("name").and_then(|n| n.as_str())
+										{
+											tracing::info!("Monitor: {}", name);
+										}
+									}
+
+									// Get transaction details based on network type
+									match network_type.as_str() {
+										"EVM" => {
+											if let Some(receipt) = details.get("receipt") {
+												// Get block number (handle hex format)
+												if let Some(block) = receipt.get("blockNumber") {
+													let block_num = match block.as_str() {
+														Some(hex) if hex.starts_with("0x") => {
+															u64::from_str_radix(
+																hex.trim_start_matches("0x"),
+																16,
+															)
+															.map(|n| n.to_string())
+															.unwrap_or_else(|_| hex.to_string())
+														}
+														_ => block
+															.as_str()
+															.unwrap_or_default()
+															.to_string(),
+													};
+													tracing::info!("Block: {}", block_num);
+												}
+
+												// Get transaction hash
+												if let Some(hash) = receipt
+													.get("transactionHash")
+													.and_then(|h| h.as_str())
+												{
+													tracing::info!("Transaction: {}", hash);
+												}
+											}
+										}
+										"Stellar" => {
+											// Get block number from ledger
+											if let Some(ledger) = details.get("ledger") {
+												if let Some(sequence) =
+													ledger.get("sequence").and_then(|s| s.as_u64())
+												{
+													tracing::info!("Ledger: {}", sequence);
+												}
+											}
+
+											// Get transaction hash
+											if let Some(transaction) = details.get("transaction") {
+												if let Some(hash) = transaction
+													.get("txHash")
+													.and_then(|h| h.as_str())
+												{
+													tracing::info!("Transaction: {}", hash);
+												}
+											}
+										}
+										_ => {}
+									}
+
+									// Get matched conditions (common across networks)
+									if let Some(matched_on) = details.get("matched_on") {
+										tracing::info!("Matched Conditions:");
+
+										// Check events
+										if let Some(events) =
+											matched_on.get("events").and_then(|e| e.as_array())
+										{
+											for event in events {
+												let mut condition = String::new();
+												if let Some(sig) =
+													event.get("signature").and_then(|s| s.as_str())
+												{
+													condition.push_str(sig);
+												}
+												if let Some(expr) =
+													event.get("expression").and_then(|e| e.as_str())
+												{
+													if !expr.is_empty() {
+														condition
+															.push_str(&format!(" where {}", expr));
+													}
+												}
+												if !condition.is_empty() {
+													tracing::info!("  - Event: {}", condition);
+												}
+											}
+										}
+
+										// Check functions
+										if let Some(functions) =
+											matched_on.get("functions").and_then(|f| f.as_array())
+										{
+											for function in functions {
+												let mut condition = String::new();
+												if let Some(sig) = function
+													.get("signature")
+													.and_then(|s| s.as_str())
+												{
+													condition.push_str(sig);
+												}
+												if let Some(expr) = function
+													.get("expression")
+													.and_then(|e| e.as_str())
+												{
+													if !expr.is_empty() {
+														condition
+															.push_str(&format!(" where {}", expr));
+													}
+												}
+												if !condition.is_empty() {
+													tracing::info!("  - Function: {}", condition);
+												}
+											}
+										}
+
+										// Check transaction conditions
+										if let Some(txs) = matched_on
+											.get("transactions")
+											.and_then(|t| t.as_array())
+										{
+											for tx in txs {
+												if let Some(status) =
+													tx.get("status").and_then(|s| s.as_str())
+												{
+													tracing::info!(
+														"  - Transaction Status: {}",
+														status
+													);
+												}
+											}
+										}
+									}
+								}
+								tracing::info!("-------------\n");
+							}
+						}
+					}
+					Err(_) => {
+						// Fallback to raw JSON output
+						tracing::info!("Execution results: {}", matches);
+					}
+				}
+			}
+			tracing::info!("=========================================");
 			Ok(())
 		}
 		Err(e) => Err(MonitorExecutionError::execution_error(
@@ -247,6 +439,7 @@ async fn main() -> Result<()> {
 			monitor_service,
 			network_service,
 			filter_service,
+			false,
 		)
 		.await;
 	}
@@ -431,6 +624,7 @@ mod tests {
 			monitor_service,
 			network_service,
 			filter_service,
+			false,
 		)
 		.await;
 
@@ -466,6 +660,7 @@ mod tests {
 			monitor_service,
 			network_service,
 			filter_service,
+			false,
 		)
 		.await;
 

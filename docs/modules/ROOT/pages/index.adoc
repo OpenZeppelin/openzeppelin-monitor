@@ -1119,7 +1119,7 @@ This mode processes the most recent blocks across all configured networks.
 
 [source,bash]
 ----
-cargo run -- --monitorPath="config/monitor/evm_transfer_usdc.json"
+cargo run -- --monitorPath="config/monitors/evm_transfer_usdc.json"
 ----
 
 What this does:
@@ -1135,7 +1135,7 @@ This mode allows you to analyze a particular block on a specific network, which 
 [source,bash]
 ----
 cargo run -- \
-    --monitorPath="config/monitor/evm_transfer_usdc.json" \
+    --monitorPath="config/monitors/evm_transfer_usdc.json" \
     --network=ethereum_mainnet \
     --block=12345678
 ----
