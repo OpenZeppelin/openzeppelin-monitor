@@ -849,21 +849,13 @@ fn test_load_from_path_with_mixed_services() {
 	std::fs::create_dir_all(&trigger_dir).unwrap();
 	std::fs::create_dir_all(&monitor_dir).unwrap();
 
-	println!("network_dir: {:?}", network_dir);
-	println!("trigger_dir: {:?}", trigger_dir);
-	println!("monitor_dir: {:?}", monitor_dir);
-
 	let network_path = create_test_network_file(&monitor_dir, "ethereum_mainnet");
 	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
 	let network_service = NetworkService::new_with_repository(network_repo).unwrap();
 
-	println!("network_path: {:?}", network_path);
-
 	let trigger_path = create_test_trigger_file(&trigger_dir, "test-trigger");
 	let trigger_repo = TriggerRepository::new(Some(trigger_path.parent().unwrap())).unwrap();
 	let trigger_service = TriggerService::new_with_repository(trigger_repo).unwrap();
-
-	println!("trigger_path: {:?}", trigger_path);
 
 	let repository = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(
 		HashMap::new(),
@@ -872,9 +864,7 @@ fn test_load_from_path_with_mixed_services() {
 	// Test 1: With no services
 	let monitor_path =
 		create_test_monitor_file(&monitor_dir, "monitor", vec![], vec!["ethereum_mainnet"]);
-	println!("monitor_path: {:?}", monitor_path);
 	let result = repository.load_from_path(Some(&monitor_path), None, None);
-	println!("result: {:?}", result);
 	assert!(result.is_ok());
 
 	// Test 2: Empty monitor content
