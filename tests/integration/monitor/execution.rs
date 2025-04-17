@@ -851,16 +851,19 @@ fn test_load_from_path_trait_implementation_error() {
 }
 
 #[test]
-fn test_load_from_path_with_services_errors() {
+fn test_load_from_path_with_mixed_services() {
 	let monitor_temp_dir = TempDir::new().unwrap();
 	let network_temp_dir = TempDir::new().unwrap();
 	let trigger_temp_dir = TempDir::new().unwrap();
 
+	// Just canonicalize the paths directly
 	let network_path = create_test_network_file(&network_temp_dir, "ethereum_mainnet");
+	let network_path = network_path.canonicalize().unwrap();
 	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
 	let network_service = NetworkService::new_with_repository(network_repo).unwrap();
 
 	let trigger_path = create_test_trigger_file(&trigger_temp_dir, "test-trigger");
+	let trigger_path = trigger_path.canonicalize().unwrap();
 	let trigger_repo = TriggerRepository::new(Some(trigger_path.parent().unwrap())).unwrap();
 	let trigger_service = TriggerService::new_with_repository(trigger_repo).unwrap();
 
@@ -868,25 +871,28 @@ fn test_load_from_path_with_services_errors() {
 		HashMap::new(),
 	);
 
-	// Test 1: With no services (falling back to new repositories)
+	// Test 1: With no services
 	let monitor_path = create_test_monitor_file(&monitor_temp_dir, "monitor", vec![]);
+	let monitor_path = monitor_path.canonicalize().unwrap();
 	let result = repository.load_from_path(Some(&monitor_path), None, None);
 	assert!(result.is_ok());
 
-	// Test 2: Empty monitor content (should trigger "Failed to load monitors")
+	// Test 2: Empty monitor content
 	let monitor_temp_dir = TempDir::new().unwrap();
-
-	let result = repository.load_from_path(Some(monitor_temp_dir.path()), None, None);
+	let monitor_temp_path = monitor_temp_dir.path().canonicalize().unwrap();
+	let result = repository.load_from_path(Some(&monitor_temp_path), None, None);
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(matches!(err, RepositoryError::LoadError(_)));
 	assert!(err.to_string().contains("Failed to load monitors"));
 
 	// Test 3: Mixed service configuration
-	let result = repository.load_from_path(Some(&monitor_path), Some(network_service), None);
+	let result =
+		repository.load_from_path(Some(&monitor_path), Some(network_service.clone()), None);
 	assert!(result.is_ok());
 
-	let result = repository.load_from_path(Some(&monitor_path), None, Some(trigger_service));
+	let result =
+		repository.load_from_path(Some(&monitor_path), None, Some(trigger_service.clone()));
 	assert!(result.is_ok());
 
 	// Test 4: Invalid monitor references
@@ -895,7 +901,7 @@ fn test_load_from_path_with_services_errors() {
 		"invalid_monitor",
 		vec!["invalid-trigger"],
 	);
-
+	let invalid_monitor_path = invalid_monitor_path.canonicalize().unwrap();
 	let result = repository.load_from_path(Some(&invalid_monitor_path), None, None);
 	assert!(result.is_err());
 	let err = result.unwrap_err();
