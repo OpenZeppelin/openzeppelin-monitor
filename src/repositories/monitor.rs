@@ -289,32 +289,12 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 
 				let networks = match network_service {
 					Some(service) => service.get_all(),
-					None => {
-						NetworkRepository::new(None)
-							.map_err(|e| {
-								RepositoryError::load_error(
-									"Failed to load networks for monitor validation",
-									Some(Box::new(e)),
-									None,
-								)
-							})?
-							.networks
-					}
+					None => NetworkRepository::new(None)?.networks,
 				};
 
 				let triggers = match trigger_service {
 					Some(service) => service.get_all(),
-					None => {
-						TriggerRepository::new(None)
-							.map_err(|e| {
-								RepositoryError::load_error(
-									"Failed to load triggers for monitor validation",
-									Some(Box::new(e)),
-									None,
-								)
-							})?
-							.triggers
-					}
+					None => TriggerRepository::new(None)?.triggers,
 				};
 				let monitors = HashMap::from([(monitor.name.clone(), monitor)]);
 				Self::validate_monitor_references(&monitors, &triggers, &networks)?;
