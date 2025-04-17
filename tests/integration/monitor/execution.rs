@@ -13,7 +13,10 @@ use openzeppelin_monitor::{
 		BlockChainType, EVMTransactionReceipt, Monitor, NotificationMessage, Trigger, TriggerType,
 		TriggerTypeConfig,
 	},
-	repositories::{MonitorRepository, MonitorRepositoryTrait, NetworkService},
+	repositories::{
+		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkService,
+		RepositoryError, TriggerRepository, TriggerService,
+	},
 	services::filter::FilterService,
 	utils::monitor::execution::execute_monitor,
 };
@@ -35,7 +38,7 @@ fn setup_mocked_networks(
 }
 
 // Helper to create a valid monitor JSON file
-fn create_test_monitor_file(dir: &TempDir, name: &str) -> std::path::PathBuf {
+fn create_test_monitor_file(dir: &TempDir, name: &str, triggers: Vec<&str>) -> std::path::PathBuf {
 	let monitor_path = dir.path().join(format!("{}.json", name));
 	let monitor_json = serde_json::json!({
 		"name": name,
@@ -48,10 +51,55 @@ fn create_test_monitor_file(dir: &TempDir, name: &str) -> std::path::PathBuf {
 			"transactions": []
 		},
 		"trigger_conditions": [],
-		"triggers": ["test-trigger"],
+		"triggers": triggers,
 	});
 	fs::write(&monitor_path, monitor_json.to_string()).unwrap();
 	monitor_path
+}
+
+// Helper to create a valid network JSON file
+fn create_test_network_file(dir: &TempDir, name: &str) -> std::path::PathBuf {
+	let network_path = dir.path().join(format!("{}.json", name));
+	let network_json = serde_json::json!({
+		"network_type": "EVM",
+		"slug": name,
+		"name": name,
+		"rpc_urls": [
+			{
+			"type_": "rpc",
+			"url": "https://eth.drpc.org",
+			"weight": 100
+			}
+		],
+		"chain_id": 1,
+		"block_time_ms": 12000,
+		"confirmation_blocks": 12,
+		"cron_schedule": "0 */1 * * * *",
+		"max_past_blocks": 18,
+		"store_blocks": false
+	});
+	fs::write(&network_path, network_json.to_string()).unwrap();
+	network_path
+}
+
+// Helper to create a valid trigger JSON file
+fn create_test_trigger_file(dir: &TempDir, name: &str) -> std::path::PathBuf {
+	let trigger_path = dir.path().join(format!("{}.json", name));
+	let trigger_json = serde_json::json!({
+		name: {
+			"name": name,
+			"trigger_type": "slack",
+			"config": {
+			  "slack_url": "https://hooks.slack.com/services/AA/BB/CC",
+			  "message": {
+				"title": "large_transfer_slack triggered",
+				"body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+			  }
+			}
+		},
+	});
+	fs::write(&trigger_path, trigger_json.to_string()).unwrap();
+	trigger_path
 }
 
 fn create_test_trigger(name: &str) -> Trigger {
@@ -612,7 +660,7 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 fn test_load_from_path() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
-	let monitor_path = create_test_monitor_file(&temp_dir, "monitor");
+	let monitor_path = create_test_monitor_file(&temp_dir, "monitor", vec!["test-trigger"]);
 
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert(
@@ -642,7 +690,7 @@ fn test_load_from_path() {
 fn test_load_from_path_with_services() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
-	let monitor_path = create_test_monitor_file(&temp_dir, "monitor");
+	let monitor_path = create_test_monitor_file(&temp_dir, "monitor", vec!["test-trigger"]);
 
 	let mock_network_service =
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
@@ -699,6 +747,7 @@ fn test_load_from_path_with_services_error() {
 
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
+	// Test error loading from path with services
 	let result = mock_monitor_service.load_from_path(
 		None,
 		Some(mock_network_service),
@@ -706,13 +755,17 @@ fn test_load_from_path_with_services_error() {
 	);
 
 	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to load monitors"));
 }
 
 #[test]
 fn test_load_from_path_trait_implementation() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
-	let monitor_path = create_test_monitor_file(&temp_dir, "monitor");
+	let monitor_path = create_test_monitor_file(&temp_dir, "monitor", vec!["test-trigger"]);
 
 	let mock_network_service =
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
@@ -791,4 +844,60 @@ fn test_load_from_path_trait_implementation_error() {
 		);
 
 	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to load monitors"));
+}
+
+#[test]
+fn test_load_from_path_with_services_errors() {
+	let monitor_temp_dir = TempDir::new().unwrap();
+	let network_temp_dir = TempDir::new().unwrap();
+	let trigger_temp_dir = TempDir::new().unwrap();
+
+	let network_path = create_test_network_file(&network_temp_dir, "ethereum_mainnet");
+	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
+	let network_service = NetworkService::new_with_repository(network_repo).unwrap();
+
+	let trigger_path = create_test_trigger_file(&trigger_temp_dir, "test-trigger");
+	let trigger_repo = TriggerRepository::new(Some(trigger_path.parent().unwrap())).unwrap();
+	let trigger_service = TriggerService::new_with_repository(trigger_repo).unwrap();
+
+	let repository = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(
+		HashMap::new(),
+	);
+
+	// Test 1: With no services (falling back to new repositories)
+	let monitor_path = create_test_monitor_file(&monitor_temp_dir, "monitor", vec![]);
+	let result = repository.load_from_path(Some(&monitor_path), None, None);
+	assert!(result.is_ok());
+
+	// Test 2: Empty monitor content (should trigger "Failed to load monitors")
+	let monitor_temp_dir = TempDir::new().unwrap();
+
+	let result = repository.load_from_path(Some(monitor_temp_dir.path()), None, None);
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(matches!(err, RepositoryError::LoadError(_)));
+	assert!(err.to_string().contains("Failed to load monitors"));
+
+	// Test 3: Mixed service configuration
+	let result = repository.load_from_path(Some(&monitor_path), Some(network_service), None);
+	assert!(result.is_ok());
+
+	let result = repository.load_from_path(Some(&monitor_path), None, Some(trigger_service));
+	assert!(result.is_ok());
+
+	// Test 4: Invalid monitor references
+	let invalid_monitor_path = create_test_monitor_file(
+		&monitor_temp_dir,
+		"invalid_monitor",
+		vec!["invalid-trigger"],
+	);
+
+	let result = repository.load_from_path(Some(&invalid_monitor_path), None, None);
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("references non-existent"));
 }

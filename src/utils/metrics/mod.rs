@@ -692,11 +692,7 @@ mod tests {
 
 		// Verify metrics
 		let total_triggers = TRIGGERS_TOTAL.get();
-		assert_eq!(
-			total_triggers, 3.0,
-			"Should have 3 total triggers, got {}",
-			total_triggers
-		);
+		assert_eq!(total_triggers, 3.0);
 
 		// Verify other metrics are zero since we have no monitors or networks
 		assert_eq!(MONITORS_TOTAL.get(), 0.0);

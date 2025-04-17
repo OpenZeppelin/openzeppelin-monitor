@@ -51,6 +51,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		})
 	}
 
+	/// Create a new monitor repository from a list of monitors
 	pub fn new_with_monitors(monitors: HashMap<String, Monitor>) -> Self {
 		MonitorRepository {
 			monitors,
