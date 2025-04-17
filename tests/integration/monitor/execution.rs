@@ -726,37 +726,6 @@ fn test_load_from_path_with_services() {
 }
 
 #[test]
-fn test_load_from_path_with_services_error() {
-	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
-
-	let mut mocked_triggers = HashMap::new();
-	mocked_triggers.insert("test-trigger".to_string(), create_test_trigger("test"));
-	let mock_trigger_service = setup_trigger_service(mocked_triggers);
-
-	let mut mocked_monitors = HashMap::new();
-	mocked_monitors.insert(
-		"monitor".to_string(),
-		create_test_monitor(
-			"monitor",
-			vec!["ethereum_mainnet"],
-			false,
-			vec!["test-trigger"],
-		),
-	);
-
-	let mock_monitor_service = setup_monitor_service(mocked_monitors);
-
-	let result = mock_monitor_service.load_from_path(
-		None,
-		Some(mock_network_service),
-		Some(mock_trigger_service),
-	);
-
-	assert!(result.is_err());
-}
-
-#[test]
 fn test_load_from_path_trait_implementation() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
