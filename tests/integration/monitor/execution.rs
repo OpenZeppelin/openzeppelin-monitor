@@ -20,7 +20,12 @@ use openzeppelin_monitor::{
 	services::filter::FilterService,
 	utils::monitor::execution::execute_monitor,
 };
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{
+	collections::HashMap,
+	fs,
+	path::{Path, PathBuf},
+	sync::Arc,
+};
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 
@@ -836,26 +841,32 @@ fn test_load_from_path_trait_implementation_error() {
 
 #[test]
 fn test_load_from_path_with_mixed_services() {
-	let config_temp_dir = TempDir::new().unwrap();
+	// Create paths
+	let config_path = PathBuf::from("config");
+	let network_path = config_path.join("networks");
+	let trigger_path = config_path.join("triggers");
+	let monitor_path = config_path.join("monitors");
 
-	// Create default config directories for when we use None for path
-	let config_dir = config_temp_dir.path().join("config");
-	let network_dir = config_dir.join("networks");
-	let trigger_dir = config_dir.join("triggers");
-	let monitor_dir = config_dir.join("monitors");
+	std::fs::create_dir_all(&config_path).unwrap();
+	std::fs::create_dir_all(&network_path).unwrap();
+	std::fs::create_dir_all(&trigger_path).unwrap();
+	std::fs::create_dir_all(&monitor_path).unwrap();
 
-	std::fs::create_dir_all(&config_dir).unwrap();
-	std::fs::create_dir_all(&network_dir).unwrap();
-	std::fs::create_dir_all(&trigger_dir).unwrap();
-	std::fs::create_dir_all(&monitor_dir).unwrap();
+	println!("network_path: {:?}", network_path);
+	println!("trigger_path: {:?}", trigger_path);
+	println!("monitor_path: {:?}", monitor_path);
 
-	let network_path = create_test_network_file(&monitor_dir, "ethereum_mainnet");
+	let network_path = create_test_network_file(&network_path, "ethereum_mainnet");
 	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
 	let network_service = NetworkService::new_with_repository(network_repo).unwrap();
 
-	let trigger_path = create_test_trigger_file(&trigger_dir, "test-trigger");
+	println!("network_path: {:?}", network_path);
+
+	let trigger_path = create_test_trigger_file(&trigger_path, "test-trigger");
 	let trigger_repo = TriggerRepository::new(Some(trigger_path.parent().unwrap())).unwrap();
 	let trigger_service = TriggerService::new_with_repository(trigger_repo).unwrap();
+
+	println!("trigger_path: {:?}", trigger_path);
 
 	let repository = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(
 		HashMap::new(),
@@ -863,8 +874,10 @@ fn test_load_from_path_with_mixed_services() {
 
 	// Test 1: With no services
 	let monitor_path =
-		create_test_monitor_file(&monitor_dir, "monitor", vec![], vec!["ethereum_mainnet"]);
+		create_test_monitor_file(&monitor_path, "monitor", vec![], vec!["ethereum_mainnet"]);
+	println!("monitor_path: {:?}", monitor_path);
 	let result = repository.load_from_path(Some(&monitor_path), None, None);
+	println!("result: {:?}", result);
 	assert!(result.is_ok());
 
 	// Test 2: Empty monitor content
