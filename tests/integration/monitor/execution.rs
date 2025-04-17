@@ -842,7 +842,7 @@ fn test_load_from_path_trait_implementation_error() {
 // This test is ignored because it creates files in the config directory
 // and we don't want to pollute the default config directory
 #[test]
-#[cfg_attr(not(feature = "test-config"), ignore)]
+#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 fn test_load_from_path_with_mixed_services() {
 	// Create default config paths for when we use None for path
 	let config_path = PathBuf::from("config");

@@ -381,7 +381,7 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg_attr(not(feature = "test-log"), ignore)]
+	#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 	fn test_log_error() {
 		use tracing_test::traced_test;
 
