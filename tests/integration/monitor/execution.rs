@@ -856,7 +856,6 @@ fn test_load_from_path_with_mixed_services() {
 	let network_temp_dir = TempDir::new().unwrap();
 	let trigger_temp_dir = TempDir::new().unwrap();
 
-	// Just canonicalize the paths directly
 	let network_path = create_test_network_file(&network_temp_dir, "ethereum_mainnet");
 	let network_path = network_path.canonicalize().unwrap();
 	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
