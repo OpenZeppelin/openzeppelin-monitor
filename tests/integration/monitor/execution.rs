@@ -834,10 +834,18 @@ fn test_load_from_path_with_mixed_services() {
 		HashMap::new(),
 	);
 
+	// Test 1: With no services
 	let monitor_path = create_test_monitor_file(&monitor_temp_dir, "monitor", vec![]);
-	let monitor_path = monitor_path.canonicalize().unwrap();
+	println!("monitor_path: {:?}", monitor_path);
 
-	// Test 1: Empty monitor content
+	let monitor_path = monitor_path.canonicalize().unwrap();
+	println!("monitor_path (canonicalized): {:?}", monitor_path);
+
+	let result = repository.load_from_path(Some(&monitor_path), None, None);
+	println!("result: {:?}", result);
+	assert!(result.is_ok());
+
+	// Test 2: Empty monitor content
 	let monitor_temp_dir = TempDir::new().unwrap();
 	let monitor_temp_path = monitor_temp_dir.path().canonicalize().unwrap();
 	let result = repository.load_from_path(Some(&monitor_temp_path), None, None);
@@ -846,7 +854,7 @@ fn test_load_from_path_with_mixed_services() {
 	assert!(matches!(err, RepositoryError::LoadError(_)));
 	assert!(err.to_string().contains("Failed to load monitors"));
 
-	// Test 2: Mixed service configuration
+	// Test 3: Mixed service configuration
 	let result =
 		repository.load_from_path(Some(&monitor_path), Some(network_service.clone()), None);
 	assert!(result.is_ok());
@@ -855,7 +863,7 @@ fn test_load_from_path_with_mixed_services() {
 		repository.load_from_path(Some(&monitor_path), None, Some(trigger_service.clone()));
 	assert!(result.is_ok());
 
-	// Test 3: Invalid monitor references
+	// Test 4: Invalid monitor references
 	let invalid_monitor_path = create_test_monitor_file(
 		&monitor_temp_dir,
 		"invalid_monitor",
