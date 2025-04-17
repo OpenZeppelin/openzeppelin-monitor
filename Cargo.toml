@@ -79,3 +79,4 @@ name = "openzeppelin-monitor"
 
 [features]
 test-log = []
+test-config = []
