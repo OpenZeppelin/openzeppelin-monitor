@@ -855,10 +855,6 @@ fn test_load_from_path_with_mixed_services() {
 	std::fs::create_dir_all(&trigger_path).unwrap();
 	std::fs::create_dir_all(&monitor_path).unwrap();
 
-	println!("network_path: {:?}", network_path);
-	println!("trigger_path: {:?}", trigger_path);
-	println!("monitor_path: {:?}", monitor_path);
-
 	let network_path = create_test_network_file(&network_path, "integration_test_ethereum_mainnet");
 	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
 	let network_service = NetworkService::new_with_repository(network_repo).unwrap();
@@ -879,7 +875,6 @@ fn test_load_from_path_with_mixed_services() {
 		vec!["integration_test_ethereum_mainnet"],
 	);
 	let result = repository.load_from_path(Some(&monitor_path), None, None);
-	println!("result: {:?}", result);
 	assert!(result.is_ok());
 
 	// Test 2: Empty monitor content
