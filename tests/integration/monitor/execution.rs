@@ -839,9 +839,12 @@ fn test_load_from_path_trait_implementation_error() {
 		.contains("Failed to load monitors"));
 }
 
+// This test is ignored because it creates files in the config directory
+// and we don't want to pollute the default config directory
 #[test]
+#[ignore]
 fn test_load_from_path_with_mixed_services() {
-	// Create paths
+	// Create default config paths for when we use None for path
 	let config_path = PathBuf::from("config");
 	let network_path = config_path.join("networks");
 	let trigger_path = config_path.join("triggers");
@@ -856,26 +859,25 @@ fn test_load_from_path_with_mixed_services() {
 	println!("trigger_path: {:?}", trigger_path);
 	println!("monitor_path: {:?}", monitor_path);
 
-	let network_path = create_test_network_file(&network_path, "ethereum_mainnet");
+	let network_path = create_test_network_file(&network_path, "integration_test_ethereum_mainnet");
 	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
 	let network_service = NetworkService::new_with_repository(network_repo).unwrap();
 
-	println!("network_path: {:?}", network_path);
-
-	let trigger_path = create_test_trigger_file(&trigger_path, "test-trigger");
+	let trigger_path = create_test_trigger_file(&trigger_path, "integration_test_trigger");
 	let trigger_repo = TriggerRepository::new(Some(trigger_path.parent().unwrap())).unwrap();
 	let trigger_service = TriggerService::new_with_repository(trigger_repo).unwrap();
-
-	println!("trigger_path: {:?}", trigger_path);
 
 	let repository = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(
 		HashMap::new(),
 	);
 
 	// Test 1: With no services
-	let monitor_path =
-		create_test_monitor_file(&monitor_path, "monitor", vec![], vec!["ethereum_mainnet"]);
-	println!("monitor_path: {:?}", monitor_path);
+	let monitor_path = create_test_monitor_file(
+		&monitor_path,
+		"integration_test_monitor",
+		vec![],
+		vec!["integration_test_ethereum_mainnet"],
+	);
 	let result = repository.load_from_path(Some(&monitor_path), None, None);
 	println!("result: {:?}", result);
 	assert!(result.is_ok());
@@ -902,10 +904,16 @@ fn test_load_from_path_with_mixed_services() {
 		monitor_temp_dir.path(),
 		"invalid_monitor",
 		vec!["invalid-trigger"],
-		vec!["ethereum_mainnet"],
+		vec!["integration_test_ethereum_mainnet"],
 	);
 	let result = repository.load_from_path(Some(&invalid_monitor_path), None, None);
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(err.to_string().contains("references non-existent"));
+
+	// Clean up after test
+	// Remove integration_test_* files from config directory
+	std::fs::remove_file(network_path).unwrap();
+	std::fs::remove_file(trigger_path).unwrap();
+	std::fs::remove_file(monitor_path).unwrap();
 }
