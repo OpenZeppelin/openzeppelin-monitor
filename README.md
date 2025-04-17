@@ -127,7 +127,7 @@ graph TD
 
 ### Project Structure
 
-```
+```sh
 openzeppelin-monitor/
 ├── src/                # Source code
 │   ├── bootstrap/      # Bootstrap functions for the application
@@ -236,6 +236,7 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 ## Get Help
+
 
 If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor).
 
