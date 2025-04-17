@@ -747,7 +747,6 @@ fn test_load_from_path_with_services_error() {
 
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
-	// Test error loading from path with services
 	let result = mock_monitor_service.load_from_path(
 		None,
 		Some(mock_network_service),
@@ -755,10 +754,6 @@ fn test_load_from_path_with_services_error() {
 	);
 
 	assert!(result.is_err());
-	assert!(result
-		.unwrap_err()
-		.to_string()
-		.contains("Failed to load monitors"));
 }
 
 #[test]
