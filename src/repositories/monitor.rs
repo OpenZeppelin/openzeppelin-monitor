@@ -590,4 +590,34 @@ mod tests {
 		let err = result.unwrap_err();
 		assert!(err.to_string().contains("references non-existent trigger"));
 	}
+
+	#[test]
+	fn test_load_from_path_error_handling() {
+		// Create a temporary directory for testing
+		let temp_dir = TempDir::new().unwrap();
+		let invalid_path = temp_dir.path().join("non_existent_monitor.json");
+
+		// Create a repository instance
+		let repository =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(
+				HashMap::new(),
+			);
+
+		// Attempt to load from non-existent path
+		let result = repository.load_from_path(Some(&invalid_path), None, None);
+
+		// Verify error handling
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		match err {
+			RepositoryError::LoadError(message) => {
+				assert!(message.to_string().contains("Failed to load monitors"));
+				// Verify the error contains the path in its metadata
+				assert!(message
+					.to_string()
+					.contains(&invalid_path.display().to_string()));
+			}
+			_ => panic!("Expected RepositoryError::LoadError"),
+		}
+	}
 }
