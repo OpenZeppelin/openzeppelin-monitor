@@ -158,7 +158,9 @@ async fn test_monitor_execution(
 
 									tracing::info!(
 										"Network: {}",
-										details.get("network_slug").unwrap()
+										details
+											.get("network_slug")
+											.unwrap_or(&serde_json::Value::Null)
 									);
 
 									// Get transaction details based on network type
@@ -459,8 +461,11 @@ async fn main() -> Result<()> {
 	let should_test_monitor_execution = monitor_path.is_some();
 	// If monitor path is provided, test monitor execution else start the service
 	if should_test_monitor_execution {
+		let monitor_path = monitor_path.ok_or(anyhow::anyhow!(
+			"monitor_path must be defined when testing monitor execution"
+		))?;
 		return test_monitor_execution(
-			monitor_path.unwrap(),
+			monitor_path,
 			network_slug,
 			block_number,
 			monitor_service,
