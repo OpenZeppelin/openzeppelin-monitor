@@ -9,7 +9,7 @@ use std::{collections::HashMap, fs, path::Path};
 
 use crate::{
 	models::{config::error::ConfigError, ConfigLoader, Trigger, TriggerType, TriggerTypeConfig},
-	utils::validate_script_config,
+	services::trigger::validate_script_config,
 };
 
 /// File structure for trigger configuration files

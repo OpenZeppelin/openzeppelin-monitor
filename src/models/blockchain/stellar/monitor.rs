@@ -17,6 +17,9 @@ pub struct MonitorMatch {
 	/// Ledger containing the matched transaction
 	pub ledger: StellarBlock,
 
+	/// Network slug that the transaction was sent from
+	pub network_slug: String,
+
 	/// Conditions that were matched
 	pub matched_on: MatchConditions,
 

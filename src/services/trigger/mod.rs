@@ -5,7 +5,12 @@
 //! various conditions.
 
 mod error;
+mod script;
 mod service;
 
 pub use error::TriggerError;
+pub use script::{
+	process_script_output, validate_script_config, ScriptError, ScriptExecutor,
+	ScriptExecutorFactory,
+};
 pub use service::{TriggerExecutionService, TriggerExecutionServiceTrait};

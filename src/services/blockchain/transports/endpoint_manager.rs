@@ -2,14 +2,12 @@
 //!
 //! Provides methods for rotating between multiple URLs and sending requests to the active endpoint
 //! with automatic fallback to other URLs on failure.
-use anyhow::Context;
-use reqwest_middleware::ClientBuilder;
-use reqwest_retry::RetryTransientMiddleware;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware, RetryableStrategy};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::Level;
 
 use crate::services::blockchain::transports::{RotatingTransport, ROTATE_ON_ERROR_CODES};
 
@@ -21,11 +19,13 @@ use crate::services::blockchain::transports::{RotatingTransport, ROTATE_ON_ERROR
 /// # Fields
 /// * `active_url` - The current active URL
 /// * `fallback_urls` - A list of fallback URLs to rotate to
+/// * `client` - The client to use for the endpoint manager
 /// * `rotation_lock` - A lock for managing the rotation process
 #[derive(Clone, Debug)]
 pub struct EndpointManager {
 	pub active_url: Arc<RwLock<String>>,
 	pub fallback_urls: Arc<RwLock<Vec<String>>>,
+	client: ClientWithMiddleware,
 	rotation_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -33,16 +33,42 @@ impl EndpointManager {
 	/// Creates a new rotating URL client
 	///
 	/// # Arguments
+	/// * `client` - The client to use for the endpoint manager
 	/// * `active_url` - The initial active URL
 	/// * `fallback_urls` - A list of fallback URLs to rotate to
 	///
 	/// # Returns
-	pub fn new(active_url: &str, fallback_urls: Vec<String>) -> Self {
+	pub fn new(client: ClientWithMiddleware, active_url: &str, fallback_urls: Vec<String>) -> Self {
 		Self {
 			active_url: Arc::new(RwLock::new(active_url.to_string())),
 			fallback_urls: Arc::new(RwLock::new(fallback_urls)),
 			rotation_lock: Arc::new(tokio::sync::Mutex::new(())),
+			client,
 		}
+	}
+
+	/// Updates the client with a new client
+	///
+	/// Useful for updating the client with a new retry policy or strategy
+	///
+	/// # Arguments
+	/// * `client` - The new client to use for the endpoint manager
+	pub fn update_client(&mut self, client: ClientWithMiddleware) {
+		self.client = client;
+	}
+
+	pub fn set_retry_policy<R: RetryableStrategy + Send + Sync + 'static>(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+		retry_strategy: R,
+	) {
+		let updated_client = ClientBuilder::from_client(self.client.clone())
+			.with(RetryTransientMiddleware::new_with_policy_and_strategy(
+				retry_policy,
+				retry_strategy,
+			))
+			.build();
+		self.update_client(updated_client);
 	}
 
 	/// Rotates to the next available URL
@@ -103,6 +129,46 @@ impl EndpointManager {
 		}
 	}
 
+	/// Determines if rotation should be attempted and executes it if needed
+	///
+	/// This method encapsulates the logic for:
+	/// 1. Checking if rotation is possible (fallback URLs exist)
+	/// 2. Determining if rotation should occur based on error conditions
+	/// 3. Executing the rotation if conditions are met
+	///
+	/// # Arguments
+	/// * `transport` - The transport client implementing the RotatingTransport trait
+	/// * `should_check_status` - If true, checks HTTP status against ROTATE_ON_ERROR_CODES
+	/// * `status` - The HTTP status code to check (only used if should_check_status is true)
+	///
+	/// # Returns
+	/// * `Ok(true)` - Rotation was needed and succeeded, caller should retry the request
+	/// * `Ok(false)` - No rotation was needed or possible
+	/// * `Err` - Rotation was attempted but failed
+	async fn should_attempt_rotation<T: RotatingTransport>(
+		&self,
+		transport: &T,
+		should_check_status: bool,
+		status: Option<u16>,
+	) -> Result<bool, anyhow::Error> {
+		// Check fallback URLs availability without holding the lock
+		let should_rotate = {
+			let fallback_urls = self.fallback_urls.read().await;
+			!fallback_urls.is_empty()
+				&& (!should_check_status
+					|| status.is_some_and(|s| ROTATE_ON_ERROR_CODES.contains(&s)))
+		};
+
+		if should_rotate {
+			match self.rotate_url(transport).await {
+				Ok(_) => Ok(true), // Rotation successful, continue loop
+				Err(e) => Err(e.context("Failed to rotate URL")),
+			}
+		} else {
+			Ok(false) // No rotation needed
+		}
+	}
+
 	/// Sends a raw request to the blockchain RPC endpoint with automatic URL rotation on failure
 	///
 	/// # Arguments
@@ -127,20 +193,12 @@ impl EndpointManager {
 		method: &str,
 		params: Option<P>,
 	) -> Result<Value, anyhow::Error> {
-		// TODO: initialise this outside of the function
-		let retry_policy = transport.get_retry_policy()?;
-		let client = ClientBuilder::new(reqwest::Client::new())
-			.with(
-				RetryTransientMiddleware::new_with_policy(retry_policy)
-					.with_retry_log_level(Level::WARN),
-			)
-			.build();
-
 		loop {
 			let current_url = self.active_url.read().await.clone();
 			let request_body = transport.customize_request(method, params.clone()).await;
 
-			let response = client
+			let response = match self
+				.client
 				.post(current_url.as_str())
 				.header("Content-Type", "application/json")
 				.body(
@@ -149,38 +207,37 @@ impl EndpointManager {
 				)
 				.send()
 				.await
-				.map_err(|e| anyhow::anyhow!("Failed to send request: {}", e))?;
+			{
+				Ok(resp) => resp,
+				Err(e) => {
+					tracing::warn!("Network error while sending request: {}", e);
+					// Try rotation for network errors without status check
+					if self.should_attempt_rotation(transport, false, None).await? {
+						continue;
+					}
+					return Err(anyhow::anyhow!("Failed to send request: {}", e));
+				}
+			};
 
 			let status = response.status();
 			if !status.is_success() {
 				let error_body = response.text().await.unwrap_or_default();
+				tracing::warn!("Request failed with status {}: {}", status, error_body);
 
-				// Check fallback URLs availability without holding the lock
-				let should_rotate = {
-					let fallback_urls = self.fallback_urls.read().await;
-					!fallback_urls.is_empty() && ROTATE_ON_ERROR_CODES.contains(&status.as_u16())
-				};
-
-				if should_rotate {
-					let rotate_result = self
-						.rotate_url(transport)
-						.await
-						.with_context(|| "Failed to rotate URL");
-
-					if rotate_result.is_ok() {
-						continue;
-					}
+				// Try rotation with status code check
+				if self
+					.should_attempt_rotation(transport, true, Some(status.as_u16()))
+					.await?
+				{
+					continue;
 				}
-
 				return Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body));
 			}
 
-			let json: Value = response
+			return response
 				.json()
 				.await
-				.map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
-
-			return Ok(json);
+				.map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e));
 		}
 	}
 }

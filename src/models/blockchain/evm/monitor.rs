@@ -14,6 +14,9 @@ pub struct EVMMonitorMatch {
 	/// Transaction receipt with execution results
 	pub receipt: EVMTransactionReceipt,
 
+	/// Network slug that the transaction was sent from
+	pub network_slug: String,
+
 	/// Conditions that were matched
 	pub matched_on: MatchConditions,
 

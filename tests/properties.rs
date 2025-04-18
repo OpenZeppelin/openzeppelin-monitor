@@ -13,16 +13,21 @@ mod properties {
 		}
 	}
 	mod notifications {
+		mod discord;
 		mod email;
 		mod slack;
+		mod telegram;
+		mod webhook;
 	}
 	mod repositories {
 		mod monitor;
 		mod network;
 		mod trigger;
 	}
+	mod triggers {
+		mod script;
+	}
 	mod utils {
-		mod executor;
 		mod logging;
 	}
 	mod strategies;

@@ -38,7 +38,7 @@ RPC endpoints are configured in the network configuration files with weights for
 
 [TIP]
 ====
-For high-availability setups, configure at least 3 RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
+For high-availability setups, configure at least 3 (private) RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
 ====
 
 === Configuration Fields
@@ -92,11 +92,20 @@ pub const ROTATE_ON_ERROR_CODES: [u16; 1] = [429];
 Each transport client implements `reqwest-retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
 
 * For transient HTTP errors and network failures:
-** Retries up to 2 times (configurable via `ExponentialBackoff` builder)
+** Retries up to 3 times (configurable via `ExponentialBackoff` builder)
 ** Applies exponential backoff between retry attempts
 ** Returns the final error if all retry attempts fail
 ** Maintains the same URL throughout the retry process
 ** Independent from the endpoint rotation mechanism
+
+Each blockchain network type has its own specialized transport client that wraps the base `HttpTransportClient`.
+This architecture provides common HTTP functionality while allowing customization of network-specific behaviors like connection testing and retry policies.
+The transport clients are implemented as:
+
+1. *Base HTTP Transport*: `HttpTransportClient` provides core HTTP functionality
+2. *Network-Specific Transports*:
+   * `EVMTransportClient` for EVM networks
+   * `StellarTransportClient` for Stellar networks
 
 ==== Configuration Options
 
@@ -106,9 +115,9 @@ The retry policy can be customized using the `ExponentialBackoff` builder in the
 ----
 let retry_policy = ExponentialBackoff::builder()
   .base(2)
-  .retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
-  .jitter(Jitter::None)
-  .build_with_max_retries(2);
+  .retry_bounds(Duration::from_millis(250), Duration::from_secs(10))
+  .jitter(Jitter::Full)
+  .build_with_max_retries(3);
 ----
 
 The retry policy can be customized with the following options:
@@ -124,32 +133,68 @@ pub struct ExponentialBackoff {
 }
 ----
 
-The retry mechanism is implemented at two levels:
+The retry mechanism is implemented at the transport level using a dual-client approach:
 
-1. *Transport Level*: Each transport client maintains its own retry policy:
-+
+1. A base `reqwest` HTTP client is created with optimized configurations:
+   * Connection pool settings for efficient resource usage
+   * Configurable timeouts for request and connection handling
+   * Shared across all transport operations
+
+2. A cloned instance of this client is enhanced with middleware:
+   * Wrapped with `reqwest_middleware` for retry capabilities
+   * Configured with exponential backoff and jitter
+   * Handles automatic retry logic for failed requests
+
+This architecture ensures:
+
+1. Direct requests (like health checks) use the base client for minimal overhead
+2. RPC calls benefit from the middleware's retry capabilities
+3. Both clients maintain efficiency by sharing the same connection pool
+
+
+Each transport client may define its own retry policy:
+
 [source,rust]
 ----
-pub struct AlloyTransportClient {
-  client: Arc<RwLock<RpcClient>>,
+
+// src/services/transports/http.rs
+pub struct HttpTransportClient {
+  pub client: Arc<RwLock<Client>>,
   endpoint_manager: EndpointManager,
-  retry_policy: ExponentialBackoff,
+  test_connection_payload: Option<String>,
 }
 
-pub struct StellarTransportClient {
-  pub client: Arc<RwLock<StellarHttpClient>>,
-  endpoint_manager: EndpointManager,
-  retry_policy: ExponentialBackoff,
-}
-----
+// Example of client creation with retry mechanism
+let http_client = reqwest::ClientBuilder::new()
+  .pool_idle_timeout(Duration::from_secs(90))
+  .pool_max_idle_per_host(32)
+  .timeout(Duration::from_secs(30))
+  .connect_timeout(Duration::from_secs(20))
+  .build()?;
 
-2. *Request Level*: The `EndpointManager` applies the retry policy through middleware:
-+
-[source,rust]
-----
-let client = ClientBuilder::new(reqwest::Client::new())
-  .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+// Create middleware client with retry policy
+let client = ClientBuilder::new(cloned_http_client)
+  .with(RetryTransientMiddleware::new_with_policy_and_strategy(
+    retry_policy,
+    RetryTransient,
+  ))
   .build();
+
+// src/services/transports/evm/http.rs
+pub struct EVMTransportClient {
+  http_client: HttpTransportClient,
+}
+
+// override with a custom retry policy and strategy
+pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
+  let test_connection_payload = Some(r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#.to_string());
+  let http_client = HttpTransportClient::new(network, test_connection_payload).await?;
+  http_client.set_retry_policy(
+    ExponentialBackoff::builder().build_with_total_retry_duration(Duration::from_secs(10)),
+    Some(DefaultRetryableStrategy),
+  )?;
+  Ok(Self { http_client })
+}
 ----
 
 === Implementation Details
@@ -231,22 +276,23 @@ graph TD
 
 == Best Practices
 
-* Use private RPC providers when possible
-* Configure multiple fallback endpoints
-* Consider geographic distribution of endpoints
-* Monitor endpoint reliability and adjust weights accordingly
+* Configure multiple private endpoints with appropriate weights
+* Use geographically distributed endpoints when possible
+* Monitor endpoint health and adjust weights as needed
+* Set appropriate retry policies based on network characteristics
+
 
 == Troubleshooting
 
 === Common Issues
 
-* *429 Too Many Requests*: Increase the number of fallback URLs or reduce monitoring frequency
+* *429 Too Many Requests*: Increase the number of fallback URLs, adjust weights or reduce monitoring frequency
 * *Connection Timeouts*: Check endpoint health and network connectivity
-* *Invalid Responses*: Verify RPC endpoint compatibility with your network type
+* *Invalid Responses*: Verify endpoint compatibility with your network type
 
 === Logging
 
-Enable debug logging for detailed RPC client information:
+Enable debug logging for detailed transport information:
 
 [source,bash]
 ----

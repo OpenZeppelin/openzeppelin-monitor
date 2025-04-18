@@ -29,6 +29,7 @@ fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
 		monitor,
 		transaction,
 		receipt: create_test_evm_transaction_receipt(),
+		network_slug: "ethereum_mainnet".to_string(),
 		matched_on: MatchConditions::default(),
 		matched_on_args: None,
 	}))

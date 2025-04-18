@@ -52,7 +52,7 @@ use std::env::{set_var, var};
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
 use tokio_cron_scheduler::JobScheduler;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 type MonitorServiceType = MonitorService<
 	MonitorRepository<NetworkRepository, TriggerRepository>,
@@ -81,6 +81,7 @@ type MonitorServiceType = MonitorService<
 /// # Errors
 /// * Returns an error if network slug is missing when block number is specified
 /// * Returns an error if monitor execution fails for any reason (invalid path, network issues, etc.)
+#[instrument(skip_all)]
 async fn test_monitor_execution(
 	path: String,
 	network_slug: Option<String>,
@@ -90,6 +91,7 @@ async fn test_monitor_execution(
 	filter_service: Arc<FilterService>,
 	raw_output: bool,
 ) -> Result<()> {
+	// Validate inputs first
 	if block_number.is_some() && network_slug.is_none() {
 		return Err(Box::new(MonitorExecutionError::execution_error(
 			"Network name is required when executing a monitor for a specific block",
@@ -98,14 +100,13 @@ async fn test_monitor_execution(
 		)));
 	}
 
-	tracing::info!("Executing monitor from path: '{}'", path);
-	if block_number.is_some() && network_slug.is_some() {
-		tracing::info!(
-			"Executing monitor for block number: {} on network: {}",
-			block_number.unwrap_or(0),
-			network_slug.clone().unwrap_or("unknown".to_string())
-		);
-	}
+	tracing::info!(
+		message = "Starting monitor execution",
+		path,
+		network = network_slug,
+		block = block_number,
+	);
+
 	let client_pool = ClientPool::new();
 	let result = execute_monitor(
 		&path,
@@ -117,20 +118,27 @@ async fn test_monitor_execution(
 		client_pool,
 	)
 	.await;
+
 	match result {
 		Ok(matches) => {
 			tracing::info!("Monitor execution completed successfully");
-			tracing::info!("=========== Execution Results ===========");
+
 			if matches.is_empty() {
 				tracing::info!("No matches found");
-			} else if raw_output {
-				tracing::info!("{}", matches);
+				return Ok(());
+			}
+
+			tracing::info!("=========== Execution Results ===========");
+
+			if raw_output {
+				tracing::info!(matches = %matches, "Raw execution results");
 			} else {
 				// Parse and extract relevant information
 				match serde_json::from_str::<serde_json::Value>(&matches) {
 					Ok(json) => {
 						if let Some(matches_array) = json.as_array() {
-							tracing::info!("Found {} matches:", matches_array.len());
+							tracing::info!(total = matches_array.len(), "Found matches");
+
 							for (idx, match_result) in matches_array.iter().enumerate() {
 								tracing::info!("Match #{}", idx + 1);
 								tracing::info!("-------------");
@@ -147,6 +155,13 @@ async fn test_monitor_execution(
 											tracing::info!("Monitor: {}", name);
 										}
 									}
+
+									tracing::info!(
+										"Network: {}",
+										details
+											.get("network_slug")
+											.unwrap_or(&serde_json::Value::Null)
+									);
 
 									// Get transaction details based on network type
 									match network_type.as_str() {
@@ -281,21 +296,35 @@ async fn test_monitor_execution(
 							}
 						}
 					}
-					Err(_) => {
-						// Fallback to raw JSON output
-						tracing::info!("Execution results: {}", matches);
+					Err(e) => {
+						tracing::warn!(
+							error = %e,
+							"Failed to parse JSON output, falling back to raw output"
+						);
+						tracing::info!(matches = %matches, "Raw execution results");
 					}
 				}
 			}
+
 			tracing::info!("=========================================");
 			Ok(())
 		}
-		Err(e) => Err(MonitorExecutionError::execution_error(
-			format!("Monitor execution failed: {}", e),
-			None,
-			None,
-		)
-		.into()),
+		Err(e) => {
+			// Convert to domain-specific error with proper context
+			Err(MonitorExecutionError::execution_error(
+				"Monitor execution failed",
+				Some(e.into()),
+				Some(std::collections::HashMap::from([
+					("path".to_string(), path),
+					("network".to_string(), network_slug.unwrap_or_default()),
+					(
+						"block".to_string(),
+						block_number.map(|b| b.to_string()).unwrap_or_default(),
+					),
+				])),
+			)
+			.into())
+		}
 	}
 }
 
@@ -432,8 +461,11 @@ async fn main() -> Result<()> {
 	let should_test_monitor_execution = monitor_path.is_some();
 	// If monitor path is provided, test monitor execution else start the service
 	if should_test_monitor_execution {
+		let monitor_path = monitor_path.ok_or(anyhow::anyhow!(
+			"monitor_path must be defined when testing monitor execution"
+		))?;
 		return test_monitor_execution(
-			monitor_path.unwrap(),
+			monitor_path,
 			network_slug,
 			block_number,
 			monitor_service,
