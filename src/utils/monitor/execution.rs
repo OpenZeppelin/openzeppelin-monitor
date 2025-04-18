@@ -17,6 +17,7 @@ use crate::{
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::instrument;
 
 pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 
@@ -38,6 +39,7 @@ pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 ///
 /// # Returns
 /// * `Result<String, ExecutionError>` - JSON string containing matches or error
+#[instrument(skip_all)]
 pub async fn execute_monitor<
 	T: ClientPoolTrait,
 	M: MonitorRepositoryTrait<N, TR>,
@@ -52,19 +54,23 @@ pub async fn execute_monitor<
 	filter_service: Arc<FilterService>,
 	client_pool: T,
 ) -> ExecutionResult<String> {
+	tracing::debug!("Loading monitor configuration");
 	let monitor = monitor_service
 		.lock()
 		.await
 		.load_from_path(Some(Path::new(monitor_path)), None, None)
 		.map_err(|e| MonitorExecutionError::execution_error(e.to_string(), None, None))?;
 
+	tracing::debug!(monitor_name = %monitor.name, "Monitor loaded successfully");
+
 	let networks_for_monitor = if let Some(network_slug) = network_slug {
+		tracing::debug!(network = %network_slug, "Finding specific network");
 		let network = network_service
 			.lock()
 			.await
 			.get(network_slug)
 			.ok_or_else(|| {
-				MonitorExecutionError::execution_error(
+				MonitorExecutionError::not_found(
 					format!("Network '{}' not found", network_slug),
 					None,
 					None,
@@ -72,6 +78,7 @@ pub async fn execute_monitor<
 			})?;
 		vec![network.clone()]
 	} else {
+		tracing::debug!("Finding all active networks for monitor");
 		network_service
 			.lock()
 			.await
@@ -82,8 +89,19 @@ pub async fn execute_monitor<
 			.collect()
 	};
 
+	tracing::debug!(
+		networks_count = networks_for_monitor.len(),
+		"Networks found for monitor"
+	);
+
 	let mut all_matches = Vec::new();
 	for network in networks_for_monitor {
+		tracing::debug!(
+			network_type = ?network.network_type,
+			network_slug = %network.slug,
+			"Processing network"
+		);
+
 		let matches = match network.network_type {
 			BlockChainType::EVM => {
 				let client = client_pool.get_evm_client(&network).await.map_err(|e| {
@@ -93,14 +111,22 @@ pub async fn execute_monitor<
 						None,
 					)
 				})?;
-				// If block number is not provided, get the latest block number
+
 				let block_number = match block_number {
-					Some(block_number) => *block_number,
-					None => client.get_latest_block_number().await.map_err(|e| {
-						MonitorExecutionError::execution_error(e.to_string(), None, None)
-					})?,
+					Some(block_number) => {
+						tracing::debug!(block = %block_number, "Using specified block number");
+						*block_number
+					}
+					None => {
+						let latest = client.get_latest_block_number().await.map_err(|e| {
+							MonitorExecutionError::execution_error(e.to_string(), None, None)
+						})?;
+						tracing::debug!(block = %latest, "Using latest block number");
+						latest
+					}
 				};
 
+				tracing::debug!(block = %block_number, "Fetching block");
 				let blocks = client.get_blocks(block_number, None).await.map_err(|e| {
 					MonitorExecutionError::execution_error(
 						format!("Failed to get block {}: {}", block_number, e),
@@ -110,13 +136,14 @@ pub async fn execute_monitor<
 				})?;
 
 				let block = blocks.first().ok_or_else(|| {
-					MonitorExecutionError::execution_error(
+					MonitorExecutionError::not_found(
 						format!("Block {} not found", block_number),
 						None,
 						None,
 					)
 				})?;
 
+				tracing::debug!(block = %block_number, "Filtering block");
 				filter_service
 					.filter_block(&*client, &network, block, &[monitor.clone()])
 					.await
@@ -157,7 +184,7 @@ pub async fn execute_monitor<
 				})?;
 
 				let block = blocks.first().ok_or_else(|| {
-					MonitorExecutionError::execution_error(
+					MonitorExecutionError::not_found(
 						format!("Block {} not found", block_number),
 						None,
 						None,
@@ -190,9 +217,20 @@ pub async fn execute_monitor<
 				))
 			}
 		};
+
+		tracing::debug!(matches_count = matches.len(), "Found matches for network");
 		all_matches.extend(matches);
 	}
 
-	let json_matches = serde_json::to_string(&all_matches).unwrap();
+	tracing::debug!(total_matches = all_matches.len(), "Serializing results");
+	let json_matches = serde_json::to_string(&all_matches).map_err(|e| {
+		MonitorExecutionError::execution_error(
+			format!("Failed to serialize matches: {}", e),
+			None,
+			None,
+		)
+	})?;
+
+	tracing::debug!("Monitor execution completed successfully");
 	Ok(json_matches)
 }

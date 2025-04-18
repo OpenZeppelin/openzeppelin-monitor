@@ -92,7 +92,7 @@ pub const ROTATE_ON_ERROR_CODES: [u16; 1] = [429];
 Each transport client implements `reqwest-retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
 
 * For transient HTTP errors and network failures:
-** Retries up to 2 times (configurable via `ExponentialBackoff` builder)
+** Retries up to 3 times (configurable via `ExponentialBackoff` builder)
 ** Applies exponential backoff between retry attempts
 ** Returns the final error if all retry attempts fail
 ** Maintains the same URL throughout the retry process
@@ -106,7 +106,6 @@ The transport clients are implemented as:
 2. *Network-Specific Transports*:
    * `EVMTransportClient` for EVM networks
    * `StellarTransportClient` for Stellar networks
-   * `MidnightTransportClient` for Midnight networks
 
 ==== Configuration Options
 
@@ -116,9 +115,9 @@ The retry policy can be customized using the `ExponentialBackoff` builder in the
 ----
 let retry_policy = ExponentialBackoff::builder()
   .base(2)
-  .retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
-  .jitter(Jitter::None)
-  .build_with_max_retries(2);
+  .retry_bounds(Duration::from_millis(250), Duration::from_secs(10))
+  .jitter(Jitter::Full)
+  .build_with_max_retries(3);
 ----
 
 The retry policy can be customized with the following options:
@@ -134,9 +133,26 @@ pub struct ExponentialBackoff {
 }
 ----
 
-The retry mechanism is implemented at two levels:
+The retry mechanism is implemented at the transport level using a dual-client approach:
 
-1. *Transport Level*: Each transport client may maintain its own retry policy:
+1. A base `reqwest` HTTP client is created with optimized configurations:
+   * Connection pool settings for efficient resource usage
+   * Configurable timeouts for request and connection handling
+   * Shared across all transport operations
+
+2. A cloned instance of this client is enhanced with middleware:
+   * Wrapped with `reqwest_middleware` for retry capabilities
+   * Configured with exponential backoff and jitter
+   * Handles automatic retry logic for failed requests
+
+This architecture ensures:
+
+1. Direct requests (like health checks) use the base client for minimal overhead
+2. RPC calls benefit from the middleware's retry capabilities
+3. Both clients maintain efficiency by sharing the same connection pool
+
+
+*Transport Level*: Each transport client may define its own retry policy:
 +
 [source,rust]
 ----
@@ -145,36 +161,40 @@ The retry mechanism is implemented at two levels:
 pub struct HttpTransportClient {
   pub client: Arc<RwLock<Client>>,
   endpoint_manager: EndpointManager,
-  retry_policy: ExponentialBackoff,
   test_connection_payload: Option<String>,
 }
+
+// Example of client creation with retry mechanism
+let http_client = reqwest::ClientBuilder::new()
+  .pool_idle_timeout(Duration::from_secs(90))
+  .pool_max_idle_per_host(32)
+  .timeout(Duration::from_secs(30))
+  .connect_timeout(Duration::from_secs(20))
+  .build()?;
+
+// Create middleware client with retry policy
+let client = ClientBuilder::new(cloned_http_client)
+  .with(RetryTransientMiddleware::new_with_policy_and_strategy(
+    retry_policy,
+    RetryTransient,
+  ))
+  .build();
 
 // src/services/transports/evm/http.rs
 pub struct EVMTransportClient {
   http_client: HttpTransportClient,
 }
 
+// override with a custom retry policy and strategy
 pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
-  let http_client = EVMTransportClient::new(network).await?;
-  // Define a custom retry policy
+  let test_connection_payload = Some(r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#.to_string());
+  let http_client = HttpTransportClient::new(network, test_connection_payload).await?;
   http_client.set_retry_policy(
-    ExponentialBackoff::builder()
-    .base(2)
-    .retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
-    .jitter(Jitter::None)
-    .build_with_max_retries(2),
-  );
-  Ok(Self::new_with_transport(http_client))
+    ExponentialBackoff::builder().build_with_total_retry_duration(Duration::from_secs(10)),
+    Some(DefaultRetryableStrategy),
+  )?;
+  Ok(Self { http_client })
 }
-----
-
-2. *Request Level*: The `EndpointManager` applies the retry policy through middleware:
-+
-[source,rust]
-----
-let client = ClientBuilder::new(reqwest::Client::new())
-  .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-  .build();
 ----
 
 === Implementation Details
@@ -208,7 +228,7 @@ sequenceDiagram
         EM->>P: Retry #1
         P-->>EM: Error Response
         Note over EM: Wait with backoff
-        EM->>P: Retry #2
+        EM->>P: Retry #N
         P-->>EM: Success
         EM-->>M: Return Response
     end

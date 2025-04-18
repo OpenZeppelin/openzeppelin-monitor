@@ -49,8 +49,8 @@ impl EvmClient<EVMTransportClient> {
 	/// # Returns
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
-		let http_client = EVMTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(http_client))
+		let client = EVMTransportClient::new(network).await?;
+		Ok(Self::new_with_transport(client))
 	}
 }
 

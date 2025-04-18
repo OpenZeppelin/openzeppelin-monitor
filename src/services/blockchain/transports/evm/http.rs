@@ -4,6 +4,7 @@
 //! by wrapping the HttpTransportClient. This allows for consistent behavior with other
 //! transport implementations while providing specific EVM-focused functionality.
 
+use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::Value;
@@ -11,7 +12,7 @@ use serde_json::Value;
 use crate::{
 	models::Network,
 	services::blockchain::transports::{
-		BlockchainTransport, HttpTransportClient, RotatingTransport,
+		BlockchainTransport, HttpTransportClient, RotatingTransport, TransientErrorRetryStrategy,
 	},
 };
 
@@ -24,7 +25,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct EVMTransportClient {
 	/// The underlying HTTP transport client that handles actual RPC communications
-	http_client: HttpTransportClient,
+	pub http_client: HttpTransportClient,
 }
 
 impl EVMTransportClient {
@@ -72,23 +73,33 @@ impl BlockchainTransport for EVMTransportClient {
 		self.http_client.send_raw_request(method, params).await
 	}
 
-	/// Gets the current retry policy configuration
-	///
-	/// # Returns
-	/// * `Result<ExponentialBackoff, anyhow::Error>` - The current retry policy
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
-		self.http_client.get_retry_policy()
-	}
-
 	/// Sets a new retry policy for the transport
 	///
 	/// # Arguments
 	/// * `retry_policy` - The new retry policy to use
+	/// * `retry_strategy` - The new retry strategy to use
 	///
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error status
-	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
-		self.http_client.set_retry_policy(retry_policy)
+	fn set_retry_policy(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+		retry_strategy: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error> {
+		self.http_client
+			.set_retry_policy(retry_policy, retry_strategy)?;
+		Ok(())
+	}
+
+	/// Update endpoint manager with a new client
+	///
+	/// # Arguments
+	/// * `client` - The new client to use for the endpoint manager
+	fn update_endpoint_manager_client(
+		&mut self,
+		client: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error> {
+		self.http_client.update_endpoint_manager_client(client)
 	}
 }
 

@@ -19,7 +19,11 @@ pub use evm::http::EVMTransportClient;
 pub use http::HttpTransportClient;
 pub use stellar::http::StellarTransportClient;
 
-use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_middleware::ClientWithMiddleware;
+use reqwest_retry::{
+	default_on_request_failure, default_on_request_success, policies::ExponentialBackoff,
+	Retryable, RetryableStrategy,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -56,13 +60,18 @@ pub trait BlockchainTransport: Send + Sync {
 		})
 	}
 
-	#[allow(clippy::result_large_err)]
 	/// Sets the retry policy for the transport
-	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error>;
+	fn set_retry_policy(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+		retry_strategy: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error>;
 
-	#[allow(clippy::result_large_err)]
-	/// Gets the retry policy for the transport
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error>;
+	/// Update endpoint manager with a new client
+	fn update_endpoint_manager_client(
+		&mut self,
+		client: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error>;
 }
 
 /// Extension trait for transports that support URL rotation
@@ -73,4 +82,19 @@ pub trait RotatingTransport: BlockchainTransport {
 
 	/// Updates the client with a new URL
 	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error>;
+}
+
+/// A default retry strategy that retries on requests based on the status code
+/// This can be used to customise the retry strategy
+pub struct TransientErrorRetryStrategy;
+impl RetryableStrategy for TransientErrorRetryStrategy {
+	fn handle(
+		&self,
+		res: &Result<reqwest::Response, reqwest_middleware::Error>,
+	) -> Option<Retryable> {
+		match res {
+			Ok(success) => default_on_request_success(success),
+			Err(error) => default_on_request_failure(error),
+		}
+	}
 }

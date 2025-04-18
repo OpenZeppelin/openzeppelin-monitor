@@ -1,8 +1,11 @@
 use mockall::mock;
+use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use serde_json::Value;
 
-use openzeppelin_monitor::services::blockchain::{BlockchainTransport, RotatingTransport};
+use openzeppelin_monitor::services::blockchain::{
+	BlockchainTransport, RotatingTransport, TransientErrorRetryStrategy,
+};
 
 // Mock implementation of a EVM transport client.
 // Used for testing Ethereum compatible blockchain interactions.
@@ -37,11 +40,18 @@ impl BlockchainTransport for MockEVMTransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
-		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
+	fn set_retry_policy(
+		&mut self,
+		_: ExponentialBackoff,
+		_: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error> {
+		Ok(())
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
+	fn update_endpoint_manager_client(
+		&mut self,
+		_: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
@@ -89,11 +99,18 @@ impl BlockchainTransport for MockStellarTransportClient {
 			.await
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
-		Ok(ExponentialBackoff::builder().build_with_max_retries(2))
+	fn set_retry_policy(
+		&mut self,
+		_: ExponentialBackoff,
+		_: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error> {
+		Ok(())
 	}
 
-	fn set_retry_policy(&mut self, _: ExponentialBackoff) -> Result<(), anyhow::Error> {
+	fn update_endpoint_manager_client(
+		&mut self,
+		_: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }

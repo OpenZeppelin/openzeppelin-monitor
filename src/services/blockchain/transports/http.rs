@@ -10,17 +10,19 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use reqwest::{Client, ClientBuilder};
-use reqwest_retry::{policies::ExponentialBackoff, Jitter};
+use reqwest::Client;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, Jitter, RetryTransientMiddleware};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
-use tokio::sync::RwLock;
 use url::Url;
 
 use crate::{
 	models::Network,
-	services::blockchain::transports::{BlockchainTransport, EndpointManager, RotatingTransport},
+	services::blockchain::transports::{
+		BlockchainTransport, EndpointManager, RotatingTransport, TransientErrorRetryStrategy,
+	},
 };
 
 /// Basic HTTP transport client for blockchain interactions
@@ -35,11 +37,9 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct HttpTransportClient {
 	/// HTTP client for making requests, wrapped in Arc for thread-safety
-	pub client: Arc<RwLock<Client>>,
+	pub client: Arc<Client>,
 	/// Manages RPC endpoint rotation and request handling for high availability
 	endpoint_manager: EndpointManager,
-	/// The retry policy for failed requests
-	retry_policy: ExponentialBackoff,
 	/// The stringified JSON RPC payload to use for testing the connection
 	test_connection_payload: Option<String>,
 }
@@ -72,14 +72,27 @@ impl HttpTransportClient {
 		// Default retry policy
 		let retry_policy = ExponentialBackoff::builder()
 			.base(2)
-			.retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
-			.jitter(Jitter::None)
-			.build_with_max_retries(2);
+			.retry_bounds(Duration::from_millis(250), Duration::from_secs(10))
+			.jitter(Jitter::Full)
+			.build_with_max_retries(3);
 
-		let client = ClientBuilder::new()
+		let http_client = reqwest::ClientBuilder::new()
+			.pool_idle_timeout(Duration::from_secs(90))
+			.pool_max_idle_per_host(32)
 			.timeout(Duration::from_secs(30))
+			.connect_timeout(Duration::from_secs(20))
 			.build()
 			.context("Failed to create HTTP client")?;
+
+		// Clone it before using it to create the middleware client
+		let cloned_http_client = http_client.clone();
+
+		let client = ClientBuilder::new(cloned_http_client)
+			.with(RetryTransientMiddleware::new_with_policy_and_strategy(
+				retry_policy,
+				TransientErrorRetryStrategy,
+			))
+			.build();
 
 		for rpc_url in rpc_urls.iter() {
 			let url = match Url::parse(&rpc_url.url) {
@@ -99,7 +112,7 @@ impl HttpTransportClient {
 				})
 			};
 
-			let request = client.post(url.clone()).json(&test_request);
+			let request = http_client.post(url.clone()).json(&test_request);
 			// Attempt to connect to the endpoint
 			match request.send().await {
 				Ok(response) => {
@@ -118,9 +131,12 @@ impl HttpTransportClient {
 
 					// Successfully connected - create and return the client
 					return Ok(Self {
-						client: Arc::new(RwLock::new(client)),
-						endpoint_manager: EndpointManager::new(rpc_url.url.as_ref(), fallback_urls),
-						retry_policy,
+						client: Arc::new(http_client),
+						endpoint_manager: EndpointManager::new(
+							client,
+							rpc_url.url.as_ref(),
+							fallback_urls,
+						),
 						test_connection_payload,
 					});
 				}
@@ -181,23 +197,35 @@ impl BlockchainTransport for HttpTransportClient {
 		Ok(response)
 	}
 
-	/// Retrieves the current retry policy configuration
-	///
-	/// # Returns
-	/// * `Result<ExponentialBackoff, anyhow::Error>` - Current retry policy
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
-		Ok(self.retry_policy)
-	}
-
 	/// Updates the retry policy configuration
 	///
 	/// # Arguments
 	/// * `retry_policy` - New retry policy to use for subsequent requests
+	/// * `retry_strategy` - Optional retry strategy to use for subsequent requests
 	///
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error status
-	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
-		self.retry_policy = retry_policy;
+	fn set_retry_policy(
+		&mut self,
+		retry_policy: ExponentialBackoff,
+		retry_strategy: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error> {
+		self.endpoint_manager.set_retry_policy(
+			retry_policy,
+			retry_strategy.unwrap_or(TransientErrorRetryStrategy),
+		);
+		Ok(())
+	}
+
+	/// Update endpoint manager with a new client
+	///
+	/// # Arguments
+	/// * `client` - The new client to use for the endpoint manager
+	fn update_endpoint_manager_client(
+		&mut self,
+		client: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error> {
+		self.endpoint_manager.update_client(client);
 		Ok(())
 	}
 }
@@ -228,8 +256,7 @@ impl RotatingTransport for HttpTransportClient {
 			})
 		};
 
-		let client = self.client.read().await;
-		let request = client.post(url.clone()).json(&test_request);
+		let request = self.client.post(url.clone()).json(&test_request);
 
 		match request.send().await {
 			Ok(response) => {
