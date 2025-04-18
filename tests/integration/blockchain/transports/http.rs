@@ -40,7 +40,7 @@ async fn test_client_creation_with_test_connection_payload() {
 	let mut server = Server::new_async().await;
 	let mock = server
 		.mock("POST", "/")
-		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"system_chain","params":[]}"#)
+		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#)
 		.with_header("content-type", "application/json")
 		.with_status(200)
 		.with_body(r#"{"jsonrpc":"2.0","id":0,"result":"1"}"#)
@@ -48,7 +48,7 @@ async fn test_client_creation_with_test_connection_payload() {
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
 	const TEST_CONNECTION_PAYLOAD: &str =
-		r#"{"id":1,"jsonrpc":"2.0","method":"system_chain","params":[]}"#;
+		r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#;
 
 	match HttpTransportClient::new(&network, Some(TEST_CONNECTION_PAYLOAD.to_string())).await {
 		Ok(transport) => {
@@ -146,7 +146,7 @@ async fn test_client_try_connect_with_test_connection_payload() {
 	let mut server = Server::new_async().await;
 	let mock = server
 		.mock("POST", "/")
-		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"system_chain","params":[]}"#)
+		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#)
 		.with_header("content-type", "application/json")
 		.with_status(200)
 		.with_body(r#"{"jsonrpc":"2.0","id":0,"result":"1"}"#)
@@ -155,7 +155,7 @@ async fn test_client_try_connect_with_test_connection_payload() {
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
 	const TEST_CONNECTION_PAYLOAD: &str =
-		r#"{"id":1,"jsonrpc":"2.0","method":"system_chain","params":[]}"#;
+		r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#;
 
 	let client = HttpTransportClient::new(&network, Some(TEST_CONNECTION_PAYLOAD.to_string()))
 		.await
