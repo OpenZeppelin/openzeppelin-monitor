@@ -89,6 +89,13 @@ mock! {
 			network_service: Option<NetworkService<N>>,
 			trigger_service: Option<TriggerService<T>>,
 		) -> Result<HashMap<String, Monitor>, RepositoryError>;
+		#[mockall::concretize]
+		fn load_from_path(
+			&self,
+			path: Option<&Path>,
+			network_service: Option<NetworkService<N>>,
+			trigger_service: Option<TriggerService<T>>,
+		) -> Result<Monitor, RepositoryError>;
 		fn get(&self, monitor_id: &str) -> Option<Monitor>;
 		fn get_all(&self) -> HashMap<String, Monitor>;
 	}

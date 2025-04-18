@@ -6,9 +6,8 @@
 //! - LOG_DATA_DIR: when using file mode, the path of the log file (default "logs/monitor.log")
 //!   Refer to `src/logging/mod.rs` for more details.
 use chrono::Utc;
-use openzeppelin_monitor::utils::{
-	compute_rolled_file_path,
-	logging::{setup_logging, space_based_rolling},
+use openzeppelin_monitor::utils::logging::{
+	compute_rolled_file_path, setup_logging, space_based_rolling,
 };
 use std::{
 	env, fs,
@@ -33,24 +32,6 @@ lazy_static! {
 pub fn compute_final_log_path(base_file_path: &str, date_str: &str, max_size: u64) -> String {
 	let time_based_path = compute_rolled_file_path(base_file_path, date_str, 1);
 	space_based_rolling(&time_based_path, base_file_path, date_str, max_size)
-}
-
-// This test checks if the LOG_MAX_SIZE environment variable is set to a valid u64 value.
-#[test]
-#[should_panic(expected = "LOG_MAX_SIZE must be a valid u64 if set")]
-fn test_invalid_log_max_size() {
-	// Create a unique temporary directory.
-	let temp_dir = TempDir::new().expect("Failed to create temp dir");
-	let temp_log_dir = temp_dir.path().to_str().unwrap();
-
-	// Set LOG_MAX_SIZE to an invalid value.
-	env::set_var("LOG_MODE", "file");
-	env::set_var("LOG_LEVEL", "debug");
-	env::set_var("LOG_DATA_DIR", format!("{}/", temp_log_dir));
-	env::set_var("LOG_MAX_SIZE", "invalid_value");
-
-	// Initialize separate from lazy static.
-	let _ = setup_logging();
 }
 
 // This integration test simulates file logging

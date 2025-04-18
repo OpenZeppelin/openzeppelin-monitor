@@ -78,4 +78,4 @@ path = "src/main.rs"
 name = "openzeppelin-monitor"
 
 [features]
-test-log = []
+test-ci-only = []

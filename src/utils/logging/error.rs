@@ -380,9 +380,8 @@ mod tests {
 		assert!(formatted.contains("Caused by: Permission denied"));
 	}
 
-	#[ignore]
-	#[cfg(feature = "test-log")]
 	#[test]
+	#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 	fn test_log_error() {
 		use tracing_test::traced_test;
 

@@ -38,7 +38,7 @@ For details on the supported values see xref:index.adoc#basic_configuration[User
 
 == Installation
 
-=== Local Installation
+=== Run Locally
 
 . Clone the repository:
 +
@@ -52,22 +52,30 @@ cd openzeppelin-monitor
 +
 [source,bash]
 ----
-cargo build
+cargo build --release
 ----
 
-=== Standalone CLI Usage
+. Move the binary to the project root (so that it can access the `./config` folder)
++
+[source,bash]
+----
+mv ./target/release/openzeppelin-monitor .
+----
 
 . View available options:
 +
 [source,bash]
 ----
 ./openzeppelin-monitor --help
+
+# Enable logging to file
+./openzeppelin-monitor --log-file
+
+# Enable metrics server
+./openzeppelin-monitor --metrics
 ----
 
-. Enable logging to file with `--log-file`
-. Enable metrics server with `--metrics`
-
-=== Docker Installation
+=== Run with Docker
 
 ==== Basic Setup
 
@@ -132,7 +140,7 @@ docker compose --profile metrics down
 docker compose logs -f
 ----
 
-== Examples:
+== Examples
 
 === Monitoring USDC transfers (EVM):
 
@@ -339,8 +347,8 @@ The monitor will now:
 
 * Adjust the transfer threshold by modifying the `expression` value.
 * Monitor additional ERC20 tokens by creating new monitor configurations.
+* xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
 * Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].
-
 
 === Monitoring Dex Swaps (Stellar):
 
@@ -490,4 +498,5 @@ The monitor will now:
 
 * Adjust the swap threshold by modifying the `expression` value.
 * Monitor additional dex swaps by creating new monitor configurations.
+* xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
 * Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].

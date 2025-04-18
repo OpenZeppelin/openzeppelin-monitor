@@ -51,6 +51,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 		})
 	}
 
+	/// Create a new monitor repository from a list of monitors
 	pub fn new_with_monitors(monitors: HashMap<String, Monitor>) -> Self {
 		MonitorRepository {
 			monitors,
@@ -183,6 +184,16 @@ pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepository
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<HashMap<String, Monitor>, RepositoryError>;
 
+	/// Load a monitor from a specific path
+	///
+	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
+	fn load_from_path(
+		&self,
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Monitor, RepositoryError>;
+
 	/// Get a specific monitor by ID
 	///
 	/// Returns None if the monitor doesn't exist.
@@ -253,6 +264,52 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 
 		Self::validate_monitor_references(&monitors, &triggers, &networks)?;
 		Ok(monitors)
+	}
+
+	/// Load a monitor from a specific path
+	///
+	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
+	fn load_from_path(
+		&self,
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Monitor, RepositoryError> {
+		match path {
+			Some(path) => {
+				let monitor = Monitor::load_from_path(path).map_err(|e| {
+					RepositoryError::load_error(
+						"Failed to load monitors",
+						Some(Box::new(e)),
+						Some(HashMap::from([(
+							"path".to_string(),
+							path.display().to_string(),
+						)])),
+					)
+				})?;
+
+				let networks = match network_service {
+					Some(service) => service.get_all(),
+					None => NetworkRepository::new(None)?.networks,
+				};
+
+				let triggers = match trigger_service {
+					Some(service) => service.get_all(),
+					None => TriggerRepository::new(None)?.triggers,
+				};
+				let monitors = HashMap::from([(monitor.name.clone(), monitor)]);
+				Self::validate_monitor_references(&monitors, &triggers, &networks)?;
+				match monitors.values().next() {
+					Some(monitor) => Ok(monitor.clone()),
+					None => Err(RepositoryError::load_error("No monitors found", None, None)),
+				}
+			}
+			None => Err(RepositoryError::load_error(
+				"Failed to load monitors",
+				None,
+				None,
+			)),
+		}
 	}
 
 	fn get(&self, monitor_id: &str) -> Option<Monitor> {
@@ -336,6 +393,19 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	/// Returns a copy of the monitor map to prevent external mutation.
 	pub fn get_all(&self) -> HashMap<String, Monitor> {
 		self.repository.get_all()
+	}
+
+	/// Load a monitor from a specific path
+	///
+	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
+	pub fn load_from_path(
+		&self,
+		path: Option<&Path>,
+		network_service: Option<NetworkService<N>>,
+		trigger_service: Option<TriggerService<T>>,
+	) -> Result<Monitor, RepositoryError> {
+		self.repository
+			.load_from_path(path, network_service, trigger_service)
 	}
 }
 
@@ -520,5 +590,35 @@ mod tests {
 		assert!(result.is_err());
 		let err = result.unwrap_err();
 		assert!(err.to_string().contains("references non-existent trigger"));
+	}
+
+	#[test]
+	fn test_load_from_path_error_handling() {
+		// Create a temporary directory for testing
+		let temp_dir = TempDir::new().unwrap();
+		let invalid_path = temp_dir.path().join("non_existent_monitor.json");
+
+		// Create a repository instance
+		let repository =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(
+				HashMap::new(),
+			);
+
+		// Attempt to load from non-existent path
+		let result = repository.load_from_path(Some(&invalid_path), None, None);
+
+		// Verify error handling
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		match err {
+			RepositoryError::LoadError(message) => {
+				assert!(message.to_string().contains("Failed to load monitors"));
+				// Verify the error contains the path in its metadata
+				assert!(message
+					.to_string()
+					.contains(&invalid_path.display().to_string()));
+			}
+			_ => panic!("Expected RepositoryError::LoadError"),
+		}
 	}
 }
