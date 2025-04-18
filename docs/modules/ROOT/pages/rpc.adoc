@@ -38,7 +38,7 @@ RPC endpoints are configured in the network configuration files with weights for
 
 [TIP]
 ====
-For high-availability setups, configure at least 3 RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
+For high-availability setups, configure at least 3 (private) RPC endpoints with appropriate weights to ensure continuous operation even if multiple endpoints fail.
 ====
 
 === Configuration Fields
@@ -98,6 +98,16 @@ Each transport client implements `reqwest-retry` middleware with exponential bac
 ** Maintains the same URL throughout the retry process
 ** Independent from the endpoint rotation mechanism
 
+Each blockchain network type has its own specialized transport client that wraps the base `HttpTransportClient`.
+This architecture provides common HTTP functionality while allowing customization of network-specific behaviors like connection testing and retry policies.
+The transport clients are implemented as:
+
+1. *Base HTTP Transport*: `HttpTransportClient` provides core HTTP functionality
+2. *Network-Specific Transports*:
+   * `EVMTransportClient` for EVM networks
+   * `StellarTransportClient` for Stellar networks
+   * `MidnightTransportClient` for Midnight networks
+
 ==== Configuration Options
 
 The retry policy can be customized using the `ExponentialBackoff` builder in the respective transport client. The default retry policy is:
@@ -126,20 +136,35 @@ pub struct ExponentialBackoff {
 
 The retry mechanism is implemented at two levels:
 
-1. *Transport Level*: Each transport client maintains its own retry policy:
+1. *Transport Level*: Each transport client may maintain its own retry policy:
 +
 [source,rust]
 ----
-pub struct EVMTransportClient {
-  client: Arc<RwLock<RpcClient>>,
+
+// src/services/transports/http.rs
+pub struct HttpTransportClient {
+  pub client: Arc<RwLock<Client>>,
   endpoint_manager: EndpointManager,
   retry_policy: ExponentialBackoff,
+  test_connection_payload: Option<String>,
 }
 
-pub struct StellarTransportClient {
-  pub client: Arc<RwLock<StellarHttpClient>>,
-  endpoint_manager: EndpointManager,
-  retry_policy: ExponentialBackoff,
+// src/services/transports/evm/http.rs
+pub struct EVMTransportClient {
+  http_client: HttpTransportClient,
+}
+
+pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
+  let http_client = EVMTransportClient::new(network).await?;
+  // Define a custom retry policy
+  http_client.set_retry_policy(
+    ExponentialBackoff::builder()
+    .base(2)
+    .retry_bounds(Duration::from_millis(100), Duration::from_secs(4))
+    .jitter(Jitter::None)
+    .build_with_max_retries(2),
+  );
+  Ok(Self::new_with_transport(http_client))
 }
 ----
 
@@ -231,22 +256,23 @@ graph TD
 
 == Best Practices
 
-* Use private RPC providers when possible
-* Configure multiple fallback endpoints
-* Consider geographic distribution of endpoints
-* Monitor endpoint reliability and adjust weights accordingly
+* Configure multiple private endpoints with appropriate weights
+* Use geographically distributed endpoints when possible
+* Monitor endpoint health and adjust weights as needed
+* Set appropriate retry policies based on network characteristics
+
 
 == Troubleshooting
 
 === Common Issues
 
-* *429 Too Many Requests*: Increase the number of fallback URLs or reduce monitoring frequency
+* *429 Too Many Requests*: Increase the number of fallback URLs, adjust weights or reduce monitoring frequency
 * *Connection Timeouts*: Check endpoint health and network connectivity
-* *Invalid Responses*: Verify RPC endpoint compatibility with your network type
+* *Invalid Responses*: Verify endpoint compatibility with your network type
 
 === Logging
 
-Enable debug logging for detailed RPC client information:
+Enable debug logging for detailed transport information:
 
 [source,bash]
 ----
