@@ -150,10 +150,10 @@ Create the Ethereum mainnet network configuration:
 
 [source,bash]
 ----
-cp config/networks/ethereum_mainnet.json.example config/networks/ethereum_mainnet.json
+cp examples/config/networks/ethereum_mainnet.json config/networks/ethereum_mainnet.json
 ----
 
-The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/networks/ethereum_mainnet.json.example[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
+The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/networks/ethereum_mainnet.json[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
 
 [source,json]
 ----
@@ -183,10 +183,11 @@ Create the USDC transfer monitor configuration:
 
 [source,bash]
 ----
-cp config/monitors/evm_transfer_usdc.json.example config/monitors/evm_transfer_usdc.json
+cp examples/config/monitors/evm_transfer_usdc.json config/monitors/evm_transfer_usdc.json
+cp examples/config/filters/evm_filter_block_number.sh config/filters/evm_filter_block_number.sh
 ----
 
-This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/monitors/evm_transfer_usdc.json.example[configuration^] monitors USDC transfers over 10,000 USDC. You can customize the notification channels by modifying the `triggers` array.
+This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/monitors/evm_transfer_usdc.json[configuration^] monitors USDC transfers over 10,000 USDC. You can customize the notification channels by modifying the `triggers` array.
 
 [source,json]
 ----
@@ -264,10 +265,10 @@ Remove the `trigger_conditions` array to disable additional filtering.
 
 [source,bash]
 ----
-cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
 ----
 
-Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/triggers/slack_notifications.json.example[configuration^].
+Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/triggers/slack_notifications.json[configuration^].
 
 [source,json]
 ----
@@ -290,10 +291,10 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
 
 [source,bash]
 ----
-cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
+cp examples/config/triggers/email_notifications.json config/triggers/email_notifications.json
 ----
 
-Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/triggers/email_notifications.json.example[configuration^].
+Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/triggers/email_notifications.json[configuration^].
 
 [source,json]
 ----
@@ -347,7 +348,7 @@ The monitor will now:
 * Adjust the transfer threshold by modifying the `expression` value.
 * Monitor additional ERC20 tokens by creating new monitor configurations.
 * xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
-* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/config/monitors[`config/monitors` directory].
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].
 
 === Monitoring Dex Swaps (Stellar):
 
@@ -357,10 +358,10 @@ Create the Stellar mainnet network configuration:
 
 [source,bash]
 ----
-cp config/networks/stellar_mainnet.json.example config/networks/stellar_mainnet.json
+cp examples/config/networks/examples/stellar_mainnet.json config/networks/stellar_mainnet.json
 ----
 
-The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/networks/stellar_mainnet.json.example[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
+The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/networks/stellar_mainnet.json[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
 
 [source,json]
 ----
@@ -390,10 +391,11 @@ Create the large swap monitor configuration:
 
 [source,bash]
 ----
-cp config/monitors/stellar_swap_dex.json.example config/monitors/stellar_swap_dex.json
+cp examples/config/monitors/stellar_swap_dex.json config/monitors/stellar_swap_dex.json
+cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar_filter_block_number.sh
 ----
 
-This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/monitors/stellar_swap_dex.json.example[configuration^] monitors large swaps of over 1,000,000,000 tokens. You can customize the notification channels by modifying the `triggers` array.
+This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/monitors/stellar_swap_dex.json[configuration^] monitors large swaps of over 1,000,000,000 tokens. You can customize the notification channels by modifying the `triggers` array.
 
 [source,json]
 ----
@@ -448,10 +450,10 @@ Remove the `trigger_conditions` array to disable additional filtering.
 
 [source,bash]
 ----
-cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
 ----
 
-Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/config/triggers/slack_notifications.json.example[configuration^].
+Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/triggers/slack_notifications.json[configuration^].
 
 [source,json]
 ----
@@ -497,4 +499,4 @@ The monitor will now:
 * Adjust the swap threshold by modifying the `expression` value.
 * Monitor additional dex swaps by creating new monitor configurations.
 * xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
-* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/config/monitors[`config/monitors` directory].
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].

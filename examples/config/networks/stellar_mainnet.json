@@ -1,0 +1,18 @@
+{
+  "network_type": "Stellar",
+  "slug": "stellar_mainnet",
+  "name": "Stellar Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": "https://mainnet.sorobanrpc.com",
+      "weight": 100
+    }
+  ],
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "block_time_ms": 5000,
+  "confirmation_blocks": 2,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 20,
+  "store_blocks": false
+}

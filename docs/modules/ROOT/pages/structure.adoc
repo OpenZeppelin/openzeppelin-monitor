@@ -3,9 +3,9 @@
 
 This document provides detailed information about each directory in the OpenZeppelin Monitor project.
 
-== Source Code Organization:
+== Source Code Organization
 
-=== `src/` Directory:
+=== `src/` Directory
 The main source code directory contains the core implementation files organized into several modules:
 
 * `bootstrap/`: Application initialization and setup for `main.rs`
@@ -46,9 +46,9 @@ The main source code directory contains the core implementation files organized 
 ** `metrics/`: Metrics utilities
 ** `script/`: Script execution utilities
 
-== Configuration and Data:
+== Configuration and Data
 
-=== `config/` Directory:
+=== `config/` Directory
 Contains JSON configuration files for:
 
 * Network configurations (`networks/`)
@@ -66,7 +66,12 @@ Contains JSON configuration files for:
 * Filter configurations (`filters/`)
 ** Match filter scripts
 
-=== `data/` Directory:
+[TIP]
+====
+The `examples/config/` directory contains example JSON configuration files for each (network, monitor, trigger and filters).
+====
+
+=== `data/` Directory
 Runtime data storage:
 
 * Block processing state
@@ -78,9 +83,17 @@ Runtime data storage:
 The `data/`, `logs/` and `config/` directories are gitignored except for example files. These directories mounted to persist the configs and runtime data.
 ====
 
-== Metrics and Monitoring:
+== Examples
+=== `examples/` Directory
+Provides practical examples and sample configurations to help users get started:
 
-=== `cmd/prometheus/` Directory:
+* Demonstrates typical service configurations for various networks
+* Acts as a quick-start guide for customizing the monitor
+* Serves as a reference for best practices in configuration
+
+== Metrics and Monitoring
+
+=== `cmd/prometheus/` Directory
 Prometheus exporters:
 
 * `dashboards/`: Grafana dashboards
@@ -88,9 +101,9 @@ Prometheus exporters:
 * `prometheus.yml`: Prometheus configuration
 * `grafana.ini`: Grafana configuration
 
-== Testing and Documentation:
+== Testing and Documentation
 
-=== `tests/` Directory:
+=== `tests/` Directory
 Contains comprehensive test suites:
 
 * Integration tests
@@ -98,7 +111,7 @@ Contains comprehensive test suites:
 * Mock implementations
 * Test utilities and helpers
 
-=== `docs/` Directory:
+=== `docs/` Directory
 Project documentation:
 
 * User guides
@@ -106,7 +119,7 @@ Project documentation:
 * Configuration examples
 * Architecture diagrams
 
-=== `scripts/` Directory:
+=== `scripts/` Directory
 Utility scripts for:
 
 * Development workflows
@@ -114,23 +127,23 @@ Utility scripts for:
 * Build processes
 * Deployment helpers
 
-== Development Tools:
+== Development Tools
 
-=== Pre-commit Hooks:
+=== Pre-commit Hooks
 Located in the project root:
 
 * Code formatting checks
 * Linting rules
 * Commit message validation
 
-=== Build Configuration:
+=== Build Configuration
 Core build files:
 
 * `Cargo.toml`: Project dependencies and metadata
 * `rustfmt.toml`: Code formatting rules
 * `rust-toolchain.toml`: Rust version and components
 
-== Docker Support:
+== Docker Support
 
 The project includes Docker configurations for different environments:
 
