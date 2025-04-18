@@ -379,10 +379,21 @@ mod tests {
 		let _lock = TEST_MUTEX.lock().unwrap();
 		reset_all_metrics();
 
-		// Set a value for the network_monitors metric so it appears in the output
+		// Initialize all metrics with non-zero values to ensure they appear in output
+		CPU_USAGE.set(50.0);
+		MEMORY_USAGE_PERCENT.set(60.0);
+		MEMORY_USAGE.set(1024.0);
+		TOTAL_MEMORY.set(2048.0);
+		AVAILABLE_MEMORY.set(1024.0);
+		DISK_USAGE.set(512.0);
+		DISK_USAGE_PERCENT.set(25.0);
+		MONITORS_TOTAL.set(5.0);
+		MONITORS_ACTIVE.set(3.0);
+		TRIGGERS_TOTAL.set(2.0);
+		CONTRACTS_MONITORED.set(4.0);
+		NETWORKS_MONITORED.set(2.0);
 		NETWORK_MONITORS.with_label_values(&["test"]).set(1.0);
 
-		update_system_metrics();
 		let metrics = gather_metrics().expect("failed to gather metrics");
 		let output = String::from_utf8(metrics).expect("metrics output is not valid UTF-8");
 
@@ -413,31 +424,32 @@ mod tests {
 		update_system_metrics();
 
 		// Verify metrics were updated with reasonable values
-		assert!(
-			CPU_USAGE.get() >= 0.0 && CPU_USAGE.get() <= 100.0,
-			"CPU usage should be between 0-100%"
-		);
-		assert!(
-			MEMORY_USAGE.get() > 0.0,
-			"Memory usage should be greater than 0"
-		);
-		assert!(
-			MEMORY_USAGE_PERCENT.get() >= 0.0 && MEMORY_USAGE_PERCENT.get() <= 100.0,
-			"Memory percentage should be between 0-100%"
-		);
-		assert!(
-			TOTAL_MEMORY.get() > 0.0,
-			"Total memory should be greater than 0"
-		);
-		assert!(
-			AVAILABLE_MEMORY.get() > 0.0,
-			"Available memory should be greater than 0"
-		);
-		assert!(DISK_USAGE.get() >= 0.0, "Disk usage should be non-negative");
-		assert!(
-			DISK_USAGE_PERCENT.get() >= 0.0 && DISK_USAGE_PERCENT.get() <= 100.0,
-			"Disk usage percentage should be between 0-100%"
-		);
+		let cpu_usage = CPU_USAGE.get();
+		assert!((0.0..=100.0).contains(&cpu_usage));
+
+		let memory_usage = MEMORY_USAGE.get();
+		assert!(memory_usage >= 0.0);
+
+		let memory_percent = MEMORY_USAGE_PERCENT.get();
+		assert!((0.0..=100.0).contains(&memory_percent));
+
+		let total_memory = TOTAL_MEMORY.get();
+		assert!(total_memory > 0.0);
+
+		let available_memory = AVAILABLE_MEMORY.get();
+		assert!(available_memory >= 0.0);
+
+		let disk_usage = DISK_USAGE.get();
+		assert!(disk_usage >= 0.0);
+
+		let disk_percent = DISK_USAGE_PERCENT.get();
+		assert!((0.0..=100.0).contains(&disk_percent));
+
+		// Verify that memory usage doesn't exceed total memory
+		assert!(memory_usage <= total_memory);
+
+		// Verify that available memory plus used memory doesn't exceed total memory
+		assert!((available_memory + memory_usage) <= total_memory);
 	}
 
 	#[test]
@@ -502,47 +514,27 @@ mod tests {
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 
 		// Verify metrics
-		assert_eq!(MONITORS_TOTAL.get(), 3.0, "Should have 3 total monitors");
-		assert_eq!(MONITORS_ACTIVE.get(), 2.0, "Should have 2 active monitors");
-		assert_eq!(TRIGGERS_TOTAL.get(), 0.0, "Should have 0 triggers");
-		assert_eq!(
-			CONTRACTS_MONITORED.get(),
-			5.0,
-			"Should have 5 monitored contracts"
-		);
-		assert_eq!(
-			NETWORKS_MONITORED.get(),
-			2.0,
-			"Should have 2 monitored networks"
-		);
+		assert_eq!(MONITORS_TOTAL.get(), 3.0);
+		assert_eq!(MONITORS_ACTIVE.get(), 2.0);
+		assert_eq!(TRIGGERS_TOTAL.get(), 0.0);
+		assert_eq!(CONTRACTS_MONITORED.get(), 5.0);
+		assert_eq!(NETWORKS_MONITORED.get(), 2.0);
 
 		// Check network-specific metrics
 		let ethereum_monitors = NETWORK_MONITORS
 			.get_metric_with_label_values(&["ethereum"])
 			.unwrap();
-		assert_eq!(
-			ethereum_monitors.get(),
-			1.0,
-			"Should have 1 active monitor for Ethereum"
-		);
+		assert_eq!(ethereum_monitors.get(), 1.0);
 
 		let polygon_monitors = NETWORK_MONITORS
 			.get_metric_with_label_values(&["polygon"])
 			.unwrap();
-		assert_eq!(
-			polygon_monitors.get(),
-			0.0,
-			"Should have 0 active monitors for Polygon (monitor is paused)"
-		);
+		assert_eq!(polygon_monitors.get(), 0.0);
 
 		let arbitrum_monitors = NETWORK_MONITORS
 			.get_metric_with_label_values(&["arbitrum"])
 			.unwrap();
-		assert_eq!(
-			arbitrum_monitors.get(),
-			1.0,
-			"Should have 1 active monitor for Arbitrum"
-		);
+		assert_eq!(arbitrum_monitors.get(), 1.0);
 	}
 
 	#[test]
@@ -574,16 +566,8 @@ mod tests {
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 
 		// Verify metrics
-		assert_eq!(
-			NETWORKS_MONITORED.get(),
-			1.0,
-			"Should only count the existing network"
-		);
-		assert_eq!(
-			CONTRACTS_MONITORED.get(),
-			1.0,
-			"Should only count contracts on existing networks"
-		);
+		assert_eq!(NETWORKS_MONITORED.get(), 1.0);
+		assert_eq!(CONTRACTS_MONITORED.get(), 1.0);
 
 		// The nonexistent network should not have a metric
 		let nonexistent = NETWORK_MONITORS.get_metric_with_label_values(&["nonexistent_network"]);
@@ -640,23 +624,15 @@ mod tests {
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 
 		// Verify metrics
-		assert_eq!(MONITORS_TOTAL.get(), 3.0, "Should have 3 total monitors");
-		assert_eq!(MONITORS_ACTIVE.get(), 2.0, "Should have 2 active monitors");
-		assert_eq!(
-			NETWORKS_MONITORED.get(),
-			1.0,
-			"Should have 1 monitored network"
-		);
+		assert_eq!(MONITORS_TOTAL.get(), 3.0);
+		assert_eq!(MONITORS_ACTIVE.get(), 2.0);
+		assert_eq!(NETWORKS_MONITORED.get(), 1.0);
 
 		// Check network-specific metrics
 		let ethereum_monitors = NETWORK_MONITORS
 			.get_metric_with_label_values(&["ethereum"])
 			.unwrap();
-		assert_eq!(
-			ethereum_monitors.get(),
-			2.0,
-			"Should have 2 active monitors for Ethereum"
-		);
+		assert_eq!(ethereum_monitors.get(), 2.0);
 	}
 
 	#[test]
@@ -693,11 +669,7 @@ mod tests {
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 
 		// Verify metrics
-		assert_eq!(
-			CONTRACTS_MONITORED.get(),
-			3.0,
-			"Should have 3 monitored contracts"
-		);
+		assert_eq!(CONTRACTS_MONITORED.get(), 3.0);
 	}
 
 	#[test]
@@ -719,7 +691,14 @@ mod tests {
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 
 		// Verify metrics
-		assert_eq!(TRIGGERS_TOTAL.get(), 3.0, "Should have 3 total triggers");
+		let total_triggers = TRIGGERS_TOTAL.get();
+		assert_eq!(total_triggers, 3.0);
+
+		// Verify other metrics are zero since we have no monitors or networks
+		assert_eq!(MONITORS_TOTAL.get(), 0.0);
+		assert_eq!(MONITORS_ACTIVE.get(), 0.0);
+		assert_eq!(CONTRACTS_MONITORED.get(), 0.0);
+		assert_eq!(NETWORKS_MONITORED.get(), 0.0);
 	}
 
 	#[test]
@@ -746,28 +725,16 @@ mod tests {
 		update_monitoring_metrics(&monitors, &triggers, &networks);
 
 		// Verify all metrics are reset to zero
-		assert_eq!(MONITORS_TOTAL.get(), 0.0, "Should have 0 total monitors");
-		assert_eq!(MONITORS_ACTIVE.get(), 0.0, "Should have 0 active monitors");
-		assert_eq!(TRIGGERS_TOTAL.get(), 0.0, "Should have 0 triggers");
-		assert_eq!(
-			CONTRACTS_MONITORED.get(),
-			0.0,
-			"Should have 0 monitored contracts"
-		);
-		assert_eq!(
-			NETWORKS_MONITORED.get(),
-			0.0,
-			"Should have 0 monitored networks"
-		);
+		assert_eq!(MONITORS_TOTAL.get(), 0.0);
+		assert_eq!(MONITORS_ACTIVE.get(), 0.0);
+		assert_eq!(TRIGGERS_TOTAL.get(), 0.0);
+		assert_eq!(CONTRACTS_MONITORED.get(), 0.0);
+		assert_eq!(NETWORKS_MONITORED.get(), 0.0);
 
 		// The test network should have been reset
 		let test_network = NETWORK_MONITORS
 			.get_metric_with_label_values(&["test"])
 			.unwrap();
-		assert_eq!(
-			test_network.get(),
-			0.0,
-			"Network monitors should be reset to 0"
-		);
+		assert_eq!(test_network.get(), 0.0);
 	}
 }

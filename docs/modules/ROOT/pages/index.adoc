@@ -1109,6 +1109,51 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 * Each monitor can watch multiple networks and addresses simultaneously.
 * Monitors can be paused without removing their configuration.
 
+=== Testing your configuration
+
+The monitor can be tested in two modes:
+
+==== 1. Latest Block Mode
+
+This mode processes the most recent blocks across all configured networks.
+
+[source,bash]
+----
+cargo run -- --monitorPath="config/monitors/evm_transfer_usdc.json"
+----
+
+What this does:
+
+* Runs the "Large Transfer of USDC Token" monitor
+* Targets all networks specified in the configuration
+* Processes only the latest block for each network
+
+==== 2. Specific Block Mode
+
+This mode allows you to analyze a particular block on a specific network, which is useful for debugging specific transactions, verifying monitor behavior on known events, and testing monitor performance on historical data.
+
+[source,bash]
+----
+cargo run -- \
+    --monitorPath="config/monitors/evm_transfer_usdc.json" \
+    --network=ethereum_mainnet \
+    --block=12345678
+----
+
+What this does:
+
+* Runs the "Large Transfer of USDC Token" monitor
+* Targets only the specified network (`ethereum_mainnet`)
+* Processes only the specified block (`12345678`)
+
+[IMPORTANT]
+====
+Specific Block Mode requires both parameters:
+
+* `--network`: The network to analyze
+* `--block`: The block number to process
+====
+
 == Running the Monitor
 
 === Local Execution

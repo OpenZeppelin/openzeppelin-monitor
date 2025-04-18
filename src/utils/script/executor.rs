@@ -787,7 +787,6 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_wrong_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
-		println!("script_content ====>: {:?}", script_content);
 		let executor = PythonScriptExecutor { script_content };
 
 		let input = create_mock_monitor_match();
@@ -976,7 +975,6 @@ exit 1
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
-		println!("result ====>: {:?}", result);
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
