@@ -1,6 +1,10 @@
+//! Trigger script factory implementation.
+//!
+//! This module provides functionality to create script executors based on the script language.
+
 use crate::{
 	models::ScriptLanguage,
-	utils::script::executor::{
+	services::trigger::script::executor::{
 		BashScriptExecutor, JavaScriptScriptExecutor, PythonScriptExecutor, ScriptExecutor,
 	},
 };

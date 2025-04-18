@@ -183,6 +183,7 @@ impl NotificationService {
 					let monitor_name = match monitor_match {
 						MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
 						MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,
+						MonitorMatch::Midnight(midnight_match) => &midnight_match.monitor.name,
 					};
 					let script_path = match &trigger.config {
 						TriggerTypeConfig::Script { script_path, .. } => script_path,
@@ -302,6 +303,7 @@ mod tests {
 			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
 			transaction: create_test_evm_transaction(),
 			receipt: EVMTransactionReceipt::default(),
+			network_slug: "evm_mainnet".to_string(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],

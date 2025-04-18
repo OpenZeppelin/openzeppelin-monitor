@@ -4,7 +4,7 @@ use crate::models::{EVMTransaction, EVMTransactionReceipt, MatchConditions, Moni
 
 /// Result of a successful monitor match on an EVM chain
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct EVMMonitorMatch {
+pub struct MonitorMatch {
 	/// Monitor configuration that triggered the match
 	pub monitor: Monitor,
 
@@ -13,6 +13,9 @@ pub struct EVMMonitorMatch {
 
 	/// Transaction receipt with execution results
 	pub receipt: EVMTransactionReceipt,
+
+	/// Network slug that the transaction was sent from
+	pub network_slug: String,
 
 	/// Conditions that were matched
 	pub matched_on: MatchConditions,

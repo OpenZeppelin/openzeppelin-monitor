@@ -9,20 +9,13 @@
 use std::{collections::HashMap, marker::PhantomData, path::Path};
 
 use crate::{
-	models::{ConfigLoader, Monitor, Network, ScriptLanguage, Trigger},
+	models::{ConfigLoader, Monitor, Network, Trigger, LANGUAGE_EXTENSIONS},
 	repositories::{
 		error::RepositoryError,
 		network::{NetworkRepository, NetworkRepositoryTrait, NetworkService},
 		trigger::{TriggerRepository, TriggerRepositoryTrait, TriggerService},
 	},
 };
-
-/// Static mapping of script languages to their file extensions
-const LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
-	(&ScriptLanguage::Python, "py"),
-	(&ScriptLanguage::JavaScript, "js"),
-	(&ScriptLanguage::Bash, "sh"),
-];
 
 /// Repository for storing and retrieving monitor configurations
 #[derive(Clone)]

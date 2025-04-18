@@ -91,9 +91,9 @@ async fn test_get_blocks() {
 async fn test_new_client() {
 	let mut server = Server::new_async().await;
 
-	let mock = create_stellar_valid_server_mock_network_response(&mut server, "soroban");
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
 	// Create a test network
-	let network = create_stellar_test_network_with_urls(vec![&server.url()], "rpc");
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
 
 	// Test successful client creation
 	let result = StellarClient::new(&network).await;
@@ -104,8 +104,8 @@ async fn test_new_client() {
 #[tokio::test]
 async fn test_get_transactions_pagination() {
 	let mut server = Server::new_async().await;
-	let mock = create_stellar_valid_server_mock_network_response(&mut server, "soroban");
-	let network = create_stellar_test_network_with_urls(vec![&server.url()], "rpc");
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
 
 	// Mock first request (current_iteration == 0)
 	let first_response = json!({
@@ -182,8 +182,8 @@ async fn test_get_transactions_pagination() {
 #[tokio::test]
 async fn test_get_events_pagination() {
 	let mut server = Server::new_async().await;
-	let mock = create_stellar_valid_server_mock_network_response(&mut server, "soroban");
-	let network = create_stellar_test_network_with_urls(vec![&server.url()], "rpc");
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
 
 	// Mock first request (current_iteration == 0)
 	let first_response = json!({
@@ -268,8 +268,8 @@ async fn test_get_events_pagination() {
 #[tokio::test]
 async fn test_get_blocks_pagination() {
 	let mut server = Server::new_async().await;
-	let mock = create_stellar_valid_server_mock_network_response(&mut server, "soroban");
-	let network = create_stellar_test_network_with_urls(vec![&server.url()], "rpc");
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
 
 	// Mock first request (current_iteration == 0)
 	let first_response = json!({

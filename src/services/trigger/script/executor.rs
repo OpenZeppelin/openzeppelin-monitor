@@ -1,3 +1,7 @@
+//! Trigger script executor implementation.
+//!
+//! This module provides functionality to execute scripts in different languages.
+
 use crate::models::MonitorMatch;
 use anyhow::Context;
 use async_trait::async_trait;
@@ -332,6 +336,7 @@ mod tests {
 			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
 			transaction: create_test_evm_transaction(),
 			receipt: create_test_evm_transaction_receipt(),
+			network_slug: "evm_mainnet".to_string(),
 			matched_on: MatchConditions {
 				functions: vec![],
 				events: vec![],

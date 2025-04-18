@@ -1024,11 +1024,11 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 	///
 	/// # Returns
 	/// Result containing vector of matching monitors or a filter error
-	#[instrument(skip_all, fields(network = %_network.slug))]
+	#[instrument(skip_all, fields(network = %network.slug))]
 	async fn filter_block(
 		&self,
 		client: &Self::Client,
-		_network: &Network,
+		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
@@ -1158,6 +1158,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 						#[allow(clippy::useless_conversion)]
 						transaction: StellarTransaction::from(transaction.clone()),
 						ledger: *stellar_block.clone(),
+						network_slug: network.slug.clone(),
 						matched_on: MatchConditions {
 							events: matched_events
 								.clone()

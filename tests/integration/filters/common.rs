@@ -1,7 +1,7 @@
 //! Common test utilities and helper functions.
 //!
 //! Provides shared functionality for loading test fixtures and setting up
-//! test environments for both EVM and Stellar chain tests.
+//! test environments for supported chain tests.
 
 use openzeppelin_monitor::{
 	models::{

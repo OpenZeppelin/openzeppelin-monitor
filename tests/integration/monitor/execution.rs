@@ -609,31 +609,6 @@ async fn test_execute_monitor_midnight() {
 }
 
 #[tokio::test]
-async fn test_execute_monitor_solana() {
-	let test_data = load_test_data("evm");
-	let mut mocked_monitors = HashMap::new();
-	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
-	let mock_monitor_service = setup_monitor_service(mocked_monitors);
-
-	let mock_pool = MockClientPool::new();
-	let mock_network_service =
-		setup_mocked_networks("Solana", "solana_mainnet", BlockChainType::Solana);
-
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"solana_mainnet".to_string()),
-		None,
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		mock_pool,
-	)
-	.await;
-
-	assert!(result.is_err());
-}
-
-#[tokio::test]
 async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 	let test_data = load_test_data("stellar");
 	let mut mocked_monitors = HashMap::new();

@@ -1,4 +1,5 @@
 use mockito::Server;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -6,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, EndpointManager, RotatingTransport,
+	BlockchainTransport, EndpointManager, RotatingTransport, TransientErrorRetryStrategy,
 };
 
 // Mock transport implementation for testing
@@ -14,7 +15,6 @@ use openzeppelin_monitor::services::blockchain::{
 struct MockTransport {
 	client: reqwest::Client,
 	current_url: Arc<RwLock<String>>,
-	retry_policy: ExponentialBackoff,
 }
 
 impl MockTransport {
@@ -22,7 +22,6 @@ impl MockTransport {
 		Self {
 			client: reqwest::Client::new(),
 			current_url: Arc::new(RwLock::new(String::new())),
-			retry_policy: ExponentialBackoff::builder().build_with_max_retries(2),
 		}
 	}
 }
@@ -58,12 +57,18 @@ impl BlockchainTransport for MockTransport {
 		})
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
-		Ok(self.retry_policy)
+	fn set_retry_policy(
+		&mut self,
+		_retry_policy: ExponentialBackoff,
+		_retry_strategy: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error> {
+		Ok(())
 	}
 
-	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
-		self.retry_policy = retry_policy;
+	fn update_endpoint_manager_client(
+		&mut self,
+		_: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
@@ -84,6 +89,10 @@ impl RotatingTransport for MockTransport {
 	}
 }
 
+fn get_mock_client_builder() -> ClientWithMiddleware {
+	ClientBuilder::new(reqwest::Client::new()).build()
+}
+
 #[tokio::test]
 async fn test_endpoint_rotation() {
 	// Set up mock servers
@@ -97,7 +106,11 @@ async fn test_endpoint_rotation() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server1.url().as_ref(), vec![server2.url(), server3.url()]);
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		server1.url().as_ref(),
+		vec![server2.url(), server3.url()],
+	);
 	let transport = MockTransport::new();
 
 	// Test initial state
@@ -127,7 +140,7 @@ async fn test_send_raw_request() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
+	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -149,7 +162,7 @@ async fn test_rotation_on_error() {
 		.mock("POST", "/")
 		.with_status(429)
 		.with_body("Rate limited")
-		.expect(3) // Expect 3 requests due to default retry policy
+		.expect(1) // Expect 1 request due to 429 error which is not retried
 		.create_async()
 		.await;
 
@@ -162,7 +175,11 @@ async fn test_rotation_on_error() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(primary_server.url().as_ref(), vec![fallback_server.url()]);
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		primary_server.url().as_ref(),
+		vec![fallback_server.url()],
+	);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -186,11 +203,11 @@ async fn test_no_fallback_urls_available() {
 		.mock("POST", "/")
 		.with_status(429)
 		.with_body("Rate limited")
-		.expect(3) // Expect 3 requests due to default retry policy
+		.expect(1) // Expect 1 request due to 429 error which is not retried
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
+	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -241,7 +258,7 @@ async fn test_rotate_url_no_fallbacks() {
 	let server = Server::new_async().await;
 
 	// Create manager with no fallback URLs
-	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
+	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate
@@ -262,6 +279,7 @@ async fn test_rotate_url_all_urls_match_active() {
 	// Create manager with fallback URLs that are identical to the active URL
 	let active_url = server.url();
 	let manager = EndpointManager::new(
+		get_mock_client_builder(),
 		active_url.as_ref(),
 		vec![active_url.clone(), active_url.clone()],
 	);
@@ -290,7 +308,11 @@ async fn test_rotate_url_connection_failure() {
 
 	// Create manager with an invalid fallback URL that will fail to connect
 	let invalid_url = "http://invalid-domain-that-does-not-exist:12345";
-	let manager = EndpointManager::new(server.url().as_ref(), vec![invalid_url.to_string()]);
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![invalid_url.to_string()],
+	);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate

@@ -19,11 +19,11 @@ use openzeppelin_monitor::{
 
 use crate::integration::{
 	filters::common::{load_test_data, setup_trigger_execution_service, TestData},
-	mocks::MockAlloyTransportClient,
+	mocks::MockEVMTransportClient,
 };
 
-fn setup_mock_transport(test_data: TestData) -> MockAlloyTransportClient {
-	let mut mock_transport = MockAlloyTransportClient::new();
+fn setup_mock_transport(test_data: TestData) -> MockEVMTransportClient {
+	let mut mock_transport = MockEVMTransportClient::new();
 	let counter = std::sync::atomic::AtomicUsize::new(0);
 	let receipts = test_data.receipts;
 

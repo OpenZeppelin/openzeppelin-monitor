@@ -1,12 +1,13 @@
 //! Blockchain-specific model implementations.
 //!
 //! This module contains type definitions and implementations for different
-//! blockchain platforms (EVM, Stellar, etc). Each submodule implements the
+//! blockchain platforms (EVM, Stellar, Midnight, etc). Each submodule implements the
 //! platform-specific logic for blocks, transactions, and event monitoring.
 
 use serde::{Deserialize, Serialize};
 
 pub mod evm;
+pub mod midnight;
 pub mod stellar;
 
 /// Supported blockchain platform types
@@ -16,10 +17,8 @@ pub enum BlockChainType {
 	EVM,
 	/// Stellar blockchain
 	Stellar,
-	/// Midnight blockchain (not yet implemented)
+	/// Midnight blockchain
 	Midnight,
-	/// Solana blockchain (not yet implemented)
-	Solana,
 }
 
 /// Block data from different blockchain platforms
@@ -35,6 +34,11 @@ pub enum BlockType {
 	/// # Note
 	/// Box is used here to equalize the enum variants
 	Stellar(Box<stellar::StellarBlock>),
+	/// Midnight block and transaction data
+	///
+	/// # Note
+	/// Box is used here to equalize the enum variants
+	Midnight(Box<midnight::MidnightBlock>),
 }
 
 impl BlockType {
@@ -42,6 +46,7 @@ impl BlockType {
 		match self {
 			BlockType::EVM(b) => b.number(),
 			BlockType::Stellar(b) => b.number(),
+			BlockType::Midnight(b) => b.number(),
 		}
 	}
 }
@@ -53,6 +58,8 @@ pub enum TransactionType {
 	EVM(evm::EVMTransaction),
 	/// Stellar transaction
 	Stellar(stellar::StellarTransaction),
+	/// Midnight transaction
+	Midnight(midnight::MidnightTransaction),
 }
 
 /// Monitor match results from different blockchain platforms
@@ -68,6 +75,11 @@ pub enum MonitorMatch {
 	/// # Note
 	/// Box is used here to equalize the enum variants
 	Stellar(Box<stellar::StellarMonitorMatch>),
+	/// Matched conditions from Midnight chains
+	///
+	/// # Note
+	/// Box is used here to equalize the enum variants
+	Midnight(Box<midnight::MidnightMonitorMatch>),
 }
 
 /// Structure to hold block processing results

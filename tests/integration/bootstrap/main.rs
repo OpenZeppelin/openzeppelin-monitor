@@ -4,8 +4,8 @@ use crate::integration::{
 		setup_trigger_service,
 	},
 	mocks::{
-		create_test_block, create_test_network, create_test_transaction, MockAlloyTransportClient,
-		MockClientPool, MockEvmClientTrait, MockMonitorRepository, MockNetworkRepository,
+		create_test_block, create_test_network, create_test_transaction, MockClientPool,
+		MockEVMTransportClient, MockEvmClientTrait, MockMonitorRepository, MockNetworkRepository,
 		MockStellarClientTrait, MockTriggerExecutionService, MockTriggerRepository,
 	},
 };
@@ -67,6 +67,7 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 				TransactionType::EVM(tx) => tx,
 				_ => panic!("Expected EVM transaction"),
 			},
+			network_slug: "ethereum_mainnet".to_string(),
 			receipt: EVMTransactionReceipt::default(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
@@ -77,6 +78,7 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 				TransactionType::Stellar(tx) => tx,
 				_ => panic!("Expected Stellar transaction"),
 			},
+			network_slug: "stellar_mainnet".to_string(),
 			ledger: StellarBlock::default(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
@@ -444,6 +446,7 @@ print(True)  # Always return true for test
 				_ => panic!("Expected EVM transaction"),
 			},
 			receipt: EVMTransactionReceipt::default(),
+			network_slug: "ethereum_mainnet".to_string(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		}))],
@@ -457,7 +460,7 @@ print(True)  # Always return true for test
 
 #[tokio::test]
 async fn test_process_block() {
-	let mut mock_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut mock_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let monitors = vec![create_test_monitor(
@@ -501,7 +504,7 @@ async fn test_process_block() {
 #[ignore]
 /// Skipping as this test is flaky and fails intermittently
 async fn test_process_block_with_shutdown() {
-	let mock_client = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mock_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let monitors = vec![create_test_monitor(

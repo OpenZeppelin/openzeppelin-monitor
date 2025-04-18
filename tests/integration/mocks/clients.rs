@@ -18,16 +18,16 @@ use openzeppelin_monitor::{
 	services::{
 		blockchain::{
 			BlockChainClient, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
-			StellarClientTrait,
+			MidnightClientTrait, StellarClientTrait,
 		},
-		filter::{EVMBlockFilter, StellarBlockFilter},
+		filter::{EVMBlockFilter, MidnightBlockFilter, StellarBlockFilter},
 	},
 };
 
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
 
-use super::{MockAlloyTransportClient, MockStellarTransportClient};
+use super::{MockEVMTransportClient, MockMidnightTransportClient, MockStellarTransportClient};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -110,6 +110,57 @@ mock! {
 	}
 }
 
+mock! {
+	/// Mock implementation of the Midnight client trait.
+	///
+	/// This mock allows testing Midnight-specific functionality by simulating blockchain
+	/// responses without actual network calls.
+	pub MidnightClientTrait<T: Send + Sync + Clone + 'static> {
+		pub fn new_with_transport(transport: T, network: &Network) -> Self;
+	}
+
+	#[async_trait]
+	impl<T: Send + Sync + Clone + 'static> BlockChainClient for MidnightClientTrait<T> {
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error>;
+		async fn get_blocks(
+			&self,
+			start_block: u64,
+			end_block: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error>;
+	}
+
+	#[async_trait]
+	impl<T: Send + Sync + Clone + 'static> MidnightClientTrait for MidnightClientTrait<T> {
+		async fn get_transaction_receipt(
+			&self,
+			transaction_hash: String,
+		) -> Result<EVMTransactionReceipt,  anyhow::Error>;
+
+		async fn get_logs_for_blocks(
+			&self,
+			from_block: u64,
+			to_block: u64,
+		) -> Result<Vec<EVMReceiptLog>,  anyhow::Error>;
+	}
+
+	impl<T: Send + Sync + Clone + 'static> Clone for MidnightClientTrait<T> {
+		fn clone(&self) -> Self {
+			Self{}
+		}
+	}
+}
+
+impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockMidnightClientTrait<T>>
+	for MockMidnightClientTrait<T>
+{
+	type Filter = MidnightBlockFilter<MockMidnightClientTrait<T>>;
+	fn filter() -> Self::Filter {
+		MidnightBlockFilter {
+			_client: PhantomData,
+		}
+	}
+}
+
 impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockStellarClientTrait<T>>
 	for MockStellarClientTrait<T>
 {
@@ -138,10 +189,12 @@ mock! {
 
 	#[async_trait]
 	impl ClientPoolTrait for ClientPool {
-		type EvmClient = MockEvmClientTrait<MockAlloyTransportClient>;
+		type EvmClient = MockEvmClientTrait<MockEVMTransportClient>;
 		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
-		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockAlloyTransportClient>>,  anyhow::Error>;
+		type MidnightClient = MockMidnightClientTrait<MockMidnightTransportClient>;
+		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockEVMTransportClient>>,  anyhow::Error>;
 		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>,  anyhow::Error>;
+		async fn get_midnight_client(&self, network: &Network) -> Result<Arc<MockMidnightClientTrait<MockMidnightTransportClient>>,  anyhow::Error>;
 	}
 
 	impl Clone for ClientPool {

@@ -399,7 +399,7 @@ Additionally, the monitor will always store:
 
 === Network Configuration
 
-A Network configuration defines connection details and operational parameters for a specific blockchain network, supporting both EVM and Stellar-based chains.
+A Network configuration defines connection details and operational parameters for a specific blockchain network.
 
 .Example Network Configuration
 [source,json]
@@ -1103,7 +1103,7 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 
 * Network slugs in the monitor must match valid network configurations.
 * Trigger IDs must match configured triggers.
-* Expression syntax and available variables differ between EVM and Stellar networks.
+* Expression syntax and available variables differ between networks.
 * ABIs are only relevant for EVM networks.
 * The monitoring frequency is controlled by the network's `cron_schedule`.
 * Each monitor can watch multiple networks and addresses simultaneously.

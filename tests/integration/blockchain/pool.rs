@@ -1,8 +1,8 @@
 use openzeppelin_monitor::{
 	models::{BlockChainType, Network, RpcUrl},
 	services::blockchain::{
-		AlloyTransportClient, ClientPool, ClientPoolTrait, EvmClient, StellarClient,
-		StellarTransportClient,
+		ClientPool, ClientPoolTrait, EVMTransportClient, EvmClient, MidnightClient,
+		MidnightTransportClient, StellarClient, StellarTransportClient,
 	},
 };
 
@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use crate::integration::mocks::{
 	create_evm_test_network_with_urls, create_evm_valid_server_mock_network_response,
+	create_midnight_test_network_with_urls, create_midnight_valid_server_mock_network_response,
 	create_stellar_test_network_with_urls, create_stellar_valid_server_mock_network_response,
 };
 
@@ -25,10 +26,15 @@ async fn test_new_pool_is_empty() {
 
 	// Test Stellar clients
 	let result = pool
-		.get_stellar_client(&create_stellar_test_network_with_urls(
-			vec!["http://dummy"],
-			"rpc",
-		))
+		.get_stellar_client(&create_stellar_test_network_with_urls(vec!["http://dummy"]))
+		.await;
+	assert!(result.is_err()); // Should error since no client exists yet
+
+	// Test Midnight clients
+	let result = pool
+		.get_midnight_client(&create_midnight_test_network_with_urls(vec![
+			"http://dummy",
+		]))
 		.await;
 	assert!(result.is_err()); // Should error since no client exists yet
 }
@@ -42,9 +48,9 @@ async fn test_get_evm_client_creates_and_caches() {
 
 	// First request should create new client
 	let client1 = pool.get_evm_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 2); // We have both EVM and Stellar storage types
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	); // But only one EVM client
@@ -54,10 +60,16 @@ async fn test_get_evm_client_creates_and_caches() {
 		0
 	); // And no Stellar clients
 
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
+			.await,
+		0
+	); // And no Midnight clients
+
 	// Second request should return cached client
 	let client2 = pool.get_evm_client(&network).await.unwrap();
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	); // Still only one EVM client
@@ -72,14 +84,14 @@ async fn test_get_evm_client_creates_and_caches() {
 async fn test_get_stellar_client_creates_and_caches() {
 	let mut mock_server = mockito::Server::new_async().await;
 
-	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server, "soroban");
+	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server);
 
 	let pool = ClientPool::new();
-	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()]);
 
 	// First request should create new client
 	let client1 = pool.get_stellar_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
 			.await,
@@ -88,9 +100,42 @@ async fn test_get_stellar_client_creates_and_caches() {
 
 	// Second request should return cached client
 	let client2 = pool.get_stellar_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
+			.await,
+		1
+	);
+
+	// Clients should be the same instance
+	assert!(Arc::ptr_eq(&client1, &client2));
+
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_midnight_client_creates_and_caches() {
+	let mut mock_server = mockito::Server::new_async().await;
+
+	let mock = create_midnight_valid_server_mock_network_response(&mut mock_server);
+
+	let pool = ClientPool::new();
+	let network = create_midnight_test_network_with_urls(vec![&mock_server.url()]);
+
+	// First request should create new client
+	let client1 = pool.get_midnight_client(&network).await.unwrap();
+	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
+			.await,
+		1
+	);
+
+	// Second request should return cached client
+	let client2 = pool.get_midnight_client(&network).await.unwrap();
+	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
 			.await,
 		1
 	);
@@ -132,10 +177,10 @@ async fn test_different_evm_networks_get_different_clients() {
 	let client1 = pool.get_evm_client(&network1).await.unwrap();
 	let client2 = pool.get_evm_client(&network2).await.unwrap();
 
-	// Should have two different clients
-	assert_eq!(pool.storages.len(), 2);
+	// Should have different clients
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		2
 	);
@@ -151,10 +196,10 @@ async fn test_different_stellar_networks_get_different_clients() {
 	let mut mock_server = mockito::Server::new_async().await;
 	let mut mock_server_2 = mockito::Server::new_async().await;
 
-	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server, "soroban");
-	let mock_2 = create_stellar_valid_server_mock_network_response(&mut mock_server_2, "soroban");
+	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server);
+	let mock_2 = create_stellar_valid_server_mock_network_response(&mut mock_server_2);
 
-	let network1 = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+	let network1 = create_stellar_test_network_with_urls(vec![&mock_server.url()]);
 	let network2 = Network {
 		name: "test-2".to_string(),
 		slug: "test-2".to_string(),
@@ -176,10 +221,54 @@ async fn test_different_stellar_networks_get_different_clients() {
 	let client1 = pool.get_stellar_client(&network1).await.unwrap();
 	let client2 = pool.get_stellar_client(&network2).await.unwrap();
 
-	// Should have two different clients
-	assert_eq!(pool.storages.len(), 2);
+	// Should have different clients
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
+			.await,
+		2
+	);
+	assert!(!Arc::ptr_eq(&client1, &client2));
+
+	mock.assert();
+	mock_2.assert();
+}
+
+#[tokio::test]
+async fn test_different_midnight_networks_get_different_clients() {
+	let pool = ClientPool::new();
+	let mut mock_server = mockito::Server::new_async().await;
+	let mut mock_server_2 = mockito::Server::new_async().await;
+
+	let mock = create_midnight_valid_server_mock_network_response(&mut mock_server);
+	let mock_2 = create_midnight_valid_server_mock_network_response(&mut mock_server_2);
+
+	let network1 = create_midnight_test_network_with_urls(vec![&mock_server.url()]);
+	let network2 = Network {
+		name: "test-2".to_string(),
+		slug: "test-2".to_string(),
+		network_type: BlockChainType::EVM,
+		rpc_urls: vec![RpcUrl {
+			url: mock_server_2.url(),
+			type_: "rpc".to_string(),
+			weight: 100,
+		}],
+		cron_schedule: "*/5 * * * * *".to_string(),
+		confirmation_blocks: 1,
+		store_blocks: Some(false),
+		chain_id: None,
+		network_passphrase: None,
+		block_time_ms: 5000,
+		max_past_blocks: None,
+	};
+
+	let client1 = pool.get_midnight_client(&network1).await.unwrap();
+	let client2 = pool.get_midnight_client(&network2).await.unwrap();
+
+	// Should have different clients
+	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
 			.await,
 		2
 	);
@@ -209,16 +298,16 @@ async fn test_concurrent_access() {
 	}
 
 	// Wait for all tasks to complete
-	let clients: Vec<Arc<EvmClient<AlloyTransportClient>>> = futures::future::join_all(handles)
+	let clients: Vec<Arc<EvmClient<EVMTransportClient>>> = futures::future::join_all(handles)
 		.await
 		.into_iter()
 		.map(|r| r.unwrap())
 		.collect();
 
 	// Should only have created one client
-	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	);
@@ -236,14 +325,19 @@ async fn test_concurrent_access() {
 async fn test_default_creates_empty_pool() {
 	let pool: ClientPool = Default::default();
 
-	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
 			.await,
 		0
 	);
@@ -279,14 +373,19 @@ async fn test_get_evm_client_handles_errors() {
 	}
 
 	// Pool should remain empty after failed client creation
-	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
 			.await,
 		0
 	);
@@ -307,7 +406,7 @@ async fn test_get_stellar_client_handles_errors() {
 		.await;
 
 	let pool = ClientPool::new();
-	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()]);
 
 	// Attempt to get client should result in error
 	let result = pool.get_stellar_client(&network).await;
@@ -323,14 +422,68 @@ async fn test_get_stellar_client_handles_errors() {
 	}
 
 	// Pool should remain empty after failed client creation
-	assert_eq!(pool.storages.len(), 2);
+	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
+			.await,
+		0
+	);
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_midnight_client_handles_errors() {
+	let mut mock_server = mockito::Server::new_async().await;
+
+	// Setup mock to return an error response
+	let mock = mock_server
+		.mock("POST", "/")
+		.with_status(500)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"error": "Internal Server Error"}"#)
+		.create_async()
+		.await;
+
+	let pool = ClientPool::new();
+	let network = create_midnight_test_network_with_urls(vec![&mock_server.url()]);
+
+	// Attempt to get client should result in error
+	let result = pool.get_midnight_client(&network).await;
+	if let Err(err) = result {
+		assert!(
+			err.to_string()
+				.contains("Failed to get or create Midnight client"),
+			"Expected ClientPoolError, got: {}",
+			err
+		);
+	} else {
+		panic!("Expected error, got success");
+	}
+
+	// Pool should remain empty after failed client creation
+	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
+			.await,
+		0
+	);
+	assert_eq!(
+		pool.get_client_count::<MidnightClient<MidnightTransportClient>>(BlockChainType::Midnight)
 			.await,
 		0
 	);

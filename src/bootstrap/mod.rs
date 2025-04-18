@@ -32,9 +32,11 @@ use crate::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
 		filter::{handle_match, FilterService},
 		notification::NotificationService,
-		trigger::{TriggerError, TriggerExecutionService, TriggerExecutionServiceTrait},
+		trigger::{
+			ScriptError, ScriptExecutorFactory, TriggerError, TriggerExecutionService,
+			TriggerExecutionServiceTrait,
+		},
 	},
-	utils::{ScriptError, ScriptExecutorFactory},
 };
 
 /// Type alias for handling ServiceResult
@@ -190,7 +192,6 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 							}
 						}
 						BlockChainType::Midnight => None,
-						BlockChainType::Solana => None,
 					};
 
 					processed_block.processing_results = matches.unwrap_or_default();
@@ -356,12 +357,14 @@ async fn run_trigger_filters(
 		let trigger_conditions = match monitor_match {
 			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
 			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
+			MonitorMatch::Midnight(midnight_match) => &midnight_match.monitor.trigger_conditions,
 		};
 
 		for trigger_condition in trigger_conditions {
 			let monitor_name = match monitor_match {
 				MonitorMatch::EVM(evm_match) => evm_match.monitor.name.clone(),
 				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
+				MonitorMatch::Midnight(midnight_match) => midnight_match.monitor.name.clone(),
 			};
 
 			let script_content = trigger_scripts
@@ -491,32 +494,70 @@ mod tests {
 		StellarBlock::default()
 	}
 
-	fn create_mock_stellar_monitor_match(script_path: Option<&str>) -> MonitorMatch {
-		MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
-			monitor: create_test_monitor("test", vec![], false, script_path),
-			transaction: create_test_stellar_transaction(),
-			ledger: create_test_stellar_block(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}))
+	fn create_mock_monitor_match_from_path(
+		blockchain_type: BlockChainType,
+		script_path: Option<&str>,
+	) -> MonitorMatch {
+		match blockchain_type {
+			BlockChainType::EVM => MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+				monitor: create_test_monitor("test", vec![], false, script_path),
+				transaction: create_test_evm_transaction(),
+				receipt: create_test_evm_transaction_receipt(),
+				network_slug: "ethereum_mainnet".to_string(),
+				matched_on: MatchConditions {
+					functions: vec![],
+					events: vec![],
+					transactions: vec![],
+				},
+				matched_on_args: None,
+			})),
+			BlockChainType::Stellar => MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
+				monitor: create_test_monitor("test", vec![], false, script_path),
+				transaction: create_test_stellar_transaction(),
+				ledger: create_test_stellar_block(),
+				network_slug: "stellar_mainnet".to_string(),
+				matched_on: MatchConditions {
+					functions: vec![],
+					events: vec![],
+					transactions: vec![],
+				},
+				matched_on_args: None,
+			})),
+			BlockChainType::Midnight => unimplemented!(),
+		}
 	}
 
-	fn create_mock_monitor_match(script_path: Option<&str>) -> MonitorMatch {
-		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: create_test_monitor("test", vec![], false, script_path),
-			transaction: create_test_evm_transaction(),
-			receipt: create_test_evm_transaction_receipt(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}))
+	fn create_mock_monitor_match_from_monitor(
+		blockchain_type: BlockChainType,
+		monitor: Monitor,
+	) -> MonitorMatch {
+		match blockchain_type {
+			BlockChainType::EVM => MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+				monitor,
+				transaction: create_test_evm_transaction(),
+				receipt: create_test_evm_transaction_receipt(),
+				network_slug: "ethereum_mainnet".to_string(),
+				matched_on: MatchConditions {
+					functions: vec![],
+					events: vec![],
+					transactions: vec![],
+				},
+				matched_on_args: None,
+			})),
+			BlockChainType::Stellar => MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
+				monitor,
+				transaction: create_test_stellar_transaction(),
+				ledger: create_test_stellar_block(),
+				network_slug: "stellar_mainnet".to_string(),
+				matched_on: MatchConditions {
+					functions: vec![],
+					events: vec![],
+					transactions: vec![],
+				},
+				matched_on_args: None,
+			})),
+			BlockChainType::Midnight => unimplemented!(),
+		}
 	}
 
 	fn matches_equal(a: &MonitorMatch, b: &MonitorMatch) -> bool {
@@ -553,7 +594,7 @@ mod tests {
 		));
 		assert!(!has_active_monitors(
 			&monitors,
-			&"solana_mainnet".to_string()
+			&"midnight_mainnet".to_string()
 		));
 		assert!(!has_active_monitors(
 			&monitors,
@@ -607,8 +648,8 @@ mod tests {
 			.iter()
 			.all(|m| m.networks.contains(&"stellar_mainnet".to_string())));
 
-		let sol_monitors = filter_network_monitors(&monitors, &"solana_mainnet".to_string());
-		assert!(sol_monitors.is_empty());
+		let midnight_monitors = filter_network_monitors(&monitors, &"midnight_mainnet".to_string());
+		assert!(midnight_monitors.is_empty());
 	}
 
 	#[tokio::test]
@@ -659,7 +700,10 @@ print(result)
 			format!("test-{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
-		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::EVM,
+			Some(temp_file.path().to_str().unwrap()),
+		);
 		let matches = vec![match_item.clone()];
 
 		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
@@ -687,7 +731,10 @@ print(result)
 			format!("test-{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
-		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::EVM,
+			Some(temp_file.path().to_str().unwrap()),
+		);
 		let matches = vec![match_item.clone()];
 
 		let filtered = run_trigger_filters(&matches, "ethereum_mainnet", &trigger_scripts).await;
@@ -704,7 +751,10 @@ print(result)
 			timeout_ms: 1000,
 			arguments: None,
 		};
-		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::EVM,
+			Some(temp_file.path().to_str().unwrap()),
+		);
 		let script_content = (ScriptLanguage::Python, script_content.to_string());
 
 		let result =
@@ -722,7 +772,10 @@ print(result)
 			timeout_ms: 1000,
 			arguments: None,
 		};
-		let match_item = create_mock_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::EVM,
+			Some(temp_file.path().to_str().unwrap()),
+		);
 		let script_content = (ScriptLanguage::Python, script_content.to_string());
 
 		let result =
@@ -738,7 +791,10 @@ print(result)
 			timeout_ms: 1000,
 			arguments: None,
 		};
-		let match_item = create_mock_monitor_match(Some("non_existent_script.py"));
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::EVM,
+			Some("non_existent_script.py"),
+		);
 		let script_content = (ScriptLanguage::Python, "invalid script content".to_string());
 
 		let result =
@@ -771,17 +827,7 @@ print(result)
 		};
 
 		// Create a match with this monitor
-		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: monitor.clone(),
-			transaction: create_test_evm_transaction(),
-			receipt: create_test_evm_transaction_receipt(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}));
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
 
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
@@ -845,17 +891,7 @@ print(True)
 			..Default::default()
 		};
 
-		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: monitor.clone(),
-			transaction: create_test_evm_transaction(),
-			receipt: create_test_evm_transaction_receipt(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}));
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
 
 		// Test case 1: All conditions return true - match should be kept
 		let mut trigger_scripts = HashMap::new();
@@ -897,17 +933,7 @@ print(True)
 			..Default::default()
 		};
 
-		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: monitor.clone(),
-			transaction: create_test_evm_transaction(),
-			receipt: create_test_evm_transaction_receipt(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}));
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
 
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
@@ -948,17 +974,7 @@ print(True)
 			..Default::default()
 		};
 
-		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: monitor.clone(),
-			transaction: create_test_evm_transaction(),
-			receipt: create_test_evm_transaction_receipt(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}));
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
 
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
@@ -1005,17 +1021,7 @@ print(True)
 			..Default::default()
 		};
 
-		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: monitor.clone(),
-			transaction: create_test_evm_transaction(),
-			receipt: create_test_evm_transaction_receipt(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}));
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
 
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
@@ -1066,17 +1072,7 @@ print(True)
 			..Default::default()
 		};
 
-		let match_item = MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: monitor.clone(),
-			transaction: create_test_evm_transaction(),
-			receipt: create_test_evm_transaction_receipt(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}));
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
 
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(
@@ -1142,8 +1138,10 @@ print(result)
 			format!("test|{}", temp_file.path().to_str().unwrap()),
 			(ScriptLanguage::Python, script_content.to_string()),
 		);
-		let match_item =
-			create_mock_stellar_monitor_match(Some(temp_file.path().to_str().unwrap()));
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::Stellar,
+			Some(temp_file.path().to_str().unwrap()),
+		);
 		let matches = vec![match_item.clone()];
 
 		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
@@ -1174,17 +1172,7 @@ print(result)
 			..Default::default()
 		};
 
-		let match_item = MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
-			monitor: monitor.clone(),
-			transaction: create_test_stellar_transaction(),
-			ledger: create_test_stellar_block(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}));
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::Stellar, monitor);
 
 		let mut trigger_scripts = HashMap::new();
 		trigger_scripts.insert(

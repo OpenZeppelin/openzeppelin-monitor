@@ -5,6 +5,7 @@
 //! - Generic BlockFilter trait
 //! - EVM-specific implementation
 //! - Stellar-specific implementation
+//! - Midnight-specific implementation
 
 pub mod evm {
 	pub mod filter;
@@ -15,15 +16,20 @@ pub mod stellar {
 	pub mod helpers;
 }
 
-use async_trait::async_trait;
+pub mod midnight {
+	pub mod filter;
+	pub mod helpers;
+}
 
-pub use evm::filter::EVMBlockFilter;
-pub use stellar::filter::StellarBlockFilter;
+use async_trait::async_trait;
 
 use crate::{
 	models::{BlockType, Monitor, MonitorMatch, Network},
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
+pub use evm::filter::EVMBlockFilter;
+pub use midnight::filter::MidnightBlockFilter;
+pub use stellar::filter::StellarBlockFilter;
 
 /// Trait for filtering blockchain data
 ///
