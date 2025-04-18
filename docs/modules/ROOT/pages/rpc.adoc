@@ -152,8 +152,8 @@ This architecture ensures:
 3. Both clients maintain efficiency by sharing the same connection pool
 
 
-*Transport Level*: Each transport client may define its own retry policy:
-+
+Each transport client may define its own retry policy:
+
 [source,rust]
 ----
 
@@ -228,7 +228,7 @@ sequenceDiagram
         EM->>P: Retry #1
         P-->>EM: Error Response
         Note over EM: Wait with backoff
-        EM->>P: Retry #N
+        EM->>P: Retry #2
         P-->>EM: Success
         EM-->>M: Return Response
     end
