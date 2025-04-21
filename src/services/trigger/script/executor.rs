@@ -104,7 +104,6 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
-			.kill_on_drop(true)
 			.spawn()
 			.with_context(|| "Failed to spawn node process")?;
 
