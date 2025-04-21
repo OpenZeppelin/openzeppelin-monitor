@@ -1112,6 +1112,25 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 
 === Testing your configuration
 
+==== Network Configuration
+The `validate_network_config.sh` script helps ensure your network configuration is properly set up and operational. The script:
+
+* Tests the health of all configured RPC endpoints
+* Validates connectivity using network-specific methods
+* Provides clear visual feedback for each endpoint
+
+[source,bash]
+----
+# Test default networks directory (/config/networks/)
+./scripts/validate_network_config.sh
+
+# Test a specific configuration directory
+./scripts/validate_network_config.sh -f /path/to/configs
+----
+
+TIP: Run this script when setting up new networks, before deploying configuration changes, or when troubleshooting connectivity issues.
+
+==== Monitor Configuration
 The monitor can be tested in two modes:
 
 ==== 1. Latest Block Mode
