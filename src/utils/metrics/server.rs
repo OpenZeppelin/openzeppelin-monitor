@@ -190,7 +190,7 @@ mod tests {
 	}
 
 	fn create_mock_configs() -> (PathBuf, PathBuf, PathBuf) {
-		let config_path = PathBuf::from("config");
+		let config_path = PathBuf::from("unit_test_config");
 		let monitor_dir = config_path.join("monitors");
 		let trigger_dir = config_path.join("triggers");
 		let network_dir = config_path.join("networks");
