@@ -1,0 +1,17 @@
+{
+  "network_type": "EVM",
+  "slug": "optimism_sepolia",
+  "name": "OP Sepolia",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": "https://sepolia.optimism.io",
+      "weight": 100
+    }
+  ],
+  "chain_id": 11155420,
+  "block_time_ms": 2000,
+  "confirmation_blocks": 12,
+  "cron_schedule": "0 */1 * * * *",
+  "store_blocks": false
+}

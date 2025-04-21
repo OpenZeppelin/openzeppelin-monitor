@@ -22,7 +22,7 @@ data/**/*.json
 
 # Ignore actual config files but not examples
 config/**/*.json
-!config/**/*.json.example
+!examples/config/**/*.json
 
 # Ignore .env files
 .env

@@ -1,0 +1,18 @@
+{
+  "network_type": "EVM",
+  "slug": "unichain_sepolia",
+  "name": "Unichain Sepolia",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": "https://sepolia.unichain.org",
+      "weight": 90
+    }
+  ],
+  "chain_id": 1301,
+  "block_time_ms": 1000,
+  "confirmation_blocks": 1,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 62,
+  "store_blocks": false
+}

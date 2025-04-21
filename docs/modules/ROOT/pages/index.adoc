@@ -135,6 +135,7 @@ openzeppelin-monitor/
 ├── docs/               # Documentation
 ├── scripts/            # Utility scripts
 ├── cmd/                # Metrics and monitoring
+├── examples/           # Example configuration files
 └── ... other root files (Cargo.toml, README.md, etc.)
 ```
 
@@ -357,25 +358,25 @@ This table lists the environment variables and their default values.
 | Port to use for metrics server.
 |===
 
-* Copy and configure example files:
+* Copy and configure some example files:
 
 [source,bash]
 ----
 # EVM Configuration
-cp config/monitors/evm_transfer_usdc.json.example config/monitors/evm_transfer_usdc.json
-cp config/networks/ethereum_mainnet.json.example config/networks/ethereum_mainnet.json
+cp examples/config/monitors/evm_transfer_usdc.json config/monitors/evm_transfer_usdc.json
+cp examples/config/networks/ethereum_mainnet.json config/networks/ethereum_mainnet.json
 
 # Stellar Configuration
-cp config/monitors/stellar_transfer_usdc.json.example config/monitors/stellar_transfer_usdc.json
-cp config/networks/stellar_mainnet.json.example config/networks/stellar_mainnet.json
+cp examples/config/monitors/stellar_swap_dex.json config/monitors/stellar_swap_dex.json
+cp examples/config/networks/stellar_mainnet.json config/networks/stellar_mainnet.json
 
 # Notification Configuration
-cp config/triggers/email_notifications.json.example config/triggers/email_notifications.json
-cp config/triggers/slack_notifications.json.example config/triggers/slack_notifications.json
-cp config/triggers/discord_notifications.json.example config/triggers/discord_notifications.json
-cp config/triggers/telegram_notifications.json.example config/triggers/telegram_notifications.json
-cp config/triggers/webhook_notifications.json.example config/triggers/webhook_notifications.json
-cp config/triggers/script_notifications.json.example config/triggers/script_notifications.json
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
+cp examples/config/triggers/email_notifications.json config/triggers/email_notifications.json
+
+# Filter Configuration
+cp examples/config/filters/evm_filter_block_number.sh config/filters/evm_filter_block_number.sh
+cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar_filter_block_number.sh
 ----
 
 == Data Storage Configuration
@@ -1111,6 +1112,25 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 
 === Testing your configuration
 
+==== Network Configuration
+The `validate_network_config.sh` script helps ensure your network configuration is properly set up and operational. The script:
+
+* Tests the health of all configured RPC endpoints
+* Validates connectivity using network-specific methods
+* Provides clear visual feedback for each endpoint
+
+[source,bash]
+----
+# Test default networks directory (/config/networks/)
+./scripts/validate_network_config.sh
+
+# Test a specific configuration directory
+./scripts/validate_network_config.sh -f /path/to/configs
+----
+
+TIP: Run this script when setting up new networks, before deploying configuration changes, or when troubleshooting connectivity issues.
+
+==== Monitor Configuration
 The monitor can be tested in two modes:
 
 ==== 1. Latest Block Mode
