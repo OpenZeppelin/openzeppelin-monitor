@@ -106,7 +106,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.stderr(Stdio::piped())
 			.spawn()
 			.with_context(|| "Failed to spawn node process")?;
-
+		println!("Executing JavaScript script!");
 		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
@@ -195,6 +195,8 @@ pub fn process_script_output(
 		.last()
 		.ok_or_else(|| anyhow::anyhow!("No output from script"))?
 		.trim();
+	println!("SCRIPT OUTPUT: {}", stdout);
+	println!("SCRIPT OUTPUT LAST LINE: {}", last_line);
 
 	match last_line.to_lowercase().as_str() {
 		"true" => Ok(true),
@@ -213,6 +215,7 @@ async fn process_command(
 	from_custom_notification: bool,
 ) -> Result<bool, anyhow::Error> {
 	if let Some(mut stdin) = cmd.stdin.take() {
+		println!("Writing input to script!");
 		stdin
 			.write_all(input_json.as_bytes())
 			.await
@@ -223,7 +226,9 @@ async fn process_command(
 			.shutdown()
 			.await
 			.map_err(|e| anyhow::anyhow!("Failed to close stdin: {}", e))?;
+		println!("Closed stdin!");
 	} else {
+		println!("Failed to get stdin handle!");
 		return Err(anyhow::anyhow!("Failed to get stdin handle"));
 	}
 
@@ -233,6 +238,7 @@ async fn process_command(
 		Ok(result) => {
 			let output =
 				result.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))?;
+			println!("Output: {:?}", output);
 			process_script_output(output, from_custom_notification)
 		}
 		Err(_) => Err(anyhow::anyhow!("Script execution timed out")),
