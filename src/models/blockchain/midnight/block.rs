@@ -17,7 +17,9 @@ pub struct RpcBlock {
 	pub header: BlockHeader,
 	#[serde(rename = "body")]
 	pub body: Vec<MidnightRpcTransactionEnum>,
-	#[serde(rename = "transactionsIndex")]
+	// NOTE: This should be `transactionsIndex` in the RPC response but it's not
+	// so we're using `transactions_index` here but expect this may change in the future
+	#[serde(rename = "transactions_index")]
 	pub transactions_index: Vec<(String, String)>,
 }
 /// Represents a Midnight block header
@@ -59,6 +61,8 @@ pub struct Block(pub RpcBlock);
 
 impl Block {
 	/// Get the block number
+	///
+	/// Returns the block number as an `Option<u64>`.
 	pub fn number(&self) -> Option<u64> {
 		Some(u64::from_str_radix(self.0.header.number.trim_start_matches("0x"), 16).unwrap_or(0))
 	}

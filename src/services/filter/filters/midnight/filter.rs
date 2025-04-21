@@ -134,9 +134,22 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		&self,
 		_client: &T,
 		_network: &Network,
-		_block: &BlockType,
+		block: &BlockType,
 		_monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
+		let midnight_block = match block {
+			BlockType::Midnight(block) => block,
+			_ => {
+				return Err(FilterError::block_type_mismatch(
+					"Expected Midnight block",
+					None,
+					None,
+				))
+			}
+		};
+
+		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
+
 		Ok(vec![])
 	}
 }

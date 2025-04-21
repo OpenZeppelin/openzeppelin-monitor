@@ -548,10 +548,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			}
 		};
 
-		tracing::debug!(
-			"Processing block {}",
-			evm_block.number.unwrap_or(U64::from(0))
-		);
+		tracing::debug!("Processing block {}", evm_block.number().unwrap_or(0));
 
 		// Process all transaction receipts in parallel
 		let receipt_futures: Vec<_> = evm_block

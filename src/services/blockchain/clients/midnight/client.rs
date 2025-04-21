@@ -13,7 +13,7 @@ use serde_json::json;
 use tracing::instrument;
 
 use crate::{
-	models::{BlockType, EVMBlock, EVMReceiptLog, EVMTransactionReceipt, Network},
+	models::{BlockType, EVMReceiptLog, EVMTransactionReceipt, MidnightBlock, Network},
 	services::{
 		blockchain::{
 			client::BlockChainClient,
@@ -183,15 +183,16 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for Midnight
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
 		let response = self
 			.http_client
-			.send_raw_request::<serde_json::Value>("eth_blockNumber", None)
+			.send_raw_request::<serde_json::Value>("chain_getHeader", None)
 			.await
 			.with_context(|| "Failed to get latest block number")?;
 
-		// Extract the "result" field from the JSON-RPC response
+		// Extract the "result" field and then the "number" field from the JSON-RPC response
 		let hex_str = response
 			.get("result")
+			.and_then(|v| v.get("number"))
 			.and_then(|v| v.as_str())
-			.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
+			.ok_or_else(|| anyhow::anyhow!("Missing block number in response"))?;
 
 		// Parse hex string to u64
 		u64::from_str_radix(hex_str.trim_start_matches("0x"), 16)
@@ -210,15 +211,26 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for Midnight
 	) -> Result<Vec<BlockType>, anyhow::Error> {
 		let block_futures: Vec<_> = (start_block..=end_block.unwrap_or(start_block))
 			.map(|block_number| {
-				let params = json!([
-					format!("0x{:x}", block_number),
-					true // include full transaction objects
-				]);
+				let params = json!([format!("0x{:x}", block_number)]);
 				let client = self.http_client.clone();
 
 				async move {
 					let response = client
-						.send_raw_request("eth_getBlockByNumber", Some(params))
+						.send_raw_request("chain_getBlockHash", Some(params))
+						.await
+						.with_context(|| {
+							format!("Failed to get block hash for: {}", block_number)
+						})?;
+
+					let block_hash = response
+						.get("result")
+						.and_then(|v| v.as_str())
+						.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
+
+					let params = json!([block_hash]);
+
+					let response = client
+						.send_raw_request("midnight_jsonBlock", Some(params))
 						.await
 						.with_context(|| format!("Failed to get block: {}", block_number))?;
 
@@ -226,14 +238,22 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for Midnight
 						.get("result")
 						.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
 
-					if block_data.is_null() {
+					// Parse the JSON string into a Value
+					let block_value: serde_json::Value = serde_json::from_str(
+						block_data
+							.as_str()
+							.ok_or_else(|| anyhow::anyhow!("Result is not a string"))?,
+					)
+					.with_context(|| "Failed to parse block JSON string")?;
+
+					if block_value.is_null() {
 						return Err(anyhow::anyhow!("Block not found"));
 					}
 
-					let block: EVMBlock = serde_json::from_value(block_data.clone())
+					let block: MidnightBlock = serde_json::from_value(block_value.clone())
 						.map_err(|e| anyhow::anyhow!("Failed to parse block: {}", e))?;
 
-					Ok(BlockType::EVM(Box::new(block)))
+					Ok(BlockType::Midnight(Box::new(block)))
 				}
 			})
 			.collect();

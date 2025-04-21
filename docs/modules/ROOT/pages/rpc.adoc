@@ -274,6 +274,13 @@ graph TD
 * Fetching transactions (batched up to 200 in a single request): `getTransactions`
 * Fetching events (batched up to 200 in a single request): `getEvents`
 
+*Midnight*
+
+* RPC Client initialization (per active network): `system_chain`
+* Fetching the latest block number (per cron iteration): `chain_getHeader`
+* Fetching block data (per block): `chain_getBlockHash` and `midnight_jsonBlock`
+* Fetching transaction receipt (per transaction in block): ``
+
 
 == Best Practices
 
