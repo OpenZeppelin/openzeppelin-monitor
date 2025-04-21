@@ -190,7 +190,7 @@ mod tests {
 	}
 
 	fn create_mock_configs() -> (PathBuf, PathBuf, PathBuf) {
-		let config_path = PathBuf::from("unit_test_config");
+		let config_path = PathBuf::from("config");
 		let monitor_dir = config_path.join("monitors");
 		let trigger_dir = config_path.join("triggers");
 		let network_dir = config_path.join("networks");
@@ -200,9 +200,9 @@ mod tests {
 		fs::create_dir_all(&trigger_dir).expect("Failed to create trigger directory");
 		fs::create_dir_all(&network_dir).expect("Failed to create network directory");
 
-		let monitor_path = monitor_dir.join("test_monitor.json");
-		let trigger_path = trigger_dir.join("test_trigger.json");
-		let network_path = network_dir.join("ethereum_mainnet.json");
+		let monitor_path = monitor_dir.join("integration_test_monitor.json");
+		let trigger_path = trigger_dir.join("integration_test_trigger.json");
+		let network_path = network_dir.join("integration_test_ethereum_mainnet.json");
 
 		fs::write(
 			&monitor_path,
