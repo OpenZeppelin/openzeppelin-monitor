@@ -57,6 +57,14 @@ impl EndpointManager {
 		self.client = client;
 	}
 
+	/// Updates the retry policy for the client
+	///
+	/// Constructs a new client with the given retry policy and strategy
+	/// and updates the endpoint manager with the new client
+	///
+	/// # Arguments
+	/// * `retry_policy` - The new retry policy to use for the client
+	/// * `retry_strategy` - The new retry strategy to use for the client
 	pub fn set_retry_policy<R: RetryableStrategy + Send + Sync + 'static>(
 		&mut self,
 		retry_policy: ExponentialBackoff,
