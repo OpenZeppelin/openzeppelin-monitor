@@ -159,7 +159,7 @@ mod tests {
 			trigger_type: TriggerType::Slack,
 			config: TriggerTypeConfig::Slack {
 				slack_url:
-					"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+					"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX" // noboost
 						.to_string(),
 				message: NotificationMessage {
 					title: "Test Title".to_string(),
