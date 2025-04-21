@@ -7,7 +7,7 @@ use std::{collections::HashMap, fs, path::Path};
 
 use crate::{
 	models::{config::error::ConfigError, ConfigLoader, Monitor},
-	utils::validate_script_config,
+	services::trigger::validate_script_config,
 };
 
 impl ConfigLoader for Monitor {

@@ -529,11 +529,11 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 	///
 	/// # Returns
 	/// Vector of matches found in the block
-	#[instrument(skip_all, fields(network = %_network.slug))]
+	#[instrument(skip_all, fields(network = %network.slug))]
 	async fn filter_block(
 		&self,
 		client: &T,
-		_network: &Network,
+		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
@@ -564,23 +564,25 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			})
 			.collect();
 
-		let receipts = match futures::future::join_all(receipt_futures)
-			.await
-			.into_iter()
-			.collect::<Result<Vec<_>, _>>()
-		{
-			Ok(receipts) => receipts,
-			Err(e) => {
-				return Err(FilterError::network_error(
-					format!(
-						"Failed to get transaction receipts for block {}",
-						evm_block.number.unwrap_or(U64::from(0))
-					),
-					Some(e.into()),
-					None,
-				));
+		let receipt_results = futures::future::join_all(receipt_futures).await;
+
+		// Partition receipts into successful and failed
+		let mut receipts = Vec::new();
+		for result in receipt_results.into_iter() {
+			match result {
+				Ok(receipt) => receipts.push(receipt),
+				Err(e) => {
+					FilterError::network_error(
+						format!(
+							"Failed to get a receipt for block {}",
+							evm_block.number.unwrap_or(U64::from(0))
+						),
+						Some(e.into()),
+						None,
+					);
+				}
 			}
-		};
+		}
 
 		if receipts.is_empty() {
 			tracing::debug!(
@@ -720,6 +722,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 								},
 								transaction: transaction.clone(),
 								receipt: receipt.clone(),
+								network_slug: network.slug.clone(),
 								matched_on: MatchConditions {
 									events: matched_events
 										.clone()

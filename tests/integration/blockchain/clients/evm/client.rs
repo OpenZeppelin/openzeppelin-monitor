@@ -1,6 +1,6 @@
 use crate::integration::mocks::{
 	create_evm_test_network_with_urls, create_evm_valid_server_mock_network_response,
-	MockAlloyTransportClient, MockEvmClientTrait,
+	MockEVMTransportClient, MockEvmClientTrait,
 };
 use alloy::{
 	consensus::{Receipt, ReceiptEnvelope, ReceiptWithBloom},
@@ -16,7 +16,7 @@ use openzeppelin_monitor::{
 
 #[tokio::test]
 async fn test_get_transaction_receipt() {
-	let mut mock = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut mock = MockEvmClientTrait::<MockEVMTransportClient>::new();
 
 	let expected_receipt = EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
 		inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
@@ -48,7 +48,7 @@ async fn test_get_transaction_receipt() {
 
 #[tokio::test]
 async fn test_get_logs_for_blocks() {
-	let mut mock = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut mock = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	let expected_logs = vec![EVMReceiptLog {
 		address: Default::default(),
 		topics: vec![],
@@ -75,7 +75,7 @@ async fn test_get_logs_for_blocks() {
 
 #[tokio::test]
 async fn test_get_latest_block_number() {
-	let mut mock = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut mock = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	mock.expect_get_latest_block_number()
 		.times(1)
 		.returning(|| Ok(100u64));
@@ -87,7 +87,7 @@ async fn test_get_latest_block_number() {
 
 #[tokio::test]
 async fn test_get_blocks() {
-	let mut mock = MockEvmClientTrait::<MockAlloyTransportClient>::new();
+	let mut mock = MockEvmClientTrait::<MockEVMTransportClient>::new();
 
 	let block = BlockType::EVM(Box::new(EVMBlock::from(alloy::rpc::types::Block {
 		header: Header {

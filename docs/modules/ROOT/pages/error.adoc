@@ -160,6 +160,12 @@ a|* `NotFound` - Resource not found errors
 * `ExecutionError` - Trigger execution failures
 * `ConfigurationError` - Trigger configuration issues
 * `Other` - Unclassified errors
+
+|Monitor Executor
+|`MonitorExecutionError`
+a|* `NotFound` - Resource not found errors
+* `ExecutionError` - Monitor execution failures
+* `Other` - Unclassified errors
 |===
 
 == Error Handling Guidelines

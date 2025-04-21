@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
 	services::notification::ScriptExecutor,
-	utils::ScriptExecutorFactory,
+	services::trigger::ScriptExecutorFactory,
 };
 
 /// A notification handler that executes scripts when triggered
@@ -139,6 +139,7 @@ mod tests {
 			monitor: create_test_monitor("test_monitor", vec!["ethereum_mainnet"], false, vec![]),
 			transaction: create_test_evm_transaction(),
 			receipt: EVMTransactionReceipt::default(),
+			network_slug: "ethereum_mainnet".to_string(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		}))

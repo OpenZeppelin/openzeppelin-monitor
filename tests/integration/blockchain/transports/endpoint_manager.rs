@@ -1,12 +1,13 @@
 use mockito::Server;
-use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, EndpointManager, RotatingTransport,
+	BlockchainTransport, EndpointManager, RotatingTransport, TransientErrorRetryStrategy,
 };
 
 // Mock transport implementation for testing
@@ -14,7 +15,6 @@ use openzeppelin_monitor::services::blockchain::{
 struct MockTransport {
 	client: reqwest::Client,
 	current_url: Arc<RwLock<String>>,
-	retry_policy: ExponentialBackoff,
 }
 
 impl MockTransport {
@@ -22,7 +22,6 @@ impl MockTransport {
 		Self {
 			client: reqwest::Client::new(),
 			current_url: Arc::new(RwLock::new(String::new())),
-			retry_policy: ExponentialBackoff::builder().build_with_max_retries(2),
 		}
 	}
 }
@@ -58,12 +57,18 @@ impl BlockchainTransport for MockTransport {
 		})
 	}
 
-	fn get_retry_policy(&self) -> Result<ExponentialBackoff, anyhow::Error> {
-		Ok(self.retry_policy)
+	fn set_retry_policy(
+		&mut self,
+		_retry_policy: ExponentialBackoff,
+		_retry_strategy: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error> {
+		Ok(())
 	}
 
-	fn set_retry_policy(&mut self, retry_policy: ExponentialBackoff) -> Result<(), anyhow::Error> {
-		self.retry_policy = retry_policy;
+	fn update_endpoint_manager_client(
+		&mut self,
+		_: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error> {
 		Ok(())
 	}
 }
@@ -84,6 +89,10 @@ impl RotatingTransport for MockTransport {
 	}
 }
 
+fn get_mock_client_builder() -> ClientWithMiddleware {
+	ClientBuilder::new(reqwest::Client::new()).build()
+}
+
 #[tokio::test]
 async fn test_endpoint_rotation() {
 	// Set up mock servers
@@ -97,7 +106,11 @@ async fn test_endpoint_rotation() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server1.url().as_ref(), vec![server2.url(), server3.url()]);
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		server1.url().as_ref(),
+		vec![server2.url(), server3.url()],
+	);
 	let transport = MockTransport::new();
 
 	// Test initial state
@@ -127,7 +140,7 @@ async fn test_send_raw_request() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
+	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -149,7 +162,7 @@ async fn test_rotation_on_error() {
 		.mock("POST", "/")
 		.with_status(429)
 		.with_body("Rate limited")
-		.expect(3) // Expect 3 requests due to default retry policy
+		.expect(1) // Expect 1 request due to 429 error which is not retried
 		.create_async()
 		.await;
 
@@ -162,7 +175,11 @@ async fn test_rotation_on_error() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(primary_server.url().as_ref(), vec![fallback_server.url()]);
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		primary_server.url().as_ref(),
+		vec![fallback_server.url()],
+	);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -186,11 +203,11 @@ async fn test_no_fallback_urls_available() {
 		.mock("POST", "/")
 		.with_status(429)
 		.with_body("Rate limited")
-		.expect(3) // Expect 3 requests due to default retry policy
+		.expect(1) // Expect 1 request due to 429 error which is not retried
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
+	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -241,7 +258,7 @@ async fn test_rotate_url_no_fallbacks() {
 	let server = Server::new_async().await;
 
 	// Create manager with no fallback URLs
-	let manager = EndpointManager::new(server.url().as_ref(), vec![]);
+	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate
@@ -262,6 +279,7 @@ async fn test_rotate_url_all_urls_match_active() {
 	// Create manager with fallback URLs that are identical to the active URL
 	let active_url = server.url();
 	let manager = EndpointManager::new(
+		get_mock_client_builder(),
 		active_url.as_ref(),
 		vec![active_url.clone(), active_url.clone()],
 	);
@@ -290,7 +308,11 @@ async fn test_rotate_url_connection_failure() {
 
 	// Create manager with an invalid fallback URL that will fail to connect
 	let invalid_url = "http://invalid-domain-that-does-not-exist:12345";
-	let manager = EndpointManager::new(server.url().as_ref(), vec![invalid_url.to_string()]);
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![invalid_url.to_string()],
+	);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate
@@ -310,4 +332,170 @@ async fn test_rotate_url_connection_failure() {
 		&*manager.fallback_urls.read().await,
 		&vec![invalid_url.to_string()]
 	);
+}
+
+#[tokio::test]
+async fn test_update_client() {
+	let mut server = Server::new_async().await;
+
+	// Set up two different responses to differentiate between clients
+	let initial_mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc": "2.0", "result": "initial_client", "id": 1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let mut manager =
+		EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+
+	// Test initial client
+	let transport = MockTransport::new();
+	let initial_result = manager
+		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+		.await
+		.unwrap();
+	assert_eq!(initial_result["result"], "initial_client");
+	initial_mock.assert();
+
+	// Set up mock for new client
+	let updated_mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc": "2.0", "result": "updated_client", "id": 1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	// Create and update to new client with different configuration
+	let new_client = ClientBuilder::new(reqwest::Client::new())
+		.with(RetryTransientMiddleware::new_with_policy(
+			ExponentialBackoff::builder().build_with_max_retries(3),
+		))
+		.build();
+	manager.update_client(new_client);
+
+	// Test updated client
+	let updated_result = manager
+		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+		.await
+		.unwrap();
+	assert_eq!(updated_result["result"], "updated_client");
+	updated_mock.assert();
+}
+
+#[tokio::test]
+async fn test_set_retry_policy() {
+	let mut server = Server::new_async().await;
+
+	// Set up a sequence of responses to test retry behavior
+	let retry_mock = server
+		.mock("POST", "/")
+		.with_status(429) // Too Many Requests
+		.with_body("Rate limited")
+		.expect(2) // Expect 2 retries
+		.create_async()
+		.await;
+
+	let success_mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc": "2.0", "result": "success_after_retry", "id": 1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let mut manager = EndpointManager::new(
+		get_mock_client_builder(), // Initial client with no retry policy
+		server.url().as_ref(),
+		vec![],
+	);
+
+	// Set a custom retry policy with exactly 2 retries
+	let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+
+	manager.set_retry_policy(retry_policy, TransientErrorRetryStrategy);
+
+	// Make request that should trigger retries
+	let transport = MockTransport::new();
+	let result = manager
+		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+		.await
+		.unwrap();
+
+	// Verify that we got the successful response after retries
+	assert_eq!(result["result"], "success_after_retry");
+
+	// Verify that both mocks were called the expected number of times
+	retry_mock.assert();
+	success_mock.assert();
+}
+
+#[tokio::test]
+async fn test_send_raw_request_network_error() {
+	// Set up with an invalid primary URL that will cause a network error
+	let invalid_url = "http://invalid-domain-that-will-fail:12345";
+	let mut valid_server = Server::new_async().await;
+
+	// Set up mock for fallback server
+	let success_mock = valid_server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc": "2.0", "result": "success", "id": 1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		invalid_url,
+		vec![valid_server.url()], // Add valid fallback URL
+	);
+	let transport = MockTransport::new();
+
+	// Send request - should fail first with network error, then rotate and succeed
+	let result = manager
+		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+		.await;
+
+	// Verify success after rotation
+	assert!(result.is_ok());
+	let response = result.unwrap();
+	assert_eq!(response["result"], "success");
+	success_mock.assert();
+
+	// Verify URL rotation occurred
+	assert_eq!(&*manager.active_url.read().await, &valid_server.url());
+}
+
+#[tokio::test]
+async fn test_send_raw_request_network_error_no_fallback() {
+	// Set up with an invalid URL and no fallbacks
+	let invalid_url = "http://invalid-domain-that-will-fail:12345";
+	let manager = EndpointManager::new(
+		get_mock_client_builder(),
+		invalid_url,
+		vec![], // No fallback URLs
+	);
+	let transport = MockTransport::new();
+
+	// Send request - should fail with network error and no rotation possible
+	let result = manager
+		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+		.await;
+
+	// Verify error
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to send request"));
+
+	// Verify URL didn't change
+	assert_eq!(&*manager.active_url.read().await, invalid_url);
 }

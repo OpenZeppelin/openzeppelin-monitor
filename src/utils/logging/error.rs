@@ -228,7 +228,7 @@ fn try_extract_trace_id(err: &(dyn std::error::Error + 'static)) -> Option<Strin
 		crate::services::blockwatcher::BlockWatcherError,
 		crate::services::blockchain::BlockChainError,
 		crate::repositories::RepositoryError,
-		crate::utils::script::ScriptError,
+		crate::services::trigger::ScriptError,
 		crate::models::ConfigError
 	);
 
@@ -380,9 +380,8 @@ mod tests {
 		assert!(formatted.contains("Caused by: Permission denied"));
 	}
 
-	#[ignore]
-	#[cfg(feature = "test-log")]
 	#[test]
+	#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 	fn test_log_error() {
 		use tracing_test::traced_test;
 

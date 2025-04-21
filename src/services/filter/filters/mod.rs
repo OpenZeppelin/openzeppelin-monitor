@@ -17,13 +17,12 @@ pub mod stellar {
 
 use async_trait::async_trait;
 
-pub use evm::filter::EVMBlockFilter;
-pub use stellar::filter::StellarBlockFilter;
-
 use crate::{
 	models::{BlockType, Monitor, MonitorMatch, Network},
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
+pub use evm::filter::EVMBlockFilter;
+pub use stellar::filter::StellarBlockFilter;
 
 /// Trait for filtering blockchain data
 ///

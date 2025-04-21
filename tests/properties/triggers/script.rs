@@ -1,5 +1,5 @@
 use crate::properties::strategies::process_output_strategy;
-use openzeppelin_monitor::utils::process_script_output;
+use openzeppelin_monitor::services::trigger::process_script_output;
 use proptest::{prelude::*, test_runner::Config};
 use std::os::unix::process::ExitStatusExt;
 

@@ -20,6 +20,6 @@ pub use clients::{EvmClient, EvmClientTrait, StellarClient, StellarClientTrait};
 pub use error::BlockChainError;
 pub use pool::{ClientPool, ClientPoolTrait};
 pub use transports::{
-	AlloyTransportClient, BlockchainTransport, EndpointManager, HorizonTransportClient,
-	RotatingTransport, StellarTransportClient,
+	BlockchainTransport, EVMTransportClient, EndpointManager, HttpTransportClient,
+	RotatingTransport, StellarTransportClient, TransientErrorRetryStrategy,
 };

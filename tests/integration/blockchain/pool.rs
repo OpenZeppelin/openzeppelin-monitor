@@ -1,7 +1,7 @@
 use openzeppelin_monitor::{
 	models::{BlockChainType, Network, RpcUrl},
 	services::blockchain::{
-		AlloyTransportClient, ClientPool, ClientPoolTrait, EvmClient, StellarClient,
+		ClientPool, ClientPoolTrait, EVMTransportClient, EvmClient, StellarClient,
 		StellarTransportClient,
 	},
 };
@@ -25,10 +25,7 @@ async fn test_new_pool_is_empty() {
 
 	// Test Stellar clients
 	let result = pool
-		.get_stellar_client(&create_stellar_test_network_with_urls(
-			vec!["http://dummy"],
-			"rpc",
-		))
+		.get_stellar_client(&create_stellar_test_network_with_urls(vec!["http://dummy"]))
 		.await;
 	assert!(result.is_err()); // Should error since no client exists yet
 }
@@ -42,9 +39,9 @@ async fn test_get_evm_client_creates_and_caches() {
 
 	// First request should create new client
 	let client1 = pool.get_evm_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 2); // We have both EVM and Stellar storage types
+	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	); // But only one EVM client
@@ -57,7 +54,7 @@ async fn test_get_evm_client_creates_and_caches() {
 	// Second request should return cached client
 	let client2 = pool.get_evm_client(&network).await.unwrap();
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	); // Still only one EVM client
@@ -72,10 +69,10 @@ async fn test_get_evm_client_creates_and_caches() {
 async fn test_get_stellar_client_creates_and_caches() {
 	let mut mock_server = mockito::Server::new_async().await;
 
-	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server, "soroban");
+	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server);
 
 	let pool = ClientPool::new();
-	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()]);
 
 	// First request should create new client
 	let client1 = pool.get_stellar_client(&network).await.unwrap();
@@ -132,10 +129,10 @@ async fn test_different_evm_networks_get_different_clients() {
 	let client1 = pool.get_evm_client(&network1).await.unwrap();
 	let client2 = pool.get_evm_client(&network2).await.unwrap();
 
-	// Should have two different clients
+	// Should have different clients
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		2
 	);
@@ -151,10 +148,10 @@ async fn test_different_stellar_networks_get_different_clients() {
 	let mut mock_server = mockito::Server::new_async().await;
 	let mut mock_server_2 = mockito::Server::new_async().await;
 
-	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server, "soroban");
-	let mock_2 = create_stellar_valid_server_mock_network_response(&mut mock_server_2, "soroban");
+	let mock = create_stellar_valid_server_mock_network_response(&mut mock_server);
+	let mock_2 = create_stellar_valid_server_mock_network_response(&mut mock_server_2);
 
-	let network1 = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+	let network1 = create_stellar_test_network_with_urls(vec![&mock_server.url()]);
 	let network2 = Network {
 		name: "test-2".to_string(),
 		slug: "test-2".to_string(),
@@ -176,7 +173,7 @@ async fn test_different_stellar_networks_get_different_clients() {
 	let client1 = pool.get_stellar_client(&network1).await.unwrap();
 	let client2 = pool.get_stellar_client(&network2).await.unwrap();
 
-	// Should have two different clients
+	// Should have different clients
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
@@ -209,7 +206,7 @@ async fn test_concurrent_access() {
 	}
 
 	// Wait for all tasks to complete
-	let clients: Vec<Arc<EvmClient<AlloyTransportClient>>> = futures::future::join_all(handles)
+	let clients: Vec<Arc<EvmClient<EVMTransportClient>>> = futures::future::join_all(handles)
 		.await
 		.into_iter()
 		.map(|r| r.unwrap())
@@ -218,7 +215,7 @@ async fn test_concurrent_access() {
 	// Should only have created one client
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		1
 	);
@@ -238,7 +235,7 @@ async fn test_default_creates_empty_pool() {
 
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
@@ -281,7 +278,7 @@ async fn test_get_evm_client_handles_errors() {
 	// Pool should remain empty after failed client creation
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
@@ -307,7 +304,7 @@ async fn test_get_stellar_client_handles_errors() {
 		.await;
 
 	let pool = ClientPool::new();
-	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()], "rpc");
+	let network = create_stellar_test_network_with_urls(vec![&mock_server.url()]);
 
 	// Attempt to get client should result in error
 	let result = pool.get_stellar_client(&network).await;
@@ -325,7 +322,7 @@ async fn test_get_stellar_client_handles_errors() {
 	// Pool should remain empty after failed client creation
 	assert_eq!(pool.storages.len(), 2);
 	assert_eq!(
-		pool.get_client_count::<EvmClient<AlloyTransportClient>>(BlockChainType::EVM)
+		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
 		0
 	);
