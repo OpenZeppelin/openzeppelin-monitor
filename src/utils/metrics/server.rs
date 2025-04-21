@@ -125,18 +125,126 @@ pub fn create_metrics_server(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::repositories::{
-		MonitorService, NetworkRepository, NetworkService, TriggerRepository, TriggerService,
+	use crate::{
+		models::{
+			BlockChainType, Monitor, Network, NotificationMessage, RpcUrl, Trigger, TriggerType,
+			TriggerTypeConfig,
+		},
+		repositories::{
+			MonitorService, NetworkRepository, NetworkService, TriggerRepository, TriggerService,
+		},
 	};
 	use actix_web::{test, App};
+	use std::{fs, path::PathBuf};
 	use tokio::net::TcpListener;
 
-	// Helper function to create test services with mock repositories
+	fn create_test_monitor(
+		name: &str,
+		networks: Vec<&str>,
+		paused: bool,
+		triggers: Vec<&str>,
+	) -> Monitor {
+		Monitor {
+			name: name.to_string(),
+			networks: networks.into_iter().map(|s| s.to_string()).collect(),
+			paused,
+			triggers: triggers.into_iter().map(|s| s.to_string()).collect(),
+			..Default::default()
+		}
+	}
+
+	fn create_test_trigger(name: &str) -> Trigger {
+		Trigger {
+			name: name.to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url:
+					"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+						.to_string(),
+				message: NotificationMessage {
+					title: "Test Title".to_string(),
+					body: "Test Body".to_string(),
+				},
+			},
+		}
+	}
+
+	pub fn create_test_network(name: &str, slug: &str, network_type: BlockChainType) -> Network {
+		Network {
+			name: name.to_string(),
+			slug: slug.to_string(),
+			network_type,
+			rpc_urls: vec![RpcUrl {
+				url: "http://localhost:8545".to_string(),
+				type_: "rpc".to_string(),
+				weight: 100,
+			}],
+			cron_schedule: "*/5 * * * * *".to_string(),
+			confirmation_blocks: 1,
+			store_blocks: Some(false),
+			chain_id: Some(1),
+			network_passphrase: None,
+			block_time_ms: 1000,
+			max_past_blocks: None,
+		}
+	}
+
+	fn create_mock_configs() -> (PathBuf, PathBuf, PathBuf) {
+		let config_path = PathBuf::from("config");
+		let monitor_dir = config_path.join("monitors");
+		let trigger_dir = config_path.join("triggers");
+		let network_dir = config_path.join("networks");
+
+		// Create directories
+		fs::create_dir_all(&monitor_dir).expect("Failed to create monitor directory");
+		fs::create_dir_all(&trigger_dir).expect("Failed to create trigger directory");
+		fs::create_dir_all(&network_dir).expect("Failed to create network directory");
+
+		let monitor_path = monitor_dir.join("test_monitor.json");
+		let trigger_path = trigger_dir.join("test_trigger.json");
+		let network_path = network_dir.join("ethereum_mainnet.json");
+
+		fs::write(
+			&monitor_path,
+			serde_json::to_string(&create_test_monitor(
+				"test_monitor",
+				vec!["ethereum_mainnet"],
+				false,
+				vec!["test_trigger"],
+			))
+			.unwrap(),
+		)
+		.expect("Failed to create mock monitor");
+
+		fs::write(
+			&trigger_path,
+			serde_json::to_string(&create_test_trigger("test_trigger")).unwrap(),
+		)
+		.expect("Failed to create mock trigger");
+
+		fs::write(
+			&network_path,
+			serde_json::to_string(&create_test_network(
+				"Ethereum Mainnet",
+				"ethereum_mainnet",
+				BlockChainType::EVM,
+			))
+			.unwrap(),
+		)
+		.expect("Failed to create mock network");
+
+		// Return directory paths, not file paths
+		(monitor_dir, trigger_dir, network_dir)
+	}
+
 	fn create_test_services() -> (MonitorServiceArc, NetworkServiceArc, TriggerServiceArc) {
-		let network_service = NetworkService::<NetworkRepository>::new(None).unwrap();
-		let trigger_service = TriggerService::<TriggerRepository>::new(None).unwrap();
+		let (monitor_path, trigger_path, network_path) = create_mock_configs();
+		let network_service =
+			NetworkService::<NetworkRepository>::new(Some(network_path.parent().unwrap())).unwrap();
+		let trigger_service =
+			TriggerService::<TriggerRepository>::new(Some(trigger_path.parent().unwrap())).unwrap();
 		let monitor_service = MonitorService::new(
-			None,
+			Some(monitor_path.parent().unwrap()),
 			Some(network_service.clone()),
 			Some(trigger_service.clone()),
 		)
@@ -150,6 +258,7 @@ mod tests {
 	}
 
 	#[actix_web::test]
+	#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 	async fn test_metrics_handler() {
 		// Create test services
 		let (monitor_service, network_service, trigger_service) = create_test_services();
@@ -191,6 +300,7 @@ mod tests {
 	}
 
 	#[tokio::test]
+	#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 	async fn test_create_metrics_server() {
 		// Create test services
 		let (monitor_service, network_service, trigger_service) = create_test_services();
