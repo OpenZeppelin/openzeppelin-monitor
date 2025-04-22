@@ -5,10 +5,12 @@
 //! and monitoring functionality.
 
 mod block;
+mod event;
 mod monitor;
 mod transaction;
 
 pub use block::Block as MidnightBlock;
+pub use event::Event as MidnightEvent;
 pub use monitor::MonitorMatch as MidnightMonitorMatch;
 pub use transaction::{
 	RpcTransaction as MidnightRpcTransactionEnum, Transaction as MidnightTransaction,

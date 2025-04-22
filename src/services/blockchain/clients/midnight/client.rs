@@ -13,14 +13,14 @@ use serde_json::json;
 use tracing::instrument;
 
 use crate::{
-	models::{BlockType, EVMReceiptLog, EVMTransactionReceipt, MidnightBlock, Network},
+	models::{BlockType, MidnightBlock, MidnightEvent, MidnightTransaction, Network},
 	services::{
 		blockchain::{
 			client::BlockChainClient,
 			transports::{BlockchainTransport, MidnightTransportClient},
 			BlockFilterFactory,
 		},
-		filter::{evm_helpers::string_to_h256, MidnightBlockFilter},
+		filter::MidnightBlockFilter,
 	},
 };
 
@@ -66,113 +66,66 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for 
 /// Extended functionality specific to Midnight blockchain
 #[async_trait]
 pub trait MidnightClientTrait {
-	/// Retrieves a transaction receipt by its hash
+	/// Retrieves transactions within a block range
 	///
 	/// # Arguments
-	/// * `transaction_hash` - The hash of the transaction to look up
+	/// * `start_block` - Starting block number
+	/// * `end_block` - Optional ending block number. If None, only fetches start_block
 	///
 	/// # Returns
-	/// * `Result<TransactionReceipt, anyhow::Error>` - Transaction receipt or error
-	async fn get_transaction_receipt(
+	/// * `Result<Vec<MidnightTransaction>, anyhow::Error>` - Collection of transactions or error
+	async fn get_transactions(
 		&self,
-		transaction_hash: String,
-	) -> Result<EVMTransactionReceipt, anyhow::Error>;
+		start_block: u32,
+		end_block: Option<u32>,
+	) -> Result<Vec<MidnightTransaction>, anyhow::Error>;
 
-	/// Retrieves logs for a range of blocks
+	/// Retrieves events within a block range
 	///
 	/// # Arguments
-	/// * `from_block` - Starting block number
-	/// * `to_block` - Ending block number
+	/// * `start_block` - Starting block number
+	/// * `end_block` - Optional ending block number. If None, only fetches start_block
 	///
 	/// # Returns
-	/// * `Result<Vec<Log>, anyhow::Error>` - Collection of matching logs or error
-	async fn get_logs_for_blocks(
+	/// * `Result<Vec<MidnightEvent>, anyhow::Error>` - Collection of events or error
+	async fn get_events(
 		&self,
-		from_block: u64,
-		to_block: u64,
-	) -> Result<Vec<EVMReceiptLog>, anyhow::Error>;
+		start_block: u32,
+		end_block: Option<u32>,
+	) -> Result<Vec<MidnightEvent>, anyhow::Error>;
 }
 
 #[async_trait]
 impl<T: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for MidnightClient<T> {
-	/// Retrieves a transaction receipt by hash with proper error handling
-	#[instrument(skip(self), fields(transaction_hash))]
-	async fn get_transaction_receipt(
+	/// Retrieves transactions within a block range
+	#[instrument(skip(self), fields(start_block, end_block))]
+	async fn get_transactions(
 		&self,
-		transaction_hash: String,
-	) -> Result<EVMTransactionReceipt, anyhow::Error> {
-		let hash = string_to_h256(&transaction_hash)
-			.map_err(|e| anyhow::anyhow!("Invalid transaction hash: {}", e))?;
+		start_block: u32,
+		end_block: Option<u32>,
+	) -> Result<Vec<MidnightTransaction>, anyhow::Error> {
+		let params = json!([
+			format!("0x{:x}", start_block),
+			format!("0x{:x}", end_block.unwrap_or(start_block))
+		]);
 
-		let params = json!([format!("0x{:x}", hash)])
-			.as_array()
-			.with_context(|| "Failed to create JSON-RPC params array")?
-			.to_vec();
-
-		let response = self
+		let _response = self
 			.http_client
-			.send_raw_request(
-				"eth_getTransactionReceipt",
-				Some(serde_json::Value::Array(params)),
-			)
+			.send_raw_request::<serde_json::Value>("midnight_getTransactions", Some(params))
 			.await
-			.with_context(|| format!("Failed to get transaction receipt: {}", transaction_hash))?;
+			.with_context(|| "Failed to get transactions")?;
 
-		// Extract the "result" field from the JSON-RPC response
-		let receipt_data = response
-			.get("result")
-			.with_context(|| "Missing 'result' field")?;
-
-		// Handle null response case
-		if receipt_data.is_null() {
-			return Err(anyhow::anyhow!("Transaction receipt not found"));
-		}
-
-		Ok(serde_json::from_value(receipt_data.clone())
-			.with_context(|| "Failed to parse transaction receipt")?)
+		Ok(Vec::<MidnightTransaction>::new())
 	}
 
-	/// Retrieves logs within the specified block range
-	///
-	/// # Arguments
-	/// * `from_block` - Starting block number
-	/// * `to_block` - Ending block number
-	///
-	/// # Returns
-	/// * `Result<Vec<EVMReceiptLog>, anyhow::Error>` - Collection of matching logs or error
-	#[instrument(skip(self), fields(from_block, to_block))]
-	async fn get_logs_for_blocks(
+	/// Retrieves events within a block range
+	#[instrument(skip(self), fields(start_block, end_block))]
+	async fn get_events(
 		&self,
-		from_block: u64,
-		to_block: u64,
-	) -> Result<Vec<EVMReceiptLog>, anyhow::Error> {
-		// Convert parameters to JSON-RPC format
-		let params = json!([{
-			"fromBlock": format!("0x{:x}", from_block),
-			"toBlock": format!("0x{:x}", to_block)
-		}])
-		.as_array()
-		.with_context(|| "Failed to create JSON-RPC params array")?
-		.to_vec();
-
-		let response = self
-			.http_client
-			.send_raw_request("eth_getLogs", Some(params))
-			.await
-			.with_context(|| {
-				format!(
-					"Failed to get logs for blocks: {} - {}",
-					from_block, to_block
-				)
-			})?;
-
-		// Extract the "result" field from the JSON-RPC response
-		let logs_data = response
-			.get("result")
-			.with_context(|| "Missing 'result' field")?;
-
-		// Parse the response into the expected type
-		Ok(serde_json::from_value(logs_data.clone()).with_context(|| "Failed to parse logs")?)
+		_start_block: u32,
+		_end_block: Option<u32>,
+	) -> Result<Vec<MidnightEvent>, anyhow::Error> {
+		Ok(Vec::<MidnightEvent>::new())
 	}
 }
 

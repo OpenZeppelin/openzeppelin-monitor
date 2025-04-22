@@ -13,7 +13,8 @@ use std::{marker::PhantomData, sync::Arc};
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, EVMReceiptLog, EVMTransactionReceipt, Network, StellarEvent, StellarTransaction,
+		BlockType, EVMReceiptLog, EVMTransactionReceipt, MidnightEvent, MidnightTransaction,
+		Network, StellarEvent, StellarTransaction,
 	},
 	services::{
 		blockchain::{
@@ -131,16 +132,17 @@ mock! {
 
 	#[async_trait]
 	impl<T: Send + Sync + Clone + 'static> MidnightClientTrait for MidnightClientTrait<T> {
-		async fn get_transaction_receipt(
+		async fn get_transactions(
 			&self,
-			transaction_hash: String,
-		) -> Result<EVMTransactionReceipt,  anyhow::Error>;
+			start_block: u32,
+			end_block: Option<u32>,
+		) -> Result<Vec<MidnightTransaction>, anyhow::Error>;
 
-		async fn get_logs_for_blocks(
+		async fn get_events(
 			&self,
-			from_block: u64,
-			to_block: u64,
-		) -> Result<Vec<EVMReceiptLog>,  anyhow::Error>;
+			start_block: u32,
+			end_block: Option<u32>,
+		) -> Result<Vec<MidnightEvent>, anyhow::Error>;
 	}
 
 	impl<T: Send + Sync + Clone + 'static> Clone for MidnightClientTrait<T> {
