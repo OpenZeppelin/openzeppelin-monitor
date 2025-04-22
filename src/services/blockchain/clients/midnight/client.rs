@@ -1,8 +1,7 @@
 //! Midnight blockchain client implementation.
 //!
 //! This module provides functionality to interact with Midnight blockchain,
-//! supporting operations like block retrieval, transaction receipt lookup,
-//! and log filtering.
+//! supporting operations like block retrieval.
 
 use std::marker::PhantomData;
 
@@ -101,20 +100,9 @@ impl<T: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for Midni
 	#[instrument(skip(self), fields(start_block, end_block))]
 	async fn get_transactions(
 		&self,
-		start_block: u32,
-		end_block: Option<u32>,
+		_start_block: u32,
+		_end_block: Option<u32>,
 	) -> Result<Vec<MidnightTransaction>, anyhow::Error> {
-		let params = json!([
-			format!("0x{:x}", start_block),
-			format!("0x{:x}", end_block.unwrap_or(start_block))
-		]);
-
-		let _response = self
-			.http_client
-			.send_raw_request::<serde_json::Value>("midnight_getTransactions", Some(params))
-			.await
-			.with_context(|| "Failed to get transactions")?;
-
 		Ok(Vec::<MidnightTransaction>::new())
 	}
 

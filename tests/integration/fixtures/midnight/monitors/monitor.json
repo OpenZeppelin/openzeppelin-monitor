@@ -1,0 +1,21 @@
+{
+  "name": "Post to bulletin board",
+  "paused": false,
+  "networks": [
+    "midnight_testnet"
+  ],
+  "addresses": [
+    {
+      "address": "0200f00c70fcf64e574b6b43a274c9bf3bcc9106ba7ac45268a8dccb8ddf1c4cd601"
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [],
+    "transactions": []
+  },
+  "trigger_conditions": [],
+  "triggers": [
+    "example_trigger_slack"
+  ]
+}
