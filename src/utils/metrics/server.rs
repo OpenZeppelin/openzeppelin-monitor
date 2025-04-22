@@ -136,6 +136,7 @@ mod tests {
 	};
 	use actix_web::{test, App};
 	use std::{fs, path::PathBuf};
+	use tempfile::TempDir;
 	use tokio::net::TcpListener;
 
 	fn create_test_monitor(
@@ -189,8 +190,10 @@ mod tests {
 		}
 	}
 
-	fn create_mock_configs() -> (PathBuf, PathBuf, PathBuf) {
-		let config_path = PathBuf::from("config");
+	fn create_mock_configs() -> (PathBuf, PathBuf, PathBuf, TempDir) {
+		// Create a temporary directory
+		let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+		let config_path = temp_dir.path().join("config");
 		let monitor_dir = config_path.join("monitors");
 		let trigger_dir = config_path.join("triggers");
 		let network_dir = config_path.join("networks");
@@ -200,9 +203,9 @@ mod tests {
 		fs::create_dir_all(&trigger_dir).expect("Failed to create trigger directory");
 		fs::create_dir_all(&network_dir).expect("Failed to create network directory");
 
-		let monitor_path = monitor_dir.join("integration_test_monitor.json");
-		let trigger_path = trigger_dir.join("integration_test_trigger.json");
-		let network_path = network_dir.join("integration_test_ethereum_mainnet.json");
+		let monitor_path = monitor_dir.join("test_monitor.json");
+		let trigger_path = trigger_dir.join("test_trigger.json");
+		let network_path = network_dir.join("test_network.json");
 
 		fs::write(
 			&monitor_path,
@@ -233,12 +236,17 @@ mod tests {
 		)
 		.expect("Failed to create mock network");
 
-		// Return directory paths, not file paths
-		(monitor_dir, trigger_dir, network_dir)
+		// Return directory paths and temp_dir to keep it alive
+		(monitor_dir, trigger_dir, network_dir, temp_dir)
 	}
 
-	fn create_test_services() -> (MonitorServiceArc, NetworkServiceArc, TriggerServiceArc) {
-		let (monitor_path, trigger_path, network_path) = create_mock_configs();
+	fn create_test_services() -> (
+		MonitorServiceArc,
+		NetworkServiceArc,
+		TriggerServiceArc,
+		TempDir,
+	) {
+		let (monitor_path, trigger_path, network_path, temp_dir) = create_mock_configs();
 		let network_service =
 			NetworkService::<NetworkRepository>::new(Some(network_path.parent().unwrap())).unwrap();
 		let trigger_service =
@@ -254,14 +262,14 @@ mod tests {
 			Arc::new(Mutex::new(monitor_service)),
 			Arc::new(Mutex::new(network_service)),
 			Arc::new(Mutex::new(trigger_service)),
+			temp_dir,
 		)
 	}
 
 	#[actix_web::test]
-	#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 	async fn test_metrics_handler() {
 		// Create test services
-		let (monitor_service, network_service, trigger_service) = create_test_services();
+		let (monitor_service, network_service, trigger_service, _temp_dir) = create_test_services();
 
 		// Create test app
 		let app = test::init_service(
@@ -300,10 +308,9 @@ mod tests {
 	}
 
 	#[tokio::test]
-	#[cfg_attr(not(feature = "test-ci-only"), ignore)]
 	async fn test_create_metrics_server() {
 		// Create test services
-		let (monitor_service, network_service, trigger_service) = create_test_services();
+		let (monitor_service, network_service, trigger_service, _temp_dir) = create_test_services();
 
 		// Find an available port
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
