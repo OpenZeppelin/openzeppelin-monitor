@@ -35,7 +35,7 @@ impl std::str::FromStr for MidnightChainType {
 			"Development" => Ok(Self::Development),
 			"Live" => Ok(Self::Live),
 			"Local" => Ok(Self::Local),
-			s => Ok(Self::Custom(s.to_string())),
+			_ => Err(anyhow::anyhow!("Invalid chain type: {}", s)),
 		}
 	}
 }

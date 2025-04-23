@@ -6,7 +6,8 @@ use mockall::predicate;
 use mockito::Server;
 use openzeppelin_monitor::{
 	models::{
-		BlockType, MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightRpcBlock,
+		BlockType, MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightChainType,
+		MidnightRpcBlock,
 	},
 	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
 };
@@ -37,6 +38,82 @@ async fn test_get_events() {
 	let result = mock.get_events(1, Some(2)).await;
 	assert!(result.is_ok());
 	assert_eq!(result.unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn test_get_chain_type() {
+	let mut server = Server::new_async().await;
+
+	// Mock system_chain when initializing client
+	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
+
+	// Test Development chain type
+	let mock_dev = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":"Development","id":1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
+
+	let client = MidnightClient::new(&network).await.unwrap();
+	mock_init.assert_async().await;
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), MidnightChainType::Development);
+	mock_dev.assert_async().await;
+
+	// Test Live chain type
+	let mock_prod = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":"Live","id":1}"#)
+		.create_async()
+		.await;
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), MidnightChainType::Live);
+	mock_prod.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_get_chain_type_error_cases() {
+	let mut server = Server::new_async().await;
+
+	// Mock system_chain when initializing client
+	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
+
+	// Test invalid JSON response
+	let mock_invalid_json = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":null,"id":1}"#)
+		.create_async()
+		.await;
+
+	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
+	let client = MidnightClient::new(&network).await.unwrap();
+	mock_init.assert_async().await;
+	let result = client.get_chain_type().await;
+
+	assert!(result.is_err());
+	mock_invalid_json.assert_async().await;
+
+	// Test invalid chain type string
+	let mock_invalid_type = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":"InvalidType","id":1}"#)
+		.create_async()
+		.await;
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_err());
+	assert_eq!(
+		result.unwrap_err().to_string(),
+		"Invalid chain type: InvalidType"
+	);
+	mock_invalid_type.assert_async().await;
 }
 
 #[tokio::test]
