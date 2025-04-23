@@ -55,7 +55,7 @@ async fn test_get_latest_block_number() {
 async fn test_get_blocks() {
 	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 
-	let rpc_block = MidnightRpcBlock {
+	let rpc_block = MidnightRpcBlock::<MidnightBlockHeader> {
 		header: MidnightBlockHeader {
 			parent_hash: "0xabc123".to_string(),
 			number: "0x12345".to_string(),

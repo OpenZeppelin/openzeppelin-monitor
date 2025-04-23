@@ -25,8 +25,8 @@ pub use blockchain::stellar::{
 };
 
 pub use blockchain::midnight::{
-	MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightEvent, MidnightMonitorMatch,
-	MidnightRpcBlock, MidnightRpcTransactionEnum, MidnightTransaction,
+	MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightChainType, MidnightEvent,
+	MidnightMonitorMatch, MidnightRpcBlock, MidnightRpcTransactionEnum, MidnightTransaction,
 };
 
 // Re-export core types

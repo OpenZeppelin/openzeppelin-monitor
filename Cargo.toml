@@ -36,7 +36,20 @@ lazy_static = "1.5"
 lettre = "0.11.11"
 libc = "0.2"
 log = "0.4"
-# pallet-midnight-rpc = { git = "https://github.com/midnightntwrk/midnight-node", package = "pallet-midnight-rpc", default-features = false }
+
+midnight-ledger = { git = "https://github.com/input-output-hk/midnight-ledger-prototype", package = "midnight-ledger", tag = "ledger-3.0.6", features = [
+    "transaction-construction",
+    "proving",
+    "serde",
+    "verifying",
+    "test-utilities",
+] }
+midnight-serialize = { git = "https://github.com/input-output-hk/midnight-ledger-prototype", package = "midnight-serialize", tag = "serialize-0.3" }
+# We use the local path for the midnight-node-ledger-helpers and midnight-node-ledger until a _better_ stable version is released
+midnight-node-ledger-helpers = { path = "../../midnightntwrk/midnight-node/ledger/helpers", package = "midnight-node-ledger-helpers", default-features = false }
+midnight-node-ledger = { path = "../../midnightntwrk/midnight-node/ledger", package = "midnight-node-ledger", default-features = false }
+subxt = "0.41.0"
+
 prometheus = "0.14"
 regex = "1.11.0"
 reqwest = { version = "=0.12.12", features = ["json"] }
@@ -45,7 +58,6 @@ reqwest-retry = "0.7.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.0"
-stellar-horizon = "0.7.1"
 stellar-rpc-client = "22.0.0"
 stellar-strkey = "0.0.12"
 stellar-xdr = "22.1.0"

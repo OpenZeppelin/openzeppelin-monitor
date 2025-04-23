@@ -18,3 +18,24 @@ pub use monitor::MonitorMatch as MidnightMonitorMatch;
 pub use transaction::{
 	RpcTransaction as MidnightRpcTransactionEnum, Transaction as MidnightTransaction,
 };
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+pub enum MidnightChainType {
+	Development,
+	Live,
+	Local,
+	Custom(String),
+}
+
+impl std::str::FromStr for MidnightChainType {
+	type Err = anyhow::Error;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"Development" => Ok(Self::Development),
+			"Live" => Ok(Self::Live),
+			"Local" => Ok(Self::Local),
+			s => Ok(Self::Custom(s.to_string())),
+		}
+	}
+}

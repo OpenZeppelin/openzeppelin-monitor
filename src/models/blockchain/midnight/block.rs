@@ -12,9 +12,9 @@ use crate::models::MidnightRpcTransactionEnum;
 ///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L214-L218>
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RpcBlock {
+pub struct RpcBlock<Header = BlockHeader> {
 	#[serde(rename = "header")]
-	pub header: BlockHeader,
+	pub header: Header,
 	#[serde(rename = "body")]
 	pub body: Vec<MidnightRpcTransactionEnum>,
 	// NOTE: This should be `transactionsIndex` in the RPC response but it's not
@@ -88,7 +88,7 @@ mod tests {
 
 	#[test]
 	fn test_block_creation_and_number() {
-		let rpc_block = RpcBlock {
+		let rpc_block = RpcBlock::<BlockHeader> {
 			header: BlockHeader {
 				parent_hash: "0xabc123".to_string(),
 				number: "0x12345".to_string(),

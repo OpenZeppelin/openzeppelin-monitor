@@ -13,8 +13,8 @@ use std::{marker::PhantomData, sync::Arc};
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, EVMReceiptLog, EVMTransactionReceipt, MidnightEvent, MidnightTransaction,
-		Network, StellarEvent, StellarTransaction,
+		BlockType, EVMReceiptLog, EVMTransactionReceipt, MidnightChainType, MidnightEvent,
+		MidnightTransaction, Network, StellarEvent, StellarTransaction,
 	},
 	services::{
 		blockchain::{
@@ -143,6 +143,8 @@ mock! {
 			start_block: u32,
 			end_block: Option<u32>,
 		) -> Result<Vec<MidnightEvent>, anyhow::Error>;
+
+		async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error>;
 	}
 
 	impl<T: Send + Sync + Clone + 'static> Clone for MidnightClientTrait<T> {

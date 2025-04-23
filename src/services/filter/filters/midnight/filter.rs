@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use serde_json::Value;
-use std::marker::PhantomData;
+use std::{collections::VecDeque, marker::PhantomData};
 use tracing::instrument;
 
 use crate::{
@@ -17,7 +17,10 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
-		filter::{BlockFilter, FilterError},
+		filter::{
+			filters::midnight::helpers::{map_chain_type, parse_tx_index_item},
+			BlockFilter, FilterError,
+		},
 	},
 };
 
@@ -132,7 +135,7 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 	#[instrument(skip_all, fields(network = %_network.slug))]
 	async fn filter_block(
 		&self,
-		_client: &T,
+		client: &T,
 		_network: &Network,
 		block: &BlockType,
 		_monitors: &[Monitor],
@@ -149,6 +152,41 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		};
 
 		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
+
+		// 1. Get transactions from the block
+		// 2. Decode transactions using Transactions::deserialize from midnight-node
+		// 3. Find matching transactions for each monitor (transactions and functions). Excluding events since they are not supported yet.
+		// 4. Return matches
+
+		let transactions = midnight_block.transactions_index.clone();
+		let mut txs = VecDeque::new();
+
+		// Get chain type and map to network id
+		let chain_type = client.get_chain_type().await?;
+		let network_id = map_chain_type(&chain_type);
+
+		// TransactionIndex includes only successful midnight transactions
+		// See: midnightrpc.rs in node crate
+		// We reverse here to create a list of youngest to oldest txs, then push front
+		for (hash, body) in transactions.into_iter().rev() {
+			let (hash, tx) = match parse_tx_index_item(&hash, &body, network_id) {
+				Ok(res) => res,
+				Err(e) => {
+					println!("error at {}", midnight_block.number().unwrap_or(0));
+					println!("attempted to decode tx {}", &hash);
+					println!("{:?}", e);
+					return Err(FilterError::internal_error(
+						"Failed to parse transaction",
+						Some(e.into()),
+						None,
+					));
+				}
+			};
+			// Push transaction and hash to txs
+			txs.push_front((hash, tx));
+		}
+
+		println!("transaction: {:?}", txs);
 
 		Ok(vec![])
 	}

@@ -3,16 +3,18 @@
 //! This module provides functionality to interact with Midnight blockchain,
 //! supporting operations like block retrieval.
 
-use std::marker::PhantomData;
-
 use anyhow::Context;
 use async_trait::async_trait;
 use futures;
 use serde_json::json;
+use std::marker::PhantomData;
+use std::str::FromStr;
 use tracing::instrument;
 
 use crate::{
-	models::{BlockType, MidnightBlock, MidnightEvent, MidnightTransaction, Network},
+	models::{
+		BlockType, MidnightBlock, MidnightChainType, MidnightEvent, MidnightTransaction, Network,
+	},
 	services::{
 		blockchain::{
 			client::BlockChainClient,
@@ -92,6 +94,14 @@ pub trait MidnightClientTrait {
 		start_block: u32,
 		end_block: Option<u32>,
 	) -> Result<Vec<MidnightEvent>, anyhow::Error>;
+
+	/// Retrieves the chain type
+	///
+	/// This is specific for Polkadot-based chains
+	///
+	/// # Returns
+	/// * `Result<MidnightChainType, anyhow::Error>` - Chain type
+	async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error>;
 }
 
 #[async_trait]
@@ -114,6 +124,23 @@ impl<T: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for Midni
 		_end_block: Option<u32>,
 	) -> Result<Vec<MidnightEvent>, anyhow::Error> {
 		Ok(Vec::<MidnightEvent>::new())
+	}
+
+	/// Retrieves the chain type
+	#[instrument(skip(self))]
+	async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error> {
+		let response = self
+			.http_client
+			.send_raw_request::<serde_json::Value>("system_chainType", None)
+			.await
+			.with_context(|| "Failed to get chain type")?;
+
+		Ok(MidnightChainType::from_str(
+			response
+				.get("result")
+				.and_then(|v| v.as_str())
+				.unwrap_or_default(),
+		)?)
 	}
 }
 
