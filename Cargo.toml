@@ -15,6 +15,16 @@ opt-level = 0
 overflow-checks = true
 panic = 'unwind'
 
+
+[patch."https://github.com/input-output-hk/midnight-ledger-prototype"]
+mn-ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-storage", tag = "ledger-4.0.0-beta.2" }
+coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-coin-structure", tag = "ledger-4.0.0-beta.2" }
+onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-onchain-runtime", tag = "ledger-4.0.0-beta.2" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", tag = "ledger-4.0.0-beta.2" }
+base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-base-crypto", tag = "ledger-4.0.0-beta.2" }
+transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-transient-crypto", tag = "ledger-4.0.0-beta.2" }
+
+
 [dependencies]
 actix-rt = "2.2.0"
 actix-web = "4"
@@ -37,17 +47,19 @@ lettre = "0.11.11"
 libc = "0.2"
 log = "0.4"
 
-midnight-ledger = { git = "https://github.com/input-output-hk/midnight-ledger-prototype", package = "midnight-ledger", tag = "ledger-3.0.6", features = [
-    "transaction-construction",
-    "proving",
-    "serde",
-    "verifying",
-    "test-utilities",
-] }
-midnight-serialize = { git = "https://github.com/input-output-hk/midnight-ledger-prototype", package = "midnight-serialize", tag = "serialize-0.3" }
+# We need to import itertools to override the version in midnight-node
+itertools = "0.12.0"
 # We use the local path for the midnight-node-ledger-helpers and midnight-node-ledger until a _better_ stable version is released
+
+midnight-ledger = { git = "https://github.com/input-output-hk/midnight-ledger-prototype", package = "midnight-ledger", tag = "ledger-4.0.0-beta.2" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", tag = "ledger-4.0.0-beta.2" }
+
 midnight-node-ledger-helpers = { path = "../../midnightntwrk/midnight-node/ledger/helpers", package = "midnight-node-ledger-helpers", default-features = false }
 midnight-node-ledger = { path = "../../midnightntwrk/midnight-node/ledger", package = "midnight-node-ledger", default-features = false }
+
+
+# midnight-node-ledger-helpers = { git = "https://github.com/midnightntwrk/midnight-node", package = "midnight-node-ledger-helpers", default-features = false, branch = "release/node-0.12.0" }
+# midnight-node-ledger = { git = "https://github.com/midnightntwrk/midnight-node", package = "midnight-node-ledger", default-features = false, branch = "release/node-0.12.0" }
 subxt = "0.41.0"
 
 prometheus = "0.14"

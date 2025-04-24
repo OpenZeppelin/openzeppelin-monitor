@@ -169,7 +169,7 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		// See: midnightrpc.rs in node crate
 		// We reverse here to create a list of youngest to oldest txs, then push front
 		for (hash, body) in transactions.into_iter().rev() {
-			let (hash, tx) = match parse_tx_index_item(&hash, &body, network_id) {
+			let (hash, tx) = match parse_tx_index_item::<()>(&hash, &body, network_id) {
 				Ok(res) => res,
 				Err(e) => {
 					println!("error at {}", midnight_block.number().unwrap_or(0));
