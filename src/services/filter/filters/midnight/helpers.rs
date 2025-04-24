@@ -4,11 +4,10 @@
 //! and formatting, including address normalization, value parsing, and
 //! operation processing.
 
-use midnight_ledger::base_crypto::hash::{HashOutput, PERSISTENT_HASH_BYTES};
-use midnight_ledger::serialize::{deserialize, NetworkId};
-use midnight_ledger::storage::DefaultDB;
-use midnight_ledger::structure::{Proofish, Transaction, TransactionHash};
-
+use midnight_ledger::structure::TransactionHash;
+use midnight_node_ledger::types::PERSISTENT_HASH_BYTES;
+use midnight_node_ledger_helpers::{HashOutput, NetworkId, Tx};
+use midnight_serialize::deserialize;
 use subxt::utils::H256;
 
 use crate::models::MidnightChainType;
@@ -20,11 +19,11 @@ pub fn hash_to_str(h: H256) -> String {
 }
 
 /// Parse a transaction index item
-pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
+pub fn parse_tx_index_item(
 	hash: &str,
 	body: &str,
 	network_id: NetworkId,
-) -> Result<(TransactionHash, Transaction<P, DefaultDB>), anyhow::Error> {
+) -> Result<(TransactionHash, Tx), anyhow::Error> {
 	let (_hex_prefix, hash_str) = hash.split_at(2);
 	let (_hex_prefix, body_str) = body.split_at(2);
 	let hash =

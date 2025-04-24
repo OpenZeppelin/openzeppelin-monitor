@@ -1645,27 +1645,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blstrs"
-version = "0.7.1"
-source = "git+https://github.com/davidnevadoc/blstrs?rev=3dfe5bf#3dfe5bf15d7b1fa4f898b1a286a9d43d5669b48e"
-dependencies = [
- "bitvec",
- "blst",
- "byte-slice-cast",
- "ff",
- "getrandom 0.2.16",
- "group",
- "halo2curves",
- "num-bigint",
- "pairing",
- "pasta_curves",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "serde",
- "subtle",
-]
-
-[[package]]
 name = "borsh"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2019,6 +1998,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.15.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "054ccb5b10f9f2cbf51eb355ca1d05c2d279ce1804688d0db74b4733a5aeafd8"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "once_cell",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2324,6 +2315,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "csv"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acdc4883a9c96732e4733212c01447ebd805833b7275a73ca3ee080fd77afdaf"
+dependencies = [
+ "csv-core",
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d02f3b0da4c6504f86e9cd789d8dbafab48c2321be74e9987593de5a894d93d"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "curve25519-dalek"
 version = "4.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2430,6 +2442,17 @@ name = "derivative"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.40",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "derive-getters"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a2c35ab6e03642397cdda1dd58abbc05d418aef8e36297f336d5aba060fe8df"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -2701,6 +2724,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2796,6 +2825,12 @@ dependencies = [
  "primitive-types 0.12.2",
  "uint 0.9.5",
 ]
+
+[[package]]
+name = "ethnum"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0939f82868b77ef93ce3c3c3daf2b3c526b456741da5a1a4559e590965b6026b"
 
 [[package]]
 name = "event-listener"
@@ -3014,8 +3049,8 @@ dependencies = [
 
 [[package]]
 name = "frame-support"
-version = "38.2.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+version = "37.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "aquamarine",
  "array-bytes",
@@ -3054,13 +3089,12 @@ dependencies = [
 
 [[package]]
 name = "frame-support-procedural"
-version = "30.0.3"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+version = "30.0.2"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "Inflector",
  "cfg-expr",
  "derive-syn-parse",
- "docify",
  "expander",
  "frame-support-procedural-tools",
  "itertools 0.11.0",
@@ -3068,14 +3102,14 @@ dependencies = [
  "proc-macro-warning",
  "proc-macro2",
  "quote 1.0.40",
- "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4)",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2)",
  "syn 2.0.100",
 ]
 
 [[package]]
 name = "frame-support-procedural-tools"
 version = "13.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "frame-support-procedural-tools-derive",
  "proc-macro-crate 3.3.0",
@@ -3087,7 +3121,7 @@ dependencies = [
 [[package]]
 name = "frame-support-procedural-tools-derive"
 version = "12.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -3290,15 +3324,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
+name = "goldenfile"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf39e208efa110ca273f7255aea02485103ffcb7e5dfa5e4196b05a02411618e"
+dependencies = [
+ "scopeguard",
+ "similar-asserts",
+ "tempfile",
+ "yansi",
+]
+
+[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
 dependencies = [
  "ff",
- "rand 0.8.5",
  "rand_core 0.6.4",
- "rand_xorshift",
  "subtle",
 ]
 
@@ -3341,24 +3385,46 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2_proofs"
-version = "0.3.0"
-source = "git+https://github.com/input-output-hk/halo2?rev=04db20e#04db20e066385fdc1e370c8f257eea0475b3fa10"
+name = "halo2_gadgets"
+version = "0.2.0"
+source = "git+https://github.com/input-output-hk/galois_recursion.git?rev=251f56#251f5663916f9acf18db2845d5b160e556ea2ded"
 dependencies = [
- "blake2b_simd",
- "blstrs",
+ "arrayvec 0.7.6",
+ "bitvec",
+ "derive-getters",
  "ff",
- "getrandom 0.2.16",
+ "goldenfile",
+ "group",
+ "halo2_proofs",
+ "halo2curves",
+ "lazy_static",
+ "pluto-eris",
+ "rand 0.8.5",
+ "subtle",
+ "uint 0.9.5",
+]
+
+[[package]]
+name = "halo2_proofs"
+version = "0.2.0"
+source = "git+https://github.com/input-output-hk/galois_recursion.git?rev=251f56#251f5663916f9acf18db2845d5b160e556ea2ded"
+dependencies = [
+ "arrayvec 0.7.6",
+ "bitvec",
+ "blake2b_simd",
+ "csv",
+ "ff",
  "group",
  "halo2curves",
- "num-bigint",
+ "pluto-eris",
+ "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "rayon",
- "serde",
- "serde_derive",
  "sha3 0.9.1",
+ "subtle",
  "tracing",
+ "uint 0.9.5",
 ]
 
 [[package]]
@@ -4038,27 +4104,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "introspection"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aef96cc8e702a9107d35e7eb802f60c8f3babb94c5b1d5eac7c6b99116344ff"
-dependencies = [
- "quote 0.3.15",
- "syn 0.11.11",
-]
-
-[[package]]
-name = "introspection-derive"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f40c436bdcb61b4dcd7c302029c522150b45e4f048cacd0ad845b48ba3b1cac"
-dependencies = [
- "introspection",
- "quote 0.3.15",
- "syn 0.11.11",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4099,15 +4144,6 @@ name = "itertools"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -4669,7 +4705,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto"
 version = "0.4.3-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4#64e46a74ed37ae05c91b36a3ccfc194042391248"
 dependencies = [
  "anyhow",
  "borsh",
@@ -4680,7 +4716,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "midnight-base-crypto-derive 0.4.3-beta.2 (git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2)",
+ "midnight-base-crypto-derive 0.4.3-beta.2 (git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4)",
  "midnight-serialize",
  "paste",
  "rand 0.8.5",
@@ -4696,7 +4732,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto-derive"
 version = "0.4.3-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4#64e46a74ed37ae05c91b36a3ccfc194042391248"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -4715,25 +4751,24 @@ dependencies = [
 
 [[package]]
 name = "midnight-circuits"
-version = "3.0.0"
-source = "git+https://github.com/input-output-hk/midnight-circuits?tag=v3.0.0#44a7efe922e6b59b67d5429a286aff75a022ebbc"
+version = "0.1.0"
+source = "git+https://github.com/input-output-hk/midnight-circuits?tag=v1.0.0#72fab4c12cff5bfb44a7bb6f380ad6c6862502be"
 dependencies = [
  "arrayvec 0.7.6",
- "base64 0.13.1",
  "bitvec",
  "blake2b_simd",
- "blstrs",
  "const_num_bigint",
  "ff",
  "group",
+ "halo2_gadgets",
  "halo2_proofs",
  "halo2curves",
- "lazy_static",
  "num-bigint",
  "num-integer",
  "num-traits",
  "pasta_curves",
- "rand 0.8.5",
+ "pluto-eris",
+ "rand_core 0.6.4",
  "sha2 0.10.8",
  "subtle",
  "uint 0.9.5",
@@ -4741,50 +4776,26 @@ dependencies = [
 
 [[package]]
 name = "midnight-coin-structure"
-version = "0.4.0-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+version = "0.3.1"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=coin-structure-0.3#21cab4fa56281d3b1c97c1592f0469c9742f8b7f"
 dependencies = [
  "lazy_static",
  "midnight-storage",
- "midnight-transient-crypto",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "midnight-ledger"
-version = "4.0.0-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+version = "3.0.6"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=ledger-3.0.6#9132873c24ac7fed2522bca955a4288a476df923"
 dependencies = [
- "derive-where",
- "introspection",
- "introspection-derive",
- "is_sorted",
- "lazy_static",
- "midnight-coin-structure",
- "midnight-onchain-runtime",
- "midnight-zswap 4.0.0-beta.2 (git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2)",
- "rand 0.8.5",
- "rayon",
- "sha2 0.10.8",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "midnight-ledger"
-version = "4.0.0-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
-dependencies = [
- "derive-where",
  "futures",
- "introspection",
- "introspection-derive",
  "is_sorted",
  "lazy_static",
  "midnight-coin-structure",
  "midnight-onchain-runtime",
- "midnight-zswap 4.0.0-beta.2 (git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2)",
+ "midnight-zswap",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.11.27",
@@ -4815,22 +4826,18 @@ dependencies = [
 name = "midnight-node-ledger-helpers"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "futures",
  "hex",
- "itertools 0.12.1",
  "lazy_static",
  "log",
- "midnight-ledger 4.0.0-beta.2 (git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2)",
+ "midnight-ledger",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
- "tokio",
 ]
 
 [[package]]
 name = "midnight-onchain-runtime"
-version = "0.3.0-beta.4"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=onchain-runtime-0.3#c944262e514d9327bc9387edd6a718bb2f5756a0"
+version = "0.2.5"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=onchain-runtime-0.2#752d331932bd87fcad63ae30744bab05cd7a0f16"
 dependencies = [
  "derive-where",
  "enum_index",
@@ -4849,10 +4856,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-onchain-state"
-version = "0.3.0-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=onchain-runtime-0.3#c944262e514d9327bc9387edd6a718bb2f5756a0"
+version = "0.2.5"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=onchain-runtime-0.2#752d331932bd87fcad63ae30744bab05cd7a0f16"
 dependencies = [
- "derive-where",
  "hex",
  "midnight-coin-structure",
  "rand 0.8.5",
@@ -4862,10 +4868,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-onchain-vm"
-version = "0.3.0-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=onchain-runtime-0.3#c944262e514d9327bc9387edd6a718bb2f5756a0"
+version = "0.2.4"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=onchain-runtime-0.2#752d331932bd87fcad63ae30744bab05cd7a0f16"
 dependencies = [
- "derive-where",
  "hex",
  "konst",
  "midnight-coin-structure",
@@ -4879,7 +4884,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize"
 version = "0.3.2-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=serialize-0.3#64e46a74ed37ae05c91b36a3ccfc194042391248"
 dependencies = [
  "borsh",
  "crypto",
@@ -4893,7 +4898,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize-macros"
 version = "0.1.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=serialize-0.3#64e46a74ed37ae05c91b36a3ccfc194042391248"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -4902,8 +4907,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-storage"
-version = "0.4.0-beta.3"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=storage-0.4#c944262e514d9327bc9387edd6a718bb2f5756a0"
+version = "0.3.5"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=storage-0.3#21cab4fa56281d3b1c97c1592f0469c9742f8b7f"
 dependencies = [
  "archery",
  "crypto",
@@ -4913,47 +4918,45 @@ dependencies = [
  "lru 0.12.5",
  "midnight-base-crypto",
  "midnight-storage-macros",
+ "midnight-transient-crypto",
  "parking_lot 0.12.3",
  "rand 0.8.5",
  "serde",
  "sha2 0.10.8",
- "tempfile",
 ]
 
 [[package]]
 name = "midnight-storage-macros"
 version = "0.1.0"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=storage-0.4#c944262e514d9327bc9387edd6a718bb2f5756a0"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=storage-0.3#21cab4fa56281d3b1c97c1592f0469c9742f8b7f"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
- "syn 2.0.100",
+ "syn 1.0.109",
 ]
 
 [[package]]
 name = "midnight-transient-crypto"
-version = "0.5.0-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+version = "0.4.2"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=transient-crypto-0.4#460717395b6385b6b4c7060ed5dadf8971c597b5"
 dependencies = [
  "anyhow",
- "blstrs",
  "borsh",
- "const-hex",
- "derive-where",
  "ff",
  "flate2",
  "group",
+ "halo2_gadgets",
  "halo2_proofs",
+ "hex",
  "k256",
  "lazy_static",
- "lru 0.12.5",
  "midnight-base-crypto",
  "midnight-base-crypto-derive 0.4.3-beta.2 (git+https://github.com/input-output-hk/midnight-ledger-prototype)",
  "midnight-circuits",
  "midnight-serialize",
- "midnight-storage",
  "pasta_curves",
  "paste",
+ "pluto-eris",
  "rand 0.8.5",
  "serde",
  "serde_bytes",
@@ -4965,26 +4968,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-zswap"
-version = "4.0.0-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
+version = "3.0.6"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=ledger-3.0.6#9132873c24ac7fed2522bca955a4288a476df923"
 dependencies = [
- "derive-where",
- "is_sorted",
- "lazy_static",
- "midnight-base-crypto",
- "midnight-coin-structure",
- "midnight-onchain-runtime",
- "midnight-transient-crypto",
- "rand 0.8.5",
- "tracing",
-]
-
-[[package]]
-name = "midnight-zswap"
-version = "4.0.0-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
-dependencies = [
- "derive-where",
  "futures",
  "is_sorted",
  "lazy_static",
@@ -5353,12 +5339,11 @@ dependencies = [
  "glob",
  "hex",
  "hmac 0.12.1",
- "itertools 0.12.1",
  "lazy_static",
  "lettre",
  "libc",
  "log",
- "midnight-ledger 4.0.0-beta.2 (git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2)",
+ "midnight-ledger",
  "midnight-node-ledger",
  "midnight-node-ledger-helpers",
  "midnight-serialize",
@@ -5638,6 +5623,29 @@ name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
+
+[[package]]
+name = "pluto-eris"
+version = "0.1.0"
+source = "git+https://github.com/input-output-hk/pluto_eris?rev=c97a995#c97a995002e3f8950784b10e2b1491110572466b"
+dependencies = [
+ "blake2b_simd",
+ "ethnum",
+ "ff",
+ "getrandom 0.2.16",
+ "group",
+ "halo2curves",
+ "hex",
+ "lazy_static",
+ "pasta_curves",
+ "paste",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_arrays",
+ "static_assertions",
+ "subtle",
+]
 
 [[package]]
 name = "polkavm-common"
@@ -7126,6 +7134,20 @@ name = "similar"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
+dependencies = [
+ "bstr",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "similar-asserts"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5b441962c817e33508847a22bd82f03a30cff43642dc2fae8b050566121eb9a"
+dependencies = [
+ "console",
+ "similar",
+]
 
 [[package]]
 name = "siphasher"
@@ -7286,7 +7308,7 @@ dependencies = [
 [[package]]
 name = "sp-api"
 version = "34.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "docify",
  "log",
@@ -7303,7 +7325,7 @@ dependencies = [
 [[package]]
 name = "sp-api-proc-macro"
 version = "20.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "Inflector",
  "blake2",
@@ -7317,7 +7339,7 @@ dependencies = [
 [[package]]
 name = "sp-application-crypto"
 version = "38.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -7329,7 +7351,7 @@ dependencies = [
 [[package]]
 name = "sp-arithmetic"
 version = "26.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "docify",
  "integer-sqrt",
@@ -7343,7 +7365,7 @@ dependencies = [
 [[package]]
 name = "sp-core"
 version = "34.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "array-bytes",
  "bitflags 1.3.2",
@@ -7366,7 +7388,7 @@ dependencies = [
  "schnorrkel",
  "secrecy",
  "serde",
- "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4)",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2)",
  "sp-debug-derive",
  "sp-runtime-interface",
  "sp-std",
@@ -7393,7 +7415,7 @@ dependencies = [
 [[package]]
 name = "sp-crypto-hashing"
 version = "0.1.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -7406,17 +7428,17 @@ dependencies = [
 [[package]]
 name = "sp-crypto-hashing-proc-macro"
 version = "0.1.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "quote 1.0.40",
- "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4)",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2)",
  "syn 2.0.100",
 ]
 
 [[package]]
 name = "sp-debug-derive"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -7426,7 +7448,7 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.29.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -7435,8 +7457,8 @@ dependencies = [
 
 [[package]]
 name = "sp-genesis-builder"
-version = "0.15.1"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+version = "0.15.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -7448,7 +7470,7 @@ dependencies = [
 [[package]]
 name = "sp-inherents"
 version = "34.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
@@ -7458,7 +7480,7 @@ dependencies = [
 [[package]]
 name = "sp-io"
 version = "38.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "bytes",
  "docify",
@@ -7466,7 +7488,7 @@ dependencies = [
  "polkavm-derive",
  "rustversion",
  "sp-core",
- "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4)",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2)",
  "sp-externalities",
  "sp-runtime-interface",
  "sp-tracing",
@@ -7477,7 +7499,7 @@ dependencies = [
 [[package]]
 name = "sp-metadata-ir"
 version = "0.7.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "frame-metadata 16.0.0",
  "parity-scale-codec",
@@ -7486,8 +7508,8 @@ dependencies = [
 
 [[package]]
 name = "sp-runtime"
-version = "39.0.5"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+version = "39.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "docify",
  "either",
@@ -7511,7 +7533,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "28.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -7530,7 +7552,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "18.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "Inflector",
  "expander",
@@ -7542,8 +7564,8 @@ dependencies = [
 
 [[package]]
 name = "sp-staking"
-version = "36.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+version = "34.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
@@ -7555,12 +7577,12 @@ dependencies = [
 [[package]]
 name = "sp-std"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 
 [[package]]
 name = "sp-storage"
 version = "21.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "impl-serde 0.4.0",
  "parity-scale-codec",
@@ -7571,8 +7593,8 @@ dependencies = [
 
 [[package]]
 name = "sp-tracing"
-version = "17.0.1"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+version = "17.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -7582,7 +7604,7 @@ dependencies = [
 [[package]]
 name = "sp-version"
 version = "37.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -7595,7 +7617,7 @@ dependencies = [
 [[package]]
 name = "sp-version-proc-macro"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "parity-scale-codec",
  "proc-macro2",
@@ -7605,8 +7627,8 @@ dependencies = [
 
 [[package]]
 name = "sp-wasm-interface"
-version = "21.0.1"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+version = "21.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
@@ -7615,7 +7637,7 @@ dependencies = [
 [[package]]
 name = "sp-weights"
 version = "31.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "bounded-collections",
  "parity-scale-codec",
@@ -7783,7 +7805,7 @@ dependencies = [
 [[package]]
 name = "substrate-bip39"
 version = "0.6.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2409-4#c455194a2ae2f613c1c671e00dbf397b83ed8171"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2407-2#d6f482d5593c3e791d7b3e92e95aa3c734e23794"
 dependencies = [
  "hmac 0.12.1",
  "pbkdf2",
@@ -8710,6 +8732,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+
+[[package]]
 name = "unicode-xid"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9551,6 +9579,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "yansi"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
+
+[[package]]
 name = "yap"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9710,13 +9744,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "midnight-storage"
-version = "0.4.0-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
-
-[[patch.unused]]
-name = "midnight-onchain-runtime"
-version = "0.3.0-beta.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger-prototype?tag=ledger-4.0.0-beta.2#bff2c3f6ea8e8170751ac6133d83bf26a3abfbf8"
