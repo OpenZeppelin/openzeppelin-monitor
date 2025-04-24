@@ -4,30 +4,18 @@
 //! via incoming webhooks, supporting message templates with variable substitution.
 
 use async_trait::async_trait;
-use reqwest::Client;
 use std::collections::HashMap;
 
 use crate::{
 	models::TriggerTypeConfig,
-	services::notification::{NotificationError, Notifier},
+	services::notification::{NotificationError, Notifier, WebhookConfig, WebhookNotifier},
 };
 
 /// Implementation of Telegram notifications via webhooks
 pub struct TelegramNotifier {
-	/// Telegram bot token
-	token: String,
-	/// Telegram chat ID
-	chat_id: String,
+	inner: WebhookNotifier,
 	/// Disable web preview
 	disable_web_preview: bool,
-	/// Title to display in the message
-	title: String,
-	/// Message template with variable placeholders
-	body_template: String,
-	/// HTTP client for webhook requests
-	client: Client,
-	/// Base URL for the Telegram API
-	base_url: String,
 }
 
 impl TelegramNotifier {
@@ -47,14 +35,32 @@ impl TelegramNotifier {
 		title: String,
 		body_template: String,
 	) -> Result<Self, Box<NotificationError>> {
+		let url = format!(
+			"{}/bot{}/sendMessage",
+			base_url.unwrap_or("https://api.telegram.org".to_string()),
+			token
+		);
+
+		// Set up initial URL parameters
+		let mut url_params = HashMap::new();
+		url_params.insert("chat_id".to_string(), chat_id);
+		url_params.insert("parse_mode".to_string(), "markdown".to_string());
+
+		let mut headers = HashMap::new();
+		headers.insert("Content-Type".to_string(), "application/json".to_string());
+
 		Ok(Self {
-			base_url: base_url.unwrap_or("https://api.telegram.org".to_string()),
-			token,
-			chat_id,
+			inner: WebhookNotifier::new(WebhookConfig {
+				url,
+				url_params: Some(url_params),
+				title,
+				body_template,
+				method: Some("GET".to_string()),
+				secret: None,
+				headers: Some(headers),
+				payload_fields: None,
+			})?,
 			disable_web_preview: disable_web_preview.unwrap_or(false),
-			title,
-			body_template,
-			client: Client::new(),
 		})
 	}
 
@@ -66,14 +72,8 @@ impl TelegramNotifier {
 	/// # Returns
 	/// * `String` - Formatted message with variables replaced
 	pub fn format_message(&self, variables: &HashMap<String, String>) -> String {
-		let mut message = self.body_template.clone();
-		for (key, value) in variables {
-			message = message.replace(&format!("${{{}}}", key), value);
-		}
-		// Markdown formatting for Telegram
-		// Double asterisks for bold text
-		// Double whitespaces for new line
-		format!("*{}* \n\n{}", self.title, message)
+		let message = self.inner.format_message(variables);
+		format!("*{}* \n\n{}", self.inner.title, message)
 	}
 
 	/// Creates a Telegram notifier from a trigger configuration
@@ -90,29 +90,32 @@ impl TelegramNotifier {
 				chat_id,
 				message,
 				disable_web_preview,
-			} => Some(Self {
-				base_url: "https://api.telegram.org".to_string(),
-				token: token.clone(),
-				chat_id: chat_id.clone(),
-				disable_web_preview: disable_web_preview.unwrap_or(false),
-				title: message.title.clone(),
-				body_template: message.body.clone(),
-				client: Client::new(),
-			}),
+			} => {
+				let mut url_params = HashMap::new();
+				url_params.insert("chat_id".to_string(), chat_id.clone());
+				url_params.insert("parse_mode".to_string(), "markdown".to_string());
+
+				WebhookNotifier::new(WebhookConfig {
+					url: format!("https://api.telegram.org/bot{}/sendMessage", token),
+					url_params: Some(url_params),
+					title: message.title.clone(),
+					body_template: message.body.clone(),
+					method: Some("GET".to_string()),
+					secret: None,
+					headers: Some(HashMap::from([(
+						"Content-Type".to_string(),
+						"application/json".to_string(),
+					)])),
+					payload_fields: None,
+				})
+				.ok()
+				.map(|inner| Self {
+					inner,
+					disable_web_preview: disable_web_preview.unwrap_or(false),
+				})
+			}
 			_ => None,
 		}
-	}
-
-	pub fn construct_url(&self, message: &str) -> String {
-		format!(
-			"{}/bot{}/sendMessage?text={}&chat_id={}&parse_mode=markdown&\
-			 disable_web_page_preview={}",
-			self.base_url,
-			self.token,
-			urlencoding::encode(message),
-			self.chat_id,
-			self.disable_web_preview
-		)
 	}
 }
 
@@ -126,26 +129,27 @@ impl Notifier for TelegramNotifier {
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
-		let url = self.construct_url(message);
+		// Add message and disable_web_preview to URL parameters
+		let mut url_params = self.inner.url_params.clone().unwrap_or_default();
+		url_params.insert("text".to_string(), message.to_string());
+		url_params.insert(
+			"disable_web_page_preview".to_string(),
+			self.disable_web_preview.to_string(),
+		);
 
-		let response = match self.client.get(&url).send().await {
-			Ok(resp) => resp,
-			Err(e) => {
-				return Err(anyhow::anyhow!(
-					"Failed to send Telegram notification: {}",
-					e
-				));
-			}
-		};
+		// Create a new WebhookNotifier with updated URL parameters
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: self.inner.url.clone(),
+			url_params: Some(url_params),
+			title: self.inner.title.clone(),
+			body_template: self.inner.body_template.clone(),
+			method: Some("GET".to_string()),
+			secret: None,
+			headers: self.inner.headers.clone(),
+			payload_fields: None,
+		})?;
 
-		if !response.status().is_success() {
-			return Err(anyhow::anyhow!(
-				"Telegram webhook returned error status: {}",
-				response.status()
-			));
-		}
-
-		Ok(())
+		notifier.notify_with_payload(message, HashMap::new()).await
 	}
 }
 
@@ -217,17 +221,6 @@ mod tests {
 	}
 
 	////////////////////////////////////////////////////////////
-	// construct_url tests
-	////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_construct_url() {
-		let notifier = create_test_notifier("Test message");
-		let url = notifier.construct_url("Test message");
-		assert_eq!(url, "https://api.telegram.org/bottest-token/sendMessage?text=Test%20message&chat_id=test-chat-id&parse_mode=markdown&disable_web_page_preview=true");
-	}
-
-	////////////////////////////////////////////////////////////
 	// from_config tests
 	////////////////////////////////////////////////////////////
 
@@ -239,10 +232,12 @@ mod tests {
 		assert!(notifier.is_some());
 
 		let notifier = notifier.unwrap();
-		assert_eq!(notifier.token, "test-token");
-		assert_eq!(notifier.chat_id, "test-chat-id");
+		assert_eq!(
+			notifier.inner.url,
+			"https://api.telegram.org/bottest-token/sendMessage"
+		);
 		assert!(notifier.disable_web_preview);
-		assert_eq!(notifier.body_template, "Test message ${value}");
+		assert_eq!(notifier.inner.body_template, "Test message ${value}");
 	}
 
 	////////////////////////////////////////////////////////////
@@ -253,6 +248,15 @@ mod tests {
 	async fn test_notify_failure() {
 		let notifier = create_test_notifier("Test message");
 		let result = notifier.notify("Test message").await;
+		assert!(result.is_err());
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_failure() {
+		let notifier = create_test_notifier("Test message");
+		let result = notifier
+			.notify_with_payload("Test message", HashMap::new())
+			.await;
 		assert!(result.is_err());
 	}
 }

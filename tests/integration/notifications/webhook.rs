@@ -3,7 +3,7 @@ use openzeppelin_monitor::{
 		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch,
 		NotificationMessage, TransactionType, Trigger, TriggerType, TriggerTypeConfig,
 	},
-	services::notification::{NotificationService, Notifier, WebhookNotifier},
+	services::notification::{NotificationService, Notifier, WebhookConfig, WebhookNotifier},
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -50,14 +50,16 @@ async fn test_webhook_notification_success() {
 		.create_async()
 		.await;
 
-	let notifier = WebhookNotifier::new(
-		server.url(),
-		"Test Alert".to_string(),
-		"Test message with value ${value}".to_string(),
-		Some("GET".to_string()),
-		None,
-		None,
-	)
+	let notifier = WebhookNotifier::new(WebhookConfig {
+		url: server.url(),
+		url_params: None,
+		title: "Test Alert".to_string(),
+		body_template: "Test message with value ${value}".to_string(),
+		method: Some("GET".to_string()),
+		secret: None,
+		headers: None,
+		payload_fields: None,
+	})
 	.unwrap();
 
 	// Prepare and send test message
@@ -82,14 +84,16 @@ async fn test_webhook_notification_failure() {
 		.create_async()
 		.await;
 
-	let notifier = WebhookNotifier::new(
-		server.url(),
-		"Test Alert".to_string(),
-		"Test message".to_string(),
-		Some("GET".to_string()),
-		None,
-		None,
-	)
+	let notifier = WebhookNotifier::new(WebhookConfig {
+		url: server.url(),
+		url_params: None,
+		title: "Test Alert".to_string(),
+		body_template: "Test message".to_string(),
+		method: Some("GET".to_string()),
+		secret: None,
+		headers: None,
+		payload_fields: None,
+	})
 	.unwrap();
 
 	let result = notifier.notify("Test message").await;
@@ -205,4 +209,45 @@ async fn test_notification_service_webhook_execution_invalid_config() {
 		.unwrap_err()
 		.to_string()
 		.contains("Invalid webhook configuration"));
+}
+
+#[tokio::test]
+async fn test_notify_with_payload_merges_default_fields() {
+	let mut server = mockito::Server::new_async().await;
+	let expected_payload = json!({
+		"default_field": "default_value",
+		"custom_field": "custom_value"
+	});
+
+	let mock = server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(expected_payload))
+		.with_status(200)
+		.create_async()
+		.await;
+
+	let notifier = WebhookNotifier::new(WebhookConfig {
+		url: server.url(),
+		url_params: None,
+		title: "Test".to_string(),
+		body_template: "Test message".to_string(),
+		method: None,
+		secret: None,
+		headers: None,
+		payload_fields: Some(HashMap::from([(
+			"default_field".to_string(),
+			serde_json::json!("default_value"),
+		)])),
+	})
+	.unwrap();
+
+	let mut payload = HashMap::new();
+	payload.insert(
+		"custom_field".to_string(),
+		serde_json::json!("custom_value"),
+	);
+
+	let result = notifier.notify_with_payload("Test message", payload).await;
+	assert!(result.is_ok());
+	mock.assert();
 }

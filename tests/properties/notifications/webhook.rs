@@ -5,7 +5,7 @@
 //! The tests ensure that the Webhook notification system handles template variables correctly
 //! and produces consistent, well-formed output across various input combinations.
 
-use openzeppelin_monitor::services::notification::WebhookNotifier;
+use openzeppelin_monitor::services::notification::{WebhookConfig, WebhookNotifier};
 use proptest::{prelude::*, test_runner::Config};
 use std::collections::HashMap;
 
@@ -33,14 +33,17 @@ proptest! {
 		template in "[a-zA-Z0-9 ${}_]{1,100}",
 		vars in template_variables_strategy()
 	) {
-			let notifier = WebhookNotifier::new(
-			"https://webhook.com/test".to_string(),
-			"Test".to_string(),
-			template.clone(),
-			None,
-			None,
-			None,
-		).unwrap();
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: "https://webhook.com/test".to_string(),
+			url_params: None,
+			title: "Test".to_string(),
+			body_template: template.clone(),
+			method: None,
+			secret: None,
+			headers: None,
+			payload_fields: None,
+		})
+		.unwrap();
 
 		let first_pass = notifier.format_message(&vars);
 		let second_pass = notifier.format_message(&vars);
@@ -59,14 +62,17 @@ proptest! {
 		template in "[a-zA-Z0-9 ]{0,50}\\$\\{[a-z_]+\\}[a-zA-Z0-9 ]{0,50}",
 		vars in template_variables_strategy()
 	) {
-		let notifier = WebhookNotifier::new(
-			"https://webhook.com/test".to_string(),
-			"Test".to_string(),
-			template.clone(),
-			None,
-			None,
-			None,
-		).unwrap();
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: "https://webhook.com/test".to_string(),
+			url_params: None,
+			title: "Test".to_string(),
+			body_template: template.clone(),
+			method: None,
+			secret: None,
+			headers: None,
+			payload_fields: None,
+		})
+		.unwrap();
 
 		let formatted = notifier.format_message(&vars);
 
@@ -84,14 +90,17 @@ proptest! {
 	fn test_notification_empty_variables(
 		template in "[a-zA-Z0-9 ${}_]{1,100}"
 	) {
-		let notifier = WebhookNotifier::new(
-			"https://webhook.com/test".to_string(),
-			"Test".to_string(),
-			template.clone(),
-			None,
-			None,
-			None,
-		).unwrap();
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: "https://webhook.com/test".to_string(),
+			url_params: None,
+			title: "Test".to_string(),
+			body_template: template.clone(),
+			method: None,
+			secret: None,
+			headers: None,
+			payload_fields: None,
+		})
+		.unwrap();
 
 		let empty_vars = HashMap::new();
 		let formatted = notifier.format_message(&empty_vars);

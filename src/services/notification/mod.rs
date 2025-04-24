@@ -24,7 +24,7 @@ pub use error::NotificationError;
 pub use script::ScriptNotifier;
 pub use slack::SlackNotifier;
 pub use telegram::TelegramNotifier;
-pub use webhook::WebhookNotifier;
+pub use webhook::{WebhookConfig, WebhookNotifier};
 
 /// Interface for notification implementations
 ///
@@ -40,6 +40,23 @@ pub trait Notifier {
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), anyhow::Error>;
+
+	/// Sends a notification with custom payload fields
+	///
+	/// # Arguments
+	/// * `message` - The formatted message to send
+	/// * `payload_fields` - Additional fields to include in the payload
+	///
+	/// # Returns
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify_with_payload(
+		&self,
+		message: &str,
+		_payload_fields: HashMap<String, serde_json::Value>,
+	) -> Result<(), anyhow::Error> {
+		// Default implementation just calls notify
+		self.notify(message).await
+	}
 }
 
 /// Interface for executing scripts

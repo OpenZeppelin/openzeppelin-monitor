@@ -40,14 +40,14 @@ fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
 async fn test_discord_notification_success() {
 	// Setup async mock server
 	let mut server = mockito::Server::new_async().await;
+	let expected_json_payload = json!({
+		"content": "*Test Alert*\n\nTest message with value 42",
+		"avatar_url": null,
+		"username": null,
+	});
 	let mock = server
 		.mock("POST", "/")
-		.match_body(mockito::Matcher::Json(json!({
-			"content": "*Test Alert*\n\nTest message with value 42",
-			"username": null,
-			"avatar_url": null,
-			"embeds": null,
-		})))
+		.match_body(mockito::Matcher::Json(expected_json_payload))
 		.with_status(200)
 		.create_async()
 		.await;
