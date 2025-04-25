@@ -46,9 +46,6 @@ impl TelegramNotifier {
 		url_params.insert("chat_id".to_string(), chat_id);
 		url_params.insert("parse_mode".to_string(), "markdown".to_string());
 
-		let mut headers = HashMap::new();
-		headers.insert("Content-Type".to_string(), "application/json".to_string());
-
 		Ok(Self {
 			inner: WebhookNotifier::new(WebhookConfig {
 				url,
@@ -57,7 +54,7 @@ impl TelegramNotifier {
 				body_template,
 				method: Some("GET".to_string()),
 				secret: None,
-				headers: Some(headers),
+				headers: None,
 				payload_fields: None,
 			})?,
 			disable_web_preview: disable_web_preview.unwrap_or(false),
