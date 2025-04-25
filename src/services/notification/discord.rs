@@ -81,9 +81,6 @@ impl DiscordNotifier {
 		title: String,
 		body_template: String,
 	) -> Result<Self, Box<NotificationError>> {
-		let mut headers = HashMap::new();
-		headers.insert("Content-Type".to_string(), "application/json".to_string());
-
 		// Set default Discord payload fields
 		let mut payload_fields = HashMap::new();
 		payload_fields.insert("username".to_string(), serde_json::json!(null));
@@ -97,7 +94,7 @@ impl DiscordNotifier {
 				body_template,
 				method: Some("POST".to_string()),
 				secret: None,
-				headers: Some(headers),
+				headers: None,
 				payload_fields: Some(payload_fields),
 			})?,
 		})

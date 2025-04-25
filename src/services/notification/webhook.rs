@@ -81,6 +81,10 @@ impl WebhookNotifier {
 	/// # Returns
 	/// * `Result<Self, Box<NotificationError>>` - Notifier instance if config is valid
 	pub fn new(config: WebhookConfig) -> Result<Self, Box<NotificationError>> {
+		let mut headers = config.headers.unwrap_or_default();
+		if !headers.contains_key("Content-Type") {
+			headers.insert("Content-Type".to_string(), "application/json".to_string());
+		}
 		Ok(Self {
 			url: config.url,
 			url_params: config.url_params,
@@ -89,7 +93,7 @@ impl WebhookNotifier {
 			client: Client::new(),
 			method: Some(config.method.unwrap_or("POST".to_string())),
 			secret: config.secret,
-			headers: config.headers,
+			headers: Some(headers),
 			payload_fields: config.payload_fields,
 		})
 	}
@@ -219,6 +223,8 @@ impl Notifier for WebhookNotifier {
 		} else {
 			Method::POST
 		};
+
+		// Add default headers
 		let mut headers = HeaderMap::new();
 		headers.insert(
 			HeaderName::from_static("content-type"),
