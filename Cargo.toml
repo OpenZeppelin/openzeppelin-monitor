@@ -37,6 +37,7 @@ lettre = "0.11.11"
 libc = "0.2"
 log = "0.4"
 
+
 midnight-ledger = { git = "https://github.com/input-output-hk/midnight-ledger-prototype", package = "midnight-ledger", tag = "ledger-3.0.6", features = [
     "transaction-construction",
     "proving",
@@ -45,9 +46,12 @@ midnight-ledger = { git = "https://github.com/input-output-hk/midnight-ledger-pr
     "test-utilities",
 ] }
 midnight-serialize = { git = "https://github.com/input-output-hk/midnight-ledger-prototype", package = "midnight-serialize", tag = "serialize-0.3" }
+
+#Override itertools for midnight-node-ledger-helpers
+# itertools = "0.12.0"
 # We use the local path for the midnight-node-ledger-helpers and midnight-node-ledger until a _better_ stable version is released
-midnight-node-ledger-helpers = { path = "../../midnightntwrk/midnight-node/ledger/helpers", package = "midnight-node-ledger-helpers", default-features = false }
 midnight-node-ledger = { path = "../../midnightntwrk/midnight-node/ledger", package = "midnight-node-ledger", default-features = false }
+midnight-node-ledger-helpers = { path = "../../midnightntwrk/midnight-node/ledger/helpers", package = "midnight-node-ledger-helpers", default-features = false }
 subxt = "0.41.0"
 
 prometheus = "0.14"
@@ -72,6 +76,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 url = "2.5"
 urlencoding = "2.1.3"
 uuid = "1.15.0"
+
 
 [dev-dependencies]
 cargo-llvm-cov = "0.6"

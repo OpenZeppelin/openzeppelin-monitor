@@ -4,15 +4,17 @@
 //! - Transaction matching based on conditions
 //! - Function call detection
 
+#![allow(clippy::result_large_err)]
+
 use async_trait::async_trait;
-use serde_json::Value;
+use midnight_serialize::NetworkId;
 use std::{collections::VecDeque, marker::PhantomData};
 use tracing::instrument;
 
 use crate::{
 	models::{
-		BlockType, EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap, EVMReceiptLog,
-		EVMTransaction, EVMTransactionReceipt, EventCondition, FunctionCondition, Monitor,
+		BlockType, EventCondition, FunctionCondition, MidnightBlock, MidnightMatchArguments,
+		MidnightMatchParamEntry, MidnightRpcTransactionEnum, MidnightTransaction, Monitor,
 		MonitorMatch, Network, TransactionCondition, TransactionStatus,
 	},
 	services::{
@@ -40,7 +42,7 @@ impl<T> MidnightBlockFilter<T> {
 	pub fn find_matching_transaction(
 		&self,
 		_tx_status: &TransactionStatus,
-		_transaction: &EVMTransaction,
+		_transaction: &MidnightTransaction,
 		_monitor: &Monitor,
 		_matched_transactions: &mut [TransactionCondition],
 	) {
@@ -58,30 +60,29 @@ impl<T> MidnightBlockFilter<T> {
 	/// * `matched_on_args` - Arguments from matched function calls
 	pub fn find_matching_functions_for_transaction(
 		&self,
-		_transaction: &EVMTransaction,
+		_monitored_addresses: &[String],
+		_transaction: &MidnightTransaction,
 		_monitor: &Monitor,
 		_matched_functions: &mut [FunctionCondition],
-		_matched_on_args: &mut EVMMatchArguments,
+		_matched_on_args: &mut MidnightMatchArguments,
 	) {
 	}
 
-	/// Finds events in a transaction receipt that match the monitor's conditions.
+	/// Finds events in a transaction that match the monitor's conditions.
 	///
-	/// Processes event logs from the transaction receipt and matches them against
+	/// Processes event logs from the transaction and matches them against
 	/// the monitor's event conditions.
 	///
 	/// # Arguments
-	/// * `receipt` - Transaction receipt containing event logs
 	/// * `monitor` - Monitor containing event match conditions
 	/// * `matched_events` - Vector to store matching events
 	/// * `matched_on_args` - Arguments from matched events
 	/// * `involved_addresses` - Addresses involved in matched events
 	pub async fn find_matching_events_for_transaction(
 		&self,
-		_receipt: &EVMTransactionReceipt,
 		_monitor: &Monitor,
 		_matched_events: &mut [EventCondition],
-		_matched_on_args: &mut EVMMatchArguments,
+		_matched_on_args: &mut MidnightMatchArguments,
 		_involved_addresses: &mut [String],
 	) {
 	}
@@ -97,25 +98,33 @@ impl<T> MidnightBlockFilter<T> {
 	pub fn evaluate_expression(
 		&self,
 		_expression: &str,
-		_args: &Option<Vec<EVMMatchParamEntry>>,
+		_args: &Option<Vec<MidnightMatchParamEntry>>,
 	) -> bool {
 		false
 	}
 
-	/// Decodes event logs using the provided ABI.
-	///
-	/// # Arguments
-	/// * `abi` - Contract ABI for decoding
-	/// * `log` - Event log to decode
-	///
-	/// # Returns
-	/// Option containing EVMMatchParamsMap with decoded event data if successful
-	pub async fn decode_events(
+	pub fn deserialize_transactions(
 		&self,
-		_abi: &Value,
-		_log: &EVMReceiptLog,
-	) -> Option<EVMMatchParamsMap> {
-		None
+		block: &MidnightBlock,
+		network_id: NetworkId,
+	) -> Result<Vec<MidnightTransaction>, FilterError> {
+		let mut txs = Vec::<MidnightTransaction>::new();
+		let tx_index = block.transactions_index.iter().rev();
+		for (hash, body) in tx_index {
+			let (_hash, tx) = match parse_tx_index_item(hash, body, network_id) {
+				Ok(res) => res,
+				Err(e) => {
+					tracing::error!("Error deserializing transaction: {:?}", e);
+					return Err(FilterError::network_error(
+						"Error deserializing transaction",
+						Some(e.into()),
+						None,
+					));
+				}
+			};
+			txs.push(MidnightTransaction::from(tx));
+		}
+		Ok(txs)
 	}
 }
 
@@ -132,13 +141,13 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 	///
 	/// # Returns
 	/// Vector of matches found in the block
-	#[instrument(skip_all, fields(network = %_network.slug))]
+	#[instrument(skip_all, fields(network = %network.slug))]
 	async fn filter_block(
 		&self,
 		client: &T,
-		_network: &Network,
+		network: &Network,
 		block: &BlockType,
-		_monitors: &[Monitor],
+		monitors: &[Monitor],
 	) -> Result<Vec<MonitorMatch>, FilterError> {
 		let midnight_block = match block {
 			BlockType::Midnight(block) => block,
@@ -151,6 +160,14 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 			}
 		};
 
+		println!("midnight_block: {:#?}", midnight_block);
+
+		let chain_type = client.get_chain_type().await?;
+		let network_id = map_chain_type(&chain_type);
+
+		let transactions = self.deserialize_transactions(midnight_block, network_id)?;
+		println!("transactions: {:#?}", transactions);
+
 		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
 
 		// 1. Get transactions from the block
@@ -158,35 +175,60 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		// 3. Find matching transactions for each monitor (transactions and functions). Excluding events since they are not supported yet.
 		// 4. Return matches
 
-		let transactions = midnight_block.transactions_index.clone();
-		let mut txs = VecDeque::new();
-
-		// Get chain type and map to network id
-		let chain_type = client.get_chain_type().await?;
-		let network_id = map_chain_type(&chain_type);
-
-		// TransactionIndex includes only successful midnight transactions
-		// See: midnightrpc.rs in node crate
-		// We reverse here to create a list of youngest to oldest txs, then push front
-		for (hash, body) in transactions.into_iter().rev() {
-			let (hash, tx) = match parse_tx_index_item(&hash, &body, network_id) {
-				Ok(res) => res,
-				Err(e) => {
-					println!("error at {}", midnight_block.number().unwrap_or(0));
-					println!("attempted to decode tx {}", &hash);
-					println!("{:?}", e);
-					return Err(FilterError::internal_error(
-						"Failed to parse transaction",
-						Some(e.into()),
-						None,
-					));
+		let transactions: VecDeque<_> = midnight_block
+			.body
+			.iter()
+			.filter_map(|entry| match entry {
+				MidnightRpcTransactionEnum::MidnightTransaction { tx, .. } => {
+					Some(MidnightTransaction::from(tx.clone()))
 				}
-			};
-			// Push transaction and hash to txs
-			txs.push_front((hash, tx));
+				_ => None,
+			})
+			.collect();
+
+		if transactions.is_empty() {
+			tracing::debug!(
+				"No transactions found for block {}",
+				midnight_block.number().unwrap_or(0)
+			);
+			return Ok(vec![]);
 		}
 
-		println!("transaction: {:?}", txs);
+		let _matching_results = Vec::<MonitorMatch>::new();
+		tracing::debug!("Processing {} monitor(s)", monitors.len());
+
+		for monitor in monitors {
+			tracing::debug!("Processing monitor: {:?}", monitor.name);
+			let monitored_addresses: Vec<String> = monitor
+				.addresses
+				.iter()
+				.map(|a| a.address.clone())
+				.collect();
+
+			println!("monitored_addresses: {:?}", monitored_addresses);
+
+			for transaction in transactions.iter() {
+				let _matched_transactions = Vec::<TransactionCondition>::new();
+				let _matched_functions = Vec::<FunctionCondition>::new();
+				let _matched_events = Vec::<EventCondition>::new();
+				let _matched_on_args = MidnightMatchArguments {
+					events: Some(Vec::new()),
+					functions: Some(Vec::new()),
+				};
+
+				tracing::debug!("Processing transaction: {:?}", transaction.hash());
+
+				// self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
+
+				// self.find_matching_functions_for_transaction(
+				// 	&monitored_addresses,
+				// 	transaction,
+				// 	monitor,
+				// 	&mut matched_functions,
+				// 	&mut matched_on_args,
+				// );
+			}
+		}
 
 		Ok(vec![])
 	}

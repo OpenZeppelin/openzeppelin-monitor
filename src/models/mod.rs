@@ -2,7 +2,7 @@
 //!
 //! This module contains all the core data structures used throughout the application:
 //!
-//! - `blockchain`: Platform-specific implementations for different blockchains (EVM, Stellar)
+//! - `blockchain`: Platform-specific implementations for different blockchains
 //! - `config`: Configuration loading and validation
 //! - `core`: Core domain models (Monitor, Network, Trigger)
 
@@ -26,7 +26,8 @@ pub use blockchain::stellar::{
 
 pub use blockchain::midnight::{
 	MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightChainType, MidnightEvent,
-	MidnightMonitorMatch, MidnightRpcBlock, MidnightRpcTransactionEnum, MidnightTransaction,
+	MidnightMatchArguments, MidnightMatchParamEntry, MidnightMatchParamsMap, MidnightMonitorMatch,
+	MidnightOperation, MidnightRpcBlock, MidnightRpcTransactionEnum, MidnightTransaction,
 };
 
 // Re-export core types

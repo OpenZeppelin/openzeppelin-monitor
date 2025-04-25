@@ -19,6 +19,7 @@ pub fn hash_to_str(h: H256) -> String {
 }
 
 /// Parse a transaction index item
+#[allow(dead_code)]
 pub fn parse_tx_index_item(
 	hash: &str,
 	body: &str,
@@ -38,6 +39,14 @@ pub fn parse_tx_index_item(
 
 	let body =
 		hex::decode(body_str).map_err(|e| anyhow::anyhow!("TransactionBodyDecodeError: {}", e))?;
+
+	// let api = midnight_node_ledger::ledger_v2::api::new(network_id);
+	// let decoded_with_api = midnight_node_ledger::ledger_v2::Bridge::get_decoded_transaction(
+	// 	network_id,
+	// 	body.as_slice(),
+	// );
+	// let decoded_with_api = api.deserialize::<Tx>(body.as_slice());
+	// println!("decoded_with_api: {:#?}", decoded_with_api);
 
 	let tx = deserialize(body.as_slice(), network_id)
 		.map_err(|e| anyhow::anyhow!("TransactionDeserializeError: {}", e))?;

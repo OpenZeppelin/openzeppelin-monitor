@@ -14,9 +14,13 @@ pub use block::{
 	RpcBlock as MidnightRpcBlock,
 };
 pub use event::Event as MidnightEvent;
-pub use monitor::MonitorMatch as MidnightMonitorMatch;
+pub use monitor::{
+	MatchArguments as MidnightMatchArguments, MatchParamEntry as MidnightMatchParamEntry,
+	MatchParamsMap as MidnightMatchParamsMap, MonitorMatch as MidnightMonitorMatch,
+};
 pub use transaction::{
-	RpcTransaction as MidnightRpcTransactionEnum, Transaction as MidnightTransaction,
+	Operation as MidnightOperation, RpcTransaction as MidnightRpcTransactionEnum,
+	Transaction as MidnightTransaction,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]

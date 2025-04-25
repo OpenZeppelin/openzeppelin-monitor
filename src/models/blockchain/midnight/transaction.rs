@@ -3,9 +3,13 @@
 //! Note: These structures are based on the Midnight RPC implementation:
 //! <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs>
 
+use alloy::hex::ToHexExt;
+use midnight_ledger::structure::{Proofish, TransactionIdentifier};
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
-use serde::{Deserialize, Serialize};
+// TODO: This import and transaction type might change in the future
+use midnight_node_ledger_helpers::{ContractAction, Tx};
 
 /// Represents a Midnight RPC transaction Enum
 ///
@@ -61,18 +65,96 @@ pub struct MidnightRpcTransaction {
 /// This type implements convenience methods for working with Midnight transactions
 /// while maintaining compatibility with the RPC response format.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Transaction(pub MidnightRpcTransaction);
+pub struct Transaction {
+	#[serde(flatten)]
+	pub inner: MidnightRpcTransaction,
+	// Status of the transaction (checks for existence of fallible_transcript, guaranteed_transcript, etc)
+	pub status: bool,
+}
 
 impl Transaction {
 	/// Get the transaction hash
 	pub fn hash(&self) -> &String {
-		&self.0.tx_hash
+		&self.inner.tx_hash
+	}
+
+	pub fn status(&self) -> bool {
+		self.status
 	}
 }
 
 impl From<MidnightRpcTransaction> for Transaction {
 	fn from(tx: MidnightRpcTransaction) -> Self {
-		Self(tx)
+		Self {
+			inner: tx,
+			status: true,
+		}
+	}
+}
+
+impl<P: Proofish> From<ContractAction<P>> for Operation {
+	fn from(action: ContractAction<P>) -> Self {
+		match action {
+			ContractAction::Call(call) => Operation::Call {
+				address: call.address.0 .0.encode_hex(),
+				entry_point: String::from_utf8_lossy(&call.entry_point.0).to_string(),
+			},
+			ContractAction::Deploy(deploy) => Operation::Deploy {
+				address: deploy.address().0 .0.encode_hex(),
+			},
+			ContractAction::Maintain(update) => Operation::Maintain {
+				address: update.address.0 .0.encode_hex(),
+			},
+		}
+	}
+}
+
+impl From<Tx> for Transaction {
+	fn from(tx: Tx) -> Self {
+		// Get hash and identifiers before moving tx
+		let tx_hash = tx.transaction_hash().0 .0.encode_hex();
+
+		let identifiers = tx
+			.identifiers()
+			.map(|id| match id {
+				TransactionIdentifier::Merged(pedersen) => pedersen.0.to_string(),
+				TransactionIdentifier::Unique(hash) => hash.0.encode_hex(),
+			})
+			.collect();
+
+		let operations = match tx {
+			Tx::Standard(stx) => {
+				let mut ops = Vec::new();
+				// Add guaranteed coins operation
+				ops.push(Operation::GuaranteedCoins);
+
+				// Add fallible coins operation if present
+				if stx.fallible_coins.is_some() {
+					ops.push(Operation::FallibleCoins);
+				}
+
+				// Add contract calls if present
+				if let Some(calls) = &stx.contract_calls {
+					ops.extend(calls.calls.iter().map(|call| Operation::from(call.clone())));
+				}
+				ops
+			}
+			Tx::ClaimMint(mtx) => {
+				vec![Operation::ClaimMint {
+					value: mtx.mint.coin.value,
+					coin_type: mtx.mint.coin.type_.0 .0.encode_hex(),
+				}]
+			}
+		};
+
+		Self {
+			inner: MidnightRpcTransaction {
+				tx_hash,
+				operations,
+				identifiers,
+			},
+			status: true,
+		}
 	}
 }
 
@@ -80,7 +162,7 @@ impl Deref for Transaction {
 	type Target = MidnightRpcTransaction;
 
 	fn deref(&self) -> &Self::Target {
-		&self.0
+		&self.inner
 	}
 }
 
@@ -126,7 +208,7 @@ mod tests {
 			identifiers: vec!["0x1234567890abcdef".to_string()],
 		};
 
-		let transaction = Transaction(tx_info);
+		let transaction = Transaction::from(tx_info);
 
 		// Test that we can access MidnightRpcTransaction fields through deref
 		assert_eq!(transaction.tx_hash, "test_hash");

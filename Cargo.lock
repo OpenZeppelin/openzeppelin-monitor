@@ -385,7 +385,7 @@ dependencies = [
  "itoa",
  "serde",
  "serde_json",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -876,7 +876,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d162f8524adfdfb0e4bd0505c734c985f3e2474eb022af32eef0d52a4f3935c"
 dependencies = [
  "serde",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -1841,9 +1841,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.19"
+version = "1.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e3a13707ac958681c13b39b458c073d0d9bc8a22cb1b2f4c8e55eb72c13f362"
+checksum = "04da6a0d40b948dfc4fa8f5bbf402b0fc1a64a28dbf7d12ffd683550f2c1b63a"
 dependencies = [
  "jobserver",
  "libc",
@@ -2483,9 +2483,9 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "0.99.19"
+version = "0.99.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3da29a38df43d6f156149c9b43ded5e018ddff2a855cf2cfd62e8cd7d079c69f"
+checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
 dependencies = [
  "convert_case",
  "proc-macro2",
@@ -4704,8 +4704,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-base-crypto"
-version = "0.4.3-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4#64e46a74ed37ae05c91b36a3ccfc194042391248"
+version = "0.4.3-rc"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4#217b12251dc4bc3c2bf61d4baa50a1a21e3ab941"
 dependencies = [
  "anyhow",
  "borsh",
@@ -4716,7 +4716,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "midnight-base-crypto-derive 0.4.3-beta.2 (git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4)",
+ "midnight-base-crypto-derive 0.4.3-rc",
  "midnight-serialize",
  "paste",
  "rand 0.8.5",
@@ -4732,7 +4732,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto-derive"
 version = "0.4.3-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4#64e46a74ed37ae05c91b36a3ccfc194042391248"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype#e3e86b699189c561d7edaa927156c8c890759545"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -4741,8 +4741,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-base-crypto-derive"
-version = "0.4.3-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype#5754f9648d595dc8282f4b5d06aa450c81c5a7a8"
+version = "0.4.3-rc"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=base-crypto-0.4#217b12251dc4bc3c2bf61d4baa50a1a21e3ab941"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -4883,8 +4883,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-serialize"
-version = "0.3.2-beta.2"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=serialize-0.3#64e46a74ed37ae05c91b36a3ccfc194042391248"
+version = "0.3.2-rc"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=serialize-0.3#217b12251dc4bc3c2bf61d4baa50a1a21e3ab941"
 dependencies = [
  "borsh",
  "crypto",
@@ -4898,7 +4898,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize-macros"
 version = "0.1.0"
-source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=serialize-0.3#64e46a74ed37ae05c91b36a3ccfc194042391248"
+source = "git+https://github.com/input-output-hk/midnight-ledger-prototype?tag=serialize-0.3#217b12251dc4bc3c2bf61d4baa50a1a21e3ab941"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -4951,7 +4951,7 @@ dependencies = [
  "k256",
  "lazy_static",
  "midnight-base-crypto",
- "midnight-base-crypto-derive 0.4.3-beta.2 (git+https://github.com/input-output-hk/midnight-ledger-prototype)",
+ "midnight-base-crypto-derive 0.4.3-beta.2",
  "midnight-circuits",
  "midnight-serialize",
  "pasta_curves",
@@ -6586,7 +6586,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5174a470eeb535a721ae9fdd6e291c2411a906b96592182d05217591d5c5cf7b"
 dependencies = [
  "byteorder",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
 ]
 
 [[package]]
@@ -7205,7 +7205,7 @@ dependencies = [
  "bs58",
  "chacha20",
  "crossbeam-queue",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "ed25519-zebra",
  "either",
  "event-listener",
@@ -7255,7 +7255,7 @@ dependencies = [
  "base64 0.22.1",
  "blake2-rfc",
  "bs58",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "either",
  "event-listener",
  "fnv",
@@ -8464,7 +8464,7 @@ dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -9490,9 +9490,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "0.7.6"
+version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
+checksum = "6cb8234a863ea0e8cd7284fcdd4f145233eb00fee02bbdd9861aec44e6477bc5"
 dependencies = [
  "memchr",
 ]
