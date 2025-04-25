@@ -1,14 +1,12 @@
 //! EVM transaction data structures.
 
-use std::{collections::HashMap, ops::Deref};
-
-use serde::{Deserialize, Serialize};
-
 use alloy::{
 	consensus::Transaction as AlloyConsensusTransaction,
 	primitives::{Address, Bytes, B256, U256, U64},
 	rpc::types::{AccessList, Index, Transaction as AlloyTransaction},
 };
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, ops::Deref};
 
 /// L2-specific transaction fields
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]

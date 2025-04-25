@@ -583,7 +583,6 @@ async fn main() -> Result<()> {
 				}
 			}
 			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),
-			BlockChainType::Solana => unimplemented!("Solana not implemented"),
 		}
 	}
 

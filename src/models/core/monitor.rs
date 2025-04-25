@@ -120,3 +120,10 @@ pub enum ScriptLanguage {
 	Python,
 	Bash,
 }
+
+/// Static mapping of script languages to their file extensions
+pub const LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
+	(&ScriptLanguage::Python, "py"),
+	(&ScriptLanguage::JavaScript, "js"),
+	(&ScriptLanguage::Bash, "sh"),
+];

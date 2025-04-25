@@ -145,7 +145,8 @@ impl ConfigLoader for Network {
 
 		// Validate network_type
 		match self.network_type {
-			BlockChainType::EVM | BlockChainType::Stellar => {}
+			BlockChainType::EVM | BlockChainType::Stellar | BlockChainType::Midnight => {}
+			#[allow(unreachable_patterns)]
 			_ => {
 				return Err(ConfigError::validation_error(
 					"Invalid network_type",

@@ -106,6 +106,7 @@ The transport clients are implemented as:
 2. *Network-Specific Transports*:
    * `EVMTransportClient` for EVM networks
    * `StellarTransportClient` for Stellar networks
+   * `MidnightTransportClient` for Midnight networks
 
 ==== Configuration Options
 
@@ -228,7 +229,7 @@ sequenceDiagram
         EM->>P: Retry #1
         P-->>EM: Error Response
         Note over EM: Wait with backoff
-        EM->>P: Retry #2
+        EM->>P: Retry #N
         P-->>EM: Success
         EM-->>M: Return Response
     end

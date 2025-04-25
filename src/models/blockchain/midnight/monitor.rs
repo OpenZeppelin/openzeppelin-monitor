@@ -1,18 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::{EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor};
+use crate::models::{MatchConditions, MidnightTransaction, Monitor};
 
-/// Result of a successful monitor match on an EVM chain
+/// Result of a successful monitor match on an Midnight chain
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MonitorMatch {
 	/// Monitor configuration that triggered the match
 	pub monitor: Monitor,
 
 	/// Transaction that triggered the match
-	pub transaction: EVMTransaction,
-
-	/// Transaction receipt with execution results
-	pub receipt: EVMTransactionReceipt,
+	pub transaction: MidnightTransaction,
 
 	/// Network slug that the transaction was sent from
 	pub network_slug: String,

@@ -125,3 +125,63 @@ impl RotatingTransport for MockStellarTransportClient {
 		Ok(())
 	}
 }
+
+// Mock implementation of a Midnight transport client.
+// Used for testing Midnight compatible blockchain interactions.
+// Provides functionality to simulate raw JSON-RPC request handling.
+mock! {
+	pub MidnightTransportClient {
+		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, anyhow::Error>;
+		pub async fn get_current_url(&self) -> String;
+	}
+
+	impl Clone for MidnightTransportClient {
+		fn clone(&self) -> Self;
+	}
+}
+
+#[async_trait::async_trait]
+impl BlockchainTransport for MockMidnightTransportClient {
+	async fn get_current_url(&self) -> String {
+		self.get_current_url().await
+	}
+
+	async fn send_raw_request<P>(
+		&self,
+		method: &str,
+		params: Option<P>,
+	) -> Result<Value, anyhow::Error>
+	where
+		P: Into<Value> + Send + Clone,
+	{
+		let params_value = params.map(|p| p.into());
+		self.send_raw_request(method, params_value.and_then(|v| v.as_array().cloned()))
+			.await
+	}
+
+	fn set_retry_policy(
+		&mut self,
+		_: ExponentialBackoff,
+		_: Option<TransientErrorRetryStrategy>,
+	) -> Result<(), anyhow::Error> {
+		Ok(())
+	}
+
+	fn update_endpoint_manager_client(
+		&mut self,
+		_: ClientWithMiddleware,
+	) -> Result<(), anyhow::Error> {
+		Ok(())
+	}
+}
+
+#[async_trait::async_trait]
+impl RotatingTransport for MockMidnightTransportClient {
+	async fn try_connect(&self, _url: &str) -> Result<(), anyhow::Error> {
+		Ok(())
+	}
+
+	async fn update_client(&self, _url: &str) -> Result<(), anyhow::Error> {
+		Ok(())
+	}
+}

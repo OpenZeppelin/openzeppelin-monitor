@@ -102,6 +102,39 @@ pub fn create_evm_test_network_with_urls(urls: Vec<&str>) -> Network {
 	}
 }
 
+pub fn create_midnight_valid_server_mock_network_response(server: &mut Server) -> Mock {
+	server
+		.mock("POST", "/")
+		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"system_chain","params":[]}"#)
+		.with_header("content-type", "application/json")
+		.with_status(200)
+		.with_body(r#"{"jsonrpc":"2.0","id":1,"result":"1"}"#)
+		.create()
+}
+
+pub fn create_midnight_test_network_with_urls(urls: Vec<&str>) -> Network {
+	Network {
+		name: "test".to_string(),
+		slug: "test".to_string(),
+		network_type: BlockChainType::Midnight,
+		rpc_urls: urls
+			.iter()
+			.map(|url| RpcUrl {
+				url: url.to_string(),
+				type_: "rpc".to_string(),
+				weight: 100,
+			})
+			.collect(),
+		cron_schedule: "*/5 * * * * *".to_string(),
+		confirmation_blocks: 1,
+		store_blocks: Some(false),
+		chain_id: None,
+		network_passphrase: None,
+		block_time_ms: 5000,
+		max_past_blocks: None,
+	}
+}
+
 pub fn create_http_valid_server_mock_network_response(server: &mut Server) -> Mock {
 	server
 		.mock("POST", "/")

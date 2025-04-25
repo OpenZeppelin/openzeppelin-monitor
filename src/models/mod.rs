@@ -24,11 +24,15 @@ pub use blockchain::stellar::{
 	StellarMonitorMatch, StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
 };
 
+pub use blockchain::midnight::{
+	MidnightBlock, MidnightMonitorMatch, MidnightRpcTransactionEnum, MidnightTransaction,
+};
+
 // Re-export core types
 pub use core::{
 	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, Network,
 	NotificationMessage, RpcUrl, ScriptLanguage, TransactionCondition, TransactionStatus, Trigger,
-	TriggerConditions, TriggerType, TriggerTypeConfig,
+	TriggerConditions, TriggerType, TriggerTypeConfig, LANGUAGE_EXTENSIONS,
 };
 
 // Re-export config types
