@@ -73,6 +73,9 @@ mv ./target/release/openzeppelin-monitor .
 
 # Enable metrics server
 ./openzeppelin-monitor --metrics
+
+# Validate configuration files without starting the service
+./openzeppelin-monitor --check
 ----
 
 === Run with Docker
@@ -327,7 +330,7 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
 
 [source,bash]
 ----
-cargo run
+./openzeppelin-monitor
 ----
 
 **Docker Deployment**
@@ -478,7 +481,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
 
 [source,bash]
 ----
-cargo run
+./openzeppelin-monitor
 ----
 
 **Docker Deployment**
