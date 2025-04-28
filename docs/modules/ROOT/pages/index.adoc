@@ -184,6 +184,9 @@ mv ./target/release/openzeppelin-monitor .
 
 # Enable metrics server
 ./openzeppelin-monitor --metrics
+
+# Validate configuration files without starting the service
+./openzeppelin-monitor --check
 ----
 
 === Run with Docker
@@ -342,10 +345,10 @@ This table lists the environment variables and their default values.
 | `<any file path>`
 | Persist monitor data between container restarts.
 
-| `LOG_MAX_SIZE (in bytes)`
+| `LOG_MAX_SIZE`
 | `1073741824`
-| `<any value in bytes>`
-| Size after which logs needs to be rolled.
+| `<size in bytes or human-readable format (e.g., "1GB", "500MB")>`
+| Size after which logs needs to be rolled. Accepts both raw bytes (e.g., "1073741824") or human-readable formats (e.g., "1GB", "500MB").
 
 | `METRICS_ENABLED`
 | `false`
@@ -378,6 +381,25 @@ cp examples/config/triggers/email_notifications.json config/triggers/email_notif
 cp examples/config/filters/evm_filter_block_number.sh config/filters/evm_filter_block_number.sh
 cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar_filter_block_number.sh
 ----
+
+=== Command Line Options
+
+The monitor supports several command-line options for configuration and control:
+
+[cols="1,1,2", options="header"]
+|===
+| Option | Default | Description
+| `--log-file` | `false` | Write logs to file instead of stdout
+| `--log-level` | `info` | Set log level (trace, debug, info, warn, error)
+| `--log-path` | `logs/` | Path to store log files
+| `--log-max-size` | `1GB` | Maximum log file size before rolling
+| `--metrics-address` | `127.0.0.1:8081` | Address to start the metrics server on
+| `--metrics` | `false` | Enable metrics server
+| `--monitor-path` | - | Path to the monitor to execute (for testing)
+| `--network` | - | Network to execute the monitor for (for testing)
+| `--block` | - | Block number to execute the monitor for (for testing)
+| `--check` | `false` | Validate configuration files without starting the service
+|===
 
 == Data Storage Configuration
 
@@ -1130,6 +1152,24 @@ The `validate_network_config.sh` script helps ensure your network configuration 
 
 TIP: Run this script when setting up new networks, before deploying configuration changes, or when troubleshooting connectivity issues.
 
+==== Validating Configuration Files
+
+Before starting the monitor service, you can validate your configuration files using the `--check` option:
+
+[source,bash]
+----
+./openzeppelin-monitor --check
+----
+
+This command will:
+
+* Parse and validate all configuration files
+* Check for syntax errors
+* Verify references between monitors, networks, and triggers
+* Report any issues without starting the service
+
+It's recommended to run this check after making changes to any configuration files.
+
 ==== Monitor Configuration
 The monitor can be tested in two modes:
 
@@ -1139,7 +1179,7 @@ This mode processes the most recent blocks across all configured networks.
 
 [source,bash]
 ----
-cargo run -- --monitorPath="config/monitors/evm_transfer_usdc.json"
+./openzeppelin-monitor --monitor-path="config/monitors/evm_transfer_usdc.json"
 ----
 
 What this does:
@@ -1154,8 +1194,8 @@ This mode allows you to analyze a particular block on a specific network, which 
 
 [source,bash]
 ----
-cargo run -- \
-    --monitorPath="config/monitors/evm_transfer_usdc.json" \
+./openzeppelin-monitor \
+    --monitor-path="config/monitors/evm_transfer_usdc.json" \
     --network=ethereum_mainnet \
     --block=12345678
 ----
@@ -1180,7 +1220,7 @@ Specific Block Mode requires both parameters:
 
 [source,bash]
 ----
-cargo run
+./openzeppelin-monitor
 ----
 
 === Docker Deployment

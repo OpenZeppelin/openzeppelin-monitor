@@ -9,6 +9,7 @@
 //! - logging: Logging utilities
 //! - metrics: Metrics utilities
 //! - monitor: Monitor utilities
+//! - parsing: Parsing utilities
 //! - tests: Test utilities
 
 mod cron_utils;
@@ -18,8 +19,10 @@ pub mod constants;
 pub mod logging;
 pub mod metrics;
 pub mod monitor;
+pub mod parsing;
 pub mod tests;
 
 pub use constants::*;
 pub use cron_utils::*;
 pub use expression::*;
+pub use parsing::*;
