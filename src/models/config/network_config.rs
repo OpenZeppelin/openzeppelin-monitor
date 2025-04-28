@@ -260,7 +260,33 @@ impl ConfigLoader for Network {
 			}
 		}
 
+		// Log a warning if the network uses an insecure protocol
+		self.validate_protocol();
+
 		Ok(())
+	}
+
+	/// Validate the safety of the protocol used in the network
+	///
+	/// Returns if safe, or logs a warning message if unsafe.
+	fn validate_protocol(&self) {
+		for rpc_url in &self.rpc_urls {
+			if rpc_url.url.starts_with("http://") {
+				tracing::warn!(
+					"Network '{}' uses an insecure RPC URL: {}",
+					self.slug,
+					rpc_url.url
+				);
+			}
+			// Additional check for websocket connections
+			if rpc_url.url.starts_with("ws://") {
+				tracing::warn!(
+					"Network '{}' uses an insecure WebSocket URL: {}",
+					self.slug,
+					rpc_url.url
+				);
+			}
+		}
 	}
 }
 
@@ -268,6 +294,7 @@ impl ConfigLoader for Network {
 mod tests {
 	use super::*;
 	use crate::models::RpcUrl;
+	use tracing_test::traced_test;
 
 	fn create_valid_network() -> Network {
 		Network {
@@ -448,5 +475,124 @@ mod tests {
 		if let Err(ConfigError::FileError(err)) = result {
 			assert!(err.message.contains("networks directory not found"));
 		}
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_insecure_rpc() {
+		let network = Network {
+			name: "Test Network".to_string(),
+			slug: "test_network".to_string(),
+			network_type: BlockChainType::EVM,
+			chain_id: Some(1),
+			network_passphrase: None,
+			store_blocks: Some(true),
+			rpc_urls: vec![
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "http://test.network".to_string(),
+					weight: 100,
+				},
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "ws://test.network".to_string(),
+					weight: 50,
+				},
+			],
+			block_time_ms: 1000,
+			confirmation_blocks: 1,
+			cron_schedule: "0 */5 * * * *".to_string(),
+			max_past_blocks: Some(10),
+		};
+
+		network.validate_protocol();
+		assert!(logs_contain(
+			"uses an insecure RPC URL: http://test.network"
+		));
+		assert!(logs_contain(
+			"uses an insecure WebSocket URL: ws://test.network"
+		));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_secure_rpc() {
+		let network = Network {
+			name: "Test Network".to_string(),
+			slug: "test_network".to_string(),
+			network_type: BlockChainType::EVM,
+			chain_id: Some(1),
+			network_passphrase: None,
+			store_blocks: Some(true),
+			rpc_urls: vec![
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "https://test.network".to_string(),
+					weight: 100,
+				},
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "wss://test.network".to_string(),
+					weight: 50,
+				},
+			],
+			block_time_ms: 1000,
+			confirmation_blocks: 1,
+			cron_schedule: "0 */5 * * * *".to_string(),
+			max_past_blocks: Some(10),
+		};
+
+		network.validate_protocol();
+		assert!(!logs_contain("uses an insecure RPC URL"));
+		assert!(!logs_contain("uses an insecure WebSocket URL"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_mixed_security() {
+		let network = Network {
+			name: "Test Network".to_string(),
+			slug: "test_network".to_string(),
+			network_type: BlockChainType::EVM,
+			chain_id: Some(1),
+			network_passphrase: None,
+			store_blocks: Some(true),
+			rpc_urls: vec![
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "https://secure.network".to_string(),
+					weight: 100,
+				},
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "http://insecure.network".to_string(),
+					weight: 50,
+				},
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "wss://secure.ws.network".to_string(),
+					weight: 25,
+				},
+				RpcUrl {
+					type_: "rpc".to_string(),
+					url: "ws://insecure.ws.network".to_string(),
+					weight: 25,
+				},
+			],
+			block_time_ms: 1000,
+			confirmation_blocks: 1,
+			cron_schedule: "0 */5 * * * *".to_string(),
+			max_past_blocks: Some(10),
+		};
+
+		network.validate_protocol();
+		assert!(logs_contain(
+			"uses an insecure RPC URL: http://insecure.network"
+		));
+		assert!(logs_contain(
+			"uses an insecure WebSocket URL: ws://insecure.ws.network"
+		));
+		assert!(!logs_contain("https://secure.network"));
+		assert!(!logs_contain("wss://secure.ws.network"));
 	}
 }
