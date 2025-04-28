@@ -1,7 +1,7 @@
 {
   "network_type": "EVM",
-  "slug": "amoy",
-  "name": "Amoy",
+  "slug": "polygon_amoy",
+  "name": "Polygon Amoy",
   "rpc_urls": [
     {
       "type_": "rpc",

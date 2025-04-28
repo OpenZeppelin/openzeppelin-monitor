@@ -1,7 +1,7 @@
 {
   "network_type": "EVM",
-  "slug": "polygon",
-  "name": "Polygon",
+  "slug": "polygon_mainnet",
+  "name": "Polygon Mainnet",
   "rpc_urls": [
     {
       "type_": "rpc",
