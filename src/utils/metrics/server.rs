@@ -155,7 +155,7 @@ mod tests {
 	fn create_test_trigger(name: &str) -> Trigger {
 		TriggerBuilder::new()
 			.name(name)
-			.slack("https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX")
+			.slack("https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX") //noboost
 			.message("Test Title", "Test Body")
 			.build()
 	}

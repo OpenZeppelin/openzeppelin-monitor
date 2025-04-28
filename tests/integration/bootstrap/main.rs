@@ -45,7 +45,7 @@ fn create_test_monitor(
 fn create_test_trigger(name: &str) -> Trigger {
 	TriggerBuilder::new()
 		.name(name)
-		.slack("https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX")
+		.slack("https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX") //noboost
 		.message("Test Title", "Test Body")
 		.build()
 }
@@ -813,7 +813,7 @@ async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 		TriggerBuilder::new()
 			.name("example_trigger_webhook")
 			.webhook(
-				"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX", //noboost
 			)
 			.webhook_secret("secret")
 			.webhook_method("POST")
