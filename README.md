@@ -238,7 +238,6 @@ For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 ## Get Help
 
-
 If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor).
 
 If the answer is not there:

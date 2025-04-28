@@ -6,8 +6,8 @@ use std::marker::PhantomData;
 
 use openzeppelin_monitor::{
 	models::{
-		AddressWithABI, EVMBaseTransaction, EVMMatchArguments, EVMMatchParamEntry, EVMTransaction,
-		FunctionCondition, MatchConditions, Monitor, TransactionCondition, TransactionStatus,
+		EVMBaseTransaction, EVMMatchArguments, EVMMatchParamEntry, EVMTransaction, Monitor,
+		TransactionStatus,
 	},
 	services::{
 		blockchain::{EVMTransportClient, EvmClient},
@@ -18,6 +18,7 @@ use openzeppelin_monitor::{
 			EVMBlockFilter,
 		},
 	},
+	utils::tests::evm::monitor::MonitorBuilder,
 };
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::json;
@@ -88,14 +89,10 @@ prop_compose! {
 	fn generate_base_monitor()(
 		address in valid_address(),
 	) -> Monitor {
-		Monitor {
-			name: "Test Monitor".to_string(),
-			addresses: vec![AddressWithABI {
-				address,
-				abi: None,
-			}],
-			..Default::default()
-		}
+		MonitorBuilder::new()
+			.name("Test Monitor")
+			.addresses(vec![address])
+			.build()
 	}
 }
 
@@ -106,28 +103,12 @@ prop_compose! {
 		min_value in 0u128..500000u128,
 		max_value in 500001u128..1000000u128
 	) -> Monitor {
-		Monitor {
-			name: "Test Monitor".to_string(),
-			addresses: vec![AddressWithABI {
-				address,
-				abi: None,
-			}],
-			match_conditions: MatchConditions {
-				transactions: vec![
-					TransactionCondition {
-						expression: Some(format!("value >= {}", min_value)),
-						status: TransactionStatus::Success,
-					},
-					TransactionCondition {
-						expression: Some(format!("value < {}", max_value)),
-						status: TransactionStatus::Any,
-					},
-				],
-				functions: vec![],
-				events: vec![],
-			},
-			..Default::default()
-		}
+		MonitorBuilder::new()
+			.name("Test Monitor")
+			.addresses(vec![address])
+			.transaction(TransactionStatus::Success, Some(format!("value >= {}", min_value)))
+			.transaction(TransactionStatus::Any, Some(format!("value < {}", max_value)))
+			.build()
 	}
 }
 
@@ -146,69 +127,52 @@ prop_compose! {
 		],
 		min_value in 0u128..500000u128
 	) -> Monitor {
-		Monitor {
-			name: "Test Monitor".to_string(),
-			addresses: vec![AddressWithABI {
-				address,
-				abi: Some(json!([
-					{
-						"anonymous": false,
-						"inputs": [
-						  {
-							"indexed": false,
-							"internalType": "uint256",
-							"name": "value",
-							"type": "uint256"
-						  }
-						],
-						"name": "ValueChanged",
-						"type": "event"
-					  },
+		MonitorBuilder::new()
+			.name("Test Monitor")
+			.address_with_abi(address.as_str(), json!([
+				{
+					"anonymous": false,
+					"inputs": [
 					  {
-						"inputs": [],
-						"name": "retrieve",
-						"outputs": [
-						  {
-							"internalType": "uint256",
-							"name": "",
-							"type": "uint256"
-						  }
-						],
-						"stateMutability": "view",
-						"type": "function"
-					  },
-					  {
-						"inputs": [
-						  {
-							"internalType": "uint256",
-							"name": "value",
-							"type": "uint256"
-						  }
-						],
-						"name": "store",
-						"outputs": [],
-						"stateMutability": "nonpayable",
-						"type": "function"
+						"indexed": false,
+						"internalType": "uint256",
+						"name": "value",
+						"type": "uint256"
 					  }
-				])),
-			}],
-			match_conditions: MatchConditions {
-				transactions: vec![],
-				functions: vec![
-					FunctionCondition {
-						signature: format!("{}({})", function_name, param_type),
-						expression: Some(format!("value >= {}", min_value)),
-					},
-					// Extra function that should never match
-					FunctionCondition {
-						signature: format!("not_{}({})", function_name, param_type),
-						expression: Some(format!("value >= {}", min_value)),
-					},
-				],
-				events: vec![],
-			},
-			..Default::default()
-		}
+					],
+					"name": "ValueChanged",
+					"type": "event"
+				  },
+				  {
+					"inputs": [],
+					"name": "retrieve",
+					"outputs": [
+					  {
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					  }
+					],
+					"stateMutability": "view",
+					"type": "function"
+				  },
+				  {
+					"inputs": [
+					  {
+						"internalType": "uint256",
+						"name": "value",
+						"type": "uint256"
+					  }
+					],
+					"name": "store",
+					"outputs": [],
+					"stateMutability": "nonpayable",
+					"type": "function"
+				  }
+			]))
+			.function(format!("{}({})", function_name, param_type).as_str(), Some(format!("value >= {}", min_value)))
+			.function(format!("not_{}({})", function_name, param_type).as_str(), Some(format!("value >= {}", min_value)))
+			.build()
 	}
 }
 
@@ -582,14 +546,7 @@ proptest! {
 		let mut matched_transactions = Vec::new();
 
 		// Test that transactions match when no conditions are specified
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				transactions: vec![],
-				functions: vec![],
-				events: vec![],
-			},
-			..Default::default()
-		};
+		let monitor = MonitorBuilder::new().build();
 
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,

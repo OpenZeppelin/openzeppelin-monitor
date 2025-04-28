@@ -1,9 +1,10 @@
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch,
-		NotificationMessage, TransactionType, Trigger, TriggerType, TriggerTypeConfig,
+		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, TransactionType,
+		TriggerType,
 	},
 	services::notification::{NotificationService, Notifier, WebhookConfig, WebhookNotifier},
+	utils::tests::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -11,13 +12,12 @@ use std::collections::HashMap;
 use crate::integration::mocks::{create_test_evm_transaction_receipt, create_test_transaction};
 
 fn create_test_monitor(name: &str) -> Monitor {
-	Monitor {
-		name: name.to_string(),
-		networks: vec!["ethereum_mainnet".to_string()],
-		paused: false,
-		triggers: vec!["test_trigger".to_string()],
-		..Default::default()
-	}
+	MonitorBuilder::new()
+		.name(name)
+		.networks(vec!["ethereum_mainnet".to_string()])
+		.paused(false)
+		.triggers(vec!["test_trigger".to_string()])
+		.build()
 }
 
 fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
@@ -116,20 +116,12 @@ async fn test_notification_service_webhook_execution() {
 		.await;
 
 	// Create a webhook trigger
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Webhook,
-		config: TriggerTypeConfig::Webhook {
-			url: server.url(),
-			method: Some("GET".to_string()),
-			headers: None,
-			secret: None,
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message ${value}".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.webhook(&server.url())
+		.webhook_method("GET")
+		.message("Test Alert", "Test message ${value}")
+		.build();
 
 	let mut variables = HashMap::new();
 	variables.insert("value".to_string(), "42".to_string());
@@ -156,20 +148,12 @@ async fn test_notification_service_webhook_execution_failure() {
 		.create_async()
 		.await;
 
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Webhook,
-		config: TriggerTypeConfig::Webhook {
-			url: server.url(),
-			method: Some("GET".to_string()),
-			headers: None,
-			secret: None,
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.webhook(&server.url())
+		.webhook_method("GET")
+		.message("Test Alert", "Test message")
+		.build();
 
 	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
 
@@ -185,17 +169,12 @@ async fn test_notification_service_webhook_execution_failure() {
 async fn test_notification_service_webhook_execution_invalid_config() {
 	let notification_service = NotificationService::new();
 
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Webhook,
-		config: TriggerTypeConfig::Slack {
-			slack_url: "".to_string(),
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.slack("")
+		.message("Test Alert", "Test message")
+		.trigger_type(TriggerType::Webhook)
+		.build();
 
 	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
 

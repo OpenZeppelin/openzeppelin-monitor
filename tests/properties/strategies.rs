@@ -1,8 +1,13 @@
 use email_address::EmailAddress;
-use openzeppelin_monitor::models::{
-	AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions, Monitor,
-	Network, NotificationMessage, RpcUrl, ScriptLanguage, TransactionCondition, TransactionStatus,
-	Trigger, TriggerConditions, TriggerType, TriggerTypeConfig,
+use openzeppelin_monitor::{
+	models::{
+		AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions,
+		Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage, TransactionCondition,
+		TransactionStatus, Trigger, TriggerConditions, TriggerType, TriggerTypeConfig,
+	},
+	utils::tests::{
+		evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder,
+	},
 };
 use proptest::{option, prelude::*};
 use std::os::unix::prelude::ExitStatusExt;
@@ -43,14 +48,24 @@ pub fn monitor_strategy(
 				addresses,
 				match_conditions,
 				trigger_conditions,
-			)| Monitor {
-				triggers,
-				networks,
-				name,
-				paused,
-				addresses,
-				match_conditions,
-				trigger_conditions,
+			)| {
+				let mut monitor = MonitorBuilder::new()
+					.triggers(triggers)
+					.networks(networks)
+					.name(name.as_str())
+					.paused(paused)
+					.addresses(addresses.iter().map(|a| a.address.clone()).collect())
+					.match_conditions(match_conditions);
+
+				for trigger_condition in trigger_conditions {
+					monitor = monitor.trigger_condition(
+						trigger_condition.script_path.as_str(),
+						trigger_condition.timeout_ms,
+						trigger_condition.language,
+						trigger_condition.arguments,
+					);
+				}
+				monitor.build()
 			},
 		)
 }
@@ -75,11 +90,11 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 			)
 				.prop_map(|(slack_url, message)| TriggerTypeConfig::Slack { slack_url, message })
 		)
-			.prop_map(|(name, trigger_type, config)| Trigger {
-				name,
-				trigger_type,
-				config,
-			}),
+			.prop_map(|(name, trigger_type, config)| TriggerBuilder::new()
+				.name(name.as_str())
+				.trigger_type(trigger_type)
+				.config(config)
+				.build(),),
 		// Email strategy
 		(
 			"[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()),
@@ -110,11 +125,11 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 					}
 				)
 		)
-			.prop_map(|(name, trigger_type, config)| Trigger {
-				name,
-				trigger_type,
-				config,
-			}),
+			.prop_map(|(name, trigger_type, config)| TriggerBuilder::new()
+				.name(name.as_str())
+				.trigger_type(trigger_type)
+				.config(config)
+				.build(),),
 		// Webhook strategy
 		(
 			"[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()),
@@ -140,27 +155,11 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 					}
 				})
 		)
-			.prop_map(|(name, trigger_type, config)| Trigger {
-				name,
-				trigger_type,
-				config,
-			}),
-		// Script strategy
-		// Disabled for now as it requires a script to be present
-		// (
-		//     "[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()),
-		//     Just(TriggerType::Script),
-		//     (
-		//         "/[a-z/]+\\.sh".prop_map(|s| s.to_string()),
-		//         proptest::collection::vec("[a-zA-Z0-9-]{1,10}".prop_map(|s| s.to_string()),
-		// 0..5),     )
-		//         .prop_map(|(path, args)| TriggerTypeConfig::Script { path, args })
-		// )
-		//     .prop_map(|(name, trigger_type, config)| Trigger {
-		//         name,
-		//         trigger_type,
-		//         config,
-		//     })
+			.prop_map(|(name, trigger_type, config)| TriggerBuilder::new()
+				.name(name.as_str())
+				.trigger_type(trigger_type)
+				.config(config)
+				.build(),),
 	]
 }
 
@@ -202,18 +201,20 @@ pub fn network_strategy() -> impl Strategy<Value = Network> {
 				cron_schedule,
 				max_past_blocks,
 				store_blocks,
-			)| Network {
-				network_type,
-				slug,
-				name,
-				rpc_urls,
-				chain_id,
-				network_passphrase,
-				block_time_ms,
-				confirmation_blocks,
-				cron_schedule,
-				max_past_blocks,
-				store_blocks,
+			)| {
+				NetworkBuilder::new()
+					.network_type(network_type)
+					.slug(&slug)
+					.name(&name)
+					.rpc_urls(rpc_urls.iter().map(|url| url.url.as_str()).collect())
+					.chain_id(chain_id.unwrap_or(0))
+					.network_passphrase(network_passphrase.unwrap_or("".to_string()).as_str())
+					.block_time_ms(block_time_ms)
+					.confirmation_blocks(confirmation_blocks)
+					.cron_schedule(cron_schedule.as_str())
+					.max_past_blocks(max_past_blocks.unwrap_or(0))
+					.store_blocks(store_blocks.unwrap_or(false))
+					.build()
 			},
 		)
 }

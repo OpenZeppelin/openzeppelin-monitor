@@ -1,9 +1,10 @@
 use openzeppelin_monitor::{
 	models::{
 		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
-		TransactionType, Trigger, TriggerType, TriggerTypeConfig,
+		TransactionType,
 	},
 	services::notification::{NotificationService, Notifier, SlackNotifier},
+	utils::tests::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -11,13 +12,12 @@ use std::collections::HashMap;
 use crate::integration::mocks::{create_test_evm_transaction_receipt, create_test_transaction};
 
 fn create_test_monitor(name: &str) -> Monitor {
-	Monitor {
-		name: name.to_string(),
-		networks: vec!["ethereum_mainnet".to_string()],
-		paused: false,
-		triggers: vec!["test_trigger".to_string()],
-		..Default::default()
-	}
+	MonitorBuilder::new()
+		.name(name)
+		.networks(vec!["ethereum_mainnet".to_string()])
+		.paused(false)
+		.triggers(vec!["test_trigger".to_string()])
+		.build()
 }
 
 fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
@@ -115,17 +115,11 @@ async fn test_notification_service_slack_execution_success() {
 		.await;
 
 	// Create a slack trigger
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Slack,
-		config: TriggerTypeConfig::Slack {
-			slack_url: server.url(),
-			message: openzeppelin_monitor::models::NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message with value ${value}".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.slack(&server.url())
+		.message("Test Alert", "Test message with value ${value}")
+		.build();
 
 	// Prepare and send test message
 	let mut variables = HashMap::new();
@@ -157,17 +151,11 @@ async fn test_notification_service_slack_execution_failure() {
 		.await;
 
 	// Create a slack trigger
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Slack,
-		config: TriggerTypeConfig::Slack {
-			slack_url: server.url(),
-			message: openzeppelin_monitor::models::NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message with value ${value}".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.slack(&server.url())
+		.message("Test Alert", "Test message with value ${value}")
+		.build();
 
 	// Prepare and send test message
 	let mut variables = HashMap::new();

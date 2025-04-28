@@ -1,51 +1,40 @@
 use mockito::{Mock, Server};
-use openzeppelin_monitor::models::{
-	BlockChainType, BlockType, EVMBlock, EVMTransaction, EVMTransactionReceipt, Network, RpcUrl,
-	StellarBlock, StellarLedgerInfo, StellarTransaction, StellarTransactionInfo, TransactionType,
+use openzeppelin_monitor::{
+	models::{
+		BlockChainType, BlockType, EVMBlock, EVMTransaction, EVMTransactionReceipt, Network,
+		StellarBlock, StellarLedgerInfo, StellarTransaction, StellarTransactionInfo,
+		TransactionType,
+	},
+	utils::tests::builders::network::NetworkBuilder,
 };
 use serde_json::json;
 
 pub fn create_test_network(name: &str, slug: &str, network_type: BlockChainType) -> Network {
-	Network {
-		name: name.to_string(),
-		slug: slug.to_string(),
-		network_type,
-		rpc_urls: vec![RpcUrl {
-			url: "http://localhost:8545".to_string(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: Some(1),
-		network_passphrase: None,
-		block_time_ms: 1000,
-		max_past_blocks: None,
-	}
+	NetworkBuilder::new()
+		.name(name)
+		.slug(slug)
+		.network_type(network_type)
+		.rpc_url("http://localhost:8545")
+		.cron_schedule("*/5 * * * * *")
+		.confirmation_blocks(1)
+		.store_blocks(false)
+		.chain_id(1)
+		.block_time_ms(1000)
+		.build()
 }
 
 pub fn create_stellar_test_network_with_urls(urls: Vec<&str>) -> Network {
-	Network {
-		name: "test".to_string(),
-		slug: "test".to_string(),
-		network_type: BlockChainType::Stellar,
-		rpc_urls: urls
-			.iter()
-			.map(|url| RpcUrl {
-				url: url.to_string(),
-				type_: "rpc".to_string(),
-				weight: 100,
-			})
-			.collect(),
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: None,
-		network_passphrase: Some("Test SDF Network ; September 2015".to_string()),
-		block_time_ms: 5000,
-		max_past_blocks: None,
-	}
+	NetworkBuilder::new()
+		.name("test")
+		.slug("test")
+		.network_type(BlockChainType::Stellar)
+		.cron_schedule("*/5 * * * * *")
+		.confirmation_blocks(1)
+		.store_blocks(false)
+		.block_time_ms(5000)
+		.network_passphrase("Test SDF Network ; September 2015")
+		.rpc_urls(urls)
+		.build()
 }
 
 pub fn create_stellar_valid_server_mock_network_response(server: &mut Server) -> Mock {
@@ -80,26 +69,16 @@ pub fn create_evm_valid_server_mock_network_response(server: &mut Server) -> Moc
 }
 
 pub fn create_evm_test_network_with_urls(urls: Vec<&str>) -> Network {
-	Network {
-		name: "test".to_string(),
-		slug: "test".to_string(),
-		network_type: BlockChainType::EVM,
-		rpc_urls: urls
-			.iter()
-			.map(|url| RpcUrl {
-				url: url.to_string(),
-				type_: "rpc".to_string(),
-				weight: 100,
-			})
-			.collect(),
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: None,
-		network_passphrase: None,
-		block_time_ms: 5000,
-		max_past_blocks: None,
-	}
+	NetworkBuilder::new()
+		.name("test")
+		.slug("test")
+		.network_type(BlockChainType::EVM)
+		.cron_schedule("*/5 * * * * *")
+		.confirmation_blocks(1)
+		.store_blocks(false)
+		.block_time_ms(5000)
+		.rpc_urls(urls)
+		.build()
 }
 
 pub fn create_http_valid_server_mock_network_response(server: &mut Server) -> Mock {

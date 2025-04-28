@@ -765,7 +765,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::EVMBaseTransaction;
+	use crate::{models::EVMBaseTransaction, utils::tests::evm::monitor::MonitorBuilder};
 
 	use super::*;
 	use alloy::{
@@ -803,17 +803,16 @@ mod tests {
 		transaction_conditions: Vec<TransactionCondition>,
 		addresses: Vec<AddressWithABI>,
 	) -> Monitor {
-		Monitor {
-			match_conditions: MatchConditions {
+		MonitorBuilder::new()
+			.name("test")
+			.networks(vec!["evm_mainnet".to_string()])
+			.match_conditions(MatchConditions {
 				events: event_conditions,
 				functions: function_conditions,
 				transactions: transaction_conditions,
-			},
-			addresses,
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			..Default::default()
-		}
+			})
+			.addresses_with_abi(addresses.into_iter().map(|a| (a.address, a.abi)).collect())
+			.build()
 	}
 
 	fn create_test_abi(abi_type: &str) -> Value {
@@ -1413,25 +1412,23 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
+		let monitor = MonitorBuilder::new()
+			.match_conditions(MatchConditions {
 				functions: vec![FunctionCondition {
 					signature: "transfer(address,uint256)".to_string(),
 					expression: None,
 				}],
 				events: vec![],
 				transactions: vec![],
-			},
-			addresses: vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000004321".to_string(),
-				abi: Some(create_test_abi("function")),
-			}],
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			trigger_conditions: vec![],
-			triggers: vec![],
-		};
+			})
+			.addresses_with_abi(vec![(
+				"0x0000000000000000000000000000000000004321".to_string(),
+				Some(create_test_abi("function")),
+			)])
+			.name("test")
+			.networks(vec!["evm_mainnet".to_string()])
+			.paused(false)
+			.build();
 
 		// Test with invalid input data (less than 4 bytes)
 		let transaction = create_test_transaction(

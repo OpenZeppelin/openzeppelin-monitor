@@ -1,23 +1,23 @@
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch,
-		NotificationMessage, TransactionType, Trigger, TriggerType, TriggerTypeConfig,
+		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, TransactionType,
 	},
 	services::notification::{DiscordNotifier, NotificationService, Notifier},
+	utils::tests::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
 };
+
 use serde_json::json;
 use std::collections::HashMap;
 
 use crate::integration::mocks::{create_test_evm_transaction_receipt, create_test_transaction};
 
 fn create_test_monitor(name: &str) -> Monitor {
-	Monitor {
-		name: name.to_string(),
-		networks: vec!["ethereum_mainnet".to_string()],
-		paused: false,
-		triggers: vec!["test_trigger".to_string()],
-		..Default::default()
-	}
+	MonitorBuilder::new()
+		.name(name)
+		.networks(vec!["ethereum_mainnet".to_string()])
+		.paused(false)
+		.triggers(vec!["test_trigger".to_string()])
+		.build()
 }
 
 fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
@@ -107,17 +107,11 @@ async fn test_notification_service_discord_execution() {
 		.await;
 
 	// Create a Discord trigger
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Discord,
-		config: TriggerTypeConfig::Discord {
-			discord_url: server.url(),
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message ${value}".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.discord(&server.url())
+		.message("Test Alert", "Test message ${value}")
+		.build();
 
 	let mut variables = HashMap::new();
 	variables.insert("value".to_string(), "42".to_string());
@@ -145,17 +139,11 @@ async fn test_notification_service_discord_execution_failure() {
 		.create_async()
 		.await;
 
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Discord,
-		config: TriggerTypeConfig::Discord {
-			discord_url: server.url(),
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.discord(&server.url())
+		.message("Test Alert", "Test message")
+		.build();
 
 	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
 
