@@ -12,6 +12,9 @@ use crate::{
 	services::trigger::validate_script_config,
 };
 
+const TELEGRAM_MAX_BODY_LENGTH: usize = 4096;
+const DISCORD_MAX_BODY_LENGTH: usize = 2000;
+
 /// File structure for trigger configuration files
 #[derive(Debug, Deserialize)]
 pub struct TriggerConfigFile {
@@ -421,6 +424,17 @@ impl ConfigLoader for Trigger {
 							None,
 						));
 					}
+					// Validate template max length
+					if message.body.len() > TELEGRAM_MAX_BODY_LENGTH {
+						return Err(ConfigError::validation_error(
+							format!(
+								"Body cannot be longer than {} characters",
+								TELEGRAM_MAX_BODY_LENGTH
+							),
+							None,
+							None,
+						));
+					}
 				}
 			}
 			TriggerType::Discord => {
@@ -449,6 +463,17 @@ impl ConfigLoader for Trigger {
 					if message.body.trim().is_empty() {
 						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
+							None,
+							None,
+						));
+					}
+					// Validate template max length
+					if message.body.len() > DISCORD_MAX_BODY_LENGTH {
+						return Err(ConfigError::validation_error(
+							format!(
+								"Body cannot be longer than {} characters",
+								DISCORD_MAX_BODY_LENGTH
+							),
 							None,
 							None,
 						));
