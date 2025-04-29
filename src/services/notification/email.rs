@@ -19,6 +19,7 @@ use crate::{
 	models::TriggerTypeConfig,
 	services::notification::{NotificationError, Notifier},
 };
+use pulldown_cmark::{html, Options, Parser};
 
 /// Implementation of email notifications via SMTP
 pub struct EmailNotifier<T: Transport + Send + Sync> {
@@ -109,19 +110,32 @@ impl EmailNotifier<SmtpTransport> {
 		})
 	}
 
-	/// Formats a message by substituting variables in the template
+	/// Formats a message by substituting variables in the template and converts it to HTML
 	///
 	/// # Arguments
 	/// * `variables` - Map of variable names to values
 	///
 	/// # Returns
-	/// * `String` - Formatted message with variables replaced
+	/// * `String` - Formatted message with variables replaced and converted to HTML
 	pub fn format_message(&self, variables: &HashMap<String, String>) -> String {
-		variables
+		let formatted_message = variables
 			.iter()
 			.fold(self.body_template.clone(), |message, (key, value)| {
 				message.replace(&format!("${{{}}}", key), value)
-			})
+			});
+
+		Self::markdown_to_html(&formatted_message)
+	}
+
+	/// Convert a Markdown string into HTML
+	fn markdown_to_html(md: &str) -> String {
+		// enable all the extensions you like; or just Parser::new(md) for pure CommonMark
+		let opts = Options::all();
+		let parser = Parser::new_ext(md, opts);
+
+		let mut html_out = String::new();
+		html::push_html(&mut html_out, parser);
+		html_out
 	}
 
 	/// Creates an email notifier from a trigger configuration
@@ -203,7 +217,7 @@ where
 					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
 			)
 			.subject(&self.subject)
-			.header(ContentType::TEXT_PLAIN)
+			.header(ContentType::TEXT_HTML)
 			.body(message.to_owned())
 			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
