@@ -29,7 +29,6 @@ fn setup_mock_transport(test_data: TestData) -> MockEVMTransportClient {
 
 	mock_transport
 		.expect_send_raw_request()
-		.times(3)
 		.returning(move |method, _params| {
 			let current = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 			match (method, current) {
@@ -543,6 +542,88 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 		)
 		.await;
 		assert!(result.is_ok(), "Handle match should succeed");
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
+	let mut test_data = load_test_data("evm");
+	let filter_service = FilterService::new();
+
+	// only keep the last receipt with increment() transaction
+	test_data.receipts = vec![test_data.receipts.last().unwrap().clone()];
+
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
+
+	let mut monitor = test_data.monitor;
+	// Clear existing conditions and add functions without arguments
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "increment()".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.transactions = vec![];
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			test_data.blocks.last().unwrap(), // last block contains increment() transaction
+			&[monitor],
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches");
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(evm_match.matched_on.functions.len() == 1);
+			assert!(evm_match.matched_on.events.is_empty());
+			assert!(evm_match.matched_on.transactions.is_empty());
+			assert!(evm_match.matched_on.functions[0].signature == "increment()");
+
+			// Now test handle_match to verify the data map contains signatures
+			let trigger_scripts = HashMap::new();
+			let mut trigger_execution_service = setup_trigger_execution_service(
+				"tests/integration/fixtures/evm/triggers/trigger.json",
+			);
+
+			// Set up expectations for execute()
+			trigger_execution_service
+				.expect_execute()
+				.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
+					trigger_name == ["example_trigger_slack"]
+						// Monitor metadata
+						&& variables.get("monitor_name") == Some(&"Mint USDC Token".to_string())
+						// Transaction variables
+						&& variables.get("transaction_hash") == Some(&"0x6fb716f3fc4e2edec31f01c8bb67e565e3efacba965090a38835d3f297232bf6".to_string())
+						&& variables.get("transaction_from") == Some(&"0x6b9501462d48f7e78ba11c98508ee16d29a03411".to_string())
+						&& variables.get("transaction_to") == Some(&"0xf18206b2289cf6ce15cddbee9c6f6a0f059efb56".to_string())
+						&& variables.get("transaction_value") == Some(&"0".to_string())
+						// Function signature should be present even without args
+						&& variables.get("function_0_signature") == Some(&"increment()".to_string())
+				})
+				.once()
+				.returning(|_, _, _, _| Ok(()));
+
+			let result = handle_match(
+				matches[0].clone(),
+				&trigger_execution_service,
+				&trigger_scripts,
+			)
+			.await;
+			assert!(result.is_ok(), "Handle match should succeed");
+		}
+		_ => {
+			panic!("Expected EVM match");
+		}
 	}
 
 	Ok(())
