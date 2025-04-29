@@ -52,7 +52,15 @@ async fn test_slack_notification_success() {
 	let mock = server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(200)
 		.create_async()
@@ -108,7 +116,15 @@ async fn test_notification_service_slack_execution_success() {
 	let mock = server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(200)
 		.create_async()

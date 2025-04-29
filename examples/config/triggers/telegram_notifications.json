@@ -12,6 +12,20 @@
       }
     }
   },
+  "evm_large_transfer_usdc_telegram_markdown": {
+    "name": "Large Transfer Telegram Notification",
+    "trigger_type": "telegram",
+    "config": {
+      "token": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "chat_id": "9876543210",
+      "disable_web_preview": true,
+      "message": {
+        "title": "large_transfer_telegram triggered",
+        "body": "*USDC Transfer Details*\n*Amount:* ${event_0_value} USDC\n*From:* ${event_0_from}\n*To:* ${event_0_to}\n*Transaction:* [View on Etherscan](https://etherscan.io/tx/${transaction_hash}#eventlog)"
+      }
+    }
+  },
+
   "stellar_large_swap_by_dex_telegram": {
     "name": "Large Swap By Dex Telegram Notification",
     "trigger_type": "telegram",

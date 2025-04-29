@@ -827,7 +827,15 @@ async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 	let mock = server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(500)
 		.create_async()
@@ -921,7 +929,15 @@ async fn test_trigger_execution_service_execute_multiple_triggers_success() {
 	let slack_mock = slack_server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(200)
 		.create_async()
@@ -1006,7 +1022,15 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 	let slack_mock = slack_server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(500)
 		.create_async()
