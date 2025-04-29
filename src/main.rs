@@ -29,7 +29,7 @@ use crate::{
 		create_block_handler, create_trigger_handler, has_active_monitors, initialize_services,
 		Result,
 	},
-	models::{BlockChainType, Network},
+	models::{BlockChainType, Network, ScriptLanguage},
 	repositories::{
 		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
 	},
@@ -37,7 +37,7 @@ use crate::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 		filter::FilterService,
-		trigger::TriggerExecutionServiceTrait,
+		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 	utils::{
 		constants::DOCUMENTATION_URL, logging::setup_logging,
@@ -48,6 +48,7 @@ use crate::{
 
 use clap::Parser;
 use dotenvy::dotenv;
+use std::collections::HashMap;
 use std::env::{set_var, var};
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
@@ -175,6 +176,12 @@ async fn main() -> Result<()> {
 	>(None, None, None)
 	.map_err(|e| anyhow::anyhow!("Failed to initialize services: {}. Please refer to the documentation quickstart ({}) on how to configure the service.", e, DOCUMENTATION_URL))?;
 
+	// Pre-load all trigger scripts into memory at startup to reduce file I/O operations.
+	// This prevents repeated file descriptor usage during script execution and improves performance
+	// by keeping scripts readily available in memory.
+	let active_monitors_trigger_scripts = trigger_execution_service
+		.load_scripts(&active_monitors)
+		.await?;
 	// Read CLI arguments to determine if we should test monitor execution
 	let monitor_path = cli.monitor_path.clone();
 	let network_slug = cli.network.clone();
@@ -193,6 +200,8 @@ async fn main() -> Result<()> {
 			monitor_service,
 			network_service,
 			filter_service,
+			trigger_execution_service,
+			active_monitors_trigger_scripts,
 			false,
 		)
 		.await;
@@ -249,12 +258,6 @@ async fn main() -> Result<()> {
 	}
 
 	let (shutdown_tx, _) = watch::channel(false);
-	// Pre-load all trigger scripts into memory at startup to reduce file I/O operations.
-	// This prevents repeated file descriptor usage during script execution and improves performance
-	// by keeping scripts readily available in memory.
-	let active_monitors_trigger_scripts = trigger_execution_service
-		.load_scripts(&active_monitors)
-		.await?;
 	let client_pool = Arc::new(ClientPool::new());
 	let block_handler = create_block_handler(
 		shutdown_tx.clone(),
@@ -374,6 +377,7 @@ async fn main() -> Result<()> {
 /// * Returns an error if network slug is missing when block number is specified
 /// * Returns an error if monitor execution fails for any reason (invalid path, network issues, etc.)
 #[instrument(skip_all)]
+#[allow(clippy::too_many_arguments)]
 async fn test_monitor_execution(
 	path: String,
 	network_slug: Option<String>,
@@ -381,6 +385,8 @@ async fn test_monitor_execution(
 	monitor_service: Arc<Mutex<MonitorServiceType>>,
 	network_service: Arc<Mutex<NetworkService<NetworkRepository>>>,
 	filter_service: Arc<FilterService>,
+	trigger_execution_service: Arc<TriggerExecutionService<TriggerRepository>>,
+	active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 	raw_output: bool,
 ) -> Result<()> {
 	// Validate inputs first
@@ -407,6 +413,8 @@ async fn test_monitor_execution(
 		monitor_service.clone(),
 		network_service.clone(),
 		filter_service.clone(),
+		trigger_execution_service.clone(),
+		active_monitors_trigger_scripts,
 		client_pool,
 	)
 	.await;
@@ -668,12 +676,13 @@ mod tests {
 	#[tokio::test]
 	async fn test_monitor_execution_without_network_slug_with_block_number() {
 		// Initialize services
-		let (filter_service, _, _, _, monitor_service, network_service, _) = initialize_services::<
-			MonitorRepository<NetworkRepository, TriggerRepository>,
-			NetworkRepository,
-			TriggerRepository,
-		>(None, None, None)
-		.unwrap();
+		let (filter_service, trigger_execution_service, _, _, monitor_service, network_service, _) =
+			initialize_services::<
+				MonitorRepository<NetworkRepository, TriggerRepository>,
+				NetworkRepository,
+				TriggerRepository,
+			>(None, None, None)
+			.unwrap();
 
 		let path = "test_monitor.json".to_string();
 		let block_number = Some(12345);
@@ -686,6 +695,8 @@ mod tests {
 			monitor_service,
 			network_service,
 			filter_service,
+			trigger_execution_service,
+			HashMap::new(),
 			false,
 		)
 		.await;
@@ -702,12 +713,13 @@ mod tests {
 	#[tokio::test]
 	async fn test_monitor_execution_with_invalid_path() {
 		// Initialize services
-		let (filter_service, _, _, _, monitor_service, network_service, _) = initialize_services::<
-			MonitorRepository<NetworkRepository, TriggerRepository>,
-			NetworkRepository,
-			TriggerRepository,
-		>(None, None, None)
-		.unwrap();
+		let (filter_service, trigger_execution_service, _, _, monitor_service, network_service, _) =
+			initialize_services::<
+				MonitorRepository<NetworkRepository, TriggerRepository>,
+				NetworkRepository,
+				TriggerRepository,
+			>(None, None, None)
+			.unwrap();
 
 		// Test parameters
 		let path = "nonexistent_monitor.json".to_string();
@@ -722,6 +734,8 @@ mod tests {
 			monitor_service,
 			network_service,
 			filter_service,
+			trigger_execution_service,
+			HashMap::new(),
 			false,
 		)
 		.await;

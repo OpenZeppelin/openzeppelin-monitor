@@ -3,21 +3,21 @@
 //! This module provides functionality to execute monitors against specific block numbers on blockchain networks.
 use crate::{
 	bootstrap::has_active_monitors,
-	models::BlockChainType,
+	models::{BlockChainType, ScriptLanguage},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
 		TriggerRepositoryTrait,
 	},
 	services::{
 		blockchain::{BlockChainClient, ClientPoolTrait},
-		filter::FilterService,
+		filter::{handle_match, FilterService},
+		trigger::TriggerExecutionService,
 	},
 	utils::monitor::MonitorExecutionError,
 };
-use std::path::Path;
-use std::sync::Arc;
+use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::Mutex;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 
@@ -40,11 +40,12 @@ pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 /// # Returns
 /// * `Result<String, ExecutionError>` - JSON string containing matches or error
 #[instrument(skip_all)]
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_monitor<
 	T: ClientPoolTrait,
 	M: MonitorRepositoryTrait<N, TR>,
 	N: NetworkRepositoryTrait,
-	TR: TriggerRepositoryTrait,
+	TR: TriggerRepositoryTrait + Send + Sync,
 >(
 	monitor_path: &str,
 	network_slug: Option<&String>,
@@ -52,6 +53,8 @@ pub async fn execute_monitor<
 	monitor_service: Arc<Mutex<MonitorService<M, N, TR>>>,
 	network_service: Arc<Mutex<NetworkService<N>>>,
 	filter_service: Arc<FilterService>,
+	trigger_execution_service: Arc<TriggerExecutionService<TR>>,
+	trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 	client_pool: T,
 ) -> ExecutionResult<String> {
 	tracing::debug!("Loading monitor configuration");
@@ -220,6 +223,19 @@ pub async fn execute_monitor<
 
 		tracing::debug!(matches_count = matches.len(), "Found matches for network");
 		all_matches.extend(matches);
+	}
+
+	// Send notifications for each match
+	for match_result in all_matches.clone() {
+		let result =
+			handle_match(match_result, &*trigger_execution_service, &trigger_scripts).await;
+		match result {
+			Ok(_result) => info!("Sending notifications for match successfully"),
+			Err(e) => {
+				tracing::error!("Error sending notifications: {}", e);
+				continue;
+			}
+		};
 	}
 
 	tracing::debug!(total_matches = all_matches.len(), "Serializing results");

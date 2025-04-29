@@ -17,7 +17,9 @@ use openzeppelin_monitor::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkService,
 		RepositoryError, TriggerRepository, TriggerService,
 	},
-	services::filter::FilterService,
+	services::{
+		filter::FilterService, notification::NotificationService, trigger::TriggerExecutionService,
+	},
 	utils::monitor::execution::execute_monitor,
 };
 use std::{
@@ -154,6 +156,16 @@ async fn test_execute_monitor_evm() {
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 	let mock_network_service =
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockEvmClientTrait::new();
@@ -193,6 +205,8 @@ async fn test_execute_monitor_evm() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -219,6 +233,17 @@ async fn test_execute_monitor_evm_wrong_network() {
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mock_client = MockEvmClientTrait::new();
 
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Ok(Arc::new(mock_client)));
@@ -232,6 +257,8 @@ async fn test_execute_monitor_evm_wrong_network() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -249,6 +276,17 @@ async fn test_execute_monitor_evm_wrong_block_number() {
 	let mock_network_service =
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mut mock_client = MockEvmClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	mock_client
 		.expect_get_blocks()
@@ -268,6 +306,8 @@ async fn test_execute_monitor_evm_wrong_block_number() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -285,6 +325,17 @@ async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
 	let mock_network_service =
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mut mock_client = MockEvmClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	mock_client
 		.expect_get_blocks()
@@ -304,6 +355,8 @@ async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -321,6 +374,17 @@ async fn test_execute_monitor_evm_failed_to_get_evm_client() {
 	let mock_network_service =
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Err(anyhow::anyhow!("Failed to get evm client")));
@@ -334,6 +398,8 @@ async fn test_execute_monitor_evm_failed_to_get_evm_client() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -352,6 +418,17 @@ async fn test_execute_monitor_stellar() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockStellarClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	mock_client
 		.expect_get_blocks()
@@ -377,6 +454,8 @@ async fn test_execute_monitor_stellar() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -402,6 +481,16 @@ async fn test_execute_monitor_failed_to_get_block() {
 		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockStellarClientTrait::new();
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	mock_client
 		.expect_get_blocks()
@@ -421,6 +510,8 @@ async fn test_execute_monitor_failed_to_get_block() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -438,6 +529,17 @@ async fn test_execute_monitor_failed_to_get_stellar_client() {
 		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
 	let mut mock_pool = MockClientPool::new();
 
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
 	mock_pool
 		.expect_get_stellar_client()
 		.return_once(move |_| Err(anyhow::anyhow!("Failed to get stellar client")));
@@ -451,6 +553,8 @@ async fn test_execute_monitor_failed_to_get_stellar_client() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -468,6 +572,17 @@ async fn test_execute_monitor_failed_to_get_block_by_number() {
 		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockStellarClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	mock_client
 		.expect_get_blocks()
@@ -487,6 +602,8 @@ async fn test_execute_monitor_failed_to_get_block_by_number() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -499,6 +616,17 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
@@ -520,6 +648,8 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -537,6 +667,17 @@ async fn test_execute_monitor_network_slug_not_defined() {
 	let mock_network_service =
 		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mut mock_client = MockEvmClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	mock_client
 		.expect_get_latest_block_number()
@@ -576,6 +717,8 @@ async fn test_execute_monitor_network_slug_not_defined() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -590,6 +733,17 @@ async fn test_execute_monitor_midnight() {
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
 	let mock_pool = MockClientPool::new();
 	let mock_network_service =
 		setup_mocked_networks("Midnight", "midnight_mainnet", BlockChainType::Midnight);
@@ -601,6 +755,8 @@ async fn test_execute_monitor_midnight() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -615,6 +771,17 @@ async fn test_execute_monitor_solana() {
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
 	let mock_pool = MockClientPool::new();
 	let mock_network_service =
 		setup_mocked_networks("Solana", "solana_mainnet", BlockChainType::Solana);
@@ -626,6 +793,8 @@ async fn test_execute_monitor_solana() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
@@ -645,6 +814,17 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 		setup_mocked_networks("Stellar", "stellar_mainnet", BlockChainType::Stellar);
 	let mut mock_client = MockStellarClientTrait::new();
 
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	// Create actual TriggerExecutionService instance
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
 	mock_client
 		.expect_get_latest_block_number()
 		.return_once(move || Err(anyhow::anyhow!("Failed to get latest block number")));
@@ -660,6 +840,8 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 		Arc::new(Mutex::new(mock_monitor_service)),
 		Arc::new(Mutex::new(mock_network_service)),
 		Arc::new(FilterService::new()),
+		Arc::new(trigger_execution_service),
+		HashMap::new(),
 		mock_pool,
 	)
 	.await;
