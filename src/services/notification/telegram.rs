@@ -84,7 +84,7 @@ impl TelegramNotifier {
 	///
 	/// # Returns
 	/// * `String` - The escaped text
-	fn escape_markdown_v2(text: &str) -> String {
+	pub fn escape_markdown_v2(text: &str) -> String {
 		// Full set of Telegram MDV2 metacharacters (including backslash)
 		const SPECIAL: &[char] = &[
 			'_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.',

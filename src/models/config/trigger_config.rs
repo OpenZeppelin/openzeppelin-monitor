@@ -1163,4 +1163,38 @@ mod tests {
 		perms.set_mode(0o644);
 		std::fs::set_permissions(&file_path, perms).unwrap();
 	}
+
+	#[test]
+	fn test_telegram_max_message_length() {
+		let max_body_length = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(),
+				chat_id: "1730223038".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "Test".to_string(),
+					body: "x".repeat(TELEGRAM_MAX_BODY_LENGTH + 1), // Exceeds max length
+				},
+			},
+		};
+		assert!(max_body_length.validate().is_err());
+	}
+
+	#[test]
+	fn test_discord_max_message_length() {
+		let max_body_length = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: "https://discord.com/api/webhooks/xxx".to_string(),
+				message: NotificationMessage {
+					title: "Test".to_string(),
+					body: "z".repeat(DISCORD_MAX_BODY_LENGTH + 1), // Exceeds max length
+				},
+			},
+		};
+		assert!(max_body_length.validate().is_err());
+	}
 }

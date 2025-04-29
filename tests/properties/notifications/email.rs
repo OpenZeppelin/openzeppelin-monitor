@@ -113,8 +113,8 @@ proptest! {
 
 		let empty_vars = HashMap::new();
 		let formatted = notifier.format_message(&empty_vars);
-
+		let html_template = EmailNotifier::markdown_to_html(&template);
 		// Template should remain unchanged when no variables are provided
-		prop_assert_eq!(formatted, template);
+		prop_assert_eq!(formatted, html_template);
 	}
 }

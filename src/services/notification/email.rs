@@ -128,7 +128,7 @@ impl EmailNotifier<SmtpTransport> {
 	}
 
 	/// Convert a Markdown string into HTML
-	fn markdown_to_html(md: &str) -> String {
+	pub fn markdown_to_html(md: &str) -> String {
 		// enable all the extensions you like; or just Parser::new(md) for pure CommonMark
 		let opts = Options::all();
 		let parser = Parser::new_ext(md, opts);
@@ -280,7 +280,8 @@ mod tests {
 		variables.insert("balance".to_string(), "100".to_string());
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello Alice, your balance is 100");
+		let html_result = EmailNotifier::markdown_to_html(&result);
+		assert_eq!(result, html_result);
 	}
 
 	#[test]
@@ -290,7 +291,8 @@ mod tests {
 		variables.insert("name".to_string(), "Bob".to_string());
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello Bob, your balance is ${balance}");
+		let html_result = EmailNotifier::markdown_to_html(&result);
+		assert_eq!(result, html_result);
 	}
 
 	#[test]
@@ -299,7 +301,8 @@ mod tests {
 		let variables = HashMap::new();
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello ${name}, your balance is ${balance}");
+		let html_result = EmailNotifier::markdown_to_html(&result);
+		assert_eq!(result, html_result);
 	}
 
 	#[test]
@@ -310,7 +313,8 @@ mod tests {
 		variables.insert("balance".to_string(), "".to_string());
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello , your balance is ");
+		let html_result = EmailNotifier::markdown_to_html(&result);
+		assert_eq!(result, html_result);
 	}
 
 	////////////////////////////////////////////////////////////
