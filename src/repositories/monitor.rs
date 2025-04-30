@@ -412,7 +412,7 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{MatchConditions, Monitor, ScriptLanguage};
+	use crate::{models::ScriptLanguage, utils::tests::builders::evm::monitor::MonitorBuilder};
 	use std::fs;
 	use tempfile::TempDir;
 
@@ -427,37 +427,29 @@ mod tests {
 		let networks = HashMap::new();
 
 		// Test valid configuration
-		let monitor = Monitor {
-			name: "test_monitor".to_string(),
-			match_conditions: MatchConditions::default(),
-			trigger_conditions: vec![crate::models::TriggerConditions {
-				script_path: script_path.to_str().unwrap().to_string(),
-				language: ScriptLanguage::Python,
-				timeout_ms: 1000,
-				arguments: None,
-			}],
-			..Default::default()
-		};
+		let monitor = MonitorBuilder::new()
+			.name("test_monitor")
+			.networks(vec![])
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Python,
+				None,
+			)
+			.build();
 		monitors.insert("test_monitor".to_string(), monitor);
 
-		assert!(
+		let result =
 			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
-				&monitors, &triggers, &networks
-			)
-			.is_ok()
-		);
+				&monitors, &triggers, &networks,
+			);
+		assert!(result.is_ok());
 
 		// Test non-existent script
-		let monitor_bad_path = Monitor {
-			name: "test_monitor_bad_path".to_string(),
-			trigger_conditions: vec![crate::models::TriggerConditions {
-				script_path: "non_existent_script.py".to_string(),
-				language: ScriptLanguage::Python,
-				timeout_ms: 1000,
-				arguments: None,
-			}],
-			..Default::default()
-		};
+		let monitor_bad_path = MonitorBuilder::new()
+			.name("test_monitor_bad_path")
+			.trigger_condition("non_existent_script.py", 1000, ScriptLanguage::Python, None)
+			.build();
 		monitors.insert("test_monitor_bad_path".to_string(), monitor_bad_path);
 
 		let err =
@@ -471,16 +463,15 @@ mod tests {
 		let wrong_ext_path = temp_dir.path().join("test_script.js");
 		fs::write(&wrong_ext_path, "print('test')").unwrap();
 
-		let monitor_wrong_ext = Monitor {
-			name: "test_monitor_wrong_ext".to_string(),
-			trigger_conditions: vec![crate::models::TriggerConditions {
-				script_path: wrong_ext_path.to_str().unwrap().to_string(),
-				language: ScriptLanguage::Python,
-				timeout_ms: 1000,
-				arguments: None,
-			}],
-			..Default::default()
-		};
+		let monitor_wrong_ext = MonitorBuilder::new()
+			.name("test_monitor_wrong_ext")
+			.trigger_condition(
+				wrong_ext_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Python,
+				None,
+			)
+			.build();
 		monitors.clear();
 		monitors.insert("test_monitor_wrong_ext".to_string(), monitor_wrong_ext);
 
@@ -495,17 +486,15 @@ mod tests {
 		));
 
 		// Test zero timeout
-		let monitor_zero_timeout = Monitor {
-			name: "test_monitor_zero_timeout".to_string(),
-			match_conditions: MatchConditions::default(),
-			trigger_conditions: vec![crate::models::TriggerConditions {
-				script_path: script_path.to_str().unwrap().to_string(),
-				language: ScriptLanguage::Python,
-				timeout_ms: 0,
-				arguments: None,
-			}],
-			..Default::default()
-		};
+		let monitor_zero_timeout = MonitorBuilder::new()
+			.name("test_monitor_zero_timeout")
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				0,
+				ScriptLanguage::Python,
+				None,
+			)
+			.build();
 		monitors.clear();
 		monitors.insert(
 			"test_monitor_zero_timeout".to_string(),
@@ -544,11 +533,10 @@ mod tests {
 	fn test_network_validation_error() {
 		// Create a monitor with a reference to a non-existent network
 		let mut monitors = HashMap::new();
-		let monitor = Monitor {
-			name: "test_monitor".to_string(),
-			networks: vec!["non_existent_network".to_string()],
-			..Default::default()
-		};
+		let monitor = MonitorBuilder::new()
+			.name("test_monitor")
+			.networks(vec!["non_existent_network".to_string()])
+			.build();
 		monitors.insert("test_monitor".to_string(), monitor);
 
 		// Empty networks and triggers
@@ -570,11 +558,10 @@ mod tests {
 	fn test_trigger_validation_error() {
 		// Create a monitor with a reference to a non-existent trigger
 		let mut monitors = HashMap::new();
-		let monitor = Monitor {
-			name: "test_monitor".to_string(),
-			triggers: vec!["non_existent_trigger".to_string()],
-			..Default::default()
-		};
+		let monitor = MonitorBuilder::new()
+			.name("test_monitor")
+			.triggers(vec!["non_existent_trigger".to_string()])
+			.build();
 		monitors.insert("test_monitor".to_string(), monitor);
 
 		// Empty networks and triggers

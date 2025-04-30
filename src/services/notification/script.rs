@@ -71,9 +71,12 @@ impl ScriptExecutor for ScriptNotifier {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor,
-		MonitorMatch,
+	use crate::{
+		models::{
+			EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor,
+			MonitorMatch,
+		},
+		utils::tests::builders::evm::monitor::MonitorBuilder,
 	};
 	use std::time::Instant;
 
@@ -92,13 +95,12 @@ mod tests {
 		paused: bool,
 		triggers: Vec<&str>,
 	) -> Monitor {
-		Monitor {
-			name: name.to_string(),
-			networks: networks.into_iter().map(|s| s.to_string()).collect(),
-			paused,
-			triggers: triggers.into_iter().map(|s| s.to_string()).collect(),
-			..Default::default()
-		}
+		MonitorBuilder::new()
+			.name(name)
+			.networks(networks.into_iter().map(|s| s.to_string()).collect())
+			.paused(paused)
+			.triggers(triggers.into_iter().map(|s| s.to_string()).collect())
+			.build()
 	}
 
 	fn create_test_evm_transaction() -> EVMTransaction {

@@ -262,11 +262,12 @@ pub fn update_monitoring_metrics(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		AddressWithABI, FunctionCondition, MatchConditions, Monitor, Network, RpcUrl,
-		ScriptLanguage, TransactionCondition, TransactionStatus, Trigger, TriggerConditions,
+	use crate::{
+		models::{BlockChainType, Monitor, Network, TransactionStatus, Trigger},
+		utils::tests::builders::{
+			evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder,
+		},
 	};
-	use crate::models::{BlockChainType, NotificationMessage, TriggerType, TriggerTypeConfig};
 	use std::collections::HashMap;
 	use std::sync::Mutex;
 
@@ -297,23 +298,18 @@ mod tests {
 
 	// Helper function to create a test network
 	fn create_test_network(slug: &str, name: &str, chain_id: u64) -> Network {
-		Network {
-			network_type: BlockChainType::EVM,
-			slug: slug.to_string(),
-			name: name.to_string(),
-			rpc_urls: vec![RpcUrl {
-				type_: "rpc".to_string(),
-				url: format!("https://{}.example.com", slug),
-				weight: 100,
-			}],
-			chain_id: Some(chain_id),
-			network_passphrase: None,
-			block_time_ms: 15000,
-			confirmation_blocks: 12,
-			cron_schedule: "*/15 * * * * *".to_string(),
-			max_past_blocks: Some(1000),
-			store_blocks: Some(true),
-		}
+		NetworkBuilder::new()
+			.name(name)
+			.slug(slug)
+			.network_type(BlockChainType::EVM)
+			.chain_id(chain_id)
+			.rpc_url(&format!("https://{}.example.com", slug))
+			.block_time_ms(15000)
+			.confirmation_blocks(12)
+			.cron_schedule("*/15 * * * * *")
+			.max_past_blocks(1000)
+			.store_blocks(true)
+			.build()
 	}
 
 	// Helper function to create a test monitor
@@ -323,55 +319,28 @@ mod tests {
 		addresses: Vec<String>,
 		paused: bool,
 	) -> Monitor {
-		Monitor {
-			name: name.to_string(),
-			networks,
-			addresses: addresses
-				.into_iter()
-				.map(|addr| AddressWithABI {
-					address: addr,
-					abi: None,
-				})
-				.collect(),
-			paused,
-			match_conditions: MatchConditions {
-				functions: vec![FunctionCondition {
-					signature: "transfer(address,uint256)".to_string(),
-					expression: None,
-				}],
-				events: vec![],
-				transactions: vec![TransactionCondition {
-					status: TransactionStatus::Success,
-					expression: None,
-				}],
-			},
-			trigger_conditions: vec![TriggerConditions {
-				script_path: "/path/to/script.js".to_string(),
-				arguments: None,
-				language: ScriptLanguage::JavaScript,
-				timeout_ms: 5000,
-			}],
-			triggers: vec!["trigger1".to_string()],
-		}
+		MonitorBuilder::new()
+			.name(name)
+			.networks(networks)
+			.paused(paused)
+			.addresses(addresses)
+			.function("transfer(address,uint256)", None)
+			.transaction(TransactionStatus::Success, None)
+			.build()
 	}
 
 	fn create_test_trigger(name: &str) -> Trigger {
-		Trigger {
-			name: name.to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(465),
-				username: "user@example.com".to_string(),
-				password: "password123".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Something happened!".to_string(),
-				},
-				sender: "alerts@example.com".parse().unwrap(),
-				recipients: vec!["user@example.com".parse().unwrap()],
-			},
-		}
+		TriggerBuilder::new()
+			.name(name)
+			.email(
+				"smtp.example.com",
+				"user@example.com",
+				"password123",
+				"alerts@example.com",
+				vec!["user@example.com"],
+			)
+			.message("Alert", "Something happened!")
+			.build()
 	}
 
 	#[test]

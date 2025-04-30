@@ -165,7 +165,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::{BlockChainType, BlockType, RpcUrl};
+	use crate::{models::BlockType, utils::tests::network::NetworkBuilder};
 
 	use super::*;
 	use mockall::mock;
@@ -189,23 +189,11 @@ mod tests {
 		}
 	}
 	fn create_test_network(name: &str, slug: &str, store_blocks: bool) -> Network {
-		Network {
-			name: name.to_string(),
-			slug: slug.to_string(),
-			network_type: BlockChainType::EVM,
-			rpc_urls: vec![RpcUrl {
-				url: "http://localhost:8545".to_string(),
-				type_: "rpc".to_string(),
-				weight: 100,
-			}],
-			cron_schedule: "*/5 * * * * *".to_string(),
-			confirmation_blocks: 1,
-			store_blocks: Some(store_blocks),
-			chain_id: Some(1),
-			network_passphrase: None,
-			block_time_ms: 1000,
-			max_past_blocks: None,
-		}
+		NetworkBuilder::new()
+			.name(name)
+			.slug(slug)
+			.store_blocks(store_blocks)
+			.build()
 	}
 
 	#[tokio::test]

@@ -239,9 +239,12 @@ async fn process_command(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		AddressWithABI, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, EventCondition,
-		FunctionCondition, MatchConditions, Monitor, MonitorMatch, TransactionCondition,
+	use crate::{
+		models::{
+			AddressWithABI, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, EventCondition,
+			FunctionCondition, MatchConditions, Monitor, MonitorMatch, TransactionCondition,
+		},
+		utils::tests::evm::monitor::MonitorBuilder,
 	};
 	use alloy::{
 		consensus::{
@@ -266,17 +269,24 @@ mod tests {
 		transaction_conditions: Vec<TransactionCondition>,
 		addresses: Vec<AddressWithABI>,
 	) -> Monitor {
-		Monitor {
-			match_conditions: MatchConditions {
-				events: event_conditions,
-				functions: function_conditions,
-				transactions: transaction_conditions,
-			},
-			addresses,
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			..Default::default()
+		let mut builder = MonitorBuilder::new()
+			.name("test")
+			.networks(vec!["evm_mainnet".to_string()]);
+
+		for event in event_conditions {
+			builder = builder.event(&event.signature, event.expression);
 		}
+		for function in function_conditions {
+			builder = builder.function(&function.signature, function.expression);
+		}
+		for transaction in transaction_conditions {
+			builder = builder.transaction(transaction.status, transaction.expression);
+		}
+
+		builder =
+			builder.addresses_with_abi(addresses.into_iter().map(|a| (a.address, a.abi)).collect());
+
+		builder.build()
 	}
 
 	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {

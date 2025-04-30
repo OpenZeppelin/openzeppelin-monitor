@@ -565,561 +565,328 @@ impl ConfigLoader for Trigger {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		core::{Trigger, TriggerType},
-		NotificationMessage, ScriptLanguage,
-	};
+	use crate::models::{core::Trigger, NotificationMessage, ScriptLanguage};
+	use crate::utils::tests::builders::trigger::TriggerBuilder;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
 	use tracing_test::traced_test;
 
 	#[test]
 	fn test_slack_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://hooks.slack.com/services/xxx")
+			.message("Alert", "Test message")
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test invalid webhook URL
-		let invalid_webhook = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://invalid-url.com".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Invalid webhook URL
+		let invalid_webhook = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://invalid-url.com")
+			.build();
 		assert!(invalid_webhook.validate().is_err());
 
-		// Test empty title
-		let empty_title = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Empty title
+		let empty_title = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://hooks.slack.com/services/xxx")
+			.message("", "Test message")
+			.build();
 		assert!(empty_title.validate().is_err());
 
-		// Test empty body
-		let empty_body = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
+		// Empty body
+		let empty_body = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://hooks.slack.com/services/xxx")
+			.message("Alert", "")
+			.build();
 		assert!(empty_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_email_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
 		// Test invalid host
-		let invalid_host = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "invalid@host".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let invalid_host = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"invalid@host",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(invalid_host.validate().is_err());
 
 		// Test empty host
-		let empty_host = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let empty_host = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(empty_host.validate().is_err());
 
 		// Test invalid email address
-		let invalid_email = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("invalid-email"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let invalid_email = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"invalid-email",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(invalid_email.validate().is_err());
 
-		let invalid_trigger = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "".to_string(), // Invalid password
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_trigger.validate().is_err());
+		// Test empty password
+		let invalid_password = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"", // Invalid password
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
+		assert!(invalid_password.validate().is_err());
 
-		let invalid_trigger = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "A".repeat(999).to_string(), // Exceeds max length
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_trigger.validate().is_err());
-
-		// Test empty title
-		let empty_title = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(empty_title.validate().is_err());
-
-		// Test title has no control characters
-		let invalid_title = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "\0".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_title.validate().is_err());
-
-		// Test title has atleast one character
-		let invalid_title = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: " ".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_title.validate().is_err());
-
-		// Test body has no control characters
-		let invalid_body = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "\0".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_body.validate().is_err());
-
-		// Test empty body
-		let empty_body = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(empty_body.validate().is_err());
+		// Test subject too long
+		let invalid_subject = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message(&"A".repeat(999), "Test Body")  // Exceeds max length
+			.build();
+		assert!(invalid_subject.validate().is_err());
 
 		// Test empty username
-		let empty_username = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let empty_username = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(empty_username.validate().is_err());
 
-		// Test invalid control characters
-		let invalid_control_characters = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "\0".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_control_characters.validate().is_err());
+		// Test invalid control characters in username
+		let invalid_control_chars = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"\0",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
+		assert!(invalid_control_chars.validate().is_err());
 
-		// Test invalid email recipient
-		let invalid_recipient = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("invalid-email")],
-			},
-		};
+		// Test invalid recipient
+		let invalid_recipient = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["invalid-email"],
+			)
+			.build();
 		assert!(invalid_recipient.validate().is_err());
+
+		// Test empty body
+		let empty_body = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test Subject", "")
+			.build();
+		assert!(empty_body.validate().is_err());
+
+		// Test control characters in subject
+		let control_chars_subject = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test \0 Subject", "Test Body")
+			.build();
+		assert!(control_chars_subject.validate().is_err());
+
+		// Test control characters in body
+		let control_chars_body = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test Subject", "Test \0 Body")
+			.build();
+		assert!(control_chars_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_webhook_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				secret: None,
-				method: Some("POST".to_string()),
-				headers: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("https://api.example.com/webhook")
+			.message("Alert", "Test message")
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test invalid URL
-		let invalid_url = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "invalid-url".to_string(),
-				method: Some("POST".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Invalid URL
+		let invalid_url = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("invalid-url")
+			.build();
 		assert!(invalid_url.validate().is_err());
 
-		// Test invalid method
-		let invalid_method = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				method: Some("INVALID".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
-		assert!(invalid_method.validate().is_err());
+		// Empty title
+		let invalid_title = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("https://api.example.com/webhook")
+			.message("", "Test message")
+			.build();
+		assert!(invalid_title.validate().is_err());
 
-		// Test invalid message
-		let invalid_title_message = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				method: Some("POST".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
-		assert!(invalid_title_message.validate().is_err());
-
-		let invalid_body_message = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				method: Some("POST".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
-		assert!(invalid_body_message.validate().is_err());
+		// Empty body
+		let invalid_body = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("https://api.example.com/webhook")
+			.message("Alert", "")
+			.build();
+		assert!(invalid_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_discord_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://discord.com/api/webhooks/xxx".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://discord.com/api/webhooks/xxx")
+			.message("Alert", "Test message")
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test invalid webhook URL
-		let invalid_webhook = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://invalid-url.com".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Invalid webhook URL
+		let invalid_webhook = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://invalid-url.com")
+			.build();
 		assert!(invalid_webhook.validate().is_err());
 
-		// Test invalid message
-		let invalid_title_message = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://discord.com/api/webhooks/123".to_string(),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "test".to_string(),
-				},
-			},
-		};
-		assert!(invalid_title_message.validate().is_err());
+		// Empty title
+		let invalid_title = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://discord.com/api/webhooks/123")
+			.message("", "Test message")
+			.build();
+		assert!(invalid_title.validate().is_err());
 
-		let invalid_body_message = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://discord.com/api/webhooks/123".to_string(),
-				message: NotificationMessage {
-					title: "test".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
-		assert!(invalid_body_message.validate().is_err());
+		// Empty body
+		let invalid_body = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://discord.com/api/webhooks/123")
+			.message("Alert", "")
+			.build();
+		assert!(invalid_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_telegram_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		};
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"1730223038",
+				true,
+			)
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
 		// Test invalid token
-		let invalid_token = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "invalid-token".to_string(),
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		};
-
+		let invalid_token = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram("invalid-token", "1730223038", true)
+			.build();
 		assert!(invalid_token.validate().is_err());
 
 		// Test invalid chat ID
-		let invalid_chat_id = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		};
+		let invalid_chat_id = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"",
+				true,
+			)
+			.build();
 		assert!(invalid_chat_id.validate().is_err());
 
 		// Test invalid message
-		let invalid_title_message = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "11234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "test".to_string(),
-				},
-			},
-		};
+		let invalid_title_message = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"1730223038",
+				true,
+			)
+			.message("", "Test Message")
+			.build();
 		assert!(invalid_title_message.validate().is_err());
 
-		let invalid_body_message = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "test".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
-
+		let invalid_body_message = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"1730223038",
+				true,
+			)
+			.message("Test Subject", "")
+			.build();
 		assert!(invalid_body_message.validate().is_err());
 	}
 
@@ -1129,29 +896,18 @@ mod tests {
 		let script_path = temp_dir.join("test_script.sh");
 		std::fs::write(&script_path, "#!/bin/bash\necho 'test'").unwrap();
 
-		let valid_trigger = Trigger {
-			name: "test_script".to_string(),
-			trigger_type: TriggerType::Script,
-			config: TriggerTypeConfig::Script {
-				script_path: script_path.to_str().unwrap().to_string(),
-				arguments: Some(vec![String::from("arg1")]),
-				language: ScriptLanguage::Bash,
-				timeout_ms: 1000,
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_script")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Bash)
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test non-existent script
-		let invalid_path = Trigger {
-			name: "test_script".to_string(),
-			trigger_type: TriggerType::Script,
-			config: TriggerTypeConfig::Script {
-				script_path: "/non/existent/path".to_string(),
-				arguments: Some(vec![String::from("arg1")]),
-				language: ScriptLanguage::Python,
-				timeout_ms: 1000,
-			},
-		};
+		// Non-existent script
+		let invalid_path = TriggerBuilder::new()
+			.name("test_script")
+			.script("/non/existent/path", ScriptLanguage::Python)
+			.build();
 		assert!(invalid_path.validate().is_err());
 
 		std::fs::remove_file(script_path).unwrap();

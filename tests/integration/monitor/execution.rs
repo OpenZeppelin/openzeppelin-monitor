@@ -9,10 +9,7 @@ use crate::integration::{
 };
 use mockall::predicate;
 use openzeppelin_monitor::{
-	models::{
-		BlockChainType, EVMTransactionReceipt, Monitor, NotificationMessage, Trigger, TriggerType,
-		TriggerTypeConfig,
-	},
+	models::{BlockChainType, EVMTransactionReceipt, Monitor, Trigger},
 	repositories::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkService,
 		RepositoryError, TriggerRepository, TriggerService,
@@ -20,7 +17,10 @@ use openzeppelin_monitor::{
 	services::{
 		filter::FilterService, notification::NotificationService, trigger::TriggerExecutionService,
 	},
-	utils::monitor::execution::{execute_monitor, MonitorExecutionConfig},
+	utils::{
+		monitor::execution::{execute_monitor, MonitorExecutionConfig},
+		tests::builders::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
+	},
 };
 use std::{
 	collections::HashMap,
@@ -31,7 +31,7 @@ use std::{
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 
-fn setup_mocked_networks(
+fn setup_mocked_network_service(
 	network_name: &str,
 	network_slug: &str,
 	block_chain_type: BlockChainType,
@@ -115,22 +115,17 @@ fn create_test_trigger_file(path: &Path, name: &str) -> std::path::PathBuf {
 }
 
 fn create_test_trigger(name: &str) -> Trigger {
-	Trigger {
-		name: name.to_string(),
-		trigger_type: TriggerType::Email,
-		config: TriggerTypeConfig::Email {
-			host: "smtp.example.com".to_string(),
-			port: Some(465),
-			username: "user@example.com".to_string(),
-			password: "password123".to_string(),
-			message: NotificationMessage {
-				title: "Alert".to_string(),
-				body: "Something happened!".to_string(),
-			},
-			sender: "alerts@example.com".parse().unwrap(),
-			recipients: vec!["user@example.com".parse().unwrap()],
-		},
-	}
+	TriggerBuilder::new()
+		.name(name)
+		.email(
+			"smtp.example.com",
+			"user@example.com",
+			"password123",
+			"alerts@example.com",
+			vec!["user@example.com"],
+		)
+		.message("Alert", "Something happened!")
+		.build()
 }
 
 fn create_test_monitor(
@@ -139,13 +134,12 @@ fn create_test_monitor(
 	paused: bool,
 	triggers: Vec<&str>,
 ) -> Monitor {
-	Monitor {
-		name: name.to_string(),
-		networks: networks.into_iter().map(|s| s.to_string()).collect(),
-		paused,
-		triggers: triggers.into_iter().map(|s| s.to_string()).collect(),
-		..Default::default()
-	}
+	MonitorBuilder::new()
+		.name(name)
+		.networks(networks.into_iter().map(|s| s.to_string()).collect())
+		.paused(paused)
+		.triggers(triggers.into_iter().map(|s| s.to_string()).collect())
+		.build()
 }
 
 #[tokio::test]
@@ -155,17 +149,7 @@ async fn test_execute_monitor_evm() {
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
-	let mut mocked_triggers = HashMap::new();
-	mocked_triggers.insert(
-		"evm_large_transfer_usdc_slack".to_string(),
-		create_test_trigger("test"),
-	);
-	// Create actual TriggerExecutionService instance
-	let trigger_service = setup_trigger_service(mocked_triggers);
-	let notification_service = NotificationService::new();
-	let trigger_execution_service =
-		TriggerExecutionService::new(trigger_service, notification_service);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockEvmClientTrait::new();
@@ -197,6 +181,11 @@ async fn test_execute_monitor_evm() {
 		.return_once(move |_| Ok(Arc::new(mock_client)));
 
 	let block_number = 21305050;
+
+	let trigger_service = setup_trigger_service(HashMap::new());
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -230,7 +219,7 @@ async fn test_execute_monitor_evm_wrong_network() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mock_client = MockEvmClientTrait::new();
 
 	let mut mocked_triggers = HashMap::new();
@@ -274,7 +263,7 @@ async fn test_execute_monitor_evm_wrong_block_number() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mut mock_client = MockEvmClientTrait::new();
 
 	let mut mocked_triggers = HashMap::new();
@@ -323,7 +312,7 @@ async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mut mock_client = MockEvmClientTrait::new();
 
 	let mut mocked_triggers = HashMap::new();
@@ -372,7 +361,7 @@ async fn test_execute_monitor_evm_failed_to_get_evm_client() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	let mut mocked_triggers = HashMap::new();
 	mocked_triggers.insert(
@@ -414,7 +403,7 @@ async fn test_execute_monitor_stellar() {
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
 	let mock_network_service =
-		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+		setup_mocked_network_service("Stellar", "stellar_testnet", BlockChainType::Stellar);
 
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockStellarClientTrait::new();
@@ -478,7 +467,7 @@ async fn test_execute_monitor_failed_to_get_block() {
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
 	let mock_network_service =
-		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+		setup_mocked_network_service("Stellar", "stellar_testnet", BlockChainType::Stellar);
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockStellarClientTrait::new();
 	let mut mocked_triggers = HashMap::new();
@@ -526,7 +515,7 @@ async fn test_execute_monitor_failed_to_get_stellar_client() {
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
 	let mock_network_service =
-		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+		setup_mocked_network_service("Stellar", "stellar_testnet", BlockChainType::Stellar);
 	let mut mock_pool = MockClientPool::new();
 
 	let mut mocked_triggers = HashMap::new();
@@ -569,7 +558,7 @@ async fn test_execute_monitor_failed_to_get_block_by_number() {
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
 	let mock_network_service =
-		setup_mocked_networks("Stellar", "stellar_testnet", BlockChainType::Stellar);
+		setup_mocked_network_service("Stellar", "stellar_testnet", BlockChainType::Stellar);
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockStellarClientTrait::new();
 
@@ -630,7 +619,7 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mut mock_client = MockEvmClientTrait::new();
 
 	mock_client
@@ -665,7 +654,7 @@ async fn test_execute_monitor_network_slug_not_defined() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 	let mut mock_client = MockEvmClientTrait::new();
 
 	let mut mocked_triggers = HashMap::new();
@@ -746,7 +735,7 @@ async fn test_execute_monitor_midnight() {
 
 	let mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Midnight", "midnight_mainnet", BlockChainType::Midnight);
+		setup_mocked_network_service("Midnight", "midnight_mainnet", BlockChainType::Midnight);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -784,7 +773,7 @@ async fn test_execute_monitor_solana() {
 
 	let mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Solana", "solana_mainnet", BlockChainType::Solana);
+		setup_mocked_network_service("Solana", "solana_mainnet", BlockChainType::Solana);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -811,7 +800,7 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mock_network_service =
-		setup_mocked_networks("Stellar", "stellar_mainnet", BlockChainType::Stellar);
+		setup_mocked_network_service("Stellar", "stellar_mainnet", BlockChainType::Stellar);
 	let mut mock_client = MockStellarClientTrait::new();
 
 	let mut mocked_triggers = HashMap::new();
@@ -895,7 +884,7 @@ fn test_load_from_path_with_services() {
 	);
 
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	let mut mocked_triggers = HashMap::new();
 	mocked_triggers.insert("test-trigger".to_string(), create_test_trigger("test"));
@@ -939,7 +928,7 @@ fn test_load_from_path_trait_implementation() {
 	);
 
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	let mut mocked_triggers = HashMap::new();
 	mocked_triggers.insert("test-trigger".to_string(), create_test_trigger("test"));
@@ -982,7 +971,7 @@ fn test_load_from_path_trait_implementation() {
 fn test_load_from_path_trait_implementation_error() {
 	// Setup temporary directory and files
 	let mock_network_service =
-		setup_mocked_networks("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	let mut mocked_triggers = HashMap::new();
 	mocked_triggers.insert("test-trigger".to_string(), create_test_trigger("test"));

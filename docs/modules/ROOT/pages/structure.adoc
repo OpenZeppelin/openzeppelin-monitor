@@ -47,6 +47,10 @@ The main source code directory contains the core implementation files organized 
 ** `logging/`: Logging utilities
 ** `metrics/`: Metrics utilities
 ** `monitor/`: Monitor configuration test utilities
+** `tests/`: Contains test utilities and helper functions
+*** `builders/`: Test builder patterns implementing fluent interfaces for creating test fixtures
+**** `evm/`: Builder implementations specific to Ethereum Virtual Machine (EVM) testing
+**** `stellar/`: Builder implementations specific to Stellar blockchain testing
 
 == Configuration and Data
 

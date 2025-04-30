@@ -4,9 +4,9 @@
 use base64::Engine;
 use openzeppelin_monitor::{
 	models::{
-		AddressWithABI, FunctionCondition, MatchConditions, Monitor, StellarDecodedTransaction,
+		AddressWithABI, FunctionCondition, Monitor, StellarDecodedTransaction,
 		StellarMatchArguments, StellarMatchParamEntry, StellarTransaction, StellarTransactionInfo,
-		TransactionCondition, TransactionStatus,
+		TransactionStatus,
 	},
 	services::{
 		blockchain::{StellarClient, StellarTransportClient},
@@ -17,6 +17,7 @@ use openzeppelin_monitor::{
 			StellarBlockFilter,
 		},
 	},
+	utils::tests::stellar::monitor::MonitorBuilder,
 };
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::{json, Value};
@@ -201,14 +202,10 @@ prop_compose! {
 	fn generate_base_monitor()(
 		address in valid_address(),
 	) -> Monitor {
-		Monitor {
-			name: "Test Monitor".to_string(),
-			addresses: vec![AddressWithABI {
-				address,
-				abi: None,
-			}],
-			..Default::default()
-		}
+		MonitorBuilder::new()
+			.name("Test Monitor")
+			.addresses(vec![address])
+			.build()
 	}
 }
 
@@ -218,28 +215,12 @@ prop_compose! {
 		address in valid_address(),
 		hash in "[a-zA-Z0-9]{64}",
 	) -> Monitor {
-		Monitor {
-			name: "Test Monitor".to_string(),
-			addresses: vec![AddressWithABI {
-				address,
-				abi: None,
-			}],
-			match_conditions: MatchConditions {
-				transactions: vec![
-					TransactionCondition {
-					expression: Some(format!("hash == {}", hash)),
-						status: TransactionStatus::Success,
-					},
-					TransactionCondition {
-						expression: Some(format!("hash != {}", hash)),
-						status: TransactionStatus::Failure,
-					},
-				],
-				functions: vec![],
-				events: vec![],
-			},
-			..Default::default()
-		}
+		MonitorBuilder::new()
+			.name("Test Monitor")
+			.addresses(vec![address])
+			.transaction(TransactionStatus::Success, Some(format!("hash == {}", hash)))
+			.transaction(TransactionStatus::Failure, Some(format!("hash != {}", hash)))
+			.build()
 	}
 }
 
@@ -266,29 +247,12 @@ prop_compose! {
 		],
 		min_value in 0u128..500000u128
 	) -> Monitor {
-		Monitor {
-			name: "Test Monitor".to_string(),
-			addresses: vec![AddressWithABI {
-				address,
-				abi: None,
-			}],
-			match_conditions: MatchConditions {
-				transactions: vec![],
-				functions: vec![
-					FunctionCondition {
-						signature: format!("{}({})", function_name, param_type),
-						expression: Some(format!("0 >= {}", min_value)),
-					},
-					// Extra function that should never match
-					FunctionCondition {
-						signature: format!("not_{}({})", function_name, param_type),
-						expression: Some(format!("0 >= {}", min_value)),
-					},
-				],
-				events: vec![],
-			},
-			..Default::default()
-		}
+		MonitorBuilder::new()
+			.name("Test Monitor")
+			.addresses(vec![address])
+			.function(format!("{}({})", function_name, param_type).as_str(), Some(format!("0 >= {}", min_value)))
+			.function(format!("not_{}({})", function_name, param_type).as_str(), Some(format!("0 >= {}", min_value)))
+			.build()
 	}
 }
 
@@ -778,14 +742,7 @@ proptest! {
 		let mut matched_transactions = Vec::new();
 
 		// Create monitor with empty conditions
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
-				transactions: vec![],
-				functions: vec![],
-				events: vec![],
-			},
-			..Default::default()
-		};
+		let monitor = MonitorBuilder::new().build();
 
 		filter.find_matching_transaction(
 			&tx,
