@@ -20,7 +20,7 @@ use openzeppelin_monitor::{
 	services::{
 		filter::FilterService, notification::NotificationService, trigger::TriggerExecutionService,
 	},
-	utils::monitor::execution::execute_monitor,
+	utils::monitor::execution::{execute_monitor, MonitorExecutionConfig},
 };
 use std::{
 	collections::HashMap,
@@ -198,17 +198,17 @@ async fn test_execute_monitor_evm() {
 
 	let block_number = 21305050;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"ethereum_mainnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_mainnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(
 		result.is_ok(),
@@ -250,17 +250,17 @@ async fn test_execute_monitor_evm_wrong_network() {
 
 	let block_number = 22197425;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"ethereum_goerli".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_goerli".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -299,17 +299,17 @@ async fn test_execute_monitor_evm_wrong_block_number() {
 
 	let block_number = 1;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"ethereum_mainnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_mainnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -348,17 +348,17 @@ async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
 
 	let block_number = 1;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"ethereum_mainnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_mainnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -391,17 +391,17 @@ async fn test_execute_monitor_evm_failed_to_get_evm_client() {
 
 	let block_number = 1;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"ethereum_mainnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_mainnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -447,17 +447,17 @@ async fn test_execute_monitor_stellar() {
 
 	let block_number = 172627;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"stellar_testnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("stellar_testnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(
 		result.is_ok(),
@@ -503,17 +503,17 @@ async fn test_execute_monitor_failed_to_get_block() {
 
 	let block_number = 172627;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"stellar_testnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("stellar_testnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -546,17 +546,17 @@ async fn test_execute_monitor_failed_to_get_stellar_client() {
 
 	let block_number = 172627;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"stellar_testnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("stellar_testnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -595,17 +595,17 @@ async fn test_execute_monitor_failed_to_get_block_by_number() {
 
 	let block_number = 172627;
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"stellar_testnet".to_string()),
-		Some(&block_number),
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("stellar_testnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -641,17 +641,17 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 		.expect_get_evm_client()
 		.return_once(move |_| Ok(Arc::new(mock_client)));
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"ethereum_mainnet".to_string()),
-		None,
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_mainnet".to_string()),
+		block_number: None,
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
@@ -710,17 +710,17 @@ async fn test_execute_monitor_network_slug_not_defined() {
 		.expect_get_evm_client()
 		.return_once(move |_| Ok(Arc::new(mock_client)));
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		None,
-		None,
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: None,
+		block_number: None,
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 
 	assert!(result.is_ok());
@@ -748,17 +748,17 @@ async fn test_execute_monitor_midnight() {
 	let mock_network_service =
 		setup_mocked_networks("Midnight", "midnight_mainnet", BlockChainType::Midnight);
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"midnight_mainnet".to_string()),
-		None,
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("midnight_mainnet".to_string()),
+		block_number: None,
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 
 	assert!(result.is_err());
@@ -786,17 +786,17 @@ async fn test_execute_monitor_solana() {
 	let mock_network_service =
 		setup_mocked_networks("Solana", "solana_mainnet", BlockChainType::Solana);
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"solana_mainnet".to_string()),
-		None,
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("solana_mainnet".to_string()),
+		block_number: None,
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 
 	assert!(result.is_err());
@@ -833,17 +833,17 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 		.expect_get_stellar_client()
 		.return_once(move |_| Ok(Arc::new(mock_client)));
 
-	let result = execute_monitor(
-		&test_data.monitor.name,
-		Some(&"stellar_mainnet".to_string()),
-		None,
-		Arc::new(Mutex::new(mock_monitor_service)),
-		Arc::new(Mutex::new(mock_network_service)),
-		Arc::new(FilterService::new()),
-		Arc::new(trigger_execution_service),
-		HashMap::new(),
-		mock_pool,
-	)
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("stellar_mainnet".to_string()),
+		block_number: None,
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool: mock_pool,
+	})
 	.await;
 	assert!(result.is_err());
 }
