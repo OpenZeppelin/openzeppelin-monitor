@@ -9,7 +9,9 @@ use crate::integration::{
 };
 use mockall::predicate;
 use openzeppelin_monitor::{
-	models::{BlockChainType, EVMTransactionReceipt, Monitor, Trigger},
+	models::{
+		BlockChainType, EVMTransactionReceipt, Monitor, ScriptLanguage, Trigger, TriggerConditions,
+	},
 	repositories::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkService,
 		RepositoryError, TriggerRepository, TriggerService,
@@ -835,6 +837,89 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 	})
 	.await;
 	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_execute_monitor_evm_with_trigger_scripts() {
+	let mut test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	test_data.monitor.trigger_conditions = vec![TriggerConditions {
+		script_path: "./examples/config/filters/evm_large_transfer_usdc.py".to_string(),
+		language: ScriptLanguage::Python,
+		timeout_ms: 10000,
+		arguments: None,
+	}];
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+	let mock_network_service =
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockEvmClientTrait::new();
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(21305050u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
+
+	let receipts = test_data.receipts.clone();
+	let receipt_map: std::collections::HashMap<String, EVMTransactionReceipt> = receipts
+		.iter()
+		.map(|r| (format!("0x{:x}", r.transaction_hash), r.clone()))
+		.collect();
+
+	let receipt_map = Arc::new(receipt_map);
+	mock_client
+		.expect_get_transaction_receipt()
+		.returning(move |hash| {
+			let receipt_map = Arc::clone(&receipt_map);
+			Ok(receipt_map
+				.get(&hash)
+				.cloned()
+				.unwrap_or_else(|| panic!("Receipt not found for hash: {}", hash)))
+		});
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_number = 21305050;
+
+	let trigger_service = setup_trigger_service(HashMap::new());
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	let mut trigger_scripts = HashMap::new();
+	trigger_scripts.insert(
+		"monitor".to_string(),
+		(
+			ScriptLanguage::Python,
+			"evm_large_transfer_usdc".to_string(),
+		),
+	);
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_mainnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: trigger_scripts,
+		client_pool: mock_pool,
+	})
+	.await;
+	assert!(
+		result.is_ok(),
+		"Monitor execution failed: {:?}",
+		result.err()
+	);
+
+	// Parse the JSON result and add more specific assertions based on expected matches
+	let matches: Vec<serde_json::Value> = serde_json::from_str(&result.unwrap()).unwrap();
+	assert!(matches.len() == 1);
 }
 
 #[test]

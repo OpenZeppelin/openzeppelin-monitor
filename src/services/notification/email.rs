@@ -280,8 +280,8 @@ mod tests {
 		variables.insert("balance".to_string(), "100".to_string());
 
 		let result = notifier.format_message(&variables);
-		let html_result = EmailNotifier::markdown_to_html(&result);
-		assert_eq!(result, html_result);
+		let expected_result = "<p>Hello Alice, your balance is 100</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	#[test]
@@ -291,8 +291,8 @@ mod tests {
 		variables.insert("name".to_string(), "Bob".to_string());
 
 		let result = notifier.format_message(&variables);
-		let html_result = EmailNotifier::markdown_to_html(&result);
-		assert_eq!(result, html_result);
+		let expected_result = "<p>Hello Bob, your balance is ${balance}</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	#[test]
@@ -301,8 +301,8 @@ mod tests {
 		let variables = HashMap::new();
 
 		let result = notifier.format_message(&variables);
-		let html_result = EmailNotifier::markdown_to_html(&result);
-		assert_eq!(result, html_result);
+		let expected_result = "<p>Hello ${name}, your balance is ${balance}</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	#[test]
@@ -313,8 +313,8 @@ mod tests {
 		variables.insert("balance".to_string(), "".to_string());
 
 		let result = notifier.format_message(&variables);
-		let html_result = EmailNotifier::markdown_to_html(&result);
-		assert_eq!(result, html_result);
+		let expected_result = "<p>Hello , your balance is</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	////////////////////////////////////////////////////////////
