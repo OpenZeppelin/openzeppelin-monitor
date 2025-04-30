@@ -498,7 +498,7 @@ print("true")
 				console.log("finished");
 				console.log("not a boolean");
 			} catch (err) {
-				console.error(err);
+				console.log(err);
 			}
 		})();
 		"#;
@@ -513,6 +513,7 @@ print("true")
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
+				println!("err_msg EXECUTOR: {}", err_msg);
 				assert!(
 					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
 				);
