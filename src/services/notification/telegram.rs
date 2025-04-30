@@ -342,4 +342,102 @@ mod tests {
 			.await;
 		assert!(result.is_err());
 	}
+
+	#[test]
+	fn test_escape_markdown_v2() {
+		// Test for real life examples
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("*Transaction Alert*\n*Network:* Base Sepolia\n*From:* 0x00001\n*To:* 0x00002\n*Transaction:* [View on Blockscout](https://base-sepolia.blockscout.com/tx/0x00003)"),
+			"*Transaction Alert*\n*Network:* Base Sepolia\n*From:* 0x00001\n*To:* 0x00002\n*Transaction:* [View on Blockscout](https://base\\-sepolia\\.blockscout\\.com/tx/0x00003)"
+		);
+
+		// Test basic special character escaping
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("Hello *world*!"),
+			"Hello *world*\\!"
+		);
+
+		// Test multiple special characters
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("(test) [test] {test} <test>"),
+			"\\(test\\) \\[test\\] \\{test\\} <test\\>"
+		);
+
+		// Test markdown code blocks (should be preserved)
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("```code block```"),
+			"```code block```"
+		);
+
+		// Test inline code (should be preserved)
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("`inline code`"),
+			"`inline code`"
+		);
+
+		// Test bold text (should be preserved)
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("*bold text*"),
+			"*bold text*"
+		);
+
+		// Test italic text (should be preserved)
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("_italic text_"),
+			"_italic text_"
+		);
+
+		// Test strikethrough (should be preserved)
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("~strikethrough~"),
+			"~strikethrough~"
+		);
+
+		// Test links with special characters
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("[link](https://example.com/test.html)"),
+			"[link](https://example\\.com/test\\.html)"
+		);
+
+		// Test complex link with special characters in both label and URL
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("[test!*_]{link}](https://test.com/path[1])"),
+			"\\[test\\!\\*\\_\\]\\{link\\}\\]\\(https://test\\.com/path\\[1\\]\\)"
+		);
+
+		// Test mixed content
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2(
+				"Hello *bold* and [link](http://test.com) and `code`"
+			),
+			"Hello *bold* and [link](http://test\\.com) and `code`"
+		);
+
+		// Test escaping backslashes
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("test\\test"),
+			"test\\\\test"
+		);
+
+		// Test all special characters
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("_*[]()~`>#+-=|{}.!\\"),
+			"\\_\\*\\[\\]\\(\\)\\~\\`\\>\\#\\+\\-\\=\\|\\{\\}\\.\\!\\\\",
+		);
+
+		// Test nested markdown (outer should be preserved, inner escaped)
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("*bold with [link](http://test.com)*"),
+			"*bold with [link](http://test.com)*"
+		);
+
+		// Test empty string
+		assert_eq!(TelegramNotifier::escape_markdown_v2(""), "");
+
+		// Test string with only special characters
+		assert_eq!(
+			TelegramNotifier::escape_markdown_v2("***"),
+			"**\\*" // First * is preserved as markdown, others escaped
+		);
+	}
 }
