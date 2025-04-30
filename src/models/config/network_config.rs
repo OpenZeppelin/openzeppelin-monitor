@@ -293,8 +293,8 @@ impl ConfigLoader for Network {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::utils::tests::builders::network::NetworkBuilder;
 	use crate::models::RpcUrl;
+	use crate::utils::tests::builders::network::NetworkBuilder;
 	use tracing_test::traced_test;
 
 	// Replace create_valid_network() with NetworkBuilder usage

@@ -540,7 +540,7 @@ impl ConfigLoader for Trigger {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{core::Trigger, ScriptLanguage};
+	use crate::models::{core::Trigger, NotificationMessage, ScriptLanguage};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;

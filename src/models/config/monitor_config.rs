@@ -530,6 +530,8 @@ mod tests {
 		use std::os::unix::fs::PermissionsExt;
 		use tempfile::TempDir;
 
+		use crate::models::{MatchConditions, TriggerConditions};
+
 		let temp_dir = TempDir::new().unwrap();
 		let script_path = temp_dir.path().join("test_script.sh");
 		File::create(&script_path).unwrap();
