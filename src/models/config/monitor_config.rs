@@ -182,7 +182,7 @@ impl ConfigLoader for Monitor {
 				let mode = permissions.mode();
 				if mode & 0o022 != 0 {
 					tracing::warn!(
-						"Monitor '{}' trigger conditions script file has overly permissive write permissions: {}",
+						"Monitor '{}' trigger conditions script file has overly permissive write permissions: {}. The recommended permissions are `644` (`rw-r--r--`)",
 						self.name,
 						condition.script_path
 					);

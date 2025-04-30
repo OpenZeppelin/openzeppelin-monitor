@@ -500,7 +500,7 @@ impl ConfigLoader for Trigger {
 						let mode = permissions.mode();
 						if mode & 0o022 != 0 {
 							tracing::warn!(
-								"Script file has overly permissive write permissions: {}",
+								"Script file has overly permissive write permissions: {}.The recommended permissions are `644` (`rw-r--r--`)",
 								script_path
 							);
 						}
