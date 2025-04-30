@@ -751,3 +751,97 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 
 	Ok(())
 }
+
+#[tokio::test]
+async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
+	let test_data = load_test_data("stellar");
+	let filter_service = FilterService::new();
+
+	let mut monitor = test_data.monitor;
+	// Clear existing conditions and add functions without arguments
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "increment()".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.transactions = vec![];
+
+	// Load Stellar-specific test data
+	let events: Vec<StellarEvent> =
+		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
+	let transactions: Vec<StellarTransactionInfo> =
+		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let decoded_transactions: Vec<StellarTransaction> = transactions
+		.iter()
+		.map(|tx| StellarTransaction::from(tx.clone()))
+		.collect();
+
+	// Setup mock expectations
+	mock_client
+		.expect_get_transactions()
+		.times(1)
+		.returning(move |_, _| Ok(decoded_transactions.clone()));
+
+	mock_client
+		.expect_get_events()
+		.times(1)
+		.returning(move |_, _| Ok(events.clone()));
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches");
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::Stellar(stellar_match) => {
+			assert!(stellar_match.matched_on.functions.len() == 1);
+			assert!(stellar_match.matched_on.events.is_empty());
+			assert!(stellar_match.matched_on.transactions.is_empty());
+			assert!(stellar_match.matched_on.functions[0].signature == "increment()");
+
+			// Now test handle_match to verify the data map contains signatures
+			let trigger_scripts = HashMap::new();
+			let mut trigger_execution_service = setup_trigger_execution_service(
+				"tests/integration/fixtures/stellar/triggers/trigger.json",
+			);
+
+			// Set up expectations for execute()
+			trigger_execution_service
+				.expect_execute()
+				.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
+					trigger_name == ["example_trigger_slack"]
+						// Monitor metadata
+						&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
+						// Transaction variables
+						&& variables.get("transaction_hash") == Some(&"80fec04b989895a4222d9985fbf153d253e3e2cbc1da45ef414db96a277b99be".to_string())
+						// Function signature should be present even without args
+						&& variables.get("function_0_signature") == Some(&"increment()".to_string())
+				})
+				.once()
+				.returning(|_, _, _, _| Ok(()));
+
+			let result = handle_match(
+				matches[0].clone(),
+				&trigger_execution_service,
+				&trigger_scripts,
+			)
+			.await;
+			assert!(result.is_ok(), "Handle match should succeed");
+		}
+		_ => {
+			panic!("Expected Stellar match");
+		}
+	}
+
+	Ok(())
+}

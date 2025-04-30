@@ -77,17 +77,28 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				evm_monitor_match.monitor.name.clone(),
 			);
 
+			let matched_on: HashMap<String, String> = {
+				let matched_on = &evm_monitor_match.matched_on;
+				let mut map = HashMap::new();
+				for (idx, func) in matched_on.functions.iter().enumerate() {
+					map.insert(
+						format!("function_{}_signature", idx),
+						func.signature.clone(),
+					);
+				}
+				for (idx, event) in matched_on.events.iter().enumerate() {
+					map.insert(format!("event_{}_signature", idx), event.signature.clone());
+				}
+				map
+			};
+
+			data.extend(matched_on);
+
 			let matched_args: HashMap<String, String> =
 				if let Some(args) = &evm_monitor_match.matched_on_args {
 					let mut map = HashMap::new();
 					if let Some(functions) = &args.functions {
 						for (idx, func) in functions.iter().enumerate() {
-							// First add the signature
-							map.insert(
-								format!("function_{}_signature", idx),
-								func.signature.clone(),
-							);
-							// Then add all arguments
 							if let Some(func_args) = &func.args {
 								for arg in func_args {
 									map.insert(
@@ -100,9 +111,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					}
 					if let Some(events) = &args.events {
 						for (idx, event) in events.iter().enumerate() {
-							// First add the signature
-							map.insert(format!("event_{}_signature", idx), event.signature.clone());
-							// Then add all arguments
 							if let Some(event_args) = &event.args {
 								for arg in event_args {
 									map.insert(
@@ -162,17 +170,28 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				stellar_monitor_match.monitor.name.clone(),
 			);
 
+			let matched_on: HashMap<String, String> = {
+				let matched_on = &stellar_monitor_match.matched_on;
+				let mut map = HashMap::new();
+				for (idx, func) in matched_on.functions.iter().enumerate() {
+					map.insert(
+						format!("function_{}_signature", idx),
+						func.signature.clone(),
+					);
+				}
+				for (idx, event) in matched_on.events.iter().enumerate() {
+					map.insert(format!("event_{}_signature", idx), event.signature.clone());
+				}
+				map
+			};
+
+			data.extend(matched_on);
+
 			let matched_args: HashMap<String, String> =
 				if let Some(args) = &stellar_monitor_match.matched_on_args {
 					let mut map = HashMap::new();
 					if let Some(functions) = &args.functions {
 						for (idx, func) in functions.iter().enumerate() {
-							// First add the signature
-							map.insert(
-								format!("function_{}_signature", idx),
-								func.signature.clone(),
-							);
-							// Then add all arguments
 							if let Some(func_args) = &func.args {
 								for arg in func_args {
 									map.insert(
@@ -185,9 +204,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					}
 					if let Some(events) = &args.events {
 						for (idx, event) in events.iter().enumerate() {
-							// First add the signature
-							map.insert(format!("event_{}_signature", idx), event.signature.clone());
-							// Then add all arguments
 							if let Some(event_args) = &event.args {
 								for arg in event_args {
 									map.insert(
