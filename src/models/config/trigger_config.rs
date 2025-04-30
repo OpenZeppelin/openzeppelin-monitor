@@ -3,12 +3,16 @@
 //! This module implements the ConfigLoader trait for Trigger configurations,
 //! allowing triggers to be loaded from JSON files.
 
+use async_trait::async_trait;
 use email_address::EmailAddress;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
 
 use crate::{
-	models::{config::error::ConfigError, ConfigLoader, Trigger, TriggerType, TriggerTypeConfig},
+	models::{
+		config::error::ConfigError, ConfigLoader, SecretValue, Trigger, TriggerType,
+		TriggerTypeConfig,
+	},
 	services::trigger::validate_script_config,
 };
 
@@ -20,7 +24,90 @@ pub struct TriggerConfigFile {
 	pub triggers: HashMap<String, Trigger>,
 }
 
+#[async_trait]
 impl ConfigLoader for Trigger {
+	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		let mut trigger = self.clone();
+
+		match &mut trigger.config {
+			TriggerTypeConfig::Slack { slack_url, .. } => {
+				let resolved_url = slack_url.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve Slack URL: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*slack_url = SecretValue::Plain(resolved_url);
+			}
+			TriggerTypeConfig::Email {
+				username, password, ..
+			} => {
+				let resolved_username = username.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve SMTP username: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*username = SecretValue::Plain(resolved_username);
+
+				let resolved_password = password.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve SMTP password: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*password = SecretValue::Plain(resolved_password);
+			}
+			TriggerTypeConfig::Webhook { url, secret, .. } => {
+				let resolved_url = url.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve webhook URL: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*url = SecretValue::Plain(resolved_url);
+
+				if let Some(secret) = secret {
+					let resolved_secret = secret.resolve().await.map_err(|e| {
+						ConfigError::parse_error(
+							format!("failed to resolve webhook secret: {}", e),
+							Some(Box::new(e)),
+							None,
+						)
+					})?;
+					*secret = SecretValue::Plain(resolved_secret);
+				}
+			}
+			TriggerTypeConfig::Telegram { token, .. } => {
+				let resolved_token = token.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve Telegram token: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*token = SecretValue::Plain(resolved_token);
+			}
+			TriggerTypeConfig::Discord { discord_url, .. } => {
+				let resolved_url = discord_url.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve Discord URL: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*discord_url = SecretValue::Plain(resolved_url);
+			}
+			_ => {}
+		}
+
+		Ok(trigger)
+	}
+
 	/// Load all trigger configurations from a directory
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
@@ -213,7 +300,7 @@ impl ConfigLoader for Trigger {
 							None,
 						));
 					}
-					if username.chars().any(|c| c.is_control()) {
+					if username.as_str().chars().any(|c| c.is_control()) {
 						return Err(ConfigError::validation_error(
 							"SMTP username contains invalid control characters",
 							None,
@@ -381,7 +468,7 @@ impl ConfigLoader for Trigger {
 					// Safely compile and use the regex
 					match regex::Regex::new(r"^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$") {
 						Ok(re) => {
-							if !re.is_match(token) {
+							if !re.is_match(token.as_str()) {
 								return Err(ConfigError::validation_error(
 									"Invalid token format",
 									None,
@@ -540,7 +627,7 @@ impl ConfigLoader for Trigger {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{core::Trigger, NotificationMessage, ScriptLanguage};
+	use crate::models::{core::Trigger, NotificationMessage, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
@@ -969,7 +1056,9 @@ mod tests {
 			name: "test_slack".to_string(),
 			trigger_type: TriggerType::Slack,
 			config: TriggerTypeConfig::Slack {
-				slack_url: "http://hooks.slack.com/services/xxx".to_string(),
+				slack_url: SecretValue::Plain(SecretString::new(
+					"http://hooks.slack.com/services/xxx".to_string(),
+				)),
 				message: NotificationMessage {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
@@ -988,7 +1077,9 @@ mod tests {
 			name: "test_discord".to_string(),
 			trigger_type: TriggerType::Discord,
 			config: TriggerTypeConfig::Discord {
-				discord_url: "http://discord.com/api/webhooks/xxx".to_string(),
+				discord_url: SecretValue::Plain(SecretString::new(
+					"http://discord.com/api/webhooks/xxx".to_string(),
+				)),
 				message: NotificationMessage {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
@@ -1007,7 +1098,9 @@ mod tests {
 			name: "test_webhook".to_string(),
 			trigger_type: TriggerType::Webhook,
 			config: TriggerTypeConfig::Webhook {
-				url: "http://api.example.com/webhook".to_string(),
+				url: SecretValue::Plain(SecretString::new(
+					"http://api.example.com/webhook".to_string(),
+				)),
 				method: Some("POST".to_string()),
 				headers: None,
 				secret: None,
@@ -1032,8 +1125,8 @@ mod tests {
 			config: TriggerTypeConfig::Email {
 				host: "smtp.example.com".to_string(),
 				port: Some(25), // Insecure port
-				username: "user".to_string(),
-				password: "pass".to_string(),
+				username: SecretValue::Plain(SecretString::new("user".to_string())),
+				password: SecretValue::Plain(SecretString::new("pass".to_string())),
 				message: NotificationMessage {
 					title: "Test".to_string(),
 					body: "Test message".to_string(),
@@ -1092,7 +1185,9 @@ mod tests {
 			name: "test_webhook".to_string(),
 			trigger_type: TriggerType::Webhook,
 			config: TriggerTypeConfig::Webhook {
-				url: "http://api.example.com/webhook".to_string(),
+				url: SecretValue::Plain(SecretString::new(
+					"http://api.example.com/webhook".to_string(),
+				)),
 				method: Some("POST".to_string()),
 				headers: Some(headers),
 				secret: None,

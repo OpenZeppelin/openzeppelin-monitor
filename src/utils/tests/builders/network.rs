@@ -2,7 +2,7 @@
 //!
 //! - `NetworkBuilder`: Builder for creating test Network instances
 
-use crate::models::{BlockChainType, Network, RpcUrl};
+use crate::models::{BlockChainType, Network, RpcUrl, SecretString, SecretValue};
 
 /// Builder for creating test Network instances
 pub struct NetworkBuilder {
@@ -30,7 +30,7 @@ impl Default for NetworkBuilder {
 			store_blocks: Some(true),
 			rpc_urls: vec![RpcUrl {
 				type_: "rpc".to_string(),
-				url: "https://test.network".to_string(),
+				url: SecretValue::Plain(SecretString::new("https://test.network".to_string())),
 				weight: 100,
 			}],
 			block_time_ms: 1000,
@@ -79,7 +79,7 @@ impl NetworkBuilder {
 	pub fn rpc_url(mut self, url: &str) -> Self {
 		self.rpc_urls = vec![RpcUrl {
 			type_: "rpc".to_string(),
-			url: url.to_string(),
+			url: SecretValue::Plain(SecretString::new(url.to_string())),
 			weight: 100,
 		}];
 		self
@@ -90,7 +90,7 @@ impl NetworkBuilder {
 			.into_iter()
 			.map(|url| RpcUrl {
 				type_: "rpc".to_string(),
-				url: url.to_string(),
+				url: SecretValue::Plain(SecretString::new(url.to_string())),
 				weight: 100,
 			})
 			.collect();
@@ -100,7 +100,7 @@ impl NetworkBuilder {
 	pub fn add_rpc_url(mut self, url: &str, type_: &str, weight: u32) -> Self {
 		self.rpc_urls.push(RpcUrl {
 			type_: type_.to_string(),
-			url: url.to_string(),
+			url: SecretValue::Plain(SecretString::new(url.to_string())),
 			weight,
 		});
 		self
@@ -169,7 +169,10 @@ mod tests {
 
 		// Check default RPC URL
 		assert_eq!(network.rpc_urls.len(), 1);
-		assert_eq!(network.rpc_urls[0].url, "https://test.network");
+		assert_eq!(
+			network.rpc_urls[0].url.as_ref().to_string(),
+			"https://test.network".to_string()
+		);
 		assert_eq!(network.rpc_urls[0].type_, "rpc");
 		assert_eq!(network.rpc_urls[0].weight, 100);
 	}
@@ -204,10 +207,16 @@ mod tests {
 			.build();
 
 		assert_eq!(network.rpc_urls.len(), 2);
-		assert_eq!(network.rpc_urls[0].url, "https://rpc1.example.com");
+		assert_eq!(
+			network.rpc_urls[0].url.as_ref().to_string(),
+			"https://rpc1.example.com".to_string()
+		);
 		assert_eq!(network.rpc_urls[0].type_, "http");
 		assert_eq!(network.rpc_urls[0].weight, 50);
-		assert_eq!(network.rpc_urls[1].url, "https://rpc2.example.com");
+		assert_eq!(
+			network.rpc_urls[1].url.as_ref().to_string(),
+			"https://rpc2.example.com".to_string()
+		);
 		assert_eq!(network.rpc_urls[1].type_, "ws");
 		assert_eq!(network.rpc_urls[1].weight, 50);
 	}
@@ -219,8 +228,14 @@ mod tests {
 			.build();
 
 		assert_eq!(network.rpc_urls.len(), 2);
-		assert_eq!(network.rpc_urls[0].url, "https://rpc1.com");
-		assert_eq!(network.rpc_urls[1].url, "https://rpc2.com");
+		assert_eq!(
+			network.rpc_urls[0].url.as_ref().to_string(),
+			"https://rpc1.com".to_string()
+		);
+		assert_eq!(
+			network.rpc_urls[1].url.as_ref().to_string(),
+			"https://rpc2.com".to_string()
+		);
 		// Check defaults are applied
 		assert!(network.rpc_urls.iter().all(|url| url.type_ == "rpc"));
 		assert!(network.rpc_urls.iter().all(|url| url.weight == 100));

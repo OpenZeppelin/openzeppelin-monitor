@@ -2,7 +2,10 @@
 //!
 //! - `TriggerBuilder`: Builder for creating test Trigger instances
 
-use crate::models::{NotificationMessage, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig};
+use crate::models::{
+	NotificationMessage, ScriptLanguage, SecretString, SecretValue, Trigger, TriggerType,
+	TriggerTypeConfig,
+};
 use email_address::EmailAddress;
 
 /// Builder for creating test Trigger instances
@@ -18,7 +21,9 @@ impl Default for TriggerBuilder {
 			name: "test_trigger".to_string(),
 			trigger_type: TriggerType::Webhook,
 			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
+				url: SecretValue::Plain(SecretString::new(
+					"https://api.example.com/webhook".to_string(),
+				)),
 				secret: None,
 				method: Some("POST".to_string()),
 				headers: None,
@@ -49,7 +54,7 @@ impl TriggerBuilder {
 	pub fn webhook(mut self, url: &str) -> Self {
 		self.trigger_type = TriggerType::Webhook;
 		self.config = TriggerTypeConfig::Webhook {
-			url: url.to_string(),
+			url: SecretValue::Plain(SecretString::new(url.to_string())),
 			secret: None,
 			method: Some("POST".to_string()),
 			headers: None,
@@ -64,7 +69,7 @@ impl TriggerBuilder {
 	pub fn slack(mut self, webhook_url: &str) -> Self {
 		self.trigger_type = TriggerType::Slack;
 		self.config = TriggerTypeConfig::Slack {
-			slack_url: webhook_url.to_string(),
+			slack_url: SecretValue::Plain(SecretString::new(webhook_url.to_string())),
 			message: NotificationMessage {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
@@ -76,7 +81,7 @@ impl TriggerBuilder {
 	pub fn discord(mut self, webhook_url: &str) -> Self {
 		self.trigger_type = TriggerType::Discord;
 		self.config = TriggerTypeConfig::Discord {
-			discord_url: webhook_url.to_string(),
+			discord_url: SecretValue::Plain(SecretString::new(webhook_url.to_string())),
 			message: NotificationMessage {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
@@ -88,7 +93,7 @@ impl TriggerBuilder {
 	pub fn telegram(mut self, token: &str, chat_id: &str, disable_web_preview: bool) -> Self {
 		self.trigger_type = TriggerType::Telegram;
 		self.config = TriggerTypeConfig::Telegram {
-			token: token.to_string(),
+			token: SecretValue::Plain(SecretString::new(token.to_string())),
 			chat_id: chat_id.to_string(),
 			disable_web_preview: Some(disable_web_preview),
 			message: NotificationMessage {
@@ -156,8 +161,8 @@ impl TriggerBuilder {
 		self.config = TriggerTypeConfig::Email {
 			host: host.to_string(),
 			port: Some(587),
-			username: username.to_string(),
-			password: password.to_string(),
+			username: SecretValue::Plain(SecretString::new(username.to_string())),
+			password: SecretValue::Plain(SecretString::new(password.to_string())),
 			message: NotificationMessage {
 				title: "Test Subject".to_string(),
 				body: "Test Body".to_string(),
@@ -194,7 +199,7 @@ impl TriggerBuilder {
 
 	pub fn webhook_secret(mut self, secret: &str) -> Self {
 		if let TriggerTypeConfig::Webhook { secret: s, .. } = &mut self.config {
-			*s = Some(secret.to_string());
+			*s = Some(SecretValue::Plain(SecretString::new(secret.to_string())));
 		}
 		self
 	}
@@ -228,7 +233,7 @@ mod tests {
 
 		match trigger.config {
 			TriggerTypeConfig::Webhook { url, method, .. } => {
-				assert_eq!(url, "https://api.example.com/webhook");
+				assert_eq!(url.as_ref().to_string(), "https://api.example.com/webhook");
 				assert_eq!(method, Some("POST".to_string()));
 			}
 			_ => panic!("Expected webhook config"),
@@ -240,8 +245,10 @@ mod tests {
 		let trigger = TriggerBuilder::new()
 			.name("my_trigger")
 			.config(TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				secret: Some("secret".to_string()),
+				url: SecretValue::Plain(SecretString::new(
+					"https://api.example.com/webhook".to_string(),
+				)),
+				secret: Some(SecretValue::Plain(SecretString::new("secret".to_string()))),
 				method: Some("POST".to_string()),
 				headers: None,
 				message: NotificationMessage {
@@ -256,7 +263,7 @@ mod tests {
 
 		match trigger.config {
 			TriggerTypeConfig::Webhook { url, method, .. } => {
-				assert_eq!(url, "https://api.example.com/webhook");
+				assert_eq!(url.as_ref().to_string(), "https://api.example.com/webhook");
 				assert_eq!(method, Some("POST".to_string()));
 			}
 			_ => panic!("Expected webhook config"),
@@ -276,7 +283,7 @@ mod tests {
 
 		match trigger.config {
 			TriggerTypeConfig::Webhook { url, message, .. } => {
-				assert_eq!(url, "https://webhook.example.com");
+				assert_eq!(url.as_ref().to_string(), "https://webhook.example.com");
 				assert_eq!(message.title, "Custom Alert");
 				assert_eq!(message.body, "Something happened!");
 			}
@@ -309,9 +316,12 @@ mod tests {
 				headers: h,
 				message,
 			} => {
-				assert_eq!(url, "https://webhook.example.com");
+				assert_eq!(url.as_ref().to_string(), "https://webhook.example.com");
 				assert_eq!(method, Some("POST".to_string()));
-				assert_eq!(secret, Some("secret123".to_string()));
+				assert_eq!(
+					secret.as_ref().map(|s| s.as_ref().to_string()),
+					Some("secret123".to_string())
+				);
 				assert_eq!(h, Some(headers));
 				assert_eq!(message.title, "Custom Alert");
 				assert_eq!(message.body, "Something happened!");
@@ -331,7 +341,7 @@ mod tests {
 		assert_eq!(trigger.trigger_type, TriggerType::Slack);
 		match trigger.config {
 			TriggerTypeConfig::Slack { slack_url, message } => {
-				assert_eq!(slack_url, "https://slack.webhook.com");
+				assert_eq!(slack_url.as_ref().to_string(), "https://slack.webhook.com");
 				assert_eq!(message.title, "Alert");
 				assert_eq!(message.body, "Test message");
 			}
@@ -353,7 +363,10 @@ mod tests {
 				discord_url,
 				message,
 			} => {
-				assert_eq!(discord_url, "https://discord.webhook.com");
+				assert_eq!(
+					discord_url.as_ref().to_string(),
+					"https://discord.webhook.com"
+				);
 				assert_eq!(message.title, "Alert");
 				assert_eq!(message.body, "Test message");
 			}
@@ -438,7 +451,10 @@ mod tests {
 				message,
 				..
 			} => {
-				assert_eq!(token, "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789"); // noboost
+				assert_eq!(
+					token.as_ref().to_string(),
+					"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string() // noboost
+				);
 				assert_eq!(chat_id, "1234567890");
 				assert_eq!(message.title, "Alert");
 				assert_eq!(message.body, "Test message");
@@ -476,8 +492,8 @@ mod tests {
 			} => {
 				assert_eq!(host, "smtp.example.com");
 				assert_eq!(port, Some(465));
-				assert_eq!(username, "user");
-				assert_eq!(password, "pass");
+				assert_eq!(username.as_ref().to_string(), "user");
+				assert_eq!(password.as_ref().to_string(), "pass");
 				assert_eq!(message.title, "Custom Subject");
 				assert_eq!(sender.as_str(), "sender@example.com");
 				assert_eq!(recipients.len(), 1);

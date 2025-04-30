@@ -2,8 +2,9 @@ use email_address::EmailAddress;
 use openzeppelin_monitor::{
 	models::{
 		AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions,
-		Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage, TransactionCondition,
-		TransactionStatus, Trigger, TriggerConditions, TriggerType, TriggerTypeConfig,
+		Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage, SecretString, SecretValue,
+		TransactionCondition, TransactionStatus, Trigger, TriggerConditions, TriggerType,
+		TriggerTypeConfig,
 	},
 	utils::tests::{
 		evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder,
@@ -88,7 +89,10 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 				"https://hooks\\.slack\\.com/[a-zA-Z0-9/]+".prop_map(|s| s.to_string()),
 				notification_message_strategy(),
 			)
-				.prop_map(|(slack_url, message)| TriggerTypeConfig::Slack { slack_url, message })
+				.prop_map(|(slack_url, message)| TriggerTypeConfig::Slack {
+					slack_url: SecretValue::Plain(SecretString::new(slack_url)),
+					message,
+				})
 		)
 			.prop_map(|(name, trigger_type, config)| TriggerBuilder::new()
 				.name(name.as_str())
@@ -116,8 +120,8 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 						TriggerTypeConfig::Email {
 							host,
 							port,
-							username,
-							password,
+							username: SecretValue::Plain(SecretString::new(username)),
+							password: SecretValue::Plain(SecretString::new(password)),
 							message,
 							sender,
 							recipients,
@@ -147,10 +151,10 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 			)
 				.prop_map(|(url, method, headers, secret, message)| {
 					TriggerTypeConfig::Webhook {
-						url,
+						url: SecretValue::Plain(SecretString::new(url)),
 						method,
 						headers,
-						secret,
+						secret: secret.map(|s| SecretValue::Plain(SecretString::new(s))),
 						message,
 					}
 				})
@@ -169,7 +173,11 @@ pub fn rpc_url_strategy() -> impl Strategy<Value = RpcUrl> {
 		"(http|https)://[a-z0-9-]+\\.[a-z]{2,}".prop_map(|s| s.to_string()),
 		1..=100u32,
 	)
-		.prop_map(|(type_, url, weight)| RpcUrl { type_, url, weight })
+		.prop_map(|(type_, url, weight)| RpcUrl {
+			type_,
+			url: SecretValue::Plain(SecretString::new(url)),
+			weight,
+		})
 }
 
 pub fn network_strategy() -> impl Strategy<Value = Network> {

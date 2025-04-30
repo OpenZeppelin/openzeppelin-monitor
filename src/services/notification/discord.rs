@@ -125,7 +125,7 @@ impl DiscordNotifier {
 				discord_url,
 				message,
 			} => WebhookNotifier::new(WebhookConfig {
-				url: discord_url.clone(),
+				url: discord_url.as_ref().to_string(),
 				url_params: None,
 				title: message.title.clone(),
 				body_template: message.body.clone(),
@@ -172,7 +172,7 @@ impl Notifier for DiscordNotifier {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::NotificationMessage;
+	use crate::models::{NotificationMessage, SecretString, SecretValue};
 
 	use super::*;
 
@@ -187,7 +187,9 @@ mod tests {
 
 	fn create_test_discord_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Discord {
-			discord_url: "https://discord.example.com".to_string(),
+			discord_url: SecretValue::Plain(SecretString::new(
+				"https://discord.example.com".to_string(),
+			)),
 			message: NotificationMessage {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),

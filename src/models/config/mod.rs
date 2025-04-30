@@ -5,6 +5,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use async_trait::async_trait;
 use std::path::Path;
 
 mod error;
@@ -14,6 +15,7 @@ mod trigger_config;
 
 pub use error::ConfigError;
 /// Common interface for loading configuration files
+#[async_trait]
 pub trait ConfigLoader: Sized {
 	/// Load all configuration files from a directory
 	///
@@ -41,4 +43,7 @@ pub trait ConfigLoader: Sized {
 			.map(|ext| ext.to_string_lossy().to_lowercase() == "json")
 			.unwrap_or(false)
 	}
+
+	/// Resolve all secrets in the configuration
+	async fn resolve_secrets(&self) -> Result<Self, ConfigError>;
 }

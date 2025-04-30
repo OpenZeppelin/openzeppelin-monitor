@@ -3,10 +3,11 @@
 //! This module implements the ConfigLoader trait for Network configurations,
 //! allowing network definitions to be loaded from JSON files.
 
+use async_trait::async_trait;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
 use crate::{
-	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network},
+	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network, SecretValue},
 	utils::get_cron_interval_ms,
 };
 
@@ -33,7 +34,25 @@ impl Network {
 	}
 }
 
+#[async_trait]
 impl ConfigLoader for Network {
+	/// Resolve all secrets in the network configuration
+	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		let mut network = self.clone();
+
+		for rpc_url in &mut network.rpc_urls {
+			let resolved_url = rpc_url.url.resolve().await.map_err(|e| {
+				ConfigError::parse_error(
+					format!("failed to resolve RPC URL: {}", e),
+					Some(Box::new(e)),
+					None,
+				)
+			})?;
+			rpc_url.url = SecretValue::Plain(resolved_url);
+		}
+		Ok(network)
+	}
+
 	/// Load all network configurations from a directory
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
@@ -275,7 +294,7 @@ impl ConfigLoader for Network {
 				tracing::warn!(
 					"Network '{}' uses an insecure RPC URL: {}",
 					self.slug,
-					rpc_url.url
+					rpc_url.url.as_str()
 				);
 			}
 			// Additional check for websocket connections
@@ -283,7 +302,7 @@ impl ConfigLoader for Network {
 				tracing::warn!(
 					"Network '{}' uses an insecure WebSocket URL: {}",
 					self.slug,
-					rpc_url.url
+					rpc_url.url.as_str()
 				);
 			}
 		}
@@ -293,7 +312,7 @@ impl ConfigLoader for Network {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::RpcUrl;
+	use crate::models::{RpcUrl, SecretString};
 	use crate::utils::tests::builders::network::NetworkBuilder;
 	use tracing_test::traced_test;
 
@@ -480,12 +499,12 @@ mod tests {
 			rpc_urls: vec![
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "http://test.network".to_string(),
+					url: SecretValue::Plain(SecretString::new("http://test.network".to_string())),
 					weight: 100,
 				},
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "ws://test.network".to_string(),
+					url: SecretValue::Plain(SecretString::new("ws://test.network".to_string())),
 					weight: 50,
 				},
 			],
@@ -517,12 +536,12 @@ mod tests {
 			rpc_urls: vec![
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "https://test.network".to_string(),
+					url: SecretValue::Plain(SecretString::new("https://test.network".to_string())),
 					weight: 100,
 				},
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "wss://test.network".to_string(),
+					url: SecretValue::Plain(SecretString::new("wss://test.network".to_string())),
 					weight: 50,
 				},
 			],
@@ -550,22 +569,30 @@ mod tests {
 			rpc_urls: vec![
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "https://secure.network".to_string(),
+					url: SecretValue::Plain(SecretString::new(
+						"https://secure.network".to_string(),
+					)),
 					weight: 100,
 				},
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "http://insecure.network".to_string(),
+					url: SecretValue::Plain(SecretString::new(
+						"http://insecure.network".to_string(),
+					)),
 					weight: 50,
 				},
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "wss://secure.ws.network".to_string(),
+					url: SecretValue::Plain(SecretString::new(
+						"wss://secure.ws.network".to_string(),
+					)),
 					weight: 25,
 				},
 				RpcUrl {
 					type_: "rpc".to_string(),
-					url: "ws://insecure.ws.network".to_string(),
+					url: SecretValue::Plain(SecretString::new(
+						"ws://insecure.ws.network".to_string(),
+					)),
 					weight: 25,
 				},
 			],

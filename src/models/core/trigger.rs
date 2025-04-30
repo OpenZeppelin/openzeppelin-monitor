@@ -1,4 +1,4 @@
-use crate::models::core::ScriptLanguage;
+use crate::models::{core::ScriptLanguage, SecretValue};
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +49,7 @@ pub enum TriggerTypeConfig {
 	/// Slack notification configuration
 	Slack {
 		/// Slack webhook URL
-		slack_url: String,
+		slack_url: SecretValue,
 		/// Notification message
 		message: NotificationMessage,
 	},
@@ -60,9 +60,9 @@ pub enum TriggerTypeConfig {
 		/// SMTP port (default 465)
 		port: Option<u16>,
 		/// SMTP username
-		username: String,
+		username: SecretValue,
 		/// SMTP password
-		password: String,
+		password: SecretValue,
 		/// Notification message
 		message: NotificationMessage,
 		/// Email sender
@@ -73,11 +73,11 @@ pub enum TriggerTypeConfig {
 	/// Webhook configuration
 	Webhook {
 		/// Webhook endpoint URL
-		url: String,
+		url: SecretValue,
 		/// HTTP method to use
 		method: Option<String>,
 		/// Secret
-		secret: Option<String>,
+		secret: Option<SecretValue>,
 		/// Optional HTTP headers
 		headers: Option<std::collections::HashMap<String, String>>,
 		/// Notification message
@@ -86,7 +86,7 @@ pub enum TriggerTypeConfig {
 	/// Telegram notification configuration
 	Telegram {
 		/// Telegram bot token
-		token: String,
+		token: SecretValue,
 		/// Telegram chat ID
 		chat_id: String,
 		/// Disable web preview
@@ -97,7 +97,7 @@ pub enum TriggerTypeConfig {
 	/// Discord notification configuration
 	Discord {
 		/// Discord webhook URL
-		discord_url: String,
+		discord_url: SecretValue,
 		/// Notification message
 		message: NotificationMessage,
 	},

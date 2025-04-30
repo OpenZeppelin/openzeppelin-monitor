@@ -75,7 +75,7 @@ impl SlackNotifier {
 				payload_fields.insert("text".to_string(), serde_json::json!(null));
 
 				WebhookNotifier::new(WebhookConfig {
-					url: slack_url.clone(),
+					url: slack_url.as_ref().to_string(),
 					url_params: None,
 					title: message.title.clone(),
 					body_template: message.body.clone(),
@@ -113,7 +113,7 @@ impl Notifier for SlackNotifier {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::NotificationMessage;
+	use crate::models::{NotificationMessage, SecretString, SecretValue};
 
 	use super::*;
 
@@ -128,7 +128,9 @@ mod tests {
 
 	fn create_test_slack_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Slack {
-			slack_url: "https://slack.example.com".to_string(),
+			slack_url: SecretValue::Plain(SecretString::new(
+				"https://slack.example.com".to_string(),
+			)),
 			message: NotificationMessage {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),

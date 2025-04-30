@@ -129,13 +129,13 @@ impl WebhookNotifier {
 				secret,
 				headers,
 			} => Some(Self {
-				url: url.clone(),
+				url: url.as_ref().to_string(),
 				url_params: None,
 				title: message.title.clone(),
 				body_template: message.body.clone(),
 				client: Client::new(),
 				method: method.clone(),
-				secret: secret.clone(),
+				secret: secret.as_ref().map(|s| s.as_ref().to_string()),
 				headers: headers.clone(),
 				payload_fields: None,
 			}),
@@ -292,7 +292,7 @@ impl Notifier for WebhookNotifier {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::NotificationMessage;
+	use crate::models::{NotificationMessage, SecretString, SecretValue};
 
 	use super::*;
 	use mockito::{Matcher, Mock};
@@ -319,7 +319,7 @@ mod tests {
 
 	fn create_test_webhook_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Webhook {
-			url: "https://webhook.example.com".to_string(),
+			url: SecretValue::Plain(SecretString::new("https://webhook.example.com".to_string())),
 			method: Some("POST".to_string()),
 			secret: None,
 			headers: None,

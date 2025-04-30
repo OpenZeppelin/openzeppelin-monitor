@@ -3,6 +3,7 @@
 //! This module implements the ConfigLoader trait for Monitor configurations,
 //! allowing monitors to be loaded from JSON files.
 
+use async_trait::async_trait;
 use std::{collections::HashMap, fs, path::Path};
 
 use crate::{
@@ -10,7 +11,13 @@ use crate::{
 	services::trigger::validate_script_config,
 };
 
+#[async_trait]
 impl ConfigLoader for Monitor {
+	/// Resolve all secrets in the monitor configuration
+	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		Ok(self.clone())
+	}
+
 	/// Load all monitor configurations from a directory
 	///
 	/// Reads and parses all JSON files in the specified directory (or default

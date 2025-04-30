@@ -152,7 +152,7 @@ impl Notifier for TelegramNotifier {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::NotificationMessage;
+	use crate::models::{NotificationMessage, SecretString, SecretValue};
 
 	use super::*;
 
@@ -170,7 +170,7 @@ mod tests {
 
 	fn create_test_telegram_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Telegram {
-			token: "test-token".to_string(),
+			token: SecretValue::Plain(SecretString::new("test-token".to_string())),
 			chat_id: "test-chat-id".to_string(),
 			disable_web_preview: Some(true),
 			message: NotificationMessage {
