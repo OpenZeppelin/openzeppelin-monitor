@@ -699,6 +699,48 @@ mod tests {
 			)
 			.build();
 		assert!(invalid_recipient.validate().is_err());
+
+		// Test empty body
+		let empty_body = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test Subject", "")
+			.build();
+		assert!(empty_body.validate().is_err());
+
+		// Test control characters in subject
+		let control_chars_subject = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test \0 Subject", "Test Body")
+			.build();
+		assert!(control_chars_subject.validate().is_err());
+
+		// Test control characters in body
+		let control_chars_body = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test Subject", "Test \0 Body")
+			.build();
+		assert!(control_chars_body.validate().is_err());
 	}
 
 	#[test]
