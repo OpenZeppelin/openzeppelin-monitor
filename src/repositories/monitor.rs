@@ -8,6 +8,8 @@
 
 use std::{collections::HashMap, marker::PhantomData, path::Path};
 
+use async_trait::async_trait;
+
 use crate::{
 	models::{ConfigLoader, Monitor, Network, ScriptLanguage, Trigger},
 	repositories::{
@@ -26,24 +28,31 @@ const LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
 
 /// Repository for storing and retrieving monitor configurations
 #[derive(Clone)]
-pub struct MonitorRepository<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> {
+pub struct MonitorRepository<
+	N: NetworkRepositoryTrait + Send + 'static,
+	T: TriggerRepositoryTrait + Send + 'static,
+> {
 	/// Map of monitor names to their configurations
 	pub monitors: HashMap<String, Monitor>,
 	_network_repository: PhantomData<N>,
 	_trigger_repository: PhantomData<T>,
 }
 
-impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, T> {
+impl<
+		N: NetworkRepositoryTrait + Send + Sync + 'static,
+		T: TriggerRepositoryTrait + Send + Sync + 'static,
+	> MonitorRepository<N, T>
+{
 	/// Create a new monitor repository from the given path
 	///
 	/// Loads all monitor configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
-	pub fn new(
+	pub async fn new(
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<Self, RepositoryError> {
-		let monitors = Self::load_all(path, network_service, trigger_service)?;
+		let monitors = Self::load_all(path, network_service, trigger_service).await?;
 		Ok(MonitorRepository {
 			monitors,
 			_network_repository: PhantomData,
@@ -161,11 +170,14 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepository<N, 
 ///
 /// This trait defines the standard operations that any monitor repository must support,
 /// allowing for different storage backends while maintaining a consistent interface.
-pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>:
-	Clone
+#[async_trait]
+pub trait MonitorRepositoryTrait<
+	N: NetworkRepositoryTrait + Send + 'static,
+	T: TriggerRepositoryTrait + Send + 'static,
+>: Clone + Send
 {
 	/// Create a new monitor repository from the given path
-	fn new(
+	async fn new(
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
@@ -178,7 +190,7 @@ pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepository
 	/// If no path is provided, uses the default config directory.
 	/// Also validates references to networks and triggers.
 	/// This is a static method that doesn't require an instance.
-	fn load_all(
+	async fn load_all(
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
@@ -187,7 +199,7 @@ pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepository
 	/// Load a monitor from a specific path
 	///
 	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
-	fn load_from_path(
+	async fn load_from_path(
 		&self,
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
@@ -205,23 +217,26 @@ pub trait MonitorRepositoryTrait<N: NetworkRepositoryTrait, T: TriggerRepository
 	fn get_all(&self) -> HashMap<String, Monitor>;
 }
 
-impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrait<N, T>
-	for MonitorRepository<N, T>
+#[async_trait]
+impl<
+		N: NetworkRepositoryTrait + Send + Sync + 'static,
+		T: TriggerRepositoryTrait + Send + Sync + 'static,
+	> MonitorRepositoryTrait<N, T> for MonitorRepository<N, T>
 {
-	fn new(
+	async fn new(
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<Self, RepositoryError> {
-		MonitorRepository::new(path, network_service, trigger_service)
+		MonitorRepository::new(path, network_service, trigger_service).await
 	}
 
-	fn load_all(
+	async fn load_all(
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<HashMap<String, Monitor>, RepositoryError> {
-		let monitors = Monitor::load_all(path).map_err(|e| {
+		let monitors = Monitor::load_all(path).await.map_err(|e| {
 			RepositoryError::load_error(
 				"Failed to load monitors",
 				Some(Box::new(e)),
@@ -236,6 +251,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 			Some(service) => service.get_all(),
 			None => {
 				NetworkRepository::new(None)
+					.await
 					.map_err(|e| {
 						RepositoryError::load_error(
 							"Failed to load networks for monitor validation",
@@ -251,6 +267,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 			Some(service) => service.get_all(),
 			None => {
 				TriggerRepository::new(None)
+					.await
 					.map_err(|e| {
 						RepositoryError::load_error(
 							"Failed to load triggers for monitor validation",
@@ -269,7 +286,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 	/// Load a monitor from a specific path
 	///
 	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
-	fn load_from_path(
+	async fn load_from_path(
 		&self,
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
@@ -277,7 +294,7 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 	) -> Result<Monitor, RepositoryError> {
 		match path {
 			Some(path) => {
-				let monitor = Monitor::load_from_path(path).map_err(|e| {
+				let monitor = Monitor::load_from_path(path).await.map_err(|e| {
 					RepositoryError::load_error(
 						"Failed to load monitors",
 						Some(Box::new(e)),
@@ -290,12 +307,12 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 
 				let networks = match network_service {
 					Some(service) => service.get_all(),
-					None => NetworkRepository::new(None)?.networks,
+					None => NetworkRepository::new(None).await?.networks,
 				};
 
 				let triggers = match trigger_service {
 					Some(service) => service.get_all(),
-					None => TriggerRepository::new(None)?.triggers,
+					None => TriggerRepository::new(None).await?.triggers,
 				};
 				let monitors = HashMap::from([(monitor.name.clone(), monitor)]);
 				Self::validate_monitor_references(&monitors, &triggers, &networks)?;
@@ -328,29 +345,31 @@ impl<N: NetworkRepositoryTrait, T: TriggerRepositoryTrait> MonitorRepositoryTrai
 /// It also ensures that all monitor references to networks and triggers are valid.
 #[derive(Clone)]
 pub struct MonitorService<
-	M: MonitorRepositoryTrait<N, T>,
-	N: NetworkRepositoryTrait,
-	T: TriggerRepositoryTrait,
+	M: MonitorRepositoryTrait<N, T> + Send,
+	N: NetworkRepositoryTrait + Send + Sync + 'static,
+	T: TriggerRepositoryTrait + Send + Sync + 'static,
 > {
 	repository: M,
 	_network_repository: PhantomData<N>,
 	_trigger_repository: PhantomData<T>,
 }
 
-// Generic implementation for any repository type
-impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepositoryTrait>
-	MonitorService<M, N, T>
+impl<
+		M: MonitorRepositoryTrait<N, T> + Send,
+		N: NetworkRepositoryTrait + Send + Sync + 'static,
+		T: TriggerRepositoryTrait + Send + Sync + 'static,
+	> MonitorService<M, N, T>
 {
 	/// Create a new monitor service with the default repository implementation
 	///
 	/// Loads monitor configurations from the specified path (or default config directory)
 	/// and validates all network and trigger references.
-	pub fn new(
+	pub async fn new(
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
 		trigger_service: Option<TriggerService<T>>,
 	) -> Result<MonitorService<M, N, T>, RepositoryError> {
-		let repository = M::new(path, network_service, trigger_service)?;
+		let repository = M::new(path, network_service, trigger_service).await?;
 		Ok(MonitorService {
 			repository,
 			_network_repository: PhantomData,
@@ -361,8 +380,10 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	/// Create a new monitor service with a specific configuration path
 	///
 	/// Similar to `new()` but makes the path parameter more explicit.
-	pub fn new_with_path(path: Option<&Path>) -> Result<MonitorService<M, N, T>, RepositoryError> {
-		let repository = M::new(path, None, None)?;
+	pub async fn new_with_path(
+		path: Option<&Path>,
+	) -> Result<MonitorService<M, N, T>, RepositoryError> {
+		let repository = M::new(path, None, None).await?;
 		Ok(MonitorService {
 			repository,
 			_network_repository: PhantomData,
@@ -398,7 +419,7 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	/// Load a monitor from a specific path
 	///
 	/// Loads a monitor configuration from a specific path and validates all network and trigger references.
-	pub fn load_from_path(
+	pub async fn load_from_path(
 		&self,
 		path: Option<&Path>,
 		network_service: Option<NetworkService<N>>,
@@ -406,6 +427,7 @@ impl<M: MonitorRepositoryTrait<N, T>, N: NetworkRepositoryTrait, T: TriggerRepos
 	) -> Result<Monitor, RepositoryError> {
 		self.repository
 			.load_from_path(path, network_service, trigger_service)
+			.await
 	}
 }
 
@@ -509,15 +531,16 @@ mod tests {
 		assert!(err.to_string().contains("timeout_ms greater than 0"));
 	}
 
-	#[test]
-	fn test_load_error_messages() {
+	#[tokio::test]
+	async fn test_load_error_messages() {
 		// Test with invalid path to trigger load error
 		let invalid_path = Path::new("/non/existent/path");
 		let result = MonitorRepository::<NetworkRepository, TriggerRepository>::load_all(
 			Some(invalid_path),
 			None,
 			None,
-		);
+		)
+		.await;
 
 		assert!(result.is_err());
 		let err = result.unwrap_err();
@@ -579,8 +602,8 @@ mod tests {
 		assert!(err.to_string().contains("references non-existent trigger"));
 	}
 
-	#[test]
-	fn test_load_from_path_error_handling() {
+	#[tokio::test]
+	async fn test_load_from_path_error_handling() {
 		// Create a temporary directory for testing
 		let temp_dir = TempDir::new().unwrap();
 		let invalid_path = temp_dir.path().join("non_existent_monitor.json");
@@ -592,7 +615,9 @@ mod tests {
 			);
 
 		// Attempt to load from non-existent path
-		let result = repository.load_from_path(Some(&invalid_path), None, None);
+		let result = repository
+			.load_from_path(Some(&invalid_path), None, None)
+			.await;
 
 		// Verify error handling
 		assert!(result.is_err());

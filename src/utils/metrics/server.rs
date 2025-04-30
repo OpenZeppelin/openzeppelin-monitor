@@ -224,7 +224,7 @@ mod tests {
 		(monitor_dir, trigger_dir, network_dir, temp_dir)
 	}
 
-	fn create_test_services() -> (
+	async fn create_test_services() -> (
 		MonitorServiceArc,
 		NetworkServiceArc,
 		TriggerServiceArc,
@@ -232,14 +232,19 @@ mod tests {
 	) {
 		let (monitor_path, trigger_path, network_path, temp_dir) = create_mock_configs();
 		let network_service =
-			NetworkService::<NetworkRepository>::new(Some(network_path.parent().unwrap())).unwrap();
+			NetworkService::<NetworkRepository>::new(Some(network_path.parent().unwrap()))
+				.await
+				.unwrap();
 		let trigger_service =
-			TriggerService::<TriggerRepository>::new(Some(trigger_path.parent().unwrap())).unwrap();
+			TriggerService::<TriggerRepository>::new(Some(trigger_path.parent().unwrap()))
+				.await
+				.unwrap();
 		let monitor_service = MonitorService::new(
 			Some(monitor_path.parent().unwrap()),
 			Some(network_service.clone()),
 			Some(trigger_service.clone()),
 		)
+		.await
 		.unwrap();
 
 		(
@@ -253,7 +258,8 @@ mod tests {
 	#[actix_web::test]
 	async fn test_metrics_handler() {
 		// Create test services
-		let (monitor_service, network_service, trigger_service, _temp_dir) = create_test_services();
+		let (monitor_service, network_service, trigger_service, _temp_dir) =
+			create_test_services().await;
 
 		// Create test app
 		let app = test::init_service(
@@ -294,7 +300,8 @@ mod tests {
 	#[tokio::test]
 	async fn test_create_metrics_server() {
 		// Create test services
-		let (monitor_service, network_service, trigger_service, _temp_dir) = create_test_services();
+		let (monitor_service, network_service, trigger_service, _temp_dir) =
+			create_test_services().await;
 
 		// Find an available port
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

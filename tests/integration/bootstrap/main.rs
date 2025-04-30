@@ -125,6 +125,7 @@ async fn test_initialize_services() {
 		Some(mock_network_service),
 		Some(mock_trigger_service),
 	)
+	.await
 	.expect("Failed to initialize services");
 
 	assert!(
@@ -193,7 +194,8 @@ async fn test_create_trigger_handler() {
 
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
+			.await;
 
 	let (shutdown_tx, _) = watch::channel(false);
 	let trigger_handler = create_trigger_handler(
@@ -220,7 +222,8 @@ async fn test_create_trigger_handler() {
 async fn test_create_trigger_handler_empty_matches() {
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
+			.await;
 
 	let (shutdown_tx, _) = watch::channel(false);
 	let trigger_handler = create_trigger_handler(
@@ -389,7 +392,8 @@ async fn test_create_trigger_handler_with_conditions() {
 
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
+			.await;
 
 	// Create a HashMap with trigger conditions
 	let mut trigger_scripts = HashMap::new();

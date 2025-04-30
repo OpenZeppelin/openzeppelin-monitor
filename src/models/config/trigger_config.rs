@@ -112,7 +112,7 @@ impl ConfigLoader for Trigger {
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
 	/// config directory) as trigger configurations.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
+	async fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
 	where
 		T: FromIterator<(String, Self)>,
 	{
@@ -201,11 +201,14 @@ impl ConfigLoader for Trigger {
 	/// Load a trigger configuration from a specific file
 	///
 	/// Reads and parses a single JSON file as a trigger configuration.
-	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
+	async fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path)
 			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
-		let config: Trigger = serde_json::from_reader(file)
+		let mut config: Trigger = serde_json::from_reader(file)
 			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
+
+		// Resolve secrets before validating
+		config = config.resolve_secrets().await?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -975,17 +978,17 @@ mod tests {
 		std::fs::remove_file(script_path).unwrap();
 	}
 
-	#[test]
-	fn test_invalid_load_from_path() {
+	#[tokio::test]
+	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/triggers/invalid.json");
 		assert!(matches!(
-			Trigger::load_from_path(path),
+			Trigger::load_from_path(path).await,
 			Err(ConfigError::FileError(_))
 		));
 	}
 
-	#[test]
-	fn test_invalid_config_from_load_from_path() {
+	#[tokio::test]
+	async fn test_invalid_config_from_load_from_path() {
 		use std::io::Write;
 		use tempfile::NamedTempFile;
 
@@ -995,17 +998,17 @@ mod tests {
 		let path = temp_file.path();
 
 		assert!(matches!(
-			Trigger::load_from_path(path),
+			Trigger::load_from_path(path).await,
 			Err(ConfigError::ParseError(_))
 		));
 	}
 
-	#[test]
-	fn test_load_all_directory_not_found() {
+	#[tokio::test]
+	async fn test_load_all_directory_not_found() {
 		let non_existent_path = Path::new("non_existent_directory");
 
 		let result: Result<HashMap<String, Trigger>, ConfigError> =
-			Trigger::load_all(Some(non_existent_path));
+			Trigger::load_all(Some(non_existent_path)).await;
 		assert!(matches!(result, Err(ConfigError::FileError(_))));
 
 		if let Err(ConfigError::FileError(err)) = result {
@@ -1013,9 +1016,9 @@ mod tests {
 		}
 	}
 
-	#[test]
+	#[tokio::test]
 	#[cfg(unix)] // This test is Unix-specific due to permission handling
-	fn test_load_all_unreadable_file() {
+	async fn test_load_all_unreadable_file() {
 		// Create a temporary directory for our test
 		let temp_dir = TempDir::new().unwrap();
 		let config_dir = temp_dir.path().join("triggers");
@@ -1035,7 +1038,7 @@ mod tests {
 
 		// Try to load triggers from the directory
 		let result: Result<HashMap<String, Trigger>, ConfigError> =
-			Trigger::load_all(Some(&config_dir));
+			Trigger::load_all(Some(&config_dir)).await;
 
 		// Verify we get the expected error
 		assert!(matches!(result, Err(ConfigError::FileError(_))));

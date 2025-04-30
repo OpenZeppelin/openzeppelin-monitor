@@ -658,8 +658,8 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 	assert!(result.is_err());
 }
 
-#[test]
-fn test_load_from_path() {
+#[tokio::test]
+async fn test_load_from_path() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
 	let monitor_path = create_test_monitor_file(
@@ -684,7 +684,9 @@ fn test_load_from_path() {
 	let monitor_service = setup_monitor_service(mocked_monitors);
 
 	// Test loading from path
-	let result = monitor_service.load_from_path(Some(&monitor_path), None, None);
+	let result = monitor_service
+		.load_from_path(Some(&monitor_path), None, None)
+		.await;
 
 	assert!(result.is_ok());
 	let monitor = result.unwrap();
@@ -693,8 +695,8 @@ fn test_load_from_path() {
 	assert!(monitor.triggers.contains(&"test-trigger".to_string()));
 }
 
-#[test]
-fn test_load_from_path_with_services() {
+#[tokio::test]
+async fn test_load_from_path_with_services() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
 	let monitor_path = create_test_monitor_file(
@@ -724,11 +726,13 @@ fn test_load_from_path_with_services() {
 
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
-	let result = mock_monitor_service.load_from_path(
-		Some(&monitor_path),
-		Some(mock_network_service),
-		Some(mock_trigger_service),
-	);
+	let result = mock_monitor_service
+		.load_from_path(
+			Some(&monitor_path),
+			Some(mock_network_service),
+			Some(mock_trigger_service),
+		)
+		.await;
 
 	assert!(result.is_ok());
 	let monitor = result.unwrap();
@@ -737,8 +741,8 @@ fn test_load_from_path_with_services() {
 	assert!(monitor.triggers.contains(&"test-trigger".to_string()));
 }
 
-#[test]
-fn test_load_from_path_trait_implementation() {
+#[tokio::test]
+async fn test_load_from_path_trait_implementation() {
 	// Setup temporary directory and files
 	let temp_dir = TempDir::new().unwrap();
 	let monitor_path = create_test_monitor_file(
@@ -779,7 +783,8 @@ fn test_load_from_path_trait_implementation() {
 			Some(&monitor_path),
 			Some(mock_network_service),
 			Some(mock_trigger_service),
-		);
+		)
+		.await;
 
 	assert!(result.is_ok());
 	let monitor = result.unwrap();
@@ -788,8 +793,8 @@ fn test_load_from_path_trait_implementation() {
 	assert!(monitor.triggers.contains(&"test-trigger".to_string()));
 }
 
-#[test]
-fn test_load_from_path_trait_implementation_error() {
+#[tokio::test]
+async fn test_load_from_path_trait_implementation_error() {
 	// Setup temporary directory and files
 	let mock_network_service =
 		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
@@ -822,7 +827,8 @@ fn test_load_from_path_trait_implementation_error() {
 			None,
 			Some(mock_network_service),
 			Some(mock_trigger_service),
-		);
+		)
+		.await;
 
 	assert!(result.is_err());
 	assert!(result
@@ -833,9 +839,9 @@ fn test_load_from_path_trait_implementation_error() {
 
 // This test is ignored because it creates files in the config directory
 // and we don't want to pollute the default config directory
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "test-ci-only"), ignore)]
-fn test_load_from_path_with_mixed_services() {
+async fn test_load_from_path_with_mixed_services() {
 	// Create default config paths for when we use None for path
 	let config_path = PathBuf::from("config");
 	let network_path = config_path.join("networks");
@@ -848,11 +854,15 @@ fn test_load_from_path_with_mixed_services() {
 	std::fs::create_dir_all(&monitor_path).unwrap();
 
 	let network_path = create_test_network_file(&network_path, "integration_test_ethereum_mainnet");
-	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap())).unwrap();
+	let network_repo = NetworkRepository::new(Some(network_path.parent().unwrap()))
+		.await
+		.unwrap();
 	let network_service = NetworkService::new_with_repository(network_repo).unwrap();
 
 	let trigger_path = create_test_trigger_file(&trigger_path, "integration_test_trigger");
-	let trigger_repo = TriggerRepository::new(Some(trigger_path.parent().unwrap())).unwrap();
+	let trigger_repo = TriggerRepository::new(Some(trigger_path.parent().unwrap()))
+		.await
+		.unwrap();
 	let trigger_service = TriggerService::new_with_repository(trigger_repo).unwrap();
 
 	let repository = MonitorRepository::<NetworkRepository, TriggerRepository>::new_with_monitors(
@@ -866,24 +876,30 @@ fn test_load_from_path_with_mixed_services() {
 		vec![],
 		vec!["integration_test_ethereum_mainnet"],
 	);
-	let result = repository.load_from_path(Some(&monitor_path), None, None);
+	let result = repository
+		.load_from_path(Some(&monitor_path), None, None)
+		.await;
 	assert!(result.is_ok());
 
 	// Test 2: Empty monitor content
 	let monitor_temp_dir = TempDir::new().unwrap();
-	let result = repository.load_from_path(Some(monitor_temp_dir.path()), None, None);
+	let result = repository
+		.load_from_path(Some(monitor_temp_dir.path()), None, None)
+		.await;
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(matches!(err, RepositoryError::LoadError(_)));
 	assert!(err.to_string().contains("Failed to load monitors"));
 
 	// Test 3: Mixed service configuration
-	let result =
-		repository.load_from_path(Some(&monitor_path), Some(network_service.clone()), None);
+	let result = repository
+		.load_from_path(Some(&monitor_path), Some(network_service.clone()), None)
+		.await;
 	assert!(result.is_ok());
 
-	let result =
-		repository.load_from_path(Some(&monitor_path), None, Some(trigger_service.clone()));
+	let result = repository
+		.load_from_path(Some(&monitor_path), None, Some(trigger_service.clone()))
+		.await;
 	assert!(result.is_ok());
 
 	// Test 4: Invalid monitor references
@@ -893,7 +909,9 @@ fn test_load_from_path_with_mixed_services() {
 		vec!["invalid-trigger"],
 		vec!["integration_test_ethereum_mainnet"],
 	);
-	let result = repository.load_from_path(Some(&invalid_monitor_path), None, None);
+	let result = repository
+		.load_from_path(Some(&invalid_monitor_path), None, None)
+		.await;
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(err.to_string().contains("references non-existent"));

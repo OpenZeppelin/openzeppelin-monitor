@@ -679,7 +679,8 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 		.returning(move |_, _| Ok(events.clone()));
 
 	let mut trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/stellar/triggers/trigger.json");
+		setup_trigger_execution_service("tests/integration/fixtures/stellar/triggers/trigger.json")
+			.await;
 
 	trigger_execution_service
 		.expect_execute()
@@ -813,7 +814,8 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 			let trigger_scripts = HashMap::new();
 			let mut trigger_execution_service = setup_trigger_execution_service(
 				"tests/integration/fixtures/stellar/triggers/trigger.json",
-			);
+			)
+			.await;
 
 			// Set up expectations for execute()
 			trigger_execution_service

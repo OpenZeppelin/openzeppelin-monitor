@@ -20,12 +20,12 @@ pub trait ConfigLoader: Sized {
 	/// Load all configuration files from a directory
 	///
 	/// If no path is provided, uses the default config directory.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, error::ConfigError>
+	async fn load_all<T>(path: Option<&Path>) -> Result<T, error::ConfigError>
 	where
 		T: FromIterator<(String, Self)>;
 
 	/// Load configuration from a specific file path
-	fn load_from_path(path: &Path) -> Result<Self, error::ConfigError>;
+	async fn load_from_path(path: &Path) -> Result<Self, error::ConfigError>;
 
 	/// Validate the configuration
 	///

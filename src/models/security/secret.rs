@@ -43,43 +43,44 @@ impl CloudVaultClient {
 
 	/// Creates a new CloudVaultClient from environment variables
 	pub fn from_env() -> Result<Self, Box<SecurityError>> {
-		let addr = env::var("VAULT_ADDR").map_err(|e| {
+		let client_id = env::var("HCP_CLIENT_ID").map_err(|e| {
 			Box::new(SecurityError::parse_error(
-				format!("Missing VAULT_ADDR environment variable: {}", e),
+				format!("Missing HCP_CLIENT_ID environment variable: {}", e),
 				None,
 				None,
 			))
 		})?;
-		let token = env::var("VAULT_TOKEN").map_err(|e| {
+		let client_secret = env::var("HCP_CLIENT_SECRET").map_err(|e| {
 			Box::new(SecurityError::parse_error(
-				format!("Missing VAULT_TOKEN environment variable: {}", e),
+				format!("Missing HCP_CLIENT_SECRET environment variable: {}", e),
 				None,
 				None,
 			))
 		})?;
-		let org_id = env::var("VAULT_ORG_ID").map_err(|e| {
+		let org_id = env::var("HCP_ORG_ID").map_err(|e| {
 			Box::new(SecurityError::parse_error(
-				format!("Missing VAULT_ORG_ID environment variable: {}", e),
+				format!("Missing HCP_ORG_ID environment variable: {}", e),
 				None,
 				None,
 			))
 		})?;
-		let project_id = env::var("VAULT_PROJECT_ID").map_err(|e| {
+		let project_id = env::var("HCP_PROJECT_ID").map_err(|e| {
 			Box::new(SecurityError::parse_error(
-				format!("Missing VAULT_PROJECT_ID environment variable: {}", e),
+				format!("Missing HCP_PROJECT_ID environment variable: {}", e),
 				None,
 				None,
 			))
 		})?;
-		let app_name = env::var("VAULT_APP_NAME").map_err(|e| {
+		let app_name = env::var("HCP_APP_NAME").map_err(|e| {
 			Box::new(SecurityError::parse_error(
-				format!("Missing VAULT_APP_NAME environment variable: {}", e),
+				format!("Missing HCP_APP_NAME environment variable: {}", e),
 				None,
 				None,
 			))
 		})?;
 
-		let client = HashicorpCloudClient::new(addr, token, org_id, project_id, app_name);
+		let client =
+			HashicorpCloudClient::new(client_id, client_secret, org_id, project_id, app_name);
 		Ok(Self {
 			client: Arc::new(client),
 		})
@@ -150,7 +151,7 @@ pub enum SecretValue {
 	/// A secret stored in an environment variable
 	Environment(String),
 	/// A secret stored in Hashicorp Cloud Vault
-	HashicorpCloudVault { name: String },
+	HashicorpCloudVault(String),
 }
 
 impl PartialEq for SecretValue {
@@ -158,9 +159,7 @@ impl PartialEq for SecretValue {
 		match (self, other) {
 			(Self::Plain(l0), Self::Plain(r0)) => l0.as_str() == r0.as_str(),
 			(Self::Environment(l0), Self::Environment(r0)) => l0 == r0,
-			(Self::HashicorpCloudVault { name: l0 }, Self::HashicorpCloudVault { name: r0 }) => {
-				l0 == r0
-			}
+			(Self::HashicorpCloudVault(l0), Self::HashicorpCloudVault(r0)) => l0 == r0,
 			_ => false,
 		}
 	}
@@ -213,7 +212,7 @@ impl SecretValue {
 					))
 				})
 			}
-			SecretValue::HashicorpCloudVault { name } => {
+			SecretValue::HashicorpCloudVault(name) => {
 				let client = get_vault_client().await?;
 				client.get_secret(name).await.map_err(Box::new)
 			}
@@ -225,7 +224,7 @@ impl SecretValue {
 		match self {
 			SecretValue::Plain(secret) => secret.as_str().starts_with(prefix),
 			SecretValue::Environment(env_var) => env_var.starts_with(prefix),
-			SecretValue::HashicorpCloudVault { name } => name.starts_with(prefix),
+			SecretValue::HashicorpCloudVault(name) => name.starts_with(prefix),
 		}
 	}
 
@@ -234,7 +233,7 @@ impl SecretValue {
 		match self {
 			SecretValue::Plain(secret) => secret.as_str().is_empty(),
 			SecretValue::Environment(env_var) => env_var.is_empty(),
-			SecretValue::HashicorpCloudVault { name } => name.is_empty(),
+			SecretValue::HashicorpCloudVault(name) => name.is_empty(),
 		}
 	}
 
@@ -243,7 +242,7 @@ impl SecretValue {
 		match self {
 			SecretValue::Plain(secret) => secret.as_str().trim(),
 			SecretValue::Environment(env_var) => env_var.trim(),
-			SecretValue::HashicorpCloudVault { name } => name.trim(),
+			SecretValue::HashicorpCloudVault(name) => name.trim(),
 		}
 	}
 
@@ -252,7 +251,7 @@ impl SecretValue {
 		match self {
 			SecretValue::Plain(secret) => secret.as_str(),
 			SecretValue::Environment(env_var) => env_var,
-			SecretValue::HashicorpCloudVault { name } => name,
+			SecretValue::HashicorpCloudVault(name) => name,
 		}
 	}
 }
@@ -271,7 +270,7 @@ impl Zeroize for SecretValue {
 				// Clear the environment variable name
 				env_var.clear();
 			}
-			SecretValue::HashicorpCloudVault { name } => {
+			SecretValue::HashicorpCloudVault(name) => {
 				name.clear();
 			}
 		}
@@ -314,7 +313,7 @@ impl fmt::Display for SecretValue {
 		match self {
 			SecretValue::Plain(secret) => write!(f, "{}", secret.as_str()),
 			SecretValue::Environment(env_var) => write!(f, "{}", env_var),
-			SecretValue::HashicorpCloudVault { name } => write!(f, "{}", name),
+			SecretValue::HashicorpCloudVault(name) => write!(f, "{}", name),
 		}
 	}
 }
@@ -324,7 +323,7 @@ impl AsRef<str> for SecretValue {
 		match self {
 			SecretValue::Plain(secret) => secret.as_ref(),
 			SecretValue::Environment(env_var) => env_var,
-			SecretValue::HashicorpCloudVault { name } => name,
+			SecretValue::HashicorpCloudVault(name) => name,
 		}
 	}
 }
@@ -340,11 +339,11 @@ mod tests {
 	static ENV_LOCK: Mutex<()> = Mutex::new(());
 	static MOCK_VAULT_VARS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
 		let mut map = HashMap::new();
-		map.insert("VAULT_ADDR", "https://vault.example.com");
-		map.insert("VAULT_TOKEN", "test-token");
-		map.insert("VAULT_ORG_ID", "test-org");
-		map.insert("VAULT_PROJECT_ID", "test-project");
-		map.insert("VAULT_APP_NAME", "test-app");
+		map.insert("HCP_CLIENT_ID", "test-client-id");
+		map.insert("HCP_CLIENT_SECRET", "test-client-secret");
+		map.insert("HCP_ORG_ID", "test-org");
+		map.insert("HCP_PROJECT_ID", "test-project");
+		map.insert("HCP_APP_NAME", "test-app");
 		map
 	});
 
@@ -396,9 +395,7 @@ mod tests {
 	fn test_secret_value_zeroize() {
 		let mut plain_secret = SecretValue::Plain(SecretString::new("plain_secret".to_string()));
 		let mut env_secret = SecretValue::Environment("ENV_VAR".to_string());
-		let mut cloud_vault_secret = SecretValue::HashicorpCloudVault {
-			name: "secret_name".to_string(),
-		};
+		let mut cloud_vault_secret = SecretValue::HashicorpCloudVault("secret_name".to_string());
 
 		plain_secret.zeroize();
 		env_secret.zeroize();
@@ -412,7 +409,7 @@ mod tests {
 		if let SecretValue::Environment(ref env_var) = env_secret {
 			assert_eq!(env_var, "");
 		}
-		if let SecretValue::HashicorpCloudVault { ref name } = cloud_vault_secret {
+		if let SecretValue::HashicorpCloudVault(ref name) = cloud_vault_secret {
 			assert_eq!(name, "");
 		}
 	}
@@ -433,18 +430,22 @@ mod tests {
 		let _lock = ENV_LOCK.lock().unwrap();
 		setup_mock_env();
 
-		// Test missing VAULT_ADDR
-		std::env::remove_var("VAULT_ADDR");
+		// Test missing HCP_CLIENT_ID
+		std::env::remove_var("HCP_CLIENT_ID");
 		let result = CloudVaultClient::from_env();
 		assert!(result.is_err());
-		assert!(result.err().unwrap().to_string().contains("VAULT_ADDR"));
+		assert!(result.err().unwrap().to_string().contains("HCP_CLIENT_ID"));
 
-		// Test missing VAULT_TOKEN
+		// Test missing HCP_CLIENT_SECRET
 		setup_mock_env();
-		std::env::remove_var("VAULT_TOKEN");
+		std::env::remove_var("HCP_CLIENT_SECRET");
 		let result = CloudVaultClient::from_env();
 		assert!(result.is_err());
-		assert!(result.err().unwrap().to_string().contains("VAULT_TOKEN"));
+		assert!(result
+			.err()
+			.unwrap()
+			.to_string()
+			.contains("HCP_CLIENT_SECRET"));
 
 		cleanup_mock_env();
 	}

@@ -65,20 +65,20 @@ type ServiceResult<M, N, T> = Result<(
 /// - `Arc<Mutex<T>>`: Data access for trigger configs
 /// # Errors
 /// Returns an error if any service initialization fails
-pub fn initialize_services<M, N, T>(
+pub async fn initialize_services<M, N, T>(
 	monitor_service: Option<MonitorService<M, N, T>>,
 	network_service: Option<NetworkService<N>>,
 	trigger_service: Option<TriggerService<T>>,
 ) -> ServiceResult<M, N, T>
 where
-	M: MonitorRepositoryTrait<N, T>,
-	N: NetworkRepositoryTrait,
-	T: TriggerRepositoryTrait,
+	M: MonitorRepositoryTrait<N, T> + Send + Sync + 'static,
+	N: NetworkRepositoryTrait + Send + Sync + 'static,
+	T: TriggerRepositoryTrait + Send + Sync + 'static,
 {
 	let network_service = match network_service {
 		Some(service) => service,
 		None => {
-			let repository = N::new(None)?;
+			let repository = N::new(None).await?;
 			NetworkService::<N>::new_with_repository(repository)?
 		}
 	};
@@ -86,7 +86,7 @@ where
 	let trigger_service = match trigger_service {
 		Some(service) => service,
 		None => {
-			let repository = T::new(None)?;
+			let repository = T::new(None).await?;
 			TriggerService::<T>::new_with_repository(repository)?
 		}
 	};
@@ -98,7 +98,8 @@ where
 				None,
 				Some(network_service.clone()),
 				Some(trigger_service.clone()),
-			)?;
+			)
+			.await?;
 			MonitorService::<M, N, T>::new_with_repository(repository)?
 		}
 	};

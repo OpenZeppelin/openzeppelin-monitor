@@ -57,7 +57,7 @@ impl ConfigLoader for Network {
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
 	/// config directory) as network configurations.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
+	async fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
 	where
 		T: FromIterator<(String, Self)>,
 	{
@@ -107,7 +107,7 @@ impl ConfigLoader for Network {
 				.unwrap_or("unknown")
 				.to_string();
 
-			let network = Self::load_from_path(&path)?;
+			let network = Self::load_from_path(&path).await?;
 			pairs.push((name, network));
 		}
 
@@ -117,7 +117,7 @@ impl ConfigLoader for Network {
 	/// Load a network configuration from a specific file
 	///
 	/// Reads and parses a single JSON file as a network configuration.
-	fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigError> {
+	async fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path).map_err(|e| {
 			ConfigError::file_error(
 				format!("failed to open network config file: {}", e),
@@ -128,7 +128,7 @@ impl ConfigLoader for Network {
 				)])),
 			)
 		})?;
-		let config: Network = serde_json::from_reader(file).map_err(|e| {
+		let mut config: Network = serde_json::from_reader(file).map_err(|e| {
 			ConfigError::parse_error(
 				format!("failed to parse network config: {}", e),
 				Some(Box::new(e)),
@@ -138,6 +138,9 @@ impl ConfigLoader for Network {
 				)])),
 			)
 		})?;
+
+		// Resolve secrets before validating
+		config = config.resolve_secrets().await?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -448,17 +451,17 @@ mod tests {
 		));
 	}
 
-	#[test]
-	fn test_invalid_load_from_path() {
+	#[tokio::test]
+	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/networks/invalid.json");
 		assert!(matches!(
-			Network::load_from_path(path),
+			Network::load_from_path(path).await,
 			Err(ConfigError::FileError(_))
 		));
 	}
 
-	#[test]
-	fn test_invalid_config_from_load_from_path() {
+	#[tokio::test]
+	async fn test_invalid_config_from_load_from_path() {
 		use std::io::Write;
 		use tempfile::NamedTempFile;
 
@@ -468,17 +471,17 @@ mod tests {
 		let path = temp_file.path();
 
 		assert!(matches!(
-			Network::load_from_path(path),
+			Network::load_from_path(path).await,
 			Err(ConfigError::ParseError(_))
 		));
 	}
 
-	#[test]
-	fn test_load_all_directory_not_found() {
+	#[tokio::test]
+	async fn test_load_all_directory_not_found() {
 		let non_existent_path = Path::new("non_existent_directory");
 
 		let result: Result<HashMap<String, Network>, ConfigError> =
-			Network::load_all(Some(non_existent_path));
+			Network::load_all(Some(non_existent_path)).await;
 		assert!(matches!(result, Err(ConfigError::FileError(_))));
 
 		if let Err(ConfigError::FileError(err)) = result {

@@ -72,7 +72,7 @@ pub fn read_and_parse_json<T: serde::de::DeserializeOwned>(path: &str) -> T {
 	serde_json::from_str(&content).unwrap_or_else(|_| panic!("Failed to parse JSON from: {}", path))
 }
 
-pub fn setup_trigger_execution_service(
+pub async fn setup_trigger_execution_service(
 	trigger_json: &str,
 ) -> MockTriggerExecutionService<MockTriggerRepository> {
 	let trigger_map: HashMap<String, Trigger> = read_and_parse_json(trigger_json);
@@ -89,7 +89,7 @@ pub fn setup_trigger_execution_service(
 		.withf(|_| true)
 		.returning(|_| Ok(MockTriggerRepository::default()));
 
-	let mut mock_trigger_repository = MockTriggerRepository::new(None).unwrap();
+	let mut mock_trigger_repository = MockTriggerRepository::new(None).await.unwrap();
 
 	mock_trigger_repository
 		.expect_get()

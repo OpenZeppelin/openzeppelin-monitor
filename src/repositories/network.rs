@@ -8,6 +8,8 @@
 
 use std::{collections::HashMap, path::Path};
 
+use async_trait::async_trait;
+
 use crate::{
 	models::{ConfigLoader, Network},
 	repositories::error::RepositoryError,
@@ -25,8 +27,8 @@ impl NetworkRepository {
 	///
 	/// Loads all network configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
-	pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let networks = Self::load_all(path)?;
+	pub async fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
+		let networks = Self::load_all(path).await?;
 		Ok(NetworkRepository { networks })
 	}
 }
@@ -35,9 +37,10 @@ impl NetworkRepository {
 ///
 /// This trait defines the standard operations that any network repository must support,
 /// allowing for different storage backends while maintaining a consistent interface.
+#[async_trait]
 pub trait NetworkRepositoryTrait: Clone {
 	/// Create a new repository instance
-	fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
+	async fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
 	where
 		Self: Sized;
 
@@ -45,7 +48,7 @@ pub trait NetworkRepositoryTrait: Clone {
 	///
 	/// If no path is provided, uses the default config directory.
 	/// This is a static method that doesn't require an instance.
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
+	async fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
 
 	/// Get a specific network by ID
 	///
@@ -58,13 +61,14 @@ pub trait NetworkRepositoryTrait: Clone {
 	fn get_all(&self) -> HashMap<String, Network>;
 }
 
+#[async_trait]
 impl NetworkRepositoryTrait for NetworkRepository {
-	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		NetworkRepository::new(path)
+	async fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
+		NetworkRepository::new(path).await
 	}
 
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
-		Network::load_all(path).map_err(|e| {
+	async fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError> {
+		Network::load_all(path).await.map_err(|e| {
 			RepositoryError::load_error(
 				"Failed to load networks",
 				Some(Box::new(e)),
@@ -97,8 +101,10 @@ pub struct NetworkService<T: NetworkRepositoryTrait> {
 
 impl<T: NetworkRepositoryTrait> NetworkService<T> {
 	/// Create a new network service with the default repository implementation
-	pub fn new(path: Option<&Path>) -> Result<NetworkService<NetworkRepository>, RepositoryError> {
-		let repository = NetworkRepository::new(path)?;
+	pub async fn new(
+		path: Option<&Path>,
+	) -> Result<NetworkService<NetworkRepository>, RepositoryError> {
+		let repository = NetworkRepository::new(path).await?;
 		Ok(NetworkService { repository })
 	}
 
@@ -108,10 +114,10 @@ impl<T: NetworkRepositoryTrait> NetworkService<T> {
 	}
 
 	/// Create a new network service with a specific configuration path
-	pub fn new_with_path(
+	pub async fn new_with_path(
 		path: Option<&Path>,
 	) -> Result<NetworkService<NetworkRepository>, RepositoryError> {
-		let repository = NetworkRepository::new(path)?;
+		let repository = NetworkRepository::new(path).await?;
 		Ok(NetworkService { repository })
 	}
 
@@ -130,11 +136,11 @@ impl<T: NetworkRepositoryTrait> NetworkService<T> {
 mod tests {
 	use super::*;
 
-	#[test]
-	fn test_load_error_messages() {
+	#[tokio::test]
+	async fn test_load_error_messages() {
 		// Test with invalid path to trigger load error
 		let invalid_path = Path::new("/non/existent/path");
-		let result = NetworkRepository::load_all(Some(invalid_path));
+		let result = NetworkRepository::load_all(Some(invalid_path)).await;
 
 		assert!(result.is_err());
 		let err = result.unwrap_err();
