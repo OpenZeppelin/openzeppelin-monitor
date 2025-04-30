@@ -308,6 +308,56 @@ docker compose logs -f
 Ensure all referenced slugs and trigger keys exist in their respective configuration files. The monitor will fail to start if it cannot resolve these references.
 ====
 
+==== Safe Protocol Guidelines
+
+The monitor implements protocol security validations across different components and will issue warnings when potentially insecure configurations are detected. While insecure protocols are not blocked, we strongly recommend following these security guidelines:
+
+===== Network Protocols
+
+====== RPC URLs
+* *HTTPS Recommended*: Using `https://` for RPC endpoints is strongly recommended
+* *WSS Recommended*: For WebSocket connections, `wss://` (secure WebSocket) is strongly recommended
+* *Warning*: Using `http://` or `ws://` will trigger security warnings as they transmit data unencrypted
+
+===== Notification Protocols
+
+====== Slack Notifications
+* *HTTPS Recommended*: Webhook URLs should start with `https://hooks.slack.com/`
+* *Warning*: Non-HTTPS URLs will trigger security warnings
+
+====== Discord Notifications
+* *HTTPS Recommended*: Webhook URLs should start with `https://discord.com/api/webhooks/`
+* *Warning*: Non-HTTPS URLs will trigger security warnings
+
+====== Email Notifications
+* *Secure Ports Recommended*: The following ports are considered secure:
+** 465: SMTPS (SMTP over SSL)
+** 587: SMTP with STARTTLS
+** 993: IMAPS (IMAP over SSL)
+* *Warning*: Using other ports will trigger security warnings
+* *Valid Format*: Email addresses must follow RFC 5322 format
+
+====== Webhook Notifications
+* *HTTPS Recommended*: URLs should use HTTPS protocol
+* *Authentication Recommended*: Including either:
+** `X-API-Key` header
+** `Authorization` header
+* *Optional Secret*: Can include a secret for HMAC authentication
+* *Warning*: Non-HTTPS URLs or missing authentication headers will trigger security warnings
+
+===== Script Security
+
+====== File Permissions (Unix Systems)
+* *Restricted Write Access*: Script files should not have overly permissive write permissions
+* *Recommended Permissions*: Use `644` (`rw-r--r--`) for script files
+* *Warning*: Files with mode `022` or more permissive will trigger security warnings
+
+.Example Setting Recommended Permissions
+[source,bash]
+----
+chmod 644 ./config/filters/my_script.sh
+----
+
 ==== Basic Configuration
 
 * Set up environment variables:

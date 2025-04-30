@@ -163,7 +163,32 @@ impl ConfigLoader for Monitor {
 			)?;
 		}
 
+		// Log a warning if the monitor uses an insecure protocol
+		self.validate_protocol();
+
 		Ok(())
+	}
+
+	/// Validate the safety of the protocols used in the monitor
+	///
+	/// Returns if safe, or logs a warning message if unsafe.
+	fn validate_protocol(&self) {
+		// Check script file permissions on Unix systems
+		#[cfg(unix)]
+		for condition in &self.trigger_conditions {
+			use std::os::unix::fs::PermissionsExt;
+			if let Ok(metadata) = std::fs::metadata(&condition.script_path) {
+				let permissions = metadata.permissions();
+				let mode = permissions.mode();
+				if mode & 0o022 != 0 {
+					tracing::warn!(
+						"Monitor '{}' trigger conditions script file has overly permissive write permissions: {}. The recommended permissions are `644` (`rw-r--r--`)",
+						self.name,
+						condition.script_path
+					);
+				}
+			}
+		}
 	}
 }
 
@@ -176,6 +201,7 @@ mod tests {
 	};
 	use std::collections::HashMap;
 	use tempfile::TempDir;
+	use tracing_test::traced_test;
 
 	#[test]
 	fn test_load_valid_monitor() {
@@ -569,5 +595,48 @@ mod tests {
 		if let Err(ConfigError::FileError(err)) = result {
 			assert!(err.message.contains("monitors directory not found"));
 		}
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_permissions() {
+		use std::fs::File;
+		use std::os::unix::fs::PermissionsExt;
+		use tempfile::TempDir;
+
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("test_script.sh");
+		File::create(&script_path).unwrap();
+
+		// Set overly permissive permissions (777)
+		let metadata = std::fs::metadata(&script_path).unwrap();
+		let mut permissions = metadata.permissions();
+		permissions.set_mode(0o777);
+		std::fs::set_permissions(&script_path, permissions).unwrap();
+
+		let monitor = Monitor {
+			name: "TestMonitor".to_string(),
+			networks: vec!["ethereum_mainnet".to_string()],
+			paused: false,
+			addresses: vec![],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			trigger_conditions: vec![TriggerConditions {
+				script_path: script_path.to_str().unwrap().to_string(),
+				timeout_ms: 1000,
+				arguments: None,
+				language: ScriptLanguage::Bash,
+			}],
+			triggers: vec![],
+		};
+
+		monitor.validate_protocol();
+		assert!(logs_contain(
+			"script file has overly permissive write permissions"
+		));
 	}
 }

@@ -492,7 +492,73 @@ impl ConfigLoader for Trigger {
 				}
 			}
 		}
+
+		// Log a warning if the trigger uses an insecure protocol
+		self.validate_protocol();
+
 		Ok(())
+	}
+
+	/// Validate the safety of the protocols used in the trigger
+	///
+	/// Returns if safe, or logs a warning message if unsafe.
+	fn validate_protocol(&self) {
+		match &self.config {
+			TriggerTypeConfig::Slack { slack_url, .. } => {
+				if !slack_url.starts_with("https://") {
+					tracing::warn!("Slack URL uses an insecure protocol: {}", slack_url);
+				}
+			}
+			TriggerTypeConfig::Discord { discord_url, .. } => {
+				if !discord_url.starts_with("https://") {
+					tracing::warn!("Discord URL uses an insecure protocol: {}", discord_url);
+				}
+			}
+			TriggerTypeConfig::Telegram { .. } => {}
+			TriggerTypeConfig::Script { script_path, .. } => {
+				// Check script file permissions on Unix systems
+				#[cfg(unix)]
+				{
+					use std::os::unix::fs::PermissionsExt;
+					if let Ok(metadata) = std::fs::metadata(script_path) {
+						let permissions = metadata.permissions();
+						let mode = permissions.mode();
+						if mode & 0o022 != 0 {
+							tracing::warn!(
+								"Script file has overly permissive write permissions: {}.The recommended permissions are `644` (`rw-r--r--`)",
+								script_path
+							);
+						}
+					}
+				}
+			}
+			TriggerTypeConfig::Email { port, .. } => {
+				let secure_ports = [993, 587, 465];
+				if let Some(port) = port {
+					if !secure_ports.contains(port) {
+						tracing::warn!("Email port is not using a secure protocol: {}", port);
+					}
+				}
+			}
+			TriggerTypeConfig::Webhook { url, headers, .. } => {
+				if !url.starts_with("https://") {
+					tracing::warn!("Webhook URL uses an insecure protocol: {}", url);
+				}
+				// Check for security headers
+				match headers {
+					Some(headers) => {
+						if !headers.contains_key("X-API-Key")
+							&& !headers.contains_key("Authorization")
+						{
+							tracing::warn!("Webhook lacks authentication headers");
+						}
+					}
+					None => {
+						tracing::warn!("Webhook lacks authentication headers");
+					}
+				}
+			}
+		};
 	}
 }
 
@@ -505,6 +571,7 @@ mod tests {
 	};
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
+	use tracing_test::traced_test;
 
 	#[test]
 	fn test_slack_trigger_validation() {
@@ -1162,6 +1229,152 @@ mod tests {
 		let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
 		perms.set_mode(0o644);
 		std::fs::set_permissions(&file_path, perms).unwrap();
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_slack() {
+		let insecure_trigger = Trigger {
+			name: "test_slack".to_string(),
+			trigger_type: TriggerType::Slack,
+			config: TriggerTypeConfig::Slack {
+				slack_url: "http://hooks.slack.com/services/xxx".to_string(),
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
+			},
+		};
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Slack URL uses an insecure protocol"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_discord() {
+		let insecure_trigger = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: "http://discord.com/api/webhooks/xxx".to_string(),
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
+			},
+		};
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Discord URL uses an insecure protocol"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_webhook() {
+		let insecure_trigger = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: "http://api.example.com/webhook".to_string(),
+				method: Some("POST".to_string()),
+				headers: None,
+				secret: None,
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
+			},
+		};
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Webhook URL uses an insecure protocol"));
+		assert!(logs_contain("Webhook lacks authentication headers"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_email() {
+		let insecure_trigger = Trigger {
+			name: "test_email".to_string(),
+			trigger_type: TriggerType::Email,
+			config: TriggerTypeConfig::Email {
+				host: "smtp.example.com".to_string(),
+				port: Some(25), // Insecure port
+				username: "user".to_string(),
+				password: "pass".to_string(),
+				message: NotificationMessage {
+					title: "Test".to_string(),
+					body: "Test message".to_string(),
+				},
+				sender: EmailAddress::new_unchecked("sender@example.com"),
+				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
+			},
+		};
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Email port is not using a secure protocol"));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script() {
+		use std::fs::File;
+		use std::os::unix::fs::PermissionsExt;
+		use tempfile::TempDir;
+
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("test_script.sh");
+		File::create(&script_path).unwrap();
+
+		// Set overly permissive permissions (777)
+		let metadata = std::fs::metadata(&script_path).unwrap();
+		let mut permissions = metadata.permissions();
+		permissions.set_mode(0o777);
+		std::fs::set_permissions(&script_path, permissions).unwrap();
+
+		let trigger = Trigger {
+			name: "test_script".to_string(),
+			trigger_type: TriggerType::Script,
+			config: TriggerTypeConfig::Script {
+				script_path: script_path.to_str().unwrap().to_string(),
+				language: ScriptLanguage::Bash,
+				timeout_ms: 1000,
+				arguments: None,
+			},
+		};
+
+		trigger.validate_protocol();
+		assert!(logs_contain(
+			"Script file has overly permissive write permissions"
+		));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_webhook_with_headers() {
+		let mut headers = HashMap::new();
+		headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+		let insecure_trigger = Trigger {
+			name: "test_webhook".to_string(),
+			trigger_type: TriggerType::Webhook,
+			config: TriggerTypeConfig::Webhook {
+				url: "http://api.example.com/webhook".to_string(),
+				method: Some("POST".to_string()),
+				headers: Some(headers),
+				secret: None,
+				message: NotificationMessage {
+					title: "Alert".to_string(),
+					body: "Test message".to_string(),
+				},
+			},
+		};
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Webhook URL uses an insecure protocol"));
+		assert!(logs_contain("Webhook lacks authentication headers"));
 	}
 
 	#[test]

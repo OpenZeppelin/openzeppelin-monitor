@@ -30,6 +30,11 @@ pub trait ConfigLoader: Sized {
 	/// Returns Ok(()) if valid, or an error message if invalid.
 	fn validate(&self) -> Result<(), error::ConfigError>;
 
+	/// Validate safety of the protocol
+	///
+	/// Returns if safe, or logs a warning message if unsafe.
+	fn validate_protocol(&self);
+
 	/// Check if a file is a JSON file based on extension
 	fn is_json_file(path: &Path) -> bool {
 		path.extension()
