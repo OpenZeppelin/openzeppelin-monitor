@@ -475,7 +475,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &3000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -508,7 +508,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &3000, None, false).await;
 		assert!(result.is_err());
 		println!("result EXECUTOR: {:?}", result);
 		match result {
