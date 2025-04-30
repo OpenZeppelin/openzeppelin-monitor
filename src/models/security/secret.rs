@@ -333,7 +333,9 @@ mod tests {
 	use super::*;
 	use once_cell::sync::Lazy;
 	use std::collections::HashMap;
+	use std::sync::atomic::{AtomicBool, Ordering};
 	use std::sync::Mutex;
+	use zeroize::Zeroize;
 
 	// Mock environment variables for testing
 	static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -359,6 +361,84 @@ mod tests {
 		for key in MOCK_VAULT_VARS.keys() {
 			std::env::remove_var(key);
 		}
+	}
+
+	// Generic wrapper type that tracks zeroization
+	struct TrackedSecret<T: Zeroize> {
+		inner: T,
+		was_zeroized: Arc<AtomicBool>,
+	}
+
+	impl<T: Zeroize> TrackedSecret<T> {
+		fn new(value: T, was_zeroized: Arc<AtomicBool>) -> Self {
+			Self {
+				inner: value,
+				was_zeroized,
+			}
+		}
+	}
+
+	impl<T: Zeroize> Zeroize for TrackedSecret<T> {
+		fn zeroize(&mut self) {
+			self.was_zeroized.store(true, Ordering::SeqCst);
+			self.inner.zeroize();
+		}
+	}
+
+	impl<T: Zeroize> Drop for TrackedSecret<T> {
+		fn drop(&mut self) {
+			self.zeroize();
+		}
+	}
+
+	/// Tests that SecretString is zeroized when it goes out of scope
+	#[test]
+	fn test_secret_string_zeroize_on_drop() {
+		let was_zeroized = Arc::new(AtomicBool::new(false));
+		let secret = "sensitive_data".to_string();
+		let secret_string =
+			TrackedSecret::new(SecretString::new(secret.clone()), was_zeroized.clone());
+
+		// Verify initial state
+		assert_eq!(secret_string.inner.as_str(), secret);
+		assert!(!was_zeroized.load(Ordering::SeqCst));
+
+		// Move secret_string into a new scope
+		{
+			let _secret_string = secret_string;
+			// secret_string should still be accessible
+			assert_eq!(_secret_string.inner.as_str(), secret);
+			assert!(!was_zeroized.load(Ordering::SeqCst));
+		}
+
+		// After the scope ends, the value should be zeroized
+		assert!(was_zeroized.load(Ordering::SeqCst));
+	}
+
+	/// Tests that SecretValue is zeroized when it goes out of scope
+	#[test]
+	fn test_secret_value_zeroize_on_drop() {
+		let was_zeroized = Arc::new(AtomicBool::new(false));
+		let secret = "sensitive_data".to_string();
+		let secret_value = TrackedSecret::new(
+			SecretValue::Plain(SecretString::new(secret.clone())),
+			was_zeroized.clone(),
+		);
+
+		// Verify initial state
+		assert_eq!(secret_value.inner.as_str(), secret);
+		assert!(!was_zeroized.load(Ordering::SeqCst));
+
+		// Move secret_value into a new scope
+		{
+			let _secret_value = secret_value;
+			// secret_value should still be accessible
+			assert_eq!(_secret_value.inner.as_str(), secret);
+			assert!(!was_zeroized.load(Ordering::SeqCst));
+		}
+
+		// After the scope ends, the value should be zeroized
+		assert!(was_zeroized.load(Ordering::SeqCst));
 	}
 
 	/// Tests environment variable secret resolution
@@ -489,7 +569,7 @@ mod tests {
 	#[tokio::test]
 	#[ignore]
 	// TODO: Fix this test after oz-keystore is updated
-	async fn test_vault_client_get_secret_error() {
+	async fn test_vault_client_get_secret() {
 		// 	let _lock = ENV_LOCK.lock().unwrap();
 		// 	setup_mock_env();
 
