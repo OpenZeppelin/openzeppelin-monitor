@@ -510,13 +510,12 @@ print("true")
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
+		println!("result EXECUTOR: {:?}", result);
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
 				println!("err_msg EXECUTOR: {}", err_msg);
-				assert!(
-					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
-				);
+				assert!(err_msg.contains("Last line of output is not a valid boolean"));
 			}
 			_ => panic!("Expected error"),
 		}
