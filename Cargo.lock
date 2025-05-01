@@ -3808,7 +3808,8 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "oz-keystore"
 version = "0.1.3"
-source = "git+https://github.com/OpenZeppelin/oz-keystore.git?branch=allow-overriding-base-urls#6400fe6736aac4a933cfbd754cd791be2b7fdad9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34912c1f66968ad8bde9dbad76fd7f5bf90c78df82c1ead387b8d8099207b337"
 dependencies = [
  "base64 0.22.1",
  "bs58",
