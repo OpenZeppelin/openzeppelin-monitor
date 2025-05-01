@@ -34,3 +34,8 @@ updates:
       - dependencies
     # Allow up to 10 open pull requests for testing
     open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: daily
