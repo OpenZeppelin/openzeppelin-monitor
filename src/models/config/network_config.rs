@@ -315,7 +315,6 @@ impl ConfigLoader for Network {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{RpcUrl, SecretString};
 	use crate::utils::tests::builders::network::NetworkBuilder;
 	use tracing_test::traced_test;
 
@@ -492,30 +491,15 @@ mod tests {
 	#[test]
 	#[traced_test]
 	fn test_validate_protocol_insecure_rpc() {
-		let network = Network {
-			name: "Test Network".to_string(),
-			slug: "test_network".to_string(),
-			network_type: BlockChainType::EVM,
-			chain_id: Some(1),
-			network_passphrase: None,
-			store_blocks: Some(true),
-			rpc_urls: vec![
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new("http://test.network".to_string())),
-					weight: 100,
-				},
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new("ws://test.network".to_string())),
-					weight: 50,
-				},
-			],
-			block_time_ms: 1000,
-			confirmation_blocks: 1,
-			cron_schedule: "0 */5 * * * *".to_string(),
-			max_past_blocks: Some(10),
-		};
+		let network = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test_network")
+			.network_type(BlockChainType::EVM)
+			.chain_id(1)
+			.store_blocks(true)
+			.add_rpc_url("http://test.network", "rpc", 100)
+			.add_rpc_url("ws://test.network", "rpc", 100)
+			.build();
 
 		network.validate_protocol();
 		assert!(logs_contain(
@@ -529,30 +513,15 @@ mod tests {
 	#[test]
 	#[traced_test]
 	fn test_validate_protocol_secure_rpc() {
-		let network = Network {
-			name: "Test Network".to_string(),
-			slug: "test_network".to_string(),
-			network_type: BlockChainType::EVM,
-			chain_id: Some(1),
-			network_passphrase: None,
-			store_blocks: Some(true),
-			rpc_urls: vec![
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new("https://test.network".to_string())),
-					weight: 100,
-				},
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new("wss://test.network".to_string())),
-					weight: 50,
-				},
-			],
-			block_time_ms: 1000,
-			confirmation_blocks: 1,
-			cron_schedule: "0 */5 * * * *".to_string(),
-			max_past_blocks: Some(10),
-		};
+		let network = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test_network")
+			.network_type(BlockChainType::EVM)
+			.chain_id(1)
+			.store_blocks(true)
+			.add_rpc_url("https://test.network", "rpc", 100)
+			.add_rpc_url("wss://test.network", "rpc", 100)
+			.build();
 
 		network.validate_protocol();
 		assert!(!logs_contain("uses an insecure RPC URL"));
@@ -562,48 +531,17 @@ mod tests {
 	#[test]
 	#[traced_test]
 	fn test_validate_protocol_mixed_security() {
-		let network = Network {
-			name: "Test Network".to_string(),
-			slug: "test_network".to_string(),
-			network_type: BlockChainType::EVM,
-			chain_id: Some(1),
-			network_passphrase: None,
-			store_blocks: Some(true),
-			rpc_urls: vec![
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new(
-						"https://secure.network".to_string(),
-					)),
-					weight: 100,
-				},
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new(
-						"http://insecure.network".to_string(),
-					)),
-					weight: 50,
-				},
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new(
-						"wss://secure.ws.network".to_string(),
-					)),
-					weight: 25,
-				},
-				RpcUrl {
-					type_: "rpc".to_string(),
-					url: SecretValue::Plain(SecretString::new(
-						"ws://insecure.ws.network".to_string(),
-					)),
-					weight: 25,
-				},
-			],
-			block_time_ms: 1000,
-			confirmation_blocks: 1,
-			cron_schedule: "0 */5 * * * *".to_string(),
-			max_past_blocks: Some(10),
-		};
+		let network = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test_network")
+			.network_type(BlockChainType::EVM)
+			.chain_id(1)
+			.store_blocks(true)
+			.add_rpc_url("https://secure.network", "rpc", 100)
+			.add_rpc_url("http://insecure.network", "rpc", 50)
+			.add_rpc_url("wss://secure.ws.network", "rpc", 25)
+			.add_rpc_url("ws://insecure.ws.network", "rpc", 25)
+			.build();
 
 		network.validate_protocol();
 		assert!(logs_contain(

@@ -1199,9 +1199,12 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		AddressWithABI, MatchConditions, Monitor, StellarDecodedTransaction, StellarTransaction,
-		StellarTransactionInfo, TransactionStatus,
+	use crate::{
+		models::{
+			AddressWithABI, MatchConditions, Monitor, StellarDecodedTransaction,
+			StellarTransaction, StellarTransactionInfo, TransactionStatus,
+		},
+		utils::tests::stellar::monitor::MonitorBuilder,
 	};
 	use serde_json::json;
 	use stellar_strkey::ed25519::PublicKey as StrPublicKey;
@@ -1226,19 +1229,22 @@ mod tests {
 		transaction_conditions: Vec<TransactionCondition>,
 		addresses: Vec<AddressWithABI>,
 	) -> Monitor {
-		Monitor {
-			match_conditions: MatchConditions {
+		MonitorBuilder::new()
+			.name("test")
+			.networks(vec!["stellar_mainnet".to_string()])
+			.paused(false)
+			.addresses_with_abi(
+				addresses
+					.iter()
+					.map(|a| (a.address.clone(), a.abi.clone()))
+					.collect(),
+			)
+			.match_conditions(MatchConditions {
 				events: event_conditions,
 				functions: function_conditions,
 				transactions: transaction_conditions,
-			},
-			addresses,
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			trigger_conditions: vec![],
-			triggers: vec![],
-		}
+			})
+			.build()
 	}
 
 	/// Creates a mock transaction for testing

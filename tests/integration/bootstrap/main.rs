@@ -13,8 +13,8 @@ use openzeppelin_monitor::{
 	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
 	models::{
 		BlockChainType, EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, Monitor,
-		MonitorMatch, ProcessedBlock, ScriptLanguage, StellarBlock, StellarMonitorMatch,
-		TransactionType, Trigger, TriggerConditions,
+		MonitorMatch, ProcessedBlock, ScriptLanguage, SecretString, SecretValue, StellarBlock,
+		StellarMonitorMatch, TransactionType, Trigger, TriggerConditions,
 	},
 	services::{
 		filter::FilterService,
@@ -819,7 +819,7 @@ async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 			.webhook(
 				"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX", //noboost
 			)
-			.webhook_secret("secret")
+			.webhook_secret(SecretValue::Plain(SecretString::new("secret".to_string())))
 			.webhook_method("POST")
 			.message("Test Title", "Test Body")
 			.build(),
@@ -905,7 +905,7 @@ async fn test_trigger_execution_service_execute_multiple_triggers_success() {
 			.name("example_trigger_webhook")
 			.webhook(&webhook_server.url())
 			.webhook_headers(HashMap::new())
-			.webhook_secret("secret")
+			.webhook_secret(SecretValue::Plain(SecretString::new("secret".to_string())))
 			.webhook_method("POST")
 			.message("Test Title", "Test Body")
 			.build(),
@@ -978,7 +978,7 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 			.name("example_trigger_webhook")
 			.webhook(&webhook_server.url())
 			.webhook_headers(HashMap::new())
-			.webhook_secret("secret")
+			.webhook_secret(SecretValue::Plain(SecretString::new("secret".to_string())))
 			.webhook_method("POST")
 			.message("Test Title", "Test Body")
 			.build(),

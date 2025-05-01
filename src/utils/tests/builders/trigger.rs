@@ -104,6 +104,13 @@ impl TriggerBuilder {
 		self
 	}
 
+	pub fn telegram_token(mut self, token: SecretValue) -> Self {
+		if let TriggerTypeConfig::Telegram { token: t, .. } = &mut self.config {
+			*t = token;
+		}
+		self
+	}
+
 	pub fn script(mut self, script_path: &str, language: ScriptLanguage) -> Self {
 		self.trigger_type = TriggerType::Script;
 		self.config = TriggerTypeConfig::Script {
@@ -190,6 +197,20 @@ impl TriggerBuilder {
 		self
 	}
 
+	pub fn email_username(mut self, username: SecretValue) -> Self {
+		if let TriggerTypeConfig::Email { username: u, .. } = &mut self.config {
+			*u = username;
+		}
+		self
+	}
+
+	pub fn email_password(mut self, password: SecretValue) -> Self {
+		if let TriggerTypeConfig::Email { password: p, .. } = &mut self.config {
+			*p = password;
+		}
+		self
+	}
+
 	pub fn webhook_method(mut self, method: &str) -> Self {
 		if let TriggerTypeConfig::Webhook { method: m, .. } = &mut self.config {
 			*m = Some(method.to_string());
@@ -197,9 +218,9 @@ impl TriggerBuilder {
 		self
 	}
 
-	pub fn webhook_secret(mut self, secret: &str) -> Self {
+	pub fn webhook_secret(mut self, secret: SecretValue) -> Self {
 		if let TriggerTypeConfig::Webhook { secret: s, .. } = &mut self.config {
-			*s = Some(SecretValue::Plain(SecretString::new(secret.to_string())));
+			*s = Some(secret);
 		}
 		self
 	}
@@ -208,6 +229,40 @@ impl TriggerBuilder {
 		if let TriggerTypeConfig::Webhook { headers: h, .. } = &mut self.config {
 			*h = Some(headers);
 		}
+		self
+	}
+
+	pub fn url(mut self, url: SecretValue) -> Self {
+		self.config = match self.config {
+			TriggerTypeConfig::Webhook {
+				url: _,
+				method,
+				headers,
+				secret,
+				message,
+			} => TriggerTypeConfig::Webhook {
+				url,
+				method,
+				headers,
+				secret,
+				message,
+			},
+			TriggerTypeConfig::Discord {
+				discord_url: _,
+				message,
+			} => TriggerTypeConfig::Discord {
+				discord_url: url,
+				message,
+			},
+			TriggerTypeConfig::Slack {
+				slack_url: _,
+				message,
+			} => TriggerTypeConfig::Slack {
+				slack_url: url,
+				message,
+			},
+			config => config,
+		};
 		self
 	}
 
@@ -300,7 +355,9 @@ mod tests {
 			.name("my_webhook")
 			.webhook("https://webhook.example.com")
 			.webhook_method("POST")
-			.webhook_secret("secret123")
+			.webhook_secret(SecretValue::Plain(SecretString::new(
+				"secret123".to_string(),
+			)))
 			.webhook_headers(headers.clone())
 			.message("Custom Alert", "Something happened!")
 			.build();
@@ -500,6 +557,122 @@ mod tests {
 				assert_eq!(recipients[0].as_str(), "recipient@example.com");
 			}
 			_ => panic!("Expected email config"),
+		}
+	}
+
+	#[test]
+	fn test_telegram_token() {
+		let token = SecretValue::Environment("TELEGRAM_TOKEN".to_string());
+		let trigger = TriggerBuilder::new()
+			.name("telegram_alert")
+			.telegram("dummy_token", "1234567890", false)
+			.telegram_token(token.clone())
+			.build();
+
+		assert_eq!(trigger.trigger_type, TriggerType::Telegram);
+		match trigger.config {
+			TriggerTypeConfig::Telegram { token: t, .. } => {
+				assert_eq!(t, token);
+			}
+			_ => panic!("Expected telegram config"),
+		}
+	}
+
+	#[test]
+	fn test_email_username() {
+		let username = SecretValue::Environment("SMTP_USERNAME".to_string());
+		let trigger = TriggerBuilder::new()
+			.name("email_alert")
+			.email(
+				"smtp.example.com",
+				"dummy_user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.email_username(username.clone())
+			.build();
+
+		assert_eq!(trigger.trigger_type, TriggerType::Email);
+		match trigger.config {
+			TriggerTypeConfig::Email { username: u, .. } => {
+				assert_eq!(u, username);
+			}
+			_ => panic!("Expected email config"),
+		}
+	}
+
+	#[test]
+	fn test_email_password() {
+		let password = SecretValue::Environment("SMTP_PASSWORD".to_string());
+		let trigger = TriggerBuilder::new()
+			.name("email_alert")
+			.email(
+				"smtp.example.com",
+				"user",
+				"dummy_pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.email_password(password.clone())
+			.build();
+
+		assert_eq!(trigger.trigger_type, TriggerType::Email);
+		match trigger.config {
+			TriggerTypeConfig::Email { password: p, .. } => {
+				assert_eq!(p, password);
+			}
+			_ => panic!("Expected email config"),
+		}
+	}
+
+	#[test]
+	fn test_url() {
+		let url = SecretValue::Environment("WEBHOOK_URL".to_string());
+
+		// Test with webhook
+		let webhook_trigger = TriggerBuilder::new()
+			.name("webhook_alert")
+			.webhook("dummy_url")
+			.url(url.clone())
+			.build();
+
+		assert_eq!(webhook_trigger.trigger_type, TriggerType::Webhook);
+		match webhook_trigger.config {
+			TriggerTypeConfig::Webhook { url: u, .. } => {
+				assert_eq!(u, url);
+			}
+			_ => panic!("Expected webhook config"),
+		}
+
+		// Test with discord
+		let discord_trigger = TriggerBuilder::new()
+			.name("discord_alert")
+			.discord("dummy_url")
+			.url(url.clone())
+			.build();
+
+		assert_eq!(discord_trigger.trigger_type, TriggerType::Discord);
+		match discord_trigger.config {
+			TriggerTypeConfig::Discord { discord_url: u, .. } => {
+				assert_eq!(u, url);
+			}
+			_ => panic!("Expected discord config"),
+		}
+
+		// Test with slack
+		let slack_trigger = TriggerBuilder::new()
+			.name("slack_alert")
+			.slack("dummy_url")
+			.url(url.clone())
+			.build();
+
+		assert_eq!(slack_trigger.trigger_type, TriggerType::Slack);
+		match slack_trigger.config {
+			TriggerTypeConfig::Slack { slack_url: u, .. } => {
+				assert_eq!(u, url);
+			}
+			_ => panic!("Expected slack config"),
 		}
 	}
 }
