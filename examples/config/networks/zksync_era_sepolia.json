@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://sepolia.era.zksync.dev",
+      "url": {
+        "type": "Plain",
+        "value": "https://sepolia.era.zksync.dev"
+      },
       "weight": 100
     }
   ],

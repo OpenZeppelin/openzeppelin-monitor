@@ -3,7 +3,10 @@
     "name": "Large Transfer Telegram Notification",
     "trigger_type": "telegram",
     "config": {
-      "token": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "token": {
+        "type": "Plain",
+        "value": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      },
       "chat_id": "9876543210",
       "disable_web_preview": true,
       "message": {
@@ -16,7 +19,10 @@
     "name": "Large Swap By Dex Telegram Notification",
     "trigger_type": "telegram",
     "config": {
-      "token": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "token": {
+        "type": "Plain",
+        "value": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      },
       "chat_id": "9876543210",
       "disable_web_preview": true,
       "message": {

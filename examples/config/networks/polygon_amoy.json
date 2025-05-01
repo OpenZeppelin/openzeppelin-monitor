@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://rpc-amoy.polygon.technology/",
+      "url": {
+        "type": "Plain",
+        "value": "https://rpc-amoy.polygon.technology/"
+      },
       "weight": 100
     }
   ],

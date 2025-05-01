@@ -17,6 +17,7 @@ The main source code directory contains the core implementation files organized 
 *** `stellar/`: Stellar blockchain specific types
 ** `config/`: Configuration loading and validation
 ** `core/`: Core domain models
+** `security/`: Security and secret management
 
 * `repositories/`: Configuration storage
 ** Handles loading and validating configuration files

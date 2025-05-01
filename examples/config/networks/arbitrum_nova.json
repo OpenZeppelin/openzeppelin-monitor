@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://nova.arbitrum.io/rpc",
+      "url": {
+        "type": "Plain",
+        "value": "https://nova.arbitrum.io/rpc"
+      },
       "weight": 100
     }
   ],

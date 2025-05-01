@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://sepolia-rollup.arbitrum.io/rpc",
+      "url": {
+        "type": "Plain",
+        "value": "https://sepolia-rollup.arbitrum.io/rpc"
+      },
       "weight": 100
     }
   ],

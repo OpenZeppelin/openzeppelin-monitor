@@ -3,9 +3,15 @@
     "name": "Large Transfer Webhook Notification",
     "trigger_type": "webhook",
     "config": {
-      "url": "https://webhook.site/123-456-789",
+      "url": {
+        "type": "Plain",
+        "value": "https://webhook.site/123-456-789"
+      },
       "method": "POST",
-      "secret": "some-secret",
+      "secret": {
+        "type": "Plain",
+        "value": "some-secret"
+      },
       "headers": {
         "Content-Type": "application/json"
       },
@@ -19,9 +25,15 @@
     "name": "Large Swap By Dex Webhook Notification",
     "trigger_type": "webhook",
     "config": {
-      "url": "https://webhook.site/123-456-789",
+      "url": {
+        "type": "Plain",
+        "value": "https://webhook.site/123-456-789"
+      },
       "method": "POST",
-      "secret": "some-secret",
+      "secret": {
+        "type": "Plain",
+        "value": "some-secret"
+      },
       "headers": {
         "Content-Type": "application/json"
       },

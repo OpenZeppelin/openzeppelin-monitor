@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://polygon-rpc.com/",
+      "url": {
+        "type": "Plain",
+        "value": "https://polygon-rpc.com/"
+      },
       "weight": 100
     }
   ],
