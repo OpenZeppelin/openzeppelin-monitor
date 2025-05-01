@@ -568,56 +568,54 @@ mod tests {
 
 	#[tokio::test]
 	#[allow(clippy::await_holding_lock)]
-	#[ignore]
-	// TODO: enable again after oz-keystore is updated to 0.1.4
 	async fn test_vault_client_get_secret() {
-		// let mut server = mockito::Server::new_async().await;
-		// // Mock the token request
-		// let token_mock = server
-		// 	.mock("POST", "/oauth2/token")
-		// 	.with_status(200)
-		// 	.with_header("content-type", "application/json")
-		// 	.with_body(
-		// 		r#"{"access_token": "test-token", "token_type": "Bearer", "expires_in": 3600}"#,
-		// 	)
-		// 	.create_async()
-		// 	.await;
+		let mut server = mockito::Server::new_async().await;
+		// Mock the token request
+		let token_mock = server
+			.mock("POST", "/oauth2/token")
+			.with_status(200)
+			.with_header("content-type", "application/json")
+			.with_body(
+				r#"{"access_token": "test-token", "token_type": "Bearer", "expires_in": 3600}"#,
+			)
+			.create_async()
+			.await;
 
-		// // Mock the secret request
-		// let secret_mock = server
-		// 	.mock(
-		// 		"GET",
-		// 		"/secrets/2023-11-28/organizations/test-org/projects/test-project/apps/test-app/secrets/test-secret:open",
-		// 	)
-		// 	.with_status(200)
-		// 	.with_header("content-type", "application/json")
-		// 	.with_body(r#"{"secret": {"static_version": {"value": "test-secret-value"}}}"#)
-		// 	.create_async()
-		// 	.await;
+		// Mock the secret request
+		let secret_mock = server
+			.mock(
+				"GET",
+				"/secrets/2023-11-28/organizations/test-org/projects/test-project/apps/test-app/secrets/test-secret:open",
+			)
+			.with_status(200)
+			.with_header("content-type", "application/json")
+			.with_body(r#"{"secret": {"static_version": {"value": "test-secret-value"}}}"#)
+			.create_async()
+			.await;
 
-		// // Create the HashicorpCloudClient with the custom client
-		// let hashicorp_client = HashicorpCloudClient::new(
-		// 	"test-client-id".to_string(),
-		// 	"test-client-secret".to_string(),
-		// 	"test-org".to_string(),
-		// 	"test-project".to_string(),
-		// 	"test-app".to_string(),
-		// )
-		// .with_api_base_url(server.url())
-		// .with_auth_base_url(server.url());
+		// Create the HashicorpCloudClient with the custom client
+		let hashicorp_client = HashicorpCloudClient::new(
+			"test-client-id".to_string(),
+			"test-client-secret".to_string(),
+			"test-org".to_string(),
+			"test-project".to_string(),
+			"test-app".to_string(),
+		)
+		.with_api_base_url(server.url())
+		.with_auth_base_url(server.url());
 
-		// let vault_client = CloudVaultClient::new(hashicorp_client);
+		let vault_client = CloudVaultClient::new(hashicorp_client);
 
-		// // Get the secret
-		// let result = vault_client.get_secret("test-secret").await;
+		// Get the secret
+		let result = vault_client.get_secret("test-secret").await;
 
-		// // Verify the mocks were called
-		// token_mock.assert_async().await;
-		// secret_mock.assert_async().await;
+		// Verify the mocks were called
+		token_mock.assert_async().await;
+		secret_mock.assert_async().await;
 
-		// // Verify the result
-		// assert!(result.is_ok());
-		// assert_eq!(result.unwrap().as_str(), "test-secret-value");
+		// Verify the result
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap().as_str(), "test-secret-value");
 	}
 
 	#[test]
