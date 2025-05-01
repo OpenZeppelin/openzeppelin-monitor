@@ -634,4 +634,199 @@ mod tests {
 
 		cleanup_mock_env();
 	}
+
+	#[test]
+	fn test_cloud_vault_client_new_wraps_arc() {
+		let dummy = HashicorpCloudClient::new(
+			"id".to_string(),
+			"secret".to_string(),
+			"org".to_string(),
+			"proj".to_string(),
+			"app".to_string(),
+		);
+		let client = CloudVaultClient::new(dummy);
+		// Arc should be used internally (cannot test Arc directly, but can check type)
+		assert!(Arc::strong_count(&client.client) >= 1);
+	}
+
+	#[test]
+	fn test_cloud_vault_client_from_env_missing_org_id() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+		std::env::remove_var("HCP_ORG_ID");
+		let result = CloudVaultClient::from_env();
+		assert!(result.is_err());
+		assert!(result.err().unwrap().to_string().contains("HCP_ORG_ID"));
+		cleanup_mock_env();
+	}
+
+	#[test]
+	fn test_cloud_vault_client_from_env_missing_project_id() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+		std::env::remove_var("HCP_PROJECT_ID");
+		let result = CloudVaultClient::from_env();
+		assert!(result.is_err());
+		assert!(result.err().unwrap().to_string().contains("HCP_PROJECT_ID"));
+		cleanup_mock_env();
+	}
+
+	#[test]
+	fn test_cloud_vault_client_from_env_missing_app_name() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+		std::env::remove_var("HCP_APP_NAME");
+		let result = CloudVaultClient::from_env();
+		assert!(result.is_err());
+		assert!(result.err().unwrap().to_string().contains("HCP_APP_NAME"));
+		cleanup_mock_env();
+	}
+
+	#[test]
+	fn test_cloud_vault_client_from_env_missing_client_id() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+		std::env::remove_var("HCP_CLIENT_ID");
+		let result = CloudVaultClient::from_env();
+		assert!(result.is_err());
+		assert!(result.err().unwrap().to_string().contains("HCP_CLIENT_ID"));
+		cleanup_mock_env();
+	}
+
+	#[test]
+	fn test_cloud_vault_client_from_env_missing_client_secret() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+		std::env::remove_var("HCP_CLIENT_SECRET");
+		let result = CloudVaultClient::from_env();
+		assert!(result.is_err());
+		assert!(result
+			.err()
+			.unwrap()
+			.to_string()
+			.contains("HCP_CLIENT_SECRET"));
+		cleanup_mock_env();
+	}
+
+	#[tokio::test]
+	#[allow(clippy::await_holding_lock)]
+	async fn test_vault_type_get_secret_delegates() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+		let vault = VaultType::from_env().unwrap();
+		let result = vault.get_secret("nonexistent").await;
+		assert!(
+			result.is_err(),
+			"Expected error for nonexistent secret, got: {:?}",
+			result
+		);
+		cleanup_mock_env();
+	}
+
+	#[test]
+	fn test_secret_value_partial_eq_false_for_different_variants() {
+		let a = SecretValue::Plain(SecretString::new("a".to_string()));
+		let b = SecretValue::Environment("a".to_string());
+		let c = SecretValue::HashicorpCloudVault("a".to_string());
+		assert_ne!(a, b);
+		assert_ne!(a, c);
+		assert_ne!(b, c);
+	}
+
+	#[test]
+	fn test_secret_string_partial_eq() {
+		let a = SecretString::new("foo".to_string());
+		let b = SecretString::new("foo".to_string());
+		let c = SecretString::new("bar".to_string());
+		assert_eq!(a, b);
+		assert_ne!(a, c);
+	}
+
+	#[tokio::test]
+	async fn test_secret_value_resolve_env_error() {
+		let secret = SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string());
+		let result = secret.resolve().await;
+		assert!(result.is_err());
+		assert!(result
+			.err()
+			.unwrap()
+			.to_string()
+			.contains("Failed to get environment variable"));
+	}
+
+	#[test]
+	fn test_secret_value_starts_with() {
+		let plain = SecretValue::Plain(SecretString::new("PREFIX_value".to_string()));
+		let env = SecretValue::Environment("PREFIX_value".to_string());
+		let vault = SecretValue::HashicorpCloudVault("PREFIX_secret".to_string());
+		assert!(plain.starts_with("PREFIX"));
+		assert!(env.starts_with("PREFIX"));
+		assert!(vault.starts_with("PREFIX"));
+		assert!(!plain.starts_with("NOPE"));
+		assert!(!env.starts_with("NOPE"));
+		assert!(!vault.starts_with("NOPE"));
+	}
+
+	#[test]
+	fn test_secret_value_is_empty() {
+		let plain = SecretValue::Plain(SecretString::new("".to_string()));
+		let env = SecretValue::Environment("".to_string());
+		let vault = SecretValue::HashicorpCloudVault("".to_string());
+		assert!(plain.is_empty());
+		assert!(env.is_empty());
+		assert!(vault.is_empty());
+
+		let plain2 = SecretValue::Plain(SecretString::new("notempty".to_string()));
+		let env2 = SecretValue::Environment("notempty".to_string());
+		let vault2 = SecretValue::HashicorpCloudVault("notempty".to_string());
+		assert!(!plain2.is_empty());
+		assert!(!env2.is_empty());
+		assert!(!vault2.is_empty());
+	}
+
+	#[test]
+	fn test_secret_value_trim() {
+		let plain = SecretValue::Plain(SecretString::new("  plainval  ".to_string()));
+		let env = SecretValue::Environment("  foo  ".to_string());
+		let vault = SecretValue::HashicorpCloudVault("  bar  ".to_string());
+		assert_eq!(plain.trim(), "plainval");
+		assert_eq!(env.trim(), "foo");
+		assert_eq!(vault.trim(), "bar");
+	}
+
+	#[test]
+	fn test_secret_value_as_str() {
+		let plain = SecretValue::Plain(SecretString::new("plainval".to_string()));
+		let env = SecretValue::Environment("envval".to_string());
+		let vault = SecretValue::HashicorpCloudVault("vaultval".to_string());
+		assert_eq!(plain.as_str(), "plainval");
+		assert_eq!(env.as_str(), "envval");
+		assert_eq!(vault.as_str(), "vaultval");
+	}
+
+	#[test]
+	fn test_secret_string_from_string() {
+		let s: SecretString = String::from("foo").into();
+		assert_eq!(s.as_str(), "foo");
+	}
+
+	#[test]
+	fn test_secret_value_display() {
+		let plain = SecretValue::Plain(SecretString::new("plainval".to_string()));
+		let env = SecretValue::Environment("envval".to_string());
+		let vault = SecretValue::HashicorpCloudVault("vaultval".to_string());
+		assert_eq!(format!("{}", plain), "plainval");
+		assert_eq!(format!("{}", env), "envval");
+		assert_eq!(format!("{}", vault), "vaultval");
+	}
+
+	#[test]
+	fn test_secret_value_as_ref() {
+		let plain = SecretValue::Plain(SecretString::new("plainval".to_string()));
+		let env = SecretValue::Environment("envval".to_string());
+		let vault = SecretValue::HashicorpCloudVault("vaultval".to_string());
+		assert_eq!(plain.as_ref(), "plainval");
+		assert_eq!(env.as_ref(), "envval");
+		assert_eq!(vault.as_ref(), "vaultval");
+	}
 }
