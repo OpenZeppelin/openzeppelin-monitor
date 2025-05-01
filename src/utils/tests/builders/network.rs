@@ -106,6 +106,15 @@ impl NetworkBuilder {
 		self
 	}
 
+	pub fn add_secret_rpc_url(mut self, url: SecretValue, type_: &str, weight: u32) -> Self {
+		self.rpc_urls.push(RpcUrl {
+			type_: type_.to_string(),
+			url,
+			weight,
+		});
+		self
+	}
+
 	pub fn clear_rpc_urls(mut self) -> Self {
 		self.rpc_urls.clear();
 		self
@@ -219,6 +228,24 @@ mod tests {
 		);
 		assert_eq!(network.rpc_urls[1].type_, "ws");
 		assert_eq!(network.rpc_urls[1].weight, 50);
+	}
+
+	#[test]
+	fn test_secret_rpc_url() {
+		let network = NetworkBuilder::new()
+			.add_secret_rpc_url(
+				SecretValue::Plain(SecretString::new("https://rpc1.example.com".to_string())),
+				"rpc",
+				50,
+			)
+			.build();
+
+		assert_eq!(network.rpc_urls.len(), 2);
+		assert_eq!(
+			network.rpc_urls[1].url.as_ref().to_string(),
+			"https://rpc1.example.com".to_string()
+		);
+		assert_eq!(network.rpc_urls[1].type_, "rpc");
 	}
 
 	#[test]
