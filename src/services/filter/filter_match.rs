@@ -45,9 +45,9 @@ use crate::{
 /// "transaction.to": "0x0000000000001ff3684f28c67538d4d072c22734"
 /// "transaction.value": "24504000000000000"
 /// "events.0.signature": "Transfer(address,address,uint256)"
-/// "events.0.to": "0x70bf6634ee8cb27d04478f184b9b8bb13e5f4710"
-/// "events.0.from": "0x2e8135be71230c6b1b4045696d41c09db0414226"
-/// "events.0.value": "88248701"
+/// "events.0.args.to": "0x70bf6634ee8cb27d04478f184b9b8bb13e5f4710"
+/// "events.0.args.from": "0x2e8135be71230c6b1b4045696d41c09db0414226"
+/// "events.0.args.value": "88248701"
 /// ```
 pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 	matching_monitor: MonitorMatch,
