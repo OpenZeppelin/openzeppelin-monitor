@@ -542,6 +542,29 @@ mod tests {
 
 	#[tokio::test]
 	#[allow(clippy::await_holding_lock)]
+	async fn test_get_vault_client_error() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+
+		// Remove a required environment variable to force an error
+		std::env::remove_var("HCP_CLIENT_ID");
+
+		// Try to get the vault client
+		let result = get_vault_client().await;
+
+		// Verify the error
+		assert!(result.is_err());
+		assert!(result
+			.err()
+			.unwrap()
+			.to_string()
+			.contains("Failed to get vault client"));
+
+		cleanup_mock_env();
+	}
+
+	#[tokio::test]
+	#[allow(clippy::await_holding_lock)]
 	async fn test_vault_client_get_secret() {
 		let mut server = mockito::Server::new_async().await;
 		// Mock the token request
@@ -592,6 +615,53 @@ mod tests {
 		// Verify the result
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap().as_str(), "test-secret-value");
+	}
+
+	#[tokio::test]
+	#[allow(clippy::await_holding_lock)]
+	async fn test_vault_client_get_secret_error() {
+		let _lock = ENV_LOCK.lock().unwrap();
+		setup_mock_env();
+
+		// Create a mock server that will return an error
+		let mut server = mockito::Server::new_async().await;
+		let token_mock = server
+			.mock("POST", "/oauth2/token")
+			.with_status(500)
+			.with_header("content-type", "application/json")
+			.with_body(r#"{"error": "internal server error"}"#)
+			.create_async()
+			.await;
+
+		// Create the HashicorpCloudClient with the custom client
+		let hashicorp_client = HashicorpCloudClient::new(
+			"test-client-id".to_string(),
+			"test-client-secret".to_string(),
+			"test-org".to_string(),
+			"test-project".to_string(),
+			"test-app".to_string(),
+		)
+		.with_api_base_url(server.url())
+		.with_auth_base_url(server.url());
+
+		let vault_client = CloudVaultClient {
+			client: Arc::new(hashicorp_client),
+		};
+
+		let result = vault_client.get_secret("test-secret").await;
+
+		// Verify the mock was called
+		token_mock.assert_async().await;
+
+		// Verify the error
+		assert!(result.is_err());
+		assert!(result
+			.err()
+			.unwrap()
+			.to_string()
+			.contains("Failed to get secret from Hashicorp Cloud Vault"));
+
+		cleanup_mock_env();
 	}
 
 	#[test]
