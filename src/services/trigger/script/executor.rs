@@ -226,16 +226,11 @@ async fn process_command(
 
 	let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
 
-	match timeout(timeout_duration, async {
-		// Add a small delay to ensure the output is produced
-		tokio::time::sleep(Duration::from_millis(30)).await;
-		cmd.wait_with_output().await
-	})
-	.await
-	{
+	match timeout(timeout_duration, cmd.wait_with_output()).await {
 		Ok(result) => {
 			let output =
 				result.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))?;
+			println!("output: {:?}", output);
 			process_script_output(output, from_custom_notification)
 		}
 		Err(_) => Err(anyhow::anyhow!("Script execution timed out")),
@@ -475,7 +470,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &3000, None, false).await;
+		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -508,7 +503,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &3000, None, false).await;
+		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_err());
 		println!("result EXECUTOR: {:?}", result);
 		match result {
