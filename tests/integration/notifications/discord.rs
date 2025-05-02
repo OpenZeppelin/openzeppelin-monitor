@@ -42,8 +42,6 @@ async fn test_discord_notification_success() {
 	let mut server = mockito::Server::new_async().await;
 	let expected_json_payload = json!({
 		"content": "*Test Alert*\n\nTest message with value 42",
-		"avatar_url": null,
-		"username": null,
 	});
 	let mock = server
 		.mock("POST", "/")
