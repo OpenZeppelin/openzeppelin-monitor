@@ -28,13 +28,6 @@ impl SlackNotifier {
 		title: String,
 		body_template: String,
 	) -> Result<Self, Box<NotificationError>> {
-		// Set default Slack payload fields
-		let mut payload_fields = HashMap::new();
-		payload_fields.insert(
-			"blocks".to_string(),
-			serde_json::json!([{"type": "section", "text": {"type": "mrkdwn", "text": ""}}]),
-		);
-
 		Ok(Self {
 			inner: WebhookNotifier::new(WebhookConfig {
 				url,
@@ -44,7 +37,7 @@ impl SlackNotifier {
 				method: Some("POST".to_string()),
 				secret: None,
 				headers: None,
-				payload_fields: Some(payload_fields),
+				payload_fields: None,
 			})?,
 		})
 	}
@@ -74,12 +67,6 @@ impl SlackNotifier {
 				let mut headers = HashMap::new();
 				headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-				let mut payload_fields = HashMap::new();
-				payload_fields.insert(
-					"blocks".to_string(),
-					serde_json::json!([{"type": "section", "text": {"type": "mrkdwn", "text": ""}}]),
-				);
-
 				WebhookNotifier::new(WebhookConfig {
 					url: slack_url.clone(),
 					url_params: None,
@@ -88,7 +75,7 @@ impl SlackNotifier {
 					method: Some("POST".to_string()),
 					secret: None,
 					headers: Some(headers),
-					payload_fields: Some(payload_fields),
+					payload_fields: None,
 				})
 				.ok()
 				.map(|inner| Self { inner })
