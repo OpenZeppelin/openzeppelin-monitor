@@ -230,7 +230,6 @@ async fn process_command(
 		Ok(result) => {
 			let output =
 				result.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))?;
-			println!("output: {:?}", output);
 			process_script_output(output, from_custom_notification)
 		}
 		Err(_) => Err(anyhow::anyhow!("Script execution timed out")),
@@ -505,11 +504,9 @@ print("true")
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_err());
-		println!("result EXECUTOR: {:?}", result);
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
-				println!("err_msg EXECUTOR: {}", err_msg);
 				assert!(err_msg.contains("Last line of output is not a valid boolean"));
 			}
 			_ => panic!("Expected error"),
