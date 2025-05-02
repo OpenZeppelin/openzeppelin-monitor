@@ -940,7 +940,7 @@ Transaction-related variables (`transaction_from`, `transaction_to`, `transactio
 
 ==== Message Formatting
 
-Slack, Discord, Telegram and Email support Markdown formatting in their message bodies. You can use Markdown syntax to enhance your notifications.
+Slack, Discord, Telegram, Email and Webhook support Markdown formatting in their message bodies. You can use Markdown syntax to enhance your notifications.
 
 ===== Example Email Notification with Markdown
 [source,json]
@@ -1319,7 +1319,7 @@ What this does:
 * Runs the "Large Transfer of USDC Token" monitor
 * Targets all networks specified in the configuration
 * Processes only the latest block for each network
-* Send notifications through each configured channel when matches are found
+* Sends a notification to all associated channels for every match that is found
 
 ==== 2. Specific Block Mode
 
@@ -1338,7 +1338,7 @@ What this does:
 * Runs the "Large Transfer of USDC Token" monitor
 * Targets only the specified network (`ethereum_mainnet`)
 * Processes only the specified block (`12345678`)
-* Send notifications through each configured channel when matches are found
+* Sends a notification to all associated channels for every match that is found
 
 [IMPORTANT]
 ====

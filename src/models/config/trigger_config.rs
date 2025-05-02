@@ -428,7 +428,7 @@ impl ConfigLoader for Trigger {
 					if message.body.len() > TELEGRAM_MAX_BODY_LENGTH {
 						return Err(ConfigError::validation_error(
 							format!(
-								"Body cannot be longer than {} characters",
+								"Message body should not exceed {} characters",
 								TELEGRAM_MAX_BODY_LENGTH
 							),
 							None,
@@ -471,7 +471,7 @@ impl ConfigLoader for Trigger {
 					if message.body.len() > DISCORD_MAX_BODY_LENGTH {
 						return Err(ConfigError::validation_error(
 							format!(
-								"Body cannot be longer than {} characters",
+								"Message body should not exceed {} characters",
 								DISCORD_MAX_BODY_LENGTH
 							),
 							None,
