@@ -12,9 +12,7 @@
 
 use oz_keystore::HashicorpCloudClient;
 use serde::{Deserialize, Serialize};
-use std::env;
-use std::fmt;
-use std::sync::Arc;
+use std::{env, fmt, sync::Arc};
 use tokio::sync::OnceCell;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -305,35 +303,54 @@ impl AsRef<str> for SecretValue {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use once_cell::sync::Lazy;
-	use std::collections::HashMap;
+	use lazy_static::lazy_static;
 	use std::sync::atomic::{AtomicBool, Ordering};
 	use std::sync::Mutex;
 	use zeroize::Zeroize;
 
-	// Mock environment variables for testing
-	static ENV_LOCK: Mutex<()> = Mutex::new(());
-	static MOCK_VAULT_VARS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-		let mut map = HashMap::new();
-		map.insert("HCP_CLIENT_ID", "test-client-id");
-		map.insert("HCP_CLIENT_SECRET", "test-client-secret");
-		map.insert("HCP_ORG_ID", "test-org");
-		map.insert("HCP_PROJECT_ID", "test-project");
-		map.insert("HCP_APP_NAME", "test-app");
-		map
-	});
-
-	// Helper function to set up mock environment
-	fn setup_mock_env() {
-		for (key, value) in MOCK_VAULT_VARS.iter() {
-			std::env::set_var(key, value);
-		}
+	// Static mutex for environment variable synchronization
+	lazy_static! {
+		static ref ENV_MUTEX: Mutex<()> = Mutex::new(());
 	}
 
-	// Helper function to clean up mock environment
-	fn cleanup_mock_env() {
-		for key in MOCK_VAULT_VARS.keys() {
-			std::env::remove_var(key);
+	// Helper function to set up test environment that handles mutex poisoning
+	#[allow(clippy::await_holding_lock)]
+	async fn with_test_env<F, Fut>(f: F)
+	where
+		F: FnOnce() -> Fut,
+		Fut: std::future::Future<Output = ()>,
+	{
+		// Simpler lock acquisition without poisoning recovery
+		let _lock = ENV_MUTEX.lock().unwrap();
+
+		let env_vars = [
+			("HCP_CLIENT_ID", "test-client-id"),
+			("HCP_CLIENT_SECRET", "test-client-secret"),
+			("HCP_ORG_ID", "test-org"),
+			("HCP_PROJECT_ID", "test-project"),
+			("HCP_APP_NAME", "test-app"),
+		];
+
+		// Store original values to restore later
+		let original_values: Vec<_> = env_vars
+			.iter()
+			.map(|(key, _)| (*key, std::env::var(key).ok()))
+			.collect();
+
+		// Set up environment variables
+		for (key, value) in env_vars.iter() {
+			std::env::set_var(key, value);
+		}
+
+		// Run the test
+		f().await;
+
+		// Restore environment variables
+		for (key, value) in original_values {
+			match value {
+				Some(val) => std::env::set_var(key, val),
+				None => std::env::remove_var(key),
+			}
 		}
 	}
 
@@ -468,103 +485,87 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn test_cloud_vault_client_from_env_success() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_ok());
-
-		cleanup_mock_env();
+	#[tokio::test]
+	async fn test_cloud_vault_client_from_env_success() {
+		with_test_env(|| async {
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_ok());
+		})
+		.await;
 	}
 
-	#[test]
-	fn test_cloud_vault_client_from_env_missing_vars() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
+	#[tokio::test]
+	async fn test_cloud_vault_client_from_env_missing_vars() {
+		with_test_env(|| async {
+			// Test missing HCP_CLIENT_ID
+			std::env::remove_var("HCP_CLIENT_ID");
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_err());
+			assert!(result.err().unwrap().to_string().contains("HCP_CLIENT_ID"));
+		})
+		.await;
 
-		// Test missing HCP_CLIENT_ID
-		std::env::remove_var("HCP_CLIENT_ID");
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_err());
-		assert!(result.err().unwrap().to_string().contains("HCP_CLIENT_ID"));
-
-		// Test missing HCP_CLIENT_SECRET
-		setup_mock_env();
-		std::env::remove_var("HCP_CLIENT_SECRET");
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_err());
-		assert!(result
-			.err()
-			.unwrap()
-			.to_string()
-			.contains("HCP_CLIENT_SECRET"));
-
-		cleanup_mock_env();
+		with_test_env(|| async {
+			// Test missing HCP_CLIENT_SECRET
+			std::env::remove_var("HCP_CLIENT_SECRET");
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_err());
+			assert!(result
+				.err()
+				.unwrap()
+				.to_string()
+				.contains("HCP_CLIENT_SECRET"));
+		})
+		.await;
 	}
 
 	#[tokio::test]
 	async fn test_vault_type_from_env() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-
-		let result = VaultType::from_env();
-		assert!(result.is_ok());
-		match result.unwrap() {
-			VaultType::Cloud(_) => (), // Expected
-		}
-
-		cleanup_mock_env();
+		with_test_env(|| async {
+			let result = VaultType::from_env();
+			assert!(result.is_ok());
+			match result.unwrap() {
+				VaultType::Cloud(_) => (), // Expected
+			}
+		})
+		.await;
 	}
 
 	#[tokio::test]
-	#[allow(clippy::await_holding_lock)]
 	async fn test_get_vault_client() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
+		with_test_env(|| async {
+			// First fail to get the vault client if the environment variables are not set
+			// The order of this test is important since we can only initialise the client once due to
+			// the global state
+			std::env::remove_var("HCP_CLIENT_ID");
+			let result = get_vault_client().await;
+			assert!(result.is_err());
+			assert!(result
+				.err()
+				.unwrap()
+				.to_string()
+				.contains("Failed to get vault client"));
 
-		// First call should initialize the client
-		let result = get_vault_client().await;
-		assert!(result.is_ok());
-		let client = result.unwrap();
-		match client {
-			VaultType::Cloud(_) => (), // Expected
-		}
+			// Set the environment variable
+			std::env::set_var("HCP_CLIENT_ID", "test-client-id");
 
-		// Second call should return the same instance
-		let result2 = get_vault_client().await;
-		assert!(result2.is_ok());
-		assert!(std::ptr::eq(client, result2.unwrap()));
+			// Then call should initialize the client
+			let result = get_vault_client().await;
+			assert!(result.is_ok());
+			let client = result.unwrap();
+			match client {
+				VaultType::Cloud(_) => (), // Expected
+			}
 
-		cleanup_mock_env();
+			// Second call should return the same instance
+			let result2 = get_vault_client().await;
+			assert!(result2.is_ok());
+			assert!(std::ptr::eq(client, result2.unwrap()));
+		})
+		.await;
 	}
 
 	#[tokio::test]
-	#[allow(clippy::await_holding_lock)]
-	async fn test_get_vault_client_error() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-
-		// Remove a required environment variable to force an error
-		std::env::remove_var("HCP_CLIENT_ID");
-
-		// Try to get the vault client
-		let result = get_vault_client().await;
-
-		// Verify the error
-		assert!(result.is_err());
-		assert!(result
-			.err()
-			.unwrap()
-			.to_string()
-			.contains("Failed to get vault client"));
-
-		cleanup_mock_env();
-	}
-
-	#[tokio::test]
-	#[allow(clippy::await_holding_lock)]
 	async fn test_vault_client_get_secret() {
 		let mut server = mockito::Server::new_async().await;
 		// Mock the token request
@@ -618,65 +619,60 @@ mod tests {
 	}
 
 	#[tokio::test]
-	#[allow(clippy::await_holding_lock)]
 	async fn test_vault_client_get_secret_error() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
+		with_test_env(|| async {
+			// Create a mock server that will return an error
+			let mut server = mockito::Server::new_async().await;
+			let token_mock = server
+				.mock("POST", "/oauth2/token")
+				.with_status(500)
+				.with_header("content-type", "application/json")
+				.with_body(r#"{"error": "internal server error"}"#)
+				.create_async()
+				.await;
 
-		// Create a mock server that will return an error
-		let mut server = mockito::Server::new_async().await;
-		let token_mock = server
-			.mock("POST", "/oauth2/token")
-			.with_status(500)
-			.with_header("content-type", "application/json")
-			.with_body(r#"{"error": "internal server error"}"#)
-			.create_async()
-			.await;
+			// Create the HashicorpCloudClient with the custom client
+			let hashicorp_client = HashicorpCloudClient::new(
+				"test-client-id".to_string(),
+				"test-client-secret".to_string(),
+				"test-org".to_string(),
+				"test-project".to_string(),
+				"test-app".to_string(),
+			)
+			.with_api_base_url(server.url())
+			.with_auth_base_url(server.url());
 
-		// Create the HashicorpCloudClient with the custom client
-		let hashicorp_client = HashicorpCloudClient::new(
-			"test-client-id".to_string(),
-			"test-client-secret".to_string(),
-			"test-org".to_string(),
-			"test-project".to_string(),
-			"test-app".to_string(),
-		)
-		.with_api_base_url(server.url())
-		.with_auth_base_url(server.url());
+			let vault_client = CloudVaultClient {
+				client: Arc::new(hashicorp_client),
+			};
 
-		let vault_client = CloudVaultClient {
-			client: Arc::new(hashicorp_client),
-		};
+			let result = vault_client.get_secret("test-secret").await;
 
-		let result = vault_client.get_secret("test-secret").await;
+			// Verify the mock was called
+			token_mock.assert_async().await;
 
-		// Verify the mock was called
-		token_mock.assert_async().await;
-
-		// Verify the error
-		assert!(result.is_err());
-		assert!(result
-			.err()
-			.unwrap()
-			.to_string()
-			.contains("Failed to get secret from Hashicorp Cloud Vault"));
-
-		cleanup_mock_env();
+			// Verify the error
+			assert!(result.is_err());
+			assert!(result
+				.err()
+				.unwrap()
+				.to_string()
+				.contains("Failed to get secret from Hashicorp Cloud Vault"));
+		})
+		.await;
 	}
 
-	#[test]
-	fn test_vault_type_clone() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
+	#[tokio::test]
+	async fn test_vault_type_clone() {
+		with_test_env(|| async {
+			let vault_type = VaultType::from_env().unwrap();
+			let cloned = vault_type.clone();
 
-		let vault_type = VaultType::from_env().unwrap();
-		let cloned = vault_type.clone();
-
-		match (vault_type, cloned) {
-			(VaultType::Cloud(_), VaultType::Cloud(_)) => (), // Expected
-		}
-
-		cleanup_mock_env();
+			match (vault_type, cloned) {
+				(VaultType::Cloud(_), VaultType::Cloud(_)) => (), // Expected
+			}
+		})
+		.await;
 	}
 
 	#[test]
@@ -695,78 +691,77 @@ mod tests {
 		assert!(Arc::strong_count(&client.client) >= 1);
 	}
 
-	#[test]
-	fn test_cloud_vault_client_from_env_missing_org_id() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-		std::env::remove_var("HCP_ORG_ID");
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_err());
-		assert!(result.err().unwrap().to_string().contains("HCP_ORG_ID"));
-		cleanup_mock_env();
-	}
-
-	#[test]
-	fn test_cloud_vault_client_from_env_missing_project_id() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-		std::env::remove_var("HCP_PROJECT_ID");
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_err());
-		assert!(result.err().unwrap().to_string().contains("HCP_PROJECT_ID"));
-		cleanup_mock_env();
-	}
-
-	#[test]
-	fn test_cloud_vault_client_from_env_missing_app_name() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-		std::env::remove_var("HCP_APP_NAME");
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_err());
-		assert!(result.err().unwrap().to_string().contains("HCP_APP_NAME"));
-		cleanup_mock_env();
-	}
-
-	#[test]
-	fn test_cloud_vault_client_from_env_missing_client_id() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-		std::env::remove_var("HCP_CLIENT_ID");
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_err());
-		assert!(result.err().unwrap().to_string().contains("HCP_CLIENT_ID"));
-		cleanup_mock_env();
-	}
-
-	#[test]
-	fn test_cloud_vault_client_from_env_missing_client_secret() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-		std::env::remove_var("HCP_CLIENT_SECRET");
-		let result = CloudVaultClient::from_env();
-		assert!(result.is_err());
-		assert!(result
-			.err()
-			.unwrap()
-			.to_string()
-			.contains("HCP_CLIENT_SECRET"));
-		cleanup_mock_env();
+	#[tokio::test]
+	async fn test_cloud_vault_client_from_env_missing_org_id() {
+		with_test_env(|| async {
+			std::env::remove_var("HCP_ORG_ID");
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_err());
+			assert!(result.err().unwrap().to_string().contains("HCP_ORG_ID"));
+		})
+		.await;
 	}
 
 	#[tokio::test]
-	#[allow(clippy::await_holding_lock)]
+	async fn test_cloud_vault_client_from_env_missing_project_id() {
+		with_test_env(|| async {
+			std::env::remove_var("HCP_PROJECT_ID");
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_err());
+			assert!(result.err().unwrap().to_string().contains("HCP_PROJECT_ID"));
+		})
+		.await;
+	}
+
+	#[tokio::test]
+	async fn test_cloud_vault_client_from_env_missing_app_name() {
+		with_test_env(|| async {
+			std::env::remove_var("HCP_APP_NAME");
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_err());
+			assert!(result.err().unwrap().to_string().contains("HCP_APP_NAME"));
+		})
+		.await;
+	}
+
+	#[tokio::test]
+	async fn test_cloud_vault_client_from_env_missing_client_id() {
+		with_test_env(|| async {
+			std::env::remove_var("HCP_CLIENT_ID");
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_err());
+			assert!(result.err().unwrap().to_string().contains("HCP_CLIENT_ID"));
+		})
+		.await;
+	}
+
+	#[tokio::test]
+	async fn test_cloud_vault_client_from_env_missing_client_secret() {
+		with_test_env(|| async {
+			std::env::remove_var("HCP_CLIENT_SECRET");
+			let result = CloudVaultClient::from_env();
+			assert!(result.is_err());
+			assert!(result
+				.err()
+				.unwrap()
+				.to_string()
+				.contains("HCP_CLIENT_SECRET"));
+		})
+		.await;
+	}
+
+	#[tokio::test]
 	async fn test_vault_type_get_secret_delegates() {
-		let _lock = ENV_LOCK.lock().unwrap();
-		setup_mock_env();
-		let vault = VaultType::from_env().unwrap();
-		let result = vault.get_secret("nonexistent").await;
-		assert!(
-			result.is_err(),
-			"Expected error for nonexistent secret, got: {:?}",
-			result
-		);
-		cleanup_mock_env();
+		with_test_env(|| async {
+			let vault = VaultType::from_env().unwrap();
+			let result = vault.get_secret("nonexistent").await;
+			assert!(
+				result.is_err(),
+				"Expected error for nonexistent secret, got: {:?}",
+				result
+			);
+		})
+		.await;
 	}
 
 	#[test]
