@@ -795,6 +795,21 @@ mod tests {
 			.contains("Failed to get environment variable"));
 	}
 
+	#[tokio::test]
+	async fn test_secret_value_resolve_hashicorp_cloud_vault_error() {
+		with_test_env(|| async {
+			let secret = SecretValue::HashicorpCloudVault("NON_EXISTENT_VAULT_SECRET".to_string());
+			let result = secret.resolve().await;
+			assert!(result.is_err());
+			assert!(result
+				.err()
+				.unwrap()
+				.to_string()
+				.contains("Failed to get secret from Hashicorp Cloud Vault"));
+		})
+		.await;
+	}
+
 	#[test]
 	fn test_secret_value_starts_with() {
 		let plain = SecretValue::Plain(SecretString::new("PREFIX_value".to_string()));
