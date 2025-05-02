@@ -18,12 +18,12 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::models::security::error::SecurityError;
+use crate::models::security::{error::SecurityError, error::SecurityResult, get_env_var};
 
 /// Trait for vault clients that can retrieve secrets
 #[async_trait::async_trait]
 pub trait VaultClient: Send + Sync {
-	async fn get_secret(&self, name: &str) -> Result<SecretString, SecurityError>;
+	async fn get_secret(&self, name: &str) -> SecurityResult<SecretString>;
 }
 
 /// Cloud Vault client implementation
@@ -33,52 +33,13 @@ pub struct CloudVaultClient {
 }
 
 impl CloudVaultClient {
-	#[allow(dead_code)] // TODO: Remove this after testing
-	/// Creates a new CloudVaultClient from a HashicorpCloudClient
-	pub fn new(client: HashicorpCloudClient) -> Self {
-		Self {
-			client: Arc::new(client),
-		}
-	}
-
 	/// Creates a new CloudVaultClient from environment variables
-	pub fn from_env() -> Result<Self, Box<SecurityError>> {
-		let client_id = env::var("HCP_CLIENT_ID").map_err(|e| {
-			Box::new(SecurityError::parse_error(
-				format!("Missing HCP_CLIENT_ID environment variable: {}", e),
-				None,
-				None,
-			))
-		})?;
-		let client_secret = env::var("HCP_CLIENT_SECRET").map_err(|e| {
-			Box::new(SecurityError::parse_error(
-				format!("Missing HCP_CLIENT_SECRET environment variable: {}", e),
-				None,
-				None,
-			))
-		})?;
-		let org_id = env::var("HCP_ORG_ID").map_err(|e| {
-			Box::new(SecurityError::parse_error(
-				format!("Missing HCP_ORG_ID environment variable: {}", e),
-				None,
-				None,
-			))
-		})?;
-		let project_id = env::var("HCP_PROJECT_ID").map_err(|e| {
-			Box::new(SecurityError::parse_error(
-				format!("Missing HCP_PROJECT_ID environment variable: {}", e),
-				None,
-				None,
-			))
-		})?;
-		let app_name = env::var("HCP_APP_NAME").map_err(|e| {
-			Box::new(SecurityError::parse_error(
-				format!("Missing HCP_APP_NAME environment variable: {}", e),
-				None,
-				None,
-			))
-		})?;
-
+	pub fn from_env() -> SecurityResult<Self> {
+		let client_id = get_env_var("HCP_CLIENT_ID")?;
+		let client_secret = get_env_var("HCP_CLIENT_SECRET")?;
+		let org_id = get_env_var("HCP_ORG_ID")?;
+		let project_id = get_env_var("HCP_PROJECT_ID")?;
+		let app_name = get_env_var("HCP_APP_NAME")?;
 		let client =
 			HashicorpCloudClient::new(client_id, client_secret, org_id, project_id, app_name);
 		Ok(Self {
@@ -89,11 +50,11 @@ impl CloudVaultClient {
 
 #[async_trait::async_trait]
 impl VaultClient for CloudVaultClient {
-	async fn get_secret(&self, name: &str) -> Result<SecretString, SecurityError> {
+	async fn get_secret(&self, name: &str) -> SecurityResult<SecretString> {
 		let secret = self.client.get_secret(name).await.map_err(|e| {
 			SecurityError::network_error(
-				format!("Failed to get secret from Hashicorp Cloud Vault: {}", e),
-				None,
+				"Failed to get secret from Hashicorp Cloud Vault",
+				Some(e.into()),
 				None,
 			)
 		})?;
@@ -109,7 +70,7 @@ pub enum VaultType {
 
 impl VaultType {
 	/// Creates a new VaultType from environment variables
-	pub fn from_env() -> Result<Self, Box<SecurityError>> {
+	pub fn from_env() -> SecurityResult<Self> {
 		// Default to cloud vault for now
 		Ok(Self::Cloud(CloudVaultClient::from_env()?))
 	}
@@ -117,7 +78,7 @@ impl VaultType {
 
 #[async_trait::async_trait]
 impl VaultClient for VaultType {
-	async fn get_secret(&self, name: &str) -> Result<SecretString, SecurityError> {
+	async fn get_secret(&self, name: &str) -> SecurityResult<SecretString> {
 		match self {
 			Self::Cloud(client) => client.get_secret(name).await,
 		}
@@ -128,10 +89,17 @@ impl VaultClient for VaultType {
 static VAULT_CLIENT: OnceCell<VaultType> = OnceCell::const_new();
 
 /// Gets the global vault client instance, initializing it if necessary
-pub async fn get_vault_client() -> Result<&'static VaultType, Box<SecurityError>> {
+pub async fn get_vault_client() -> SecurityResult<&'static VaultType> {
 	VAULT_CLIENT
 		.get_or_try_init(|| async { VaultType::from_env() })
 		.await
+		.map_err(|e| {
+			Box::new(SecurityError::parse_error(
+				"Failed to get vault client",
+				Some(e.into()),
+				None,
+			))
+		})
 }
 
 /// A type that represents a secret value that can be sourced from different places
@@ -200,21 +168,27 @@ impl SecretValue {
 	/// - Environment variable is not set
 	/// - Vault access fails
 	/// - Any other security-related error occurs
-	pub async fn resolve(&self) -> Result<SecretString, Box<SecurityError>> {
+	pub async fn resolve(&self) -> SecurityResult<SecretString> {
 		match self {
 			SecretValue::Plain(secret) => Ok(secret.clone()),
 			SecretValue::Environment(env_var) => {
 				env::var(env_var).map(SecretString::new).map_err(|e| {
 					Box::new(SecurityError::parse_error(
-						format!("Failed to get environment variable {}: {}", env_var, e),
-						None,
+						format!("Failed to get environment variable {}", env_var),
+						Some(e.into()),
 						None,
 					))
 				})
 			}
 			SecretValue::HashicorpCloudVault(name) => {
 				let client = get_vault_client().await?;
-				client.get_secret(name).await.map_err(Box::new)
+				client.get_secret(name).await.map_err(|e| {
+					Box::new(SecurityError::parse_error(
+						format!("Failed to get secret from Hashicorp Cloud Vault {}", name),
+						Some(e.into()),
+						None,
+					))
+				})
 			}
 		}
 	}
@@ -604,7 +578,9 @@ mod tests {
 		.with_api_base_url(server.url())
 		.with_auth_base_url(server.url());
 
-		let vault_client = CloudVaultClient::new(hashicorp_client);
+		let vault_client = CloudVaultClient {
+			client: Arc::new(hashicorp_client),
+		};
 
 		// Get the secret
 		let result = vault_client.get_secret("test-secret").await;
@@ -642,7 +618,9 @@ mod tests {
 			"proj".to_string(),
 			"app".to_string(),
 		);
-		let client = CloudVaultClient::new(dummy);
+		let client = CloudVaultClient {
+			client: Arc::new(dummy),
+		};
 		// Arc should be used internally (cannot test Arc directly, but can check type)
 		assert!(Arc::strong_count(&client.client) >= 1);
 	}

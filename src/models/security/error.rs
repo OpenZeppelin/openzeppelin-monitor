@@ -1,28 +1,38 @@
 //! Security error types and error handling utilities.
 //!
 //! This module defines error types for handling security-related operations.
+//! The `SecurityError` type provides a structured way to handle and propagate security-related errors
+//! with rich context and tracing capabilities.
 
 use crate::utils::logging::error::{ErrorContext, TraceableError};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
-/// Represents errors that can occur during security operations
+/// Result type alias for security operations
+pub type SecurityResult<T> = Result<T, Box<SecurityError>>;
+
+/// Represents errors that can occur during security operations.
+///
+/// This error type is used throughout the security module to provide consistent error handling
+/// with rich context and tracing capabilities. Each variant includes an `ErrorContext` that
+/// contains detailed information about the error, including a trace ID for distributed tracing.
+
 #[derive(ThisError, Debug)]
 pub enum SecurityError {
-	/// Errors related to validation failures
+	/// Errors related to validation failures.
 	#[error("Validation error: {0}")]
 	ValidationError(ErrorContext),
 
-	/// Errors related to parsing failures
+	/// Errors related to parsing failures.
 	#[error("Parse error: {0}")]
 	ParseError(ErrorContext),
 
-	/// Errors related to network failures
+	/// Errors related to network failures.
 	#[error("Network error: {0}")]
 	NetworkError(ErrorContext),
 
-	/// Other errors that don't fit into the categories above
+	/// Other errors that don't fit into the categories above.
 	#[error(transparent)]
 	Other(#[from] anyhow::Error),
 }
