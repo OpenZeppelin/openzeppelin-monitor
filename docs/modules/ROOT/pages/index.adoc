@@ -567,7 +567,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
       "slack_url": "https://hooks.slack.com/services/A/B/C",
       "message": {
         "title": "large_transfer_slack triggered",
-        "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+        "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }
   },
@@ -578,7 +578,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
       "slack_url": "https://hooks.slack.com/services/A/B/C",
       "message": {
         "title": "large_transfer_usdc_slack triggered",
-        "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.2} USDC to ${functions.0.args.1} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   }
@@ -594,7 +594,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   "slack_url": "https://hooks.slack.com/...",
   "message": {
     "title": "Alert Title",
-    "body": "Alert message for ${transaction_hash}"
+    "body": "Alert message for ${transaction.hash}"
   }
 }
 ----
@@ -635,7 +635,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   "password": "smtp_password",
   "message": {
     "title": "Alert Subject",
-    "body": "Alert message for ${transaction_hash}",
+    "body": "Alert message for ${transaction.hash}",
   },
   "sender": "sender@example.com",
   "recipients": ["recipient@example.com"]
@@ -700,7 +700,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   },
   "message": {
     "title": "Alert Title",
-    "body": "Alert message for ${transaction_hash}"
+    "body": "Alert message for ${transaction.hash}"
   }
 }
 ----
@@ -750,7 +750,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   "discord_url": "https://discord.com/api/webhooks/123-456-789",
   "message": {
     "title": "Alert Title",
-    "body": "Alert message for ${transaction_hash}"
+    "body": "Alert message for ${transaction.hash}"
   }
 }
 ----
@@ -789,7 +789,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   "chat_id": "9876543210",
   "message": {
     "title": "Alert Title",
-    "body": "Alert message for ${transaction_hash}"
+    "body": "Alert message for ${transaction.hash}"
   }
 }
 ----
@@ -880,21 +880,23 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 
 ==== Available Template Variables
 
+The monitor uses a structured JSON format with nested objects for template variables. The data is flattened into dot notation for template use.
+
 ===== Common Variables
 [cols="1,2"]
 |===
 |Variable |Description
 
-|monitor_name
+|monitor.name
 |Name of the triggered monitor
 
-|transaction_hash
+|transaction.hash
 |Hash of the transaction
 
-|function_[index]_signature
+|functions.[index].signature
 |Function signature
 
-|event_[index]_signature
+|events.[index].signature
 |Event signature
 |===
 
@@ -905,19 +907,19 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 |===
 |Variable |Description
 
-|transaction_from
+|transaction.from
 |Sender address
 
-|transaction_to
+|transaction.to
 |Recipient address
 
-|transaction_value
+|transaction.value
 |Transaction value
 
-|event_[index]_[param]
+|events.[index].args.[param]
 |Event parameters by name
 
-|function_[index]_[param]
+|functions.[index].args.[param]
 |Function parameters by name
 |===
 
@@ -926,16 +928,16 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 |===
 |Variable |Description
 
-|event_[index]_[position]
+|events.[index].args.[position]
 |Event parameters by position
 
-|function_[index]_[position]
+|functions.[index].args.[position]
 |Function parameters by position
 |===
 
 [NOTE]
 ====
-Transaction-related variables (`transaction_from`, `transaction_to`, `transaction_value`) are not available for Stellar networks.
+Transaction-related variables (`transaction.from`, `transaction.to`, `transaction.value`) are not available for Stellar networks.
 ====
 
 ==== Important Considerations:

@@ -6,7 +6,7 @@
       "slack_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
       "message": {
         "title": "example_trigger_slack triggered",
-        "body": "${monitor_name} triggered because of a large transfer of ${function_0_2} USDC to ${function_0_1} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.2} USDC to ${functions.0.args.1} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   },
@@ -22,7 +22,7 @@
       },
       "message": {
         "title": "example_trigger_webhook triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_0} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   },
@@ -33,7 +33,7 @@
       "discord_url": "https://discord.com/api/webhooks/123/123",
       "message": {
         "title": "example_trigger_discord triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_0} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   },
@@ -46,7 +46,7 @@
       "disable_web_preview": true,
       "message": {
         "title": "example_trigger_telegram triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_0} | https://stellar.expert/explorer/testnet/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   }

@@ -101,7 +101,7 @@ fn create_test_trigger_file(path: &Path, name: &str) -> std::path::PathBuf {
 			  "slack_url": "https://hooks.slack.com/services/AA/BB/CC",
 			  "message": {
 				"title": "large_transfer_slack triggered",
-				"body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+				"body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
 			  }
 			}
 		},

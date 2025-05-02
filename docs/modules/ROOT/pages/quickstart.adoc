@@ -283,7 +283,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
             "slack_url": "https://hooks.slack.com/services/A/B/C",
             "message": {
                 "title": "large_transfer_slack triggered",
-                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+                "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
             }
         }
     }
@@ -312,7 +312,7 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
             "password": "your_password",
             "message": {
                 "title": "large_transfer_usdc_email triggered",
-                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+                "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
             },
             "sender": "your_email@gmail.com",
             "recipients": [
@@ -468,7 +468,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
       "slack_url": "https://hooks.slack.com/services/A/B/C",
       "message": {
         "title": "large_swap_by_dex_slack triggered",
-        "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.4} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
   }

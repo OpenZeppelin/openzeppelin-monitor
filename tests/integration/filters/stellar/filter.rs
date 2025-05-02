@@ -7,15 +7,20 @@ use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, StellarEvent,
-		StellarTransaction, StellarTransactionInfo, TransactionCondition, TransactionStatus,
+		BlockChainType, BlockType, EventCondition, FunctionCondition, MatchConditions, Monitor,
+		MonitorMatch, StellarBlock, StellarEvent, StellarMatchArguments, StellarMatchParamEntry,
+		StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
+		TransactionCondition, TransactionStatus, TransactionType,
 	},
 	services::filter::{handle_match, FilterError, FilterService},
 };
 
 use crate::integration::{
 	filters::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
-	mocks::{MockStellarClientTrait, MockStellarTransportClient},
+	mocks::{
+		create_test_block, create_test_transaction, MockStellarClientTrait,
+		MockStellarTransportClient,
+	},
 };
 
 use serde_json::Value;
@@ -686,21 +691,21 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 		.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 			trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
-				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
+				&& variables.get("monitor.name") == Some(&"Large Transfer of USDC Token".to_string())
 				// Transaction variables
-				&& variables.get("transaction_hash")
+				&& variables.get("transaction.hash")
 					== Some(&"2c89fc3311bc275415ed6a764c77d7b0349cb9f4ce37fd2bbfc6604920811503".to_string())
 				// Function arguments
-				&& variables.get("function_0_signature") == Some(&"transfer(Address,Address,I128)".to_string())
-				&& variables.get("function_0_0") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
-				&& variables.get("function_0_1") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
-				&& variables.get("function_0_2") == Some(&"2240".to_string())
+				&& variables.get("functions.0.signature") == Some(&"transfer(Address,Address,I128)".to_string())
+				&& variables.get("functions.0.args.0") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
+				&& variables.get("functions.0.args.1") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
+				&& variables.get("functions.0.args.2") == Some(&"2240".to_string())
 				// Event arguments
-				&& variables.get("event_0_signature") == Some(&"transfer(Address,Address,String,I128)".to_string())
-				&& variables.get("event_0_0") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
-				&& variables.get("event_0_1") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
-				&& variables.get("event_0_2") == Some(&"USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".to_string())
-				&& variables.get("event_0_3") == Some(&"2240".to_string())
+				&& variables.get("events.0.signature") == Some(&"transfer(Address,Address,String,I128)".to_string())
+				&& variables.get("events.0.args.0") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
+				&& variables.get("events.0.args.1") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
+				&& variables.get("events.0.args.2") == Some(&"USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".to_string())
+				&& variables.get("events.0.args.3") == Some(&"2240".to_string())
 		})
 		.once()
 		.returning(|_, _, _, _| Ok(()));
@@ -712,16 +717,16 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				let expected_json: Value =
 					serde_json::from_str("{\"myKey1\":1234,\"myKey2\":\"Hello, world!\"}").unwrap();
 				let actual_json: Value =
-					serde_json::from_str(variables.get("function_0_0").unwrap()).unwrap();
+					serde_json::from_str(variables.get("functions.0.args.0").unwrap()).unwrap();
 
 				trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
-				&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
+				&& variables.get("monitor.name") == Some(&"Large Transfer of USDC Token".to_string())
 				// Transaction variables
-				&& variables.get("transaction_hash")
+				&& variables.get("transaction.hash")
 					== Some(&"FAKE5a3a9153e19002517935a5df291b81a341b98ccd80f0919d78cea5ed29d8".to_string())
 				// Function arguments
-				&& variables.get("function_0_signature") == Some(&"upsert_data(Map)".to_string())
+				&& variables.get("functions.0.signature") == Some(&"upsert_data(Map)".to_string())
 				&& expected_json == actual_json
 			},
 		)
@@ -821,11 +826,11 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 				.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 					trigger_name == ["example_trigger_slack"]
 						// Monitor metadata
-						&& variables.get("monitor_name") == Some(&"Large Transfer of USDC Token".to_string())
+						&& variables.get("monitor.name") == Some(&"Large Transfer of USDC Token".to_string())
 						// Transaction variables
-						&& variables.get("transaction_hash") == Some(&"80fec04b989895a4222d9985fbf153d253e3e2cbc1da45ef414db96a277b99be".to_string())
+						&& variables.get("transaction.hash") == Some(&"80fec04b989895a4222d9985fbf153d253e3e2cbc1da45ef414db96a277b99be".to_string())
 						// Function signature should be present even without args
-						&& variables.get("function_0_signature") == Some(&"increment()".to_string())
+						&& variables.get("functions.0.signature") == Some(&"increment()".to_string())
 				})
 				.once()
 				.returning(|_, _, _, _| Ok(()));
@@ -842,6 +847,142 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 			panic!("Expected Stellar match");
 		}
 	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
+	let test_data = load_test_data("stellar");
+
+	// Setup trigger execution service and capture the data structure
+	let data_capture = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+	let data_capture_clone = data_capture.clone();
+
+	let mut trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/stellar/triggers/trigger.json");
+
+	// Set up expectations for execute() with custom function to capture and verify data
+	trigger_execution_service
+		.expect_execute()
+		.withf(
+			move |_triggers, variables, _monitor_match, _trigger_scripts| {
+				let mut captured = data_capture_clone.lock().unwrap();
+				*captured = variables.clone();
+				true
+			},
+		)
+		.returning(|_, _, _, _| Ok(()));
+
+	// Create test monitor with a function that has an argument called "signature"
+	let mut monitor = test_data.monitor.clone();
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "riskyFunction(String signature, I128 amount)".to_string(),
+		expression: None,
+	}];
+
+	fn create_test_stellar_transaction() -> StellarTransaction {
+		match create_test_transaction(BlockChainType::Stellar) {
+			TransactionType::Stellar(transaction) => transaction,
+			_ => panic!("Expected Stellar transaction"),
+		}
+	}
+
+	fn create_test_stellar_block() -> StellarBlock {
+		match create_test_block(BlockChainType::Stellar, 1) {
+			BlockType::Stellar(block) => *block,
+			_ => panic!("Expected Stellar block"),
+		}
+	}
+
+	// Create a match object
+	let stellar_match = StellarMonitorMatch {
+		monitor,
+		transaction: create_test_stellar_transaction(),
+		network_slug: "stellar_testnet".to_string(),
+		ledger: create_test_stellar_block(),
+		matched_on: MatchConditions {
+			functions: vec![FunctionCondition {
+				signature: "riskyFunction(String signature, I128 amount)".to_string(),
+				expression: None,
+			}],
+			events: vec![],
+			transactions: vec![],
+		},
+		matched_on_args: Some(StellarMatchArguments {
+			functions: Some(vec![StellarMatchParamsMap {
+				signature: "riskyFunction(String signature, I128 amount)".to_string(),
+				args: Some(vec![
+					StellarMatchParamEntry {
+						name: "signature".to_string(),
+						value: "test_signature_value".to_string(),
+						kind: "String".to_string(),
+						indexed: false,
+					},
+					StellarMatchParamEntry {
+						name: "amount".to_string(),
+						value: "500000".to_string(),
+						kind: "I128".to_string(),
+						indexed: false,
+					},
+				]),
+			}]),
+			events: None,
+		}),
+	};
+
+	let match_wrapper = MonitorMatch::Stellar(Box::new(stellar_match));
+
+	// Process the match directly using handle_match
+	let result = handle_match(match_wrapper, &trigger_execution_service, &HashMap::new()).await;
+	assert!(result.is_ok(), "Handle match should succeed");
+
+	// Verify that data structure preserves both function signature and argument
+	let captured_data = data_capture.lock().unwrap();
+
+	// The key for the function signature should exist
+	assert!(
+		captured_data.contains_key("functions.0.signature"),
+		"functions.0.signature should exist in the data structure"
+	);
+
+	// Check the value is correct
+	assert_eq!(
+		captured_data.get("functions.0.signature").unwrap(),
+		"riskyFunction(String signature, I128 amount)",
+		"Function signature value should be preserved"
+	);
+
+	// The key for the argument should also exist
+	assert!(
+		captured_data.contains_key("functions.0.args.signature"),
+		"functions.0.args.signature should exist in the data structure"
+	);
+
+	// Check that the argument value is correct
+	assert_eq!(
+		captured_data.get("functions.0.args.signature").unwrap(),
+		"test_signature_value",
+		"Function argument value should be correct"
+	);
+
+	// Verify that the values are different - no collision
+	assert_ne!(
+		captured_data.get("functions.0.signature").unwrap(),
+		captured_data.get("functions.0.args.signature").unwrap(),
+		"Function signature and argument values should be distinct"
+	);
+
+	// Also check for other expected fields
+	assert!(
+		captured_data.contains_key("transaction.hash"),
+		"Transaction hash should be present"
+	);
+	assert!(
+		captured_data.contains_key("monitor.name"),
+		"Monitor name should be present"
+	);
 
 	Ok(())
 }
