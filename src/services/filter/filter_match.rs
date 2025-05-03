@@ -264,39 +264,21 @@ fn flatten_json_path(value: &JsonValue, prefix: &str, result: &mut HashMap<Strin
 				flatten_json_path(val, &new_prefix, result);
 			}
 		}
-		JsonValue::String(s) => {
-			let key = if prefix.is_empty() {
-				"value".to_string()
-			} else {
-				prefix.to_string()
-			};
-			result.insert(key, s.clone());
-		}
-		JsonValue::Number(n) => {
-			let key = if prefix.is_empty() {
-				"value".to_string()
-			} else {
-				prefix.to_string()
-			};
-			result.insert(key, n.to_string());
-		}
-		JsonValue::Bool(b) => {
-			let key = if prefix.is_empty() {
-				"value".to_string()
-			} else {
-				prefix.to_string()
-			};
-			result.insert(key, b.to_string());
-		}
-		JsonValue::Null => {
-			let key = if prefix.is_empty() {
-				"value".to_string()
-			} else {
-				prefix.to_string()
-			};
-			result.insert(key, "null".to_string());
-		}
+		JsonValue::String(s) => insert_primitive(prefix, result, s),
+		JsonValue::Number(n) => insert_primitive(prefix, result, n.to_string()),
+		JsonValue::Bool(b) => insert_primitive(prefix, result, b.to_string()),
+		JsonValue::Null => insert_primitive(prefix, result, "null".to_string()),
 	}
+}
+
+/// Helper function to insert primitive values with consistent key handling
+fn insert_primitive<T: ToString>(prefix: &str, result: &mut HashMap<String, String>, value: T) {
+	let key = if prefix.is_empty() {
+		"value".to_string()
+	} else {
+		prefix.to_string()
+	};
+	result.insert(key, value.to_string());
 }
 
 #[cfg(test)]
@@ -512,5 +494,40 @@ mod tests {
 		let json_null = json!(null);
 		let hashmap_null = json_to_hashmap(&json_null);
 		assert_eq!(hashmap_null["value"], "null");
+	}
+
+	#[test]
+	fn test_insert_primitive() {
+		let mut result = HashMap::new();
+		insert_primitive("prefix", &mut result, "Test String");
+		assert_eq!(result["prefix"], "Test String");
+
+		let mut result2 = HashMap::new();
+		insert_primitive("", &mut result2, "Test String");
+		assert_eq!(result2["value"], "Test String");
+
+		let mut result3 = HashMap::new();
+		insert_primitive("prefix", &mut result3, 123);
+		assert_eq!(result3["prefix"], "123");
+
+		let mut result4 = HashMap::new();
+		insert_primitive("", &mut result4, 123);
+		assert_eq!(result4["value"], "123");
+
+		let mut result5 = HashMap::new();
+		insert_primitive("prefix", &mut result5, true);
+		assert_eq!(result5["prefix"], "true");
+
+		let mut result6 = HashMap::new();
+		insert_primitive("", &mut result6, true);
+		assert_eq!(result6["value"], "true");
+
+		let mut result7 = HashMap::new();
+		insert_primitive("prefix", &mut result7, JsonValue::Null);
+		assert_eq!(result7["prefix"], "null");
+
+		let mut result8 = HashMap::new();
+		insert_primitive("", &mut result8, JsonValue::Null);
+		assert_eq!(result8["value"], "null");
 	}
 }
