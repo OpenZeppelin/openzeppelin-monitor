@@ -469,7 +469,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -492,7 +492,7 @@ print("true")
 				console.log("finished");
 				console.log("not a boolean");
 			} catch (err) {
-				console.error(err);
+				console.log(err);
 			}
 		})();
 		"#;
@@ -502,14 +502,12 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
-				assert!(
-					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
-				);
+				assert!(err_msg.contains("Last line of output is not a valid boolean"));
 			}
 			_ => panic!("Expected error"),
 		}

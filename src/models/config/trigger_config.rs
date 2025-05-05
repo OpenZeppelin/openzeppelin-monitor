@@ -16,6 +16,9 @@ use crate::{
 	services::trigger::validate_script_config,
 };
 
+const TELEGRAM_MAX_BODY_LENGTH: usize = 4096;
+const DISCORD_MAX_BODY_LENGTH: usize = 2000;
+
 /// File structure for trigger configuration files
 #[derive(Debug, Deserialize)]
 pub struct TriggerConfigFile {
@@ -511,6 +514,17 @@ impl ConfigLoader for Trigger {
 							None,
 						));
 					}
+					// Validate template max length
+					if message.body.len() > TELEGRAM_MAX_BODY_LENGTH {
+						return Err(ConfigError::validation_error(
+							format!(
+								"Message body should not exceed {} characters",
+								TELEGRAM_MAX_BODY_LENGTH
+							),
+							None,
+							None,
+						));
+					}
 				}
 			}
 			TriggerType::Discord => {
@@ -539,6 +553,17 @@ impl ConfigLoader for Trigger {
 					if message.body.trim().is_empty() {
 						return Err(ConfigError::validation_error(
 							"Body cannot be empty",
+							None,
+							None,
+						));
+					}
+					// Validate template max length
+					if message.body.len() > DISCORD_MAX_BODY_LENGTH {
+						return Err(ConfigError::validation_error(
+							format!(
+								"Message body should not exceed {} characters",
+								DISCORD_MAX_BODY_LENGTH
+							),
 							None,
 							None,
 						));
@@ -630,6 +655,7 @@ impl ConfigLoader for Trigger {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::models::NotificationMessage;
 	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
@@ -1358,5 +1384,42 @@ mod tests {
 		if let Err(e) = result {
 			assert!(e.to_string().contains("failed to resolve SMTP password"));
 		}
+	}
+	#[test]
+	fn test_telegram_max_message_length() {
+		let max_body_length = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: SecretValue::Plain(SecretString::new(
+					"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(),
+				)),
+				chat_id: "1730223038".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "Test".to_string(),
+					body: "x".repeat(TELEGRAM_MAX_BODY_LENGTH + 1), // Exceeds max length
+				},
+			},
+		};
+		assert!(max_body_length.validate().is_err());
+	}
+
+	#[test]
+	fn test_discord_max_message_length() {
+		let max_body_length = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: SecretValue::Plain(SecretString::new(
+					"https://discord.com/api/webhooks/xxx".to_string(),
+				)),
+				message: NotificationMessage {
+					title: "Test".to_string(),
+					body: "z".repeat(DISCORD_MAX_BODY_LENGTH + 1), // Exceeds max length
+				},
+			},
+		};
+		assert!(max_body_length.validate().is_err());
 	}
 }

@@ -21,6 +21,28 @@
       }
     }
   },
+  "evm_large_transfer_usdc_webhook_markdown": {
+    "name": "Large Transfer Webhook Notification",
+    "trigger_type": "webhook",
+    "config": {
+      "url": {
+        "type": "plain",
+        "value": "https://webhook.site/123-456-789"
+      },
+      "method": "POST",
+      "secret": {
+        "type": "plain",
+        "value": "some-secret"
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "message": {
+        "title": "large_transfer_webhook triggered",
+        "body": "# USDC Transfer Alert\n\n**Large transfer detected**\n\n- **Amount:** ${events.0.args.value} USDC\n- **From:** `${events.0.args.from}`\n- **To:** `${events.0.args.to}`\n\n[View on Etherscan](https://etherscan.io/tx/${transaction.hash}#eventlog)"
+      }
+    }
+  },
   "stellar_large_swap_by_dex_webhook": {
     "name": "Large Swap By Dex Webhook Notification",
     "trigger_type": "webhook",

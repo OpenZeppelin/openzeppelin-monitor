@@ -29,7 +29,7 @@ use crate::{
 		create_block_handler, create_trigger_handler, has_active_monitors, initialize_services,
 		Result,
 	},
-	models::{BlockChainType, Network},
+	models::{BlockChainType, Network, ScriptLanguage},
 	repositories::{
 		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
 	},
@@ -37,17 +37,23 @@ use crate::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
 		filter::FilterService,
-		trigger::TriggerExecutionServiceTrait,
+		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 	utils::{
-		constants::DOCUMENTATION_URL, logging::setup_logging,
-		metrics::server::create_metrics_server, monitor::execution::execute_monitor,
-		monitor::MonitorExecutionError, parse_string_to_bytes_size,
+		constants::DOCUMENTATION_URL,
+		logging::setup_logging,
+		metrics::server::create_metrics_server,
+		monitor::{
+			execution::{execute_monitor, MonitorExecutionConfig},
+			MonitorExecutionError,
+		},
+		parse_string_to_bytes_size,
 	},
 };
 
 use clap::Parser;
 use dotenvy::dotenv;
+use std::collections::HashMap;
 use std::env::{set_var, var};
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
@@ -59,6 +65,28 @@ type MonitorServiceType = MonitorService<
 	NetworkRepository,
 	TriggerRepository,
 >;
+/// Configuration for testing monitor execution
+/// Fields:
+/// * `path` - Path to the monitor configuration file
+/// * `network_slug` - Optional network identifier to run the monitor against
+/// * `block_number` - Optional specific block number to test the monitor against
+/// * `monitor_service` - Service handling monitor operations
+/// * `network_service` - Service handling network operations
+/// * `filter_service` - Service handling filter operations
+/// * `trigger_execution_service` - Service handling trigger execution
+/// * `active_monitors_trigger_scripts` - Map of active monitors and their trigger scripts
+/// * `raw_output` - Whether to print the raw output of the monitor execution
+struct MonitorExecutionTestConfig {
+	pub path: String,
+	pub network_slug: Option<String>,
+	pub block_number: Option<u64>,
+	pub monitor_service: Arc<Mutex<MonitorServiceType>>,
+	pub network_service: Arc<Mutex<NetworkService<NetworkRepository>>>,
+	pub filter_service: Arc<FilterService>,
+	pub trigger_execution_service: Arc<TriggerExecutionService<TriggerRepository>>,
+	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
+	pub raw_output: bool,
+}
 
 #[derive(Parser)]
 #[command(
@@ -176,6 +204,12 @@ async fn main() -> Result<()> {
 	.await
 	.map_err(|e| anyhow::anyhow!("Failed to initialize services: {}. Please refer to the documentation quickstart ({}) on how to configure the service.", e, DOCUMENTATION_URL))?;
 
+	// Pre-load all trigger scripts into memory at startup to reduce file I/O operations.
+	// This prevents repeated file descriptor usage during script execution and improves performance
+	// by keeping scripts readily available in memory.
+	let active_monitors_trigger_scripts = trigger_execution_service
+		.load_scripts(&active_monitors)
+		.await?;
 	// Read CLI arguments to determine if we should test monitor execution
 	let monitor_path = cli.monitor_path.clone();
 	let network_slug = cli.network.clone();
@@ -187,15 +221,17 @@ async fn main() -> Result<()> {
 		let monitor_path = monitor_path.ok_or(anyhow::anyhow!(
 			"monitor_path must be defined when testing monitor execution"
 		))?;
-		return test_monitor_execution(
-			monitor_path,
+		return test_monitor_execution(MonitorExecutionTestConfig {
+			path: monitor_path,
 			network_slug,
 			block_number,
-			monitor_service,
-			network_service,
-			filter_service,
-			false,
-		)
+			monitor_service: monitor_service.clone(),
+			network_service: network_service.clone(),
+			filter_service: filter_service.clone(),
+			trigger_execution_service: trigger_execution_service.clone(),
+			active_monitors_trigger_scripts,
+			raw_output: false,
+		})
 		.await;
 	}
 
@@ -250,12 +286,6 @@ async fn main() -> Result<()> {
 	}
 
 	let (shutdown_tx, _) = watch::channel(false);
-	// Pre-load all trigger scripts into memory at startup to reduce file I/O operations.
-	// This prevents repeated file descriptor usage during script execution and improves performance
-	// by keeping scripts readily available in memory.
-	let active_monitors_trigger_scripts = trigger_execution_service
-		.load_scripts(&active_monitors)
-		.await?;
 	let client_pool = Arc::new(ClientPool::new());
 	let block_handler = create_block_handler(
 		shutdown_tx.clone(),
@@ -360,13 +390,7 @@ async fn main() -> Result<()> {
 /// for testing and debugging monitor configurations before deploying them.
 ///
 /// # Arguments
-/// * `path` - Path to the monitor configuration file
-/// * `network_slug` - Optional network identifier to run the monitor against
-/// * `block_number` - Optional specific block number to test the monitor against
-/// * `monitor_service` - Service handling monitor operations
-/// * `network_service` - Service handling network operations
-/// * `filter_service` - Service handling filter operations
-/// * `raw_output` - Whether to print the raw output of the monitor execution
+/// * `config` - Configuration for monitor execution
 ///
 /// # Returns
 /// * `Result<()>` - Ok(()) if execution succeeds, or an error if execution fails
@@ -375,17 +399,9 @@ async fn main() -> Result<()> {
 /// * Returns an error if network slug is missing when block number is specified
 /// * Returns an error if monitor execution fails for any reason (invalid path, network issues, etc.)
 #[instrument(skip_all)]
-async fn test_monitor_execution(
-	path: String,
-	network_slug: Option<String>,
-	block_number: Option<u64>,
-	monitor_service: Arc<Mutex<MonitorServiceType>>,
-	network_service: Arc<Mutex<NetworkService<NetworkRepository>>>,
-	filter_service: Arc<FilterService>,
-	raw_output: bool,
-) -> Result<()> {
+async fn test_monitor_execution(config: MonitorExecutionTestConfig) -> Result<()> {
 	// Validate inputs first
-	if block_number.is_some() && network_slug.is_none() {
+	if config.block_number.is_some() && config.network_slug.is_none() {
 		return Err(Box::new(MonitorExecutionError::execution_error(
 			"Network name is required when executing a monitor for a specific block",
 			None,
@@ -395,21 +411,23 @@ async fn test_monitor_execution(
 
 	info!(
 		message = "Starting monitor execution",
-		path,
-		network = network_slug,
-		block = block_number,
+		path = config.path,
+		network = config.network_slug,
+		block = config.block_number,
 	);
 
 	let client_pool = ClientPool::new();
-	let result = execute_monitor(
-		&path,
-		network_slug.as_ref(),
-		block_number.as_ref(),
-		monitor_service.clone(),
-		network_service.clone(),
-		filter_service.clone(),
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: config.path.clone(),
+		network_slug: config.network_slug.clone(),
+		block_number: config.block_number,
+		monitor_service: config.monitor_service.clone(),
+		network_service: config.network_service.clone(),
+		filter_service: config.filter_service.clone(),
+		trigger_execution_service: config.trigger_execution_service.clone(),
+		active_monitors_trigger_scripts: config.active_monitors_trigger_scripts.clone(),
 		client_pool,
-	)
+	})
 	.await;
 
 	match result {
@@ -423,7 +441,7 @@ async fn test_monitor_execution(
 
 			info!("=========== Execution Results ===========");
 
-			if raw_output {
+			if config.raw_output {
 				info!(matches = %matches, "Raw execution results");
 			} else {
 				// Parse and extract relevant information
@@ -605,11 +623,17 @@ async fn test_monitor_execution(
 				"Monitor execution failed",
 				Some(e.into()),
 				Some(std::collections::HashMap::from([
-					("path".to_string(), path),
-					("network".to_string(), network_slug.unwrap_or_default()),
+					("path".to_string(), config.path),
+					(
+						"network".to_string(),
+						config.network_slug.unwrap_or_default(),
+					),
 					(
 						"block".to_string(),
-						block_number.map(|b| b.to_string()).unwrap_or_default(),
+						config
+							.block_number
+							.map(|b| b.to_string())
+							.unwrap_or_default(),
 					),
 				])),
 			)
@@ -670,27 +694,30 @@ mod tests {
 	#[tokio::test]
 	async fn test_monitor_execution_without_network_slug_with_block_number() {
 		// Initialize services
-		let (filter_service, _, _, _, monitor_service, network_service, _) = initialize_services::<
-			MonitorRepository<NetworkRepository, TriggerRepository>,
-			NetworkRepository,
-			TriggerRepository,
-		>(None, None, None)
-		.await
-		.unwrap();
+		let (filter_service, trigger_execution_service, _, _, monitor_service, network_service, _) =
+			initialize_services::<
+				MonitorRepository<NetworkRepository, TriggerRepository>,
+				NetworkRepository,
+				TriggerRepository,
+			>(None, None, None)
+			.await
+			.unwrap();
 
 		let path = "test_monitor.json".to_string();
 		let block_number = Some(12345);
 
 		// Execute test
-		let result = test_monitor_execution(
+		let result = test_monitor_execution(MonitorExecutionTestConfig {
 			path,
-			None,
+			network_slug: None,
 			block_number,
-			monitor_service,
-			network_service,
-			filter_service,
-			false,
-		)
+			monitor_service: monitor_service.clone(),
+			network_service: network_service.clone(),
+			filter_service: filter_service.clone(),
+			trigger_execution_service: trigger_execution_service.clone(),
+			active_monitors_trigger_scripts: HashMap::new(),
+			raw_output: false,
+		})
 		.await;
 
 		// Verify result and error logging
@@ -705,13 +732,14 @@ mod tests {
 	#[tokio::test]
 	async fn test_monitor_execution_with_invalid_path() {
 		// Initialize services
-		let (filter_service, _, _, _, monitor_service, network_service, _) = initialize_services::<
-			MonitorRepository<NetworkRepository, TriggerRepository>,
-			NetworkRepository,
-			TriggerRepository,
-		>(None, None, None)
-		.await
-		.unwrap();
+		let (filter_service, trigger_execution_service, _, _, monitor_service, network_service, _) =
+			initialize_services::<
+				MonitorRepository<NetworkRepository, TriggerRepository>,
+				NetworkRepository,
+				TriggerRepository,
+			>(None, None, None)
+			.await
+			.unwrap();
 
 		// Test parameters
 		let path = "nonexistent_monitor.json".to_string();
@@ -719,15 +747,17 @@ mod tests {
 		let block_number = Some(12345);
 
 		// Execute test
-		let result = test_monitor_execution(
+		let result = test_monitor_execution(MonitorExecutionTestConfig {
 			path,
 			network_slug,
 			block_number,
-			monitor_service,
-			network_service,
-			filter_service,
-			false,
-		)
+			monitor_service: monitor_service.clone(),
+			network_service: network_service.clone(),
+			filter_service: filter_service.clone(),
+			trigger_execution_service: trigger_execution_service.clone(),
+			active_monitors_trigger_scripts: HashMap::new(),
+			raw_output: false,
+		})
 		.await;
 
 		// Verify result

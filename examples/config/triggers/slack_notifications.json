@@ -13,6 +13,20 @@
       }
     }
   },
+  "evm_large_transfer_usdc_slack_markdown": {
+    "name": "Large Transfer Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/A/B/C"
+      },
+      "message": {
+        "title": "large_transfer_slack triggered",
+        "body": "*USDC Transfer Details*\n*Amount:* ${events.0.args.value} USDC\n*From:* ${events.0.args.from}\n*To:* ${events.0.args.to}\n*Transaction:* <https://etherscan.io/tx/${transaction.hash}#eventlog|View on Etherscan>"
+      }
+    }
+  },
   "stellar_large_swap_by_dex_slack": {
     "name": "Large Swap By Dex Slack Notification",
     "trigger_type": "slack",

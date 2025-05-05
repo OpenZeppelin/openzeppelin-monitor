@@ -81,11 +81,6 @@ impl DiscordNotifier {
 		title: String,
 		body_template: String,
 	) -> Result<Self, Box<NotificationError>> {
-		// Set default Discord payload fields
-		let mut payload_fields = HashMap::new();
-		payload_fields.insert("username".to_string(), serde_json::json!(null));
-		payload_fields.insert("avatar_url".to_string(), serde_json::json!(null));
-
 		Ok(Self {
 			inner: WebhookNotifier::new(WebhookConfig {
 				url,
@@ -95,7 +90,7 @@ impl DiscordNotifier {
 				method: Some("POST".to_string()),
 				secret: None,
 				headers: None,
-				payload_fields: Some(payload_fields),
+				payload_fields: None,
 			})?,
 		})
 	}
