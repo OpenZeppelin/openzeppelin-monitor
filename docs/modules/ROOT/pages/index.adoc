@@ -1120,11 +1120,11 @@ Slack, Discord, Telegram, Email and Webhook support Markdown formatting in their
     "config": {
       "host": "smtp.example.com",
       "port": 465,
-      "username": "alerts@example.com",
-      "password": "password",
+      "username": {"type": "plain", "value": "alerts@example.com"},
+      "password": {"type": "plain", "value": "password"},
       "message": {
         "title": "**High Value Transfer Alert**",
-        "body": "### Transaction Details\n\n* **Amount:** ${event_0_value} USDC\n* **From:** `${event_0_from}`\n* **To:** `${event_0_to}`\n\n> Transaction Hash: ${transaction_hash}\n\n[View on Explorer](https://etherscan.io/tx/${transaction_hash})"
+        "body": "### Transaction Details\n\n* **Amount:** ${events.0.args.value} USDC\n* **From:** `${events.0.args.from}`\n* **To:** `${events.0.args.to}`\n\n> Transaction Hash: ${transaction.hash}\n\n[View on Explorer](https://etherscan.io/tx/${transaction.hash})"
       },
       "sender": "alerts@example.com",
       "recipients": ["recipient@example.com"]
@@ -1141,10 +1141,10 @@ Slack, Discord, Telegram, Email and Webhook support Markdown formatting in their
     "name": "Formatted Alert",
     "trigger_type": "slack",
     "config": {
-      "slack_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+      "slack_url": {"type": "plain", "value": "https://hooks.slack.com/services/XXX/YYY/ZZZ"},
       "message": {
         "title": "*🚨 High Value Transfer Alert*",
-        "body": "*Transaction Details*\n\n• *Amount:* `${event_0_value}` USDC\n• *From:* `${event_0_from}`\n• *To:* `${event_0_to}`\n\n>Transaction Hash: `${transaction_hash}`\n\n<https://etherscan.io/tx/${transaction_hash}|View on Explorer>"
+        "body": "*Transaction Details*\n\n• *Amount:* `${events.0.args.value}` USDC\n• *From:* `${events.0.args.from}`\n• *To:* `${events.0.args.to}`\n\n>Transaction Hash: `${transaction.hash}`\n\n<https://etherscan.io/tx/${transaction.hash}|View on Explorer>"
       }
     }
   }
@@ -1159,10 +1159,10 @@ Slack, Discord, Telegram, Email and Webhook support Markdown formatting in their
     "name": "Formatted Alert",
     "trigger_type": "discord",
     "config": {
-      "discord_url": "https://discord.com/api/webhooks/XXX/YYY",
+      "discord_url": {"type": "plain", "value": "https://discord.com/api/webhooks/XXX/YYY"},
       "message": {
         "title": "**🚨 High Value Transfer Alert**",
-        "body": "# Transaction Details\n\n* **Amount:** `${event_0_value}` USDC\n* **From:** `${event_0_from}`\n* **To:** `${event_0_to}`\n\n>>> Transaction Hash: `${transaction_hash}`\n\n**[View on Explorer](https://etherscan.io/tx/${transaction_hash})"
+        "body": "# Transaction Details\n\n* **Amount:** `${events.0.args.value}` USDC\n* **From:** `${events.0.args.from}`\n* **To:** `${events.0.args.to}`\n\n>>> Transaction Hash: `${transaction.hash}`\n\n**[View on Explorer](https://etherscan.io/tx/${transaction.hash})"
       }
     }
   }
@@ -1177,11 +1177,11 @@ Slack, Discord, Telegram, Email and Webhook support Markdown formatting in their
     "name": "Formatted Alert",
     "trigger_type": "telegram",
     "config": {
-      "token": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "token": {"type": "plain", "value": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
       "chat_id": "9876543210",
       "message": {
         "title": "*🚨 High Value Transfer Alert*",
-        "body": "*Transaction Details*\n\n• *Amount:* `${event_0_value}` USDC\n• *From:* `${event_0_from}`\n• *To:* `${event_0_to}`\n\n`Transaction Hash: ${transaction_hash}`\n\n[View on Explorer](https://etherscan.io/tx/${transaction_hash})"
+        "body": "*Transaction Details*\n\n• *Amount:* `${events.0.args.value}` USDC\n• *From:* `${events.0.args.from}`\n• *To:* `${events.0.args.to}`\n\n`Transaction Hash: ${transaction.hash}`\n\n[View on Explorer](https://etherscan.io/tx/${transaction.hash})"
       }
     }
   }
