@@ -46,6 +46,7 @@ The main source code directory contains the core implementation files organized 
 ** `cron_utils`: Cron schedule utilities
 ** `expression`: Expression evaluation
 ** `logging/`: Logging utilities
+** `macros/`: Macros for common functionality
 ** `metrics/`: Metrics utilities
 ** `monitor/`: Monitor configuration test utilities
 ** `tests/`: Contains test utilities and helper functions

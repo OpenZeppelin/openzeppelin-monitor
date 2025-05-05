@@ -168,7 +168,7 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
     {
       "type_": "rpc",
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "YOUR_RPC_URL_HERE"
       },
       "weight": 100
@@ -284,7 +284,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
         "trigger_type": "slack",
         "config": {
             "slack_url": {
-                "type": "Plain",
+                "type": "plain",
                 "value": "SLACK_WEBHOOK_URL"
             },
             "message": {
@@ -315,11 +315,11 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
             "host": "smtp.gmail.com",
             "port": 465,
             "username": {
-                "type": "Plain",
+                "type": "plain",
                 "value": "your_email@gmail.com"
             },
             "password": {
-                "type": "Plain",
+                "type": "plain",
                 "value": "SMTP_PASSWORD"
             },
             "message": {
@@ -389,7 +389,7 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
      {
       "type_": "rpc",
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "YOUR_RPC_URL_HERE"
       },
       "weight": 100
@@ -482,7 +482,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
     "trigger_type": "slack",
     "config": {
       "slack_url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "slack-webhook-url"
       },
       "message": {

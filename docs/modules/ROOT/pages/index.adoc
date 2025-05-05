@@ -593,7 +593,7 @@ A Network configuration defines connection details and operational parameters fo
     {
       "type_": "rpc",
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://soroban.stellar.org"
       },
       "weight": 100
@@ -676,7 +676,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
     "trigger_type": "slack",
     "config": {
       "slack_url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://hooks.slack.com/services/A/B/C"
       },
       "message": {
@@ -690,7 +690,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
     "trigger_type": "slack",
     "config": {
       "slack_url": {
-        "type": "Environment",
+        "type": "environment",
         "value": "SLACK_WEBHOOK_URL"
       },
       "message": {
@@ -756,11 +756,11 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   "host": "smtp.gmail.com",
   "port": 465,
   "username": {
-    "type": "Plain",
+    "type": "plain",
     "value": "sender@example.com"
   },
   "password": {
-    "type": "Environment",
+    "type": "environment",
     "value": "SMTP_PASSWORD"
   },
   "message": {
@@ -836,7 +836,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
   },
   "method": "POST",
   "secret": {
-    "type": "Environment",
+    "type": "environment",
     "value": "WEBHOOK_SECRET"
   },
   "headers": {
@@ -900,7 +900,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 ----
 {
   "discord_url": {
-    "type": "Plain",
+    "type": "plain",
     "value": "https://discord.com/api/webhooks/123-456-789"
   },
   "message": {

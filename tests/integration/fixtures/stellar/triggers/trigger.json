@@ -4,7 +4,7 @@
     "trigger_type": "slack",
     "config": {
       "slack_url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://hooks.slack.com/services/AAA/BBB/CCC"
       },
       "message": {
@@ -18,12 +18,12 @@
     "trigger_type": "webhook",
     "config": {
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://webhook.site/123"
       },
       "method": "POST",
       "secret": {
-        "type": "Plain",
+        "type": "plain",
         "value": "some-secret"
       },
       "headers": {
@@ -40,7 +40,7 @@
     "trigger_type": "discord",
     "config": {
       "discord_url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://discord.com/api/webhooks/123/123"
       },
       "message": {
@@ -54,7 +54,7 @@
     "trigger_type": "telegram",
     "config": {
       "token": {
-        "type": "Plain",
+        "type": "plain",
         "value": "123"
       },
       "chat_id": "123",

@@ -4,12 +4,12 @@
     "trigger_type": "webhook",
     "config": {
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://webhook.site/123-456-789"
       },
       "method": "POST",
       "secret": {
-        "type": "Plain",
+        "type": "plain",
         "value": "some-secret"
       },
       "headers": {
@@ -26,12 +26,12 @@
     "trigger_type": "webhook",
     "config": {
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://webhook.site/123-456-789"
       },
       "method": "POST",
       "secret": {
-        "type": "Plain",
+        "type": "plain",
         "value": "some-secret"
       },
       "headers": {

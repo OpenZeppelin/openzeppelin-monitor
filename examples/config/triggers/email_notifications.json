@@ -6,11 +6,11 @@
             "host": "smtp.gmail.com",
             "port": 465,
             "username": {
-                "type": "Plain",
+                "type": "plain",
                 "value": "your_email@gmail.com"
             },
             "password": {
-                "type": "Plain",
+                "type": "plain",
                 "value": "your_password"
             },
             "message": {

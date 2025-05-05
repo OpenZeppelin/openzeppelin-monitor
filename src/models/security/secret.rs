@@ -16,7 +16,13 @@ use std::{env, fmt, sync::Arc};
 use tokio::sync::OnceCell;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::models::security::{error::SecurityError, error::SecurityResult, get_env_var};
+use crate::{
+	impl_case_insensitive_enum,
+	models::security::{
+		error::{SecurityError, SecurityResult},
+		get_env_var,
+	},
+};
 
 /// Trait for vault clients that can retrieve secrets
 #[async_trait::async_trait]
@@ -109,7 +115,7 @@ pub async fn get_vault_client() -> SecurityResult<&'static VaultType> {
 /// - `HashicorpCloudVault`: Hashicorp Cloud Vault reference
 ///
 /// All variants implement `ZeroizeOnDrop` to ensure secure memory cleanup.
-#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Debug, Clone, Serialize, ZeroizeOnDrop)]
 #[serde(tag = "type", content = "value")]
 pub enum SecretValue {
 	/// A plain text secret value
@@ -119,6 +125,12 @@ pub enum SecretValue {
 	/// A secret stored in Hashicorp Cloud Vault
 	HashicorpCloudVault(String),
 }
+
+impl_case_insensitive_enum!(SecretValue, {
+	"plain" => Plain,
+	"environment" => Environment,
+	"hashicorpcloudvault" => HashicorpCloudVault,
+});
 
 impl PartialEq for SecretValue {
 	fn eq(&self, other: &Self) -> bool {
@@ -884,5 +896,80 @@ mod tests {
 		assert_eq!(plain.as_ref(), "plainval");
 		assert_eq!(env.as_ref(), "envval");
 		assert_eq!(vault.as_ref(), "vaultval");
+	}
+
+	#[test]
+	fn test_case_insensitive_deserialization() {
+		// Test with uppercase variant names
+		let uppercase_json = r#"{"type":"PLAIN","value":"test_secret"}"#;
+		let uppercase_result: Result<SecretValue, _> = serde_json::from_str(uppercase_json);
+		assert!(
+			uppercase_result.is_ok(),
+			"Failed to deserialize uppercase variant: {:?}",
+			uppercase_result.err()
+		);
+
+		if let Ok(ref secret_value) = uppercase_result {
+			match secret_value {
+				SecretValue::Plain(secret) => assert_eq!(secret.as_str(), "test_secret"),
+				_ => panic!("Expected Plain variant"),
+			}
+		}
+
+		// Test with lowercase variant names
+		let lowercase_json = r#"{"type":"plain","value":"test_secret"}"#;
+		let lowercase_result: Result<SecretValue, _> = serde_json::from_str(lowercase_json);
+		assert!(
+			lowercase_result.is_ok(),
+			"Failed to deserialize lowercase variant: {:?}",
+			lowercase_result.err()
+		);
+
+		if let Ok(ref secret_value) = lowercase_result {
+			match secret_value {
+				SecretValue::Plain(secret) => assert_eq!(secret.as_str(), "test_secret"),
+				_ => panic!("Expected Plain variant"),
+			}
+		}
+
+		// Test with mixed case variant names
+		let mixedcase_json = r#"{"type":"pLaIn","value":"test_secret"}"#;
+		let mixedcase_result: Result<SecretValue, _> = serde_json::from_str(mixedcase_json);
+		assert!(
+			mixedcase_result.is_ok(),
+			"Failed to deserialize mixed case variant: {:?}",
+			mixedcase_result.err()
+		);
+
+		if let Ok(ref secret_value) = mixedcase_result {
+			match secret_value {
+				SecretValue::Plain(secret) => assert_eq!(secret.as_str(), "test_secret"),
+				_ => panic!("Expected Plain variant"),
+			}
+		}
+
+		// Test environment variant
+		let env_json = r#"{"type":"environment","value":"ENV_VAR"}"#;
+		let env_result: Result<SecretValue, _> = serde_json::from_str(env_json);
+		assert!(env_result.is_ok());
+
+		if let Ok(ref secret_value) = env_result {
+			match secret_value {
+				SecretValue::Environment(env_var) => assert_eq!(env_var, "ENV_VAR"),
+				_ => panic!("Expected Environment variant"),
+			}
+		}
+
+		// Test vault variant
+		let vault_json = r#"{"type":"hashicorpcloudvault","value":"secret_name"}"#;
+		let vault_result: Result<SecretValue, _> = serde_json::from_str(vault_json);
+		assert!(vault_result.is_ok());
+
+		if let Ok(ref secret_value) = vault_result {
+			match secret_value {
+				SecretValue::HashicorpCloudVault(name) => assert_eq!(name, "secret_name"),
+				_ => panic!("Expected HashicorpCloudVault variant"),
+			}
+		}
 	}
 }

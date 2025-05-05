@@ -6,7 +6,7 @@
     {
       "type_": "rpc",
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://rpc-amoy.polygon.technology/"
       },
       "weight": 100

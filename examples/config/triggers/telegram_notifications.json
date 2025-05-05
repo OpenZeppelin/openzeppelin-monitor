@@ -4,7 +4,7 @@
     "trigger_type": "telegram",
     "config": {
       "token": {
-        "type": "Plain",
+        "type": "plain",
         "value": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
       },
       "chat_id": "9876543210",
@@ -20,7 +20,7 @@
     "trigger_type": "telegram",
     "config": {
       "token": {
-        "type": "Plain",
+        "type": "plain",
         "value": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
       },
       "chat_id": "9876543210",

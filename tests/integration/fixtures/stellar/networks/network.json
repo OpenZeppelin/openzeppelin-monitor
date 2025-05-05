@@ -6,7 +6,7 @@
     {
       "type_": "rpc",
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://soroban-testnet.stellar.org"
       },
       "weight": 100

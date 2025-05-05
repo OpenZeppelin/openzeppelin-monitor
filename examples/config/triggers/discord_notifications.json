@@ -4,7 +4,7 @@
     "trigger_type": "discord",
     "config": {
       "discord_url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://discord.com/api/webhooks/123-456-789"
       },
       "message": {
@@ -18,7 +18,7 @@
     "trigger_type": "discord",
     "config": {
       "discord_url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://discord.com/api/webhooks/123-456-789"
       },
       "message": {

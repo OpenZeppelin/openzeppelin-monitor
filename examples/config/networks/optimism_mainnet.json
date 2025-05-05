@@ -6,7 +6,7 @@
     {
       "type_": "rpc",
       "url": {
-        "type": "Plain",
+        "type": "plain",
         "value": "https://mainnet.optimism.io"
       },
       "weight": 100
