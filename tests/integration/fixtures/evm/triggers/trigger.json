@@ -6,7 +6,7 @@
       "slack_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
       "message": {
         "title": "example_trigger_slack triggered",
-        "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+        "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }
   },
@@ -22,7 +22,7 @@
       },
       "message": {
         "title": "example_trigger_webhook triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_value} | https://etherscan.io/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   },
@@ -33,7 +33,7 @@
       "discord_url": "https://discord.com/api/webhooks/123/123",
       "message": {
         "title": "example_trigger_discord triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_value} | https://etherscan.io/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   },
@@ -46,7 +46,7 @@
       "disable_web_preview": true,
       "message": {
         "title": "example_trigger_telegram triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_value} | https://etherscan.io/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   }

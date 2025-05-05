@@ -3,6 +3,12 @@
 //! Tests the monitoring functionality for EVM-compatible blockchains,
 //! including event and transaction filtering.
 
+use alloy::{
+	consensus::{
+		transaction::Recovered, Receipt, ReceiptEnvelope, ReceiptWithBloom, Signed, TxEnvelope,
+	},
+	primitives::{Bytes, TxKind, U256},
+};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -504,21 +510,21 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 		.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 			trigger_name == ["example_trigger_slack"]
 				// Event variables
-				&& variables.get("event_0_signature") == Some(&"Transfer(address,address,uint256)".to_string())
-				&& variables.get("event_0_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
-				&& variables.get("event_0_to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
-				&& variables.get("event_0_value") == Some(&"8181710000".to_string())
+				&& variables.get("events.0.signature") == Some(&"Transfer(address,address,uint256)".to_string())
+				&& variables.get("events.0.args.from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
+				&& variables.get("events.0.args.to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
+				&& variables.get("events.0.args.value") == Some(&"8181710000".to_string())
 				// Function variables
-				&& variables.get("function_0_signature") == Some(&"transfer(address,uint256)".to_string())
-				&& variables.get("function_0_to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
-				&& variables.get("function_0_value") == Some(&"8181710000".to_string())
+				&& variables.get("functions.0.signature") == Some(&"transfer(address,uint256)".to_string())
+				&& variables.get("functions.0.args.to") == Some(&"0xf423d9c1ffeb6386639d024f3b241dab2331b635".to_string())
+				&& variables.get("functions.0.args.value") == Some(&"8181710000".to_string())
 				// Transaction variables
-				&& variables.get("transaction_hash") == Some(&"0xd5069b22a3a89a36d592d5a1f72a281bc5d11d6d0bac6f0a878c13abb764b6d8".to_string())
-				&& variables.get("transaction_from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
-				&& variables.get("transaction_to") == Some(&"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string())
-				&& variables.get("transaction_value") == Some(&"0".to_string())
+				&& variables.get("transaction.hash") == Some(&"0xd5069b22a3a89a36d592d5a1f72a281bc5d11d6d0bac6f0a878c13abb764b6d8".to_string())
+				&& variables.get("transaction.from") == Some(&"0x58b704065b7aff3ed351052f8560019e05925023".to_string())
+				&& variables.get("transaction.to") == Some(&"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string())
+				&& variables.get("transaction.value") == Some(&"0".to_string())
 				// Monitor metadata
-				&& variables.get("monitor_name") == Some(&"Mint USDC Token".to_string())
+				&& variables.get("monitor.name") == Some(&"Mint USDC Token".to_string())
 		})
 		.once()
 		.returning(|_, _, _, _| Ok(()));
@@ -601,14 +607,14 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 				.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
 					trigger_name == ["example_trigger_slack"]
 						// Monitor metadata
-						&& variables.get("monitor_name") == Some(&"Mint USDC Token".to_string())
+						&& variables.get("monitor.name") == Some(&"Mint USDC Token".to_string())
 						// Transaction variables
-						&& variables.get("transaction_hash") == Some(&"0x6fb716f3fc4e2edec31f01c8bb67e565e3efacba965090a38835d3f297232bf6".to_string())
-						&& variables.get("transaction_from") == Some(&"0x6b9501462d48f7e78ba11c98508ee16d29a03411".to_string())
-						&& variables.get("transaction_to") == Some(&"0xf18206b2289cf6ce15cddbee9c6f6a0f059efb56".to_string())
-						&& variables.get("transaction_value") == Some(&"0".to_string())
+						&& variables.get("transaction.hash") == Some(&"0x6fb716f3fc4e2edec31f01c8bb67e565e3efacba965090a38835d3f297232bf6".to_string())
+						&& variables.get("transaction.from") == Some(&"0x6b9501462d48f7e78ba11c98508ee16d29a03411".to_string())
+						&& variables.get("transaction.to") == Some(&"0xf18206b2289cf6ce15cddbee9c6f6a0f059efb56".to_string())
+						&& variables.get("transaction.value") == Some(&"0".to_string())
 						// Function signature should be present even without args
-						&& variables.get("function_0_signature") == Some(&"increment()".to_string())
+						&& variables.get("functions.0.signature") == Some(&"increment()".to_string())
 				})
 				.once()
 				.returning(|_, _, _, _| Ok(()));
@@ -625,6 +631,184 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 			panic!("Expected EVM match");
 		}
 	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
+	let test_data = load_test_data("evm");
+
+	// Setup trigger execution service and capture the data structure
+	let data_capture = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+	let data_capture_clone = data_capture.clone();
+
+	let mut trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+
+	// Set up expectations for execute() with custom function to capture and verify data
+	trigger_execution_service
+		.expect_execute()
+		.withf(
+			move |_triggers, variables, _monitor_match, _trigger_scripts| {
+				let mut captured = data_capture_clone.lock().unwrap();
+				*captured = variables.clone();
+				true
+			},
+		)
+		.returning(|_, _, _, _| Ok(()));
+
+	// Create a monitor match with an argument named "signature"
+	use alloy::primitives::{Address, B256};
+	use openzeppelin_monitor::models::{
+		EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EVMTransaction,
+		EVMTransactionReceipt, FunctionCondition, MatchConditions,
+	};
+
+	// Create test monitor with a function that has an argument called "signature"
+	let mut monitor = test_data.monitor.clone();
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "dangerousFunc(bytes32 signature, uint256 value)".to_string(),
+		expression: None,
+	}];
+
+	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
+		EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
+			inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
+				receipt: Receipt::default(),
+				logs_bloom: Default::default(),
+			}),
+			transaction_hash: B256::ZERO,
+			transaction_index: Some(0),
+			block_hash: Some(B256::ZERO),
+			block_number: Some(0),
+			gas_used: 0,
+			effective_gas_price: 0,
+			blob_gas_used: None,
+			blob_gas_price: None,
+			from: Address::ZERO,
+			to: Some(Address::ZERO),
+			contract_address: None,
+		})
+	}
+
+	fn create_test_evm_transaction() -> EVMTransaction {
+		let tx = alloy::consensus::TxLegacy {
+			chain_id: None,
+			nonce: 0,
+			gas_price: 0,
+			gas_limit: 0,
+			to: TxKind::Call(Address::ZERO),
+			value: U256::ZERO,
+			input: Bytes::default(),
+		};
+
+		let signature =
+			alloy::signers::Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+
+		let hash = B256::ZERO;
+
+		EVMTransaction::from(alloy::rpc::types::Transaction {
+			inner: Recovered::new_unchecked(
+				TxEnvelope::Legacy(Signed::new_unchecked(tx, signature, hash)),
+				Address::ZERO,
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_index: None,
+			effective_gas_price: None,
+		})
+	}
+
+	// Create a match object
+	let evm_match = EVMMonitorMatch {
+		monitor,
+		transaction: create_test_evm_transaction(),
+		receipt: create_test_evm_transaction_receipt(),
+		network_slug: "ethereum_mainnet".to_string(),
+		matched_on: MatchConditions {
+			functions: vec![FunctionCondition {
+				signature: "dangerousFunc(bytes32 signature, uint256 value)".to_string(),
+				expression: None,
+			}],
+			events: vec![],
+			transactions: vec![],
+		},
+		matched_on_args: Some(EVMMatchArguments {
+			functions: Some(vec![EVMMatchParamsMap {
+				signature: "dangerousFunc(bytes32 signature, uint256 value)".to_string(),
+				args: Some(vec![
+					EVMMatchParamEntry {
+						name: "signature".to_string(),
+						value: "0xabcdef1234567890".to_string(),
+						kind: "bytes32".to_string(),
+						indexed: false,
+					},
+					EVMMatchParamEntry {
+						name: "value".to_string(),
+						value: "123456789".to_string(),
+						kind: "uint256".to_string(),
+						indexed: false,
+					},
+				]),
+				hex_signature: Some("0xdeadbeef".to_string()),
+			}]),
+			events: None,
+		}),
+	};
+
+	let match_wrapper = MonitorMatch::EVM(Box::new(evm_match));
+
+	// Process the match directly using handle_match
+	let result = handle_match(match_wrapper, &trigger_execution_service, &HashMap::new()).await;
+	assert!(result.is_ok(), "Handle match should succeed");
+
+	// Verify that data structure preserves both function signature and argument
+	let captured_data = data_capture.lock().unwrap();
+
+	// The key for the function signature should exist
+	assert!(
+		captured_data.contains_key("functions.0.signature"),
+		"functions.0.signature should exist in the data structure"
+	);
+
+	// Check the value is correct
+	assert_eq!(
+		captured_data.get("functions.0.signature").unwrap(),
+		"dangerousFunc(bytes32 signature, uint256 value)",
+		"Function signature value should be preserved"
+	);
+
+	// The key for the argument should also exist
+	assert!(
+		captured_data.contains_key("functions.0.args.signature"),
+		"functions.0.args.signature should exist in the data structure"
+	);
+
+	// Check that the argument value is correct
+	assert_eq!(
+		captured_data.get("functions.0.args.signature").unwrap(),
+		"0xabcdef1234567890",
+		"Function argument value should be correct"
+	);
+
+	// Verify that the values are different - no collision
+	assert_ne!(
+		captured_data.get("functions.0.signature").unwrap(),
+		captured_data.get("functions.0.args.signature").unwrap(),
+		"Function signature and argument values should be distinct"
+	);
+
+	// Also check for other expected fields
+	assert!(
+		captured_data.contains_key("transaction.hash"),
+		"Transaction hash should be present"
+	);
+	assert!(
+		captured_data.contains_key("monitor.name"),
+		"Monitor name should be present"
+	);
 
 	Ok(())
 }
