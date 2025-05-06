@@ -46,15 +46,14 @@ fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> M
 fn make_monitor_with_functions(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.events = vec![];
 	monitor.match_conditions.transactions = vec![];
-	monitor.match_conditions.functions = vec![];
-	monitor.match_conditions.functions.push(FunctionCondition {
+	monitor.match_conditions.functions = vec![FunctionCondition {
 		signature: "transfer(Address,Address,I128)".to_string(),
 		expression: if include_expression {
 			Some("amount >= 2240".to_string())
 		} else {
 			None
 		},
-	});
+	}];
 	monitor
 }
 
@@ -105,6 +104,10 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 		.expect_get_events()
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
+
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -173,6 +176,10 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 		.expect_get_events()
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
+
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -274,6 +281,10 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
 
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+
 	// Run filter_block with the test data
 	let matches = filter_service
 		.filter_block(
@@ -298,8 +309,12 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 
 			let matched_on_args = stellar_match.matched_on_args.as_ref().unwrap();
 			assert!(
-				matched_on_args.functions.as_ref().unwrap().is_empty(),
-				"Expected no functions arguments to be matched"
+				stellar_match.matched_on.functions[0].expression.is_none(),
+				"Expected no function expression"
+			);
+			assert!(
+				matched_on_args.functions.as_ref().unwrap().len() == 1,
+				"Expected one function match"
 			);
 		}
 		_ => {
@@ -339,6 +354,10 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 		.expect_get_events()
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
+
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -429,6 +448,10 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
 
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+
 	// Run filter_block with the test data
 	let matches = filter_service
 		.filter_block(
@@ -495,6 +518,10 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
 
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+
 	// Run filter_block with the test data
 	let matches = filter_service
 		.filter_block(
@@ -555,6 +582,10 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 		.expect_get_events()
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
+
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -683,34 +714,37 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
 
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+
 	let mut trigger_execution_service =
 		setup_trigger_execution_service("tests/integration/fixtures/stellar/triggers/trigger.json")
 			.await;
 
+	// First expectation for the events-only match
 	trigger_execution_service
 		.expect_execute()
-		.withf(|trigger_name, variables, _monitor_match, _trigger_scripts| {
-			trigger_name == ["example_trigger_slack"]
+		.withf(
+			|trigger_name, variables, _monitor_match, _trigger_scripts| {
+				trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor.name") == Some(&"Large Transfer of USDC Token".to_string())
 				// Transaction variables
 				&& variables.get("transaction.hash")
 					== Some(&"2c89fc3311bc275415ed6a764c77d7b0349cb9f4ce37fd2bbfc6604920811503".to_string())
-				// Function arguments
-				&& variables.get("functions.0.signature") == Some(&"transfer(Address,Address,I128)".to_string())
-				&& variables.get("functions.0.args.from") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
-				&& variables.get("functions.0.args.to") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
-				&& variables.get("functions.0.args.amount") == Some(&"2240".to_string())
 				// Event arguments
 				&& variables.get("events.0.signature") == Some(&"transfer(Address,Address,String,I128)".to_string())
 				&& variables.get("events.0.args.0") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
 				&& variables.get("events.0.args.1") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
 				&& variables.get("events.0.args.2") == Some(&"USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".to_string())
 				&& variables.get("events.0.args.3") == Some(&"2240".to_string())
-		})
+			},
+		)
 		.once()
 		.returning(|_, _, _, _| Ok(()));
 
+	// Second expectation for the upsert_data function match
 	trigger_execution_service
 		.expect_execute()
 		.withf(
@@ -718,8 +752,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				let expected_json: Value =
 					serde_json::from_str("{\"myKey1\":1234,\"myKey2\":\"Hello, world!\"}").unwrap();
 				let actual_json: Value =
-					serde_json::from_str(variables.get("functions.0.args.amount").unwrap())
-						.unwrap();
+					serde_json::from_str(variables.get("functions.0.args.data").unwrap()).unwrap();
 
 				trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
@@ -795,6 +828,10 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 		.expect_get_events()
 		.times(1)
 		.returning(move |_, _| Ok(events.clone()));
+
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service

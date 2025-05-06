@@ -434,6 +434,9 @@ async fn test_execute_monitor_stellar() {
 	mock_client
 		.expect_get_events()
 		.return_once(move |_, _| Ok(test_data.stellar_events.clone()));
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
 
 	mock_pool
 		.expect_get_stellar_client()

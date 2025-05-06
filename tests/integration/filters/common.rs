@@ -5,8 +5,8 @@
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, EVMTransactionReceipt, Monitor, Network, StellarEvent, StellarTransaction,
-		Trigger,
+		BlockType, EVMTransactionReceipt, Monitor, Network, StellarContractSpec, StellarEvent,
+		StellarTransaction, Trigger,
 	},
 	repositories::{
 		MonitorService, NetworkService, RepositoryError, TriggerRepositoryTrait, TriggerService,
@@ -30,6 +30,7 @@ pub struct TestData {
 	pub receipts: Vec<EVMTransactionReceipt>,
 	pub stellar_transactions: Vec<StellarTransaction>,
 	pub stellar_events: Vec<StellarEvent>,
+	pub stellar_contract_spec: Option<StellarContractSpec>,
 }
 
 pub fn load_test_data(chain: &str) -> TestData {
@@ -56,6 +57,15 @@ pub fn load_test_data(chain: &str) -> TestData {
 		Vec::new()
 	};
 
+	let stellar_contract_spec: Option<StellarContractSpec> = if chain == "stellar" {
+		Some(read_and_parse_json(&format!(
+			"{}/contract_spec.json",
+			base_path
+		)))
+	} else {
+		None
+	};
+
 	TestData {
 		blocks,
 		monitor,
@@ -63,6 +73,7 @@ pub fn load_test_data(chain: &str) -> TestData {
 		receipts,
 		stellar_transactions,
 		stellar_events,
+		stellar_contract_spec,
 	}
 }
 

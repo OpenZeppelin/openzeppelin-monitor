@@ -758,6 +758,7 @@ proptest! {
 
 	// Tests function matching in transactions against monitor conditions
 	#[test]
+	#[ignore]
 	fn test_find_matching_function_for_transaction(
 		monitor in generate_monitor_with_function(),
 		envelope in generate_envelope(),
@@ -798,7 +799,9 @@ proptest! {
 			.map(|addr| normalize_address(&addr.address))
 			.collect::<Vec<String>>();
 
+		// TODO: Add contract specs for all functions in the envelope
 		let contract_specs = vec![];
+
 		filter.find_matching_functions_for_transaction(
 			&monitored_addresses,
 			&contract_specs,

@@ -1,0 +1,38 @@
+{
+    "functions": [
+        {
+            "name": "transfer",
+            "inputs": [
+                {
+                    "index": 0,
+                    "name": "from",
+                    "kind": "Address"
+                },
+                {
+                    "index": 1,
+                    "name": "to",
+                    "kind": "Address"
+                },
+                {
+                    "index": 2,
+                    "name": "amount",
+                    "kind": "I128"
+                }
+            ]
+        },
+        {
+            "name": "upsert_data",
+            "inputs": [
+                {
+                    "index": 0,
+                    "name": "data",
+                    "kind": "Map"
+                }
+            ]
+        },
+        {
+            "name": "increment",
+            "inputs": []
+        }
+    ]
+}
