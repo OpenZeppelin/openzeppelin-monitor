@@ -164,7 +164,7 @@ Custom filter scripts allow you to apply additional conditions to matches detect
           "functions": [
             {
               "signature": "swap(Address,U32,U32,U128,U128)",
-              "expression": "4 > 1000000000"
+              "expression": "out_min > 1000000000"
             }
           ],
           "events": [],
@@ -217,7 +217,7 @@ Custom filter scripts allow you to apply additional conditions to matches detect
         "functions": [
           {
             "signature": "swap(Address,U32,U32,U128,U128)",
-            "expression": "4 > 1000000000"
+            "expression": "out_min > 1000000000"
           }
         ],
         "events": [],

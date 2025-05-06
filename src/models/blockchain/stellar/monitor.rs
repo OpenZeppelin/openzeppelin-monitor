@@ -124,7 +124,7 @@ pub struct ContractSpec {
 ///     ]
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct ContractFunction {
 	/// Name of the function as defined in the contract
 	pub name: String,

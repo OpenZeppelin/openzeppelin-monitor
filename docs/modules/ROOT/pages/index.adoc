@@ -695,7 +695,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
       },
       "message": {
         "title": "large_transfer_usdc_slack triggered",
-        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.2} USDC to ${functions.0.args.1} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.amount} USDC to ${functions.0.args.to} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   }
@@ -1352,7 +1352,7 @@ Match transaction properties:
 |Network Type |Access Method
 
 |Stellar
-|Arguments accessed by numeric index (e.g., [0, 1, 2])
+|Arguments accessed by parameter names for functions and numeric index for events (e.g., [0, 1, 2])
 
 |EVM
 |Arguments accessed by parameter names from ABI
@@ -1368,13 +1368,21 @@ For EVM event `Transfer(address from, address to, uint256 value)`:
 }
 ----
 
-For Stellar function `transfer(Address,Address,I128)`:
+For Stellar function `transfer(Address from, Address to, I128 amount)`:
 [source,json]
 ----
 {
-  "expression": "2 > 1000"
+  "expression": "amount > 1000"
 }
 ----
+
+[NOTE]
+====
+With SEP-48 support, Stellar functions can now reference parameters by name (e.g., `amount > 1000`) instead of position (e.g., `2 > 1000`). Events still use indexed parameters until SEP-48 support is added for events.
+
+You can find a contract's SEP-48 interface by visiting the contract on Stellar Expert and clicking on the "Interface" tab. For example:
+link:https://stellar.expert/explorer/public/contract/CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE?filter=interface[Stellar DEX Contract Interface^]
+====
 
 ==== Trigger Conditions (Custom filters)
 

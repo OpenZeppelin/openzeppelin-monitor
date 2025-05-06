@@ -416,6 +416,11 @@ cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar
 
 This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/monitors/stellar_swap_dex.json[configuration^] monitors large swaps of over 1,000,000,000 tokens. You can customize the notification channels by modifying the `triggers` array.
 
+[TIP]
+====
+You can find the contract's SEP-48 interface and function signatures by visiting the link:https://stellar.expert/explorer/public/contract/CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE?filter=interface[Stellar DEX Contract Interface^] on Stellar Expert.
+====
+
 [source,json]
 ----
 {
@@ -433,7 +438,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
     "functions": [
       {
         "signature": "swap(Address,U32,U32,U128,U128)",
-        "expression": "4 > 1000000000"
+        "expression": "out_min > 1000000000"
       }
     ],
     "events": [],
@@ -487,7 +492,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
       },
       "message": {
         "title": "large_swap_by_dex_slack triggered",
-        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.4} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
   }

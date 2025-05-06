@@ -50,7 +50,7 @@ fn make_monitor_with_functions(mut monitor: Monitor, include_expression: bool) -
 	monitor.match_conditions.functions.push(FunctionCondition {
 		signature: "transfer(Address,Address,I128)".to_string(),
 		expression: if include_expression {
-			Some("2 >= 2240".to_string())
+			Some("amount >= 2240".to_string())
 		} else {
 			None
 		},
@@ -370,7 +370,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 			// Assert the argument values
 			let args = function_args.args.as_ref().unwrap();
 
-			assert_eq!(args[0].name, "0");
+			assert_eq!(args[0].name, "from");
 			assert_eq!(
 				args[0].value,
 				"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY"
@@ -378,7 +378,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 			assert_eq!(args[0].kind, "Address");
 			assert!(!args[0].indexed);
 
-			assert_eq!(args[1].name, "1");
+			assert_eq!(args[1].name, "to");
 			assert_eq!(
 				args[1].value,
 				"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT"
@@ -386,7 +386,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 			assert_eq!(args[1].kind, "Address");
 			assert!(!args[1].indexed);
 
-			assert_eq!(args[2].name, "2");
+			assert_eq!(args[2].name, "amount");
 			assert_eq!(args[2].value, "2240");
 			assert_eq!(args[2].kind, "I128");
 			assert!(!args[2].indexed);
@@ -698,9 +698,9 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 					== Some(&"2c89fc3311bc275415ed6a764c77d7b0349cb9f4ce37fd2bbfc6604920811503".to_string())
 				// Function arguments
 				&& variables.get("functions.0.signature") == Some(&"transfer(Address,Address,I128)".to_string())
-				&& variables.get("functions.0.args.0") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
-				&& variables.get("functions.0.args.1") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
-				&& variables.get("functions.0.args.2") == Some(&"2240".to_string())
+				&& variables.get("functions.0.args.from") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
+				&& variables.get("functions.0.args.to") == Some(&"CC7YMFMYZM2HE6O3JT5CNTFBHVXCZTV7CEYT56IGBHR4XFNTGTN62CPT".to_string())
+				&& variables.get("functions.0.args.amount") == Some(&"2240".to_string())
 				// Event arguments
 				&& variables.get("events.0.signature") == Some(&"transfer(Address,Address,String,I128)".to_string())
 				&& variables.get("events.0.args.0") == Some(&"GDF32CQINROD3E2LMCGZUDVMWTXCJFR5SBYVRJ7WAAIAS3P7DCVWZEFY".to_string())
@@ -718,7 +718,8 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				let expected_json: Value =
 					serde_json::from_str("{\"myKey1\":1234,\"myKey2\":\"Hello, world!\"}").unwrap();
 				let actual_json: Value =
-					serde_json::from_str(variables.get("functions.0.args.0").unwrap()).unwrap();
+					serde_json::from_str(variables.get("functions.0.args.amount").unwrap())
+						.unwrap();
 
 				trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
