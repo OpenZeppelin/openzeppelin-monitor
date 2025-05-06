@@ -95,3 +95,61 @@ pub struct DecodedParamEntry {
 	/// Whether this parameter is indexed (for event topics)
 	pub indexed: bool,
 }
+
+/// Contract specification for a Stellar smart contract
+///
+/// This structure represents the parsed specification of a Stellar smart contract,
+/// following the Stellar Contract ABI format. It contains information about all
+/// callable functions in the contract, similar to Ethereum's ABI but in Stellar's format.
+/// The spec is typically extracted from a contract's WASM bytecode.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ContractSpec {
+	/// List of callable functions defined in the contract
+	pub functions: Vec<ContractFunction>,
+}
+
+/// Function definition within a Stellar contract specification
+///
+/// Represents a callable function in a Stellar smart contract, including its name
+/// and input parameters. This is parsed from the contract's ScSpecFunctionV0 entries
+/// and provides a more accessible format for working with contract interfaces.
+///
+/// # Example
+/// ```ignore
+/// {
+///     "name": "transfer",
+///     "inputs": [
+///         {"index": 0, "name": "to", "kind": "Address"},
+///         {"index": 1, "name": "amount", "kind": "U64"}
+///     ]
+/// }
+/// ```
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ContractFunction {
+	/// Name of the function as defined in the contract
+	pub name: String,
+
+	/// Ordered list of input parameters accepted by the function
+	pub inputs: Vec<ContractInput>,
+}
+
+/// Input parameter specification for a Stellar contract function
+///
+/// Describes a single parameter in a contract function, including its position,
+/// name, and type. The type (kind) follows Stellar's type system and can include
+/// basic types (U64, I64, Address, etc.) as well as complex types (Vec, Map, etc.).
+///
+/// # Type Examples
+/// - Basic types: "U64", "I64", "Address", "Bool", "String"
+/// - Complex types: "Vec<Address>", "Map<String,U64>", "Bytes32"
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ContractInput {
+	/// Zero-based index of the parameter in the function signature
+	pub index: u32,
+
+	/// Parameter name as defined in the contract
+	pub name: String,
+
+	/// Parameter type in Stellar's type system format
+	pub kind: String,
+}

@@ -3771,6 +3771,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "soroban-spec",
  "stellar-rpc-client",
  "stellar-strkey 0.0.13",
  "stellar-xdr",
@@ -5154,6 +5155,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "soroban-spec"
+version = "22.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b54326e9516b33be99c701b37242b27efb8e66cc1f1eff994b9d9a013a4be136"
+dependencies = [
+ "base64 0.13.1",
+ "stellar-xdr",
+ "thiserror 1.0.69",
+ "wasmparser",
+]
+
+[[package]]
 name = "spki"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6138,6 +6151,16 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.116.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a58e28b80dd8340cb07b8242ae654756161f6fc8d0038123d679b7b99964fa50"
+dependencies = [
+ "indexmap 2.9.0",
+ "semver 1.0.26",
 ]
 
 [[package]]

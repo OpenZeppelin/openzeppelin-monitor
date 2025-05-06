@@ -17,7 +17,7 @@ use tracing::instrument;
 use crate::{
 	models::{
 		BlockType, EventCondition, FunctionCondition, MatchConditions, Monitor, MonitorMatch,
-		Network, StellarEvent, StellarMatchArguments, StellarMatchParamEntry,
+		Network, StellarContractSpec, StellarEvent, StellarMatchArguments, StellarMatchParamEntry,
 		StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction, TransactionCondition,
 		TransactionStatus,
 	},
@@ -216,6 +216,7 @@ impl<T> StellarBlockFilter<T> {
 	pub fn find_matching_functions_for_transaction(
 		&self,
 		monitored_addresses: &[String],
+		contract_specs: &[(String, StellarContractSpec)],
 		transaction: &StellarTransaction,
 		monitor: &Monitor,
 		matched_functions: &mut Vec<FunctionCondition>,
@@ -235,9 +236,26 @@ impl<T> StellarBlockFilter<T> {
 							continue;
 						}
 
+						// Get contract spec for the operation
+						let contract_spec = match contract_specs
+							.iter()
+							.find(|(addr, _)| addr == &parsed_operation.contract_address)
+						{
+							Some((_, spec)) => spec,
+							None => {
+								tracing::error!(
+									"No contract spec found for {}",
+									parsed_operation.contract_address
+								);
+								return;
+							}
+						};
+
 						// Convert parsed operation arguments into param entries
-						let param_entries = self
-							.convert_arguments_to_match_param_entry(&parsed_operation.arguments);
+						let param_entries = self.convert_arguments_to_match_param_entry(
+							&parsed_operation.arguments,
+							contract_spec,
+						);
 
 						if monitor.match_conditions.functions.is_empty() {
 							// Match on all functions
@@ -370,6 +388,7 @@ impl<T> StellarBlockFilter<T> {
 		&self,
 		events: &Vec<StellarEvent>,
 		monitored_addresses: &[String],
+		_contract_specs: &[(String, StellarContractSpec)],
 	) -> Vec<EventMap> {
 		let mut decoded_events = Vec::new();
 		for event in events {
@@ -377,6 +396,14 @@ impl<T> StellarBlockFilter<T> {
 			if !monitored_addresses.contains(&normalize_address(&event.contract_id)) {
 				continue;
 			}
+
+			// Get contract spec for the event
+			// Events are not yet supported in SEP-48
+			// let contract_spec = contract_specs
+			// 	.iter()
+			// 	.find(|(addr, _)| addr == &event.contract_id)
+			// 	.map(|(_, spec)| spec)
+			// 	.unwrap();
 
 			let topics = match &event.topic_xdr {
 				Some(topics) => topics,
@@ -956,6 +983,7 @@ impl<T> StellarBlockFilter<T> {
 	pub fn convert_arguments_to_match_param_entry(
 		&self,
 		arguments: &[Value],
+		_contract_spec: &StellarContractSpec,
 	) -> Vec<StellarMatchParamEntry> {
 		let mut params = Vec::new();
 		for (index, arg) in arguments.iter().enumerate() {
@@ -1090,7 +1118,19 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 				.map(|addr| normalize_address(&addr.address))
 				.collect::<Vec<String>>();
 
-			let decoded_events = self.decode_events(&events, &monitored_addresses).await;
+			let contract_specs =
+				futures::future::join_all(monitored_addresses.iter().map(|address| async move {
+					let spec = client.get_contract_spec(address).await;
+					(address.clone(), spec)
+				}))
+				.await
+				.into_iter()
+				.filter_map(|(addr, spec)| spec.ok().map(|s| (addr, s)))
+				.collect::<Vec<_>>();
+
+			let decoded_events = self
+				.decode_events(&events, &monitored_addresses, &contract_specs)
+				.await;
 
 			// Then process transactions for this monitor
 			for transaction in &transactions {
@@ -1118,6 +1158,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 
 				self.find_matching_functions_for_transaction(
 					&monitored_addresses,
+					&contract_specs,
 					transaction,
 					monitor,
 					&mut matched_functions,
@@ -1675,8 +1716,11 @@ mod tests {
 		// Use normalized address in monitored addresses
 		let monitored_addresses = vec![normalized_contract_address];
 
+		let contract_specs = vec![];
+
 		filter.find_matching_functions_for_transaction(
 			&monitored_addresses,
+			&contract_specs,
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1727,9 +1771,11 @@ mod tests {
 		);
 
 		let monitored_addresses = vec![normalized_contract_address];
+		let contract_specs = vec![];
 
 		filter.find_matching_functions_for_transaction(
 			&monitored_addresses,
+			&contract_specs,
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1778,9 +1824,11 @@ mod tests {
 		);
 
 		let monitored_addresses = vec![normalized_contract_address];
+		let contract_specs = vec![];
 
 		filter.find_matching_functions_for_transaction(
 			&monitored_addresses,
+			&contract_specs,
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1829,9 +1877,11 @@ mod tests {
 		);
 
 		let monitored_addresses = vec![normalized_different_address];
+		let contract_specs = vec![];
 
 		filter.find_matching_functions_for_transaction(
 			&monitored_addresses,
+			&contract_specs,
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1884,9 +1934,11 @@ mod tests {
 		);
 
 		let monitored_addresses = vec![normalized_contract_address];
+		let contract_specs = vec![];
 
 		filter.find_matching_functions_for_transaction(
 			&monitored_addresses,
+			&contract_specs,
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -2159,7 +2211,10 @@ mod tests {
 		);
 
 		let events = vec![event];
-		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+		let contract_specs = vec![];
+		let decoded = filter
+			.decode_events(&events, &monitored_addresses, &contract_specs)
+			.await;
 
 		assert_eq!(decoded.len(), 1);
 		assert_eq!(decoded[0].tx_hash, "tx_hash_123");
@@ -2178,7 +2233,10 @@ mod tests {
 			create_test_stellar_event(contract_address, "tx_hash_123", vec![event_name], None);
 
 		let events = vec![event];
-		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+		let contract_specs = vec![];
+		let decoded = filter
+			.decode_events(&events, &monitored_addresses, &contract_specs)
+			.await;
 
 		assert_eq!(decoded.len(), 0);
 	}
@@ -2198,7 +2256,10 @@ mod tests {
 		);
 
 		let events = vec![event];
-		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+		let contract_specs = vec![];
+		let decoded = filter
+			.decode_events(&events, &monitored_addresses, &contract_specs)
+			.await;
 
 		assert_eq!(decoded.len(), 0);
 	}
@@ -2229,7 +2290,10 @@ mod tests {
 		);
 
 		let events = vec![event];
-		let decoded = filter.decode_events(&events, &monitored_addresses).await;
+		let contract_specs = vec![];
+		let decoded = filter
+			.decode_events(&events, &monitored_addresses, &contract_specs)
+			.await;
 
 		assert_eq!(decoded.len(), 1);
 
@@ -3247,7 +3311,8 @@ mod tests {
 			}),
 		];
 
-		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let result = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		assert_eq!(result.len(), 4);
 
@@ -3281,8 +3346,8 @@ mod tests {
 		let filter = create_test_filter();
 
 		let arguments = vec![json!([1, 2, 3]), json!(["a", "b", "c"])];
-
-		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let result = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		assert_eq!(result.len(), 2);
 
@@ -3313,8 +3378,8 @@ mod tests {
 				"value": "1000000"
 			}),
 		];
-
-		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let result = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		assert_eq!(result.len(), 2);
 
@@ -3346,8 +3411,9 @@ mod tests {
 				}
 			}),
 		];
+		let contract_spec = StellarContractSpec::default();
 
-		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+		let result = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		assert_eq!(result.len(), 2);
 
@@ -3368,8 +3434,8 @@ mod tests {
 	fn test_convert_empty_array() {
 		let filter = create_test_filter();
 		let arguments = vec![];
-
-		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let result = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		assert_eq!(result.len(), 0);
 	}
@@ -3396,8 +3462,8 @@ mod tests {
 				"value": "{\"key\":\"value\"}"
 			}),
 		];
-
-		let result = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let result = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		assert_eq!(result.len(), 4);
 

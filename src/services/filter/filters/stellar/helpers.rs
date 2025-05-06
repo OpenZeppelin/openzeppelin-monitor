@@ -7,13 +7,20 @@
 use alloy::primitives::{I256, U256};
 use hex::encode;
 use serde_json::{json, Value};
+// NOTE: this may be moved to stellar_xdr in the future
+use soroban_spec::read;
 use stellar_strkey::{ed25519::PublicKey as StrkeyPublicKey, Contract};
 use stellar_xdr::curr::{
-	AccountId, HostFunction, Int128Parts, Int256Parts, InvokeHostFunctionOp, Limits, PublicKey,
-	ReadXdr, ScAddress, ScMap, ScMapEntry, ScVal, ScVec, UInt128Parts, UInt256Parts,
+	AccountId, ContractExecutable, Hash, HostFunction, Int128Parts, Int256Parts,
+	InvokeHostFunctionOp, LedgerEntryData, LedgerKey, LedgerKeyContractCode, Limits, PublicKey,
+	ReadXdr, ScAddress, ScMap, ScMapEntry, ScSpecEntry, ScSpecTypeDef, ScVal, ScVec, UInt128Parts,
+	UInt256Parts,
 };
 
-use crate::models::{StellarDecodedParamEntry, StellarParsedOperationResult};
+use crate::models::{
+	StellarContractFunction, StellarContractInput, StellarDecodedParamEntry,
+	StellarParsedOperationResult,
+};
 
 /// Combines the parts of a UInt256 into a single string representation.
 ///
@@ -422,7 +429,12 @@ pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedPara
 }
 
 /// Safely parse a string into a `serde_json::Value`.
-/// Returns `Some(Value)` if successful, `None` otherwise.
+///
+/// # Arguments
+/// * `input` - The string to parse as JSON
+///
+/// # Returns
+/// `Some(Value)` if successful, `None` otherwise
 pub fn parse_json_safe(input: &str) -> Option<Value> {
 	match serde_json::from_str::<Value>(input) {
 		Ok(val) => Some(val),
@@ -434,7 +446,13 @@ pub fn parse_json_safe(input: &str) -> Option<Value> {
 }
 
 /// Recursively navigate through a JSON structure using dot notation (e.g. "user.address.street").
-/// Returns `Some(&Value)` if found, `None` otherwise.
+///
+/// # Arguments
+/// * `json_value` - The JSON value to navigate
+/// * `path` - The dot-notation path to follow
+///
+/// # Returns
+/// `Some(&Value)` if found, `None` otherwise
 pub fn get_nested_value<'a>(json_value: &'a Value, path: &str) -> Option<&'a Value> {
 	let mut current_val = json_value;
 
@@ -447,6 +465,14 @@ pub fn get_nested_value<'a>(json_value: &'a Value, path: &str) -> Option<&'a Val
 }
 
 /// Compare two plain strings with the given operator.
+///
+/// # Arguments
+/// * `param_value` - The first string to compare
+/// * `operator` - The comparison operator to use ("==" or "!=")
+/// * `compare_value` - The second string to compare
+///
+/// # Returns
+/// `true` if the comparison is true, `false` otherwise
 pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -> bool {
 	match operator {
 		"==" => param_value.trim_matches('"') == compare_value.trim_matches('"'),
@@ -459,10 +485,15 @@ pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -
 }
 
 /// Compare a JSON `Value` with a plain string using a specific operator.
-/// This mimics the logic you had in single-key comparisons:
+///
+/// # Arguments
+/// * `value` - The JSON value to compare
+/// * `operator` - The comparison operator to use ("==" or "!=")
+/// * `compare_value` - The string to compare against
+///
+/// # Returns
+/// `true` if the comparison is true, `false` otherwise
 pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_value: &str) -> bool {
-	// We can add more logic here: if `value` is a string, compare its unquoted form, etc.
-	// For now, let's replicate the old `to_string().trim_matches('"') == compare_value`.
 	match operator {
 		"==" => value.to_string().trim_matches('"') == compare_value,
 		"!=" => value.to_string().trim_matches('"') != compare_value,
@@ -479,7 +510,7 @@ pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_valu
 ///
 /// # Arguments
 /// * `param_val` - The first JSON value to compare
-/// * `operator` - The operator to use for comparison
+/// * `operator` - The operator to use for comparison ("==", "!=", ">", ">=", "<", "<=")
 /// * `compare_val` - The second JSON value to compare
 ///
 /// # Returns
@@ -514,6 +545,12 @@ pub fn compare_json_values(param_val: &Value, operator: &str, compare_val: &Valu
 ///
 /// This is used to determine the kind of a value for the `kind` field in the
 /// `StellarMatchParamEntry` struct.
+///
+/// # Arguments
+/// * `value` - The JSON value to get the kind for
+///
+/// # Returns
+/// A string representing the kind of the value
 pub fn get_kind_from_value(value: &Value) -> String {
 	match value {
 		Value::Number(n) => {
@@ -541,13 +578,294 @@ pub fn get_kind_from_value(value: &Value) -> String {
 	}
 }
 
+/// Creates a LedgerKey for the contract instance.
+///
+/// # Arguments
+/// * `contract_id` - The contract ID in Stellar strkey format (starts with 'C')
+///
+/// # Returns
+/// A LedgerKey for the deployed contract instance
+///
+/// # Example
+/// When calling `getLedgerEntries` with the output of this function, the result might look like:
+/// ```json
+/// {
+///   "contract_data": {
+///     "ext": "v0",
+///     "contract": "CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX",
+///     "key": "ledger_key_contract_instance",
+///     "durability": "persistent",
+///     "val": {
+///       "contract_instance": {
+///         "executable": {
+///           "wasm": "0adabe438e539cf5a77afd8197f8e25c822ca2d27ba99d8e0e31b80b7400c903"
+///         },
+///         "storage": [
+///           {
+///             "key": {
+///               "symbol": "COUNTER"
+///             },
+///             "val": {
+///               "u32": 17
+///             }
+///           }
+///         ]
+///       }
+///     }
+///   }
+/// }
+/// ```
+pub fn get_contract_instance_ledger_key(contract_id: &str) -> Result<LedgerKey, anyhow::Error> {
+	let contract_id = contract_id.to_uppercase();
+	let contract_address = match Contract::from_string(contract_id.as_str()) {
+		Ok(contract) => ScAddress::Contract(Hash(contract.0)),
+		Err(err) => {
+			return Err(anyhow::anyhow!("Failed to decode contract ID: {}", err));
+		}
+	};
+
+	Ok(LedgerKey::ContractData(
+		stellar_xdr::curr::LedgerKeyContractData {
+			contract: contract_address,
+			key: ScVal::LedgerKeyContractInstance,
+			durability: stellar_xdr::curr::ContractDataDurability::Persistent,
+		},
+	))
+}
+
+/// Extracts contract code ledger key from a contract's XDR-encoded executable.
+///
+/// # Arguments
+/// * `wasm_hash` - WASM hash
+///
+/// # Returns
+/// A LedgerKey for the contract code if successfully extracted
+///
+/// # Example
+/// When calling `getLedgerEntries` with the output of this function, the result might look like:
+/// ```json
+/// {
+///   "contract_code": {
+///     "ext":  {...},
+///     "hash": "b54ba37b7bb7dd69a7759caa9eec70e9e13615ba3b009fc23c4626ae9dffa27f"
+///     "code": "0061736d0100000001e3023060027e7e017e60017e017e6000017e60037e7e7e..."
+///   }
+/// }
+/// ```
+pub fn get_contract_code_ledger_key(wasm_hash: &str) -> Result<LedgerKey, anyhow::Error> {
+	Ok(LedgerKey::ContractCode(LedgerKeyContractCode {
+		hash: wasm_hash.parse::<Hash>()?,
+	}))
+}
+
+/// Get wasm code from a contract's XDR-encoded executable.
+///
+/// # Arguments
+/// * `ledger_entry_data` - XDR-encoded contract data
+///
+/// # Returns
+/// The WASM code as a hex string if successfully extracted
+pub fn get_wasm_code_from_ledger_entry_data(
+	ledger_entry_data: &str,
+) -> Result<String, anyhow::Error> {
+	let val = match LedgerEntryData::from_xdr_base64(ledger_entry_data.as_bytes(), Limits::none()) {
+		Ok(val) => val,
+		Err(e) => {
+			return Err(anyhow::anyhow!("Failed to parse contract data XDR: {}", e));
+		}
+	};
+
+	if let LedgerEntryData::ContractCode(data) = val {
+		Ok(hex::encode(data.code))
+	} else {
+		Err(anyhow::anyhow!("XDR value is not a contract code entry"))
+	}
+}
+
+/// Get wasm hash from a contract's XDR-encoded executable.
+///
+/// # Arguments
+/// * `ledger_entry_data` - XDR-encoded contract data
+///
+/// # Returns
+/// The WASM hash as a hex string if successfully extracted
+pub fn get_wasm_hash_from_ledger_entry_data(
+	ledger_entry_data: &str,
+) -> Result<String, anyhow::Error> {
+	let val = match LedgerEntryData::from_xdr_base64(ledger_entry_data.as_bytes(), Limits::none()) {
+		Ok(val) => val,
+		Err(e) => {
+			return Err(anyhow::anyhow!("Failed to parse contract data XDR: {}", e));
+		}
+	};
+
+	if let LedgerEntryData::ContractData(data) = val {
+		if let ScVal::ContractInstance(instance) = data.val {
+			if let ContractExecutable::Wasm(wasm) = instance.executable {
+				Ok(hex::encode(wasm.0))
+			} else {
+				Err(anyhow::anyhow!("Contract executable is not WASM"))
+			}
+		} else {
+			Err(anyhow::anyhow!("XDR value is not a contract instance"))
+		}
+	} else {
+		Err(anyhow::anyhow!("XDR value is not a contract data entry"))
+	}
+}
+
+/// Convert a hexadecimal string to a byte vector.
+///
+/// # Arguments
+/// * `hex_string` - The hex string to convert
+///
+/// # Returns
+/// A Result containing the byte vector if successful, or a hex::FromHexError if conversion fails
+pub fn hex_to_bytes(hex_string: &str) -> Result<Vec<u8>, hex::FromHexError> {
+	hex::decode(hex_string)
+}
+
+/// Parse a WASM contract from hex and return a vector of ScSpecEntry.
+///
+/// # Arguments
+/// * `wasm_hex` - The hex-encoded WASM contract
+///
+/// # Returns
+/// A Result containing a vector of ScSpecEntry if successful, or an error if parsing fails
+pub fn get_contract_spec(wasm_hex: &str) -> Result<Vec<ScSpecEntry>, anyhow::Error> {
+	match hex_to_bytes(wasm_hex) {
+		Ok(wasm_bytes) => match read::from_wasm(&wasm_bytes) {
+			Ok(spec) => Ok(spec),
+			Err(e) => Err(anyhow::anyhow!("Failed to parse contract spec: {}", e)),
+		},
+		Err(e) => Err(anyhow::anyhow!("Failed to decode hex: {}", e)),
+	}
+}
+
+/// Get contract spec functions from a contract spec.
+///
+/// # Arguments
+/// * `spec_entries` - Vector of contract spec entries
+///
+/// # Returns
+/// A vector of contract spec entries which are functions
+pub fn get_contract_spec_functions(spec_entries: Vec<ScSpecEntry>) -> Vec<ScSpecEntry> {
+	spec_entries
+		.into_iter()
+		.filter_map(|entry| match entry {
+			ScSpecEntry::FunctionV0(func) => Some(ScSpecEntry::FunctionV0(func)),
+			_ => None,
+		})
+		.collect()
+}
+
+/// Format a ScSpecTypeDef into a clean string representation.
+///
+/// # Arguments
+/// * `type_def` - The type definition to format
+///
+/// # Returns
+/// A string representation of the type definition
+fn format_type_def(type_def: &ScSpecTypeDef) -> String {
+	match type_def {
+		ScSpecTypeDef::Map(t) => {
+			format!(
+				"Map<{},{}>",
+				format_type_def(&t.key_type),
+				format_type_def(&t.value_type)
+			)
+		}
+		ScSpecTypeDef::Vec(t) => format!("Vec<{}>", format_type_def(&t.element_type)),
+		ScSpecTypeDef::Tuple(t) => {
+			let types = t
+				.value_types
+				.iter()
+				.map(format_type_def)
+				.collect::<Vec<_>>()
+				.join(",");
+			format!("Tuple<{}>", types)
+		}
+		ScSpecTypeDef::BytesN(bytes_n) => format!("Bytes{}", bytes_n.n),
+		ScSpecTypeDef::U128 => "U128".to_string(),
+		ScSpecTypeDef::I128 => "I128".to_string(),
+		ScSpecTypeDef::U256 => "U256".to_string(),
+		ScSpecTypeDef::I256 => "I256".to_string(),
+		ScSpecTypeDef::Address => "Address".to_string(),
+		ScSpecTypeDef::Bool => "Bool".to_string(),
+		ScSpecTypeDef::Symbol => "Symbol".to_string(),
+		ScSpecTypeDef::String => "String".to_string(),
+		ScSpecTypeDef::Bytes => "Bytes".to_string(),
+		ScSpecTypeDef::U32 => "U32".to_string(),
+		ScSpecTypeDef::I32 => "I32".to_string(),
+		ScSpecTypeDef::U64 => "U64".to_string(),
+		ScSpecTypeDef::I64 => "I64".to_string(),
+		ScSpecTypeDef::Timepoint => "Timepoint".to_string(),
+		ScSpecTypeDef::Duration => "Duration".to_string(),
+		_ => "Unknown".to_string(),
+	}
+}
+
+/// Parse contract spec functions and populate input parameters.
+///
+/// # Arguments
+/// * `spec_entries` - Vector of contract spec entries
+///
+/// # Returns
+/// A vector of StellarContractFunction with populated input parameters
+pub fn get_contract_spec_with_function_input_parameters(
+	spec_entries: Vec<ScSpecEntry>,
+) -> Vec<StellarContractFunction> {
+	spec_entries
+		.into_iter()
+		.filter_map(|entry| match entry {
+			ScSpecEntry::FunctionV0(func) => Some(StellarContractFunction {
+				name: func.name.to_string(),
+				inputs: func
+					.inputs
+					.iter()
+					.enumerate()
+					.map(|(index, input)| StellarContractInput {
+						index: index as u32,
+						name: input.name.to_string(),
+						kind: format_type_def(&input.type_),
+					})
+					.collect(),
+			}),
+			_ => None,
+		})
+		.collect()
+}
+
 #[cfg(test)]
 mod tests {
-	use std::str::FromStr;
-
 	use super::*;
 	use serde_json::json;
-	use stellar_xdr::curr::{Hash, ScString, ScSymbol, StringM};
+	use std::str::FromStr;
+	use stellar_xdr::curr::{
+		Hash, ScSpecFunctionInputV0, ScSpecFunctionV0, ScSpecTypeMap, ScSpecTypeVec, ScString,
+		ScSymbol, StringM,
+	};
+
+	fn create_test_function_entry(
+		name: &str,
+		inputs: Vec<(u32, &str, ScSpecTypeDef)>,
+	) -> ScSpecEntry {
+		ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
+			doc: StringM::<1024>::from_str("").unwrap(),
+			name: ScSymbol(StringM::<32>::from_str(name).unwrap()),
+			inputs: inputs
+				.into_iter()
+				.map(|(_, name, type_)| ScSpecFunctionInputV0 {
+					doc: StringM::<1024>::from_str("").unwrap(),
+					name: StringM::<30>::from_str(name).unwrap(),
+					type_,
+				})
+				.collect::<Vec<_>>()
+				.try_into()
+				.unwrap(),
+			outputs: vec![].try_into().unwrap(),
+		})
+	}
 
 	#[test]
 	fn test_combine_number_functions() {
@@ -772,5 +1090,147 @@ mod tests {
 		assert_eq!(get_kind_from_value(&json!([1, 2, 3])), "Vec");
 		assert_eq!(get_kind_from_value(&json!({"key": "value"})), "Map");
 		assert_eq!(get_kind_from_value(&json!(null)), "Null");
+	}
+
+	#[test]
+	fn test_get_contract_instance_ledger_key() {
+		// Test valid contract ID
+		let contract_id = "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE";
+		let ledger_key = get_contract_instance_ledger_key(contract_id);
+		assert!(ledger_key.is_ok());
+
+		match ledger_key.unwrap() {
+			LedgerKey::ContractData(data) => {
+				assert_eq!(data.contract.to_string(), contract_id);
+				assert!(matches!(data.key, ScVal::LedgerKeyContractInstance));
+				assert_eq!(
+					data.durability,
+					stellar_xdr::curr::ContractDataDurability::Persistent
+				);
+			}
+			_ => panic!("Expected LedgerKey::ContractData, got something else"),
+		}
+
+		// Test invalid contract ID
+		let invalid_contract_id = "invalid_contract_id";
+		let result = get_contract_instance_ledger_key(invalid_contract_id);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_get_contract_code_ledger_key() {
+		// Test valid WASM hash
+		let wasm_hash = "b54ba37b7bb7dd69a7759caa9eec70e9e13615ba3b009fc23c4626ae9dffa27f";
+		let ledger_key = get_contract_code_ledger_key(wasm_hash);
+		assert!(ledger_key.is_ok());
+
+		match ledger_key.unwrap() {
+			LedgerKey::ContractCode(data) => {
+				assert_eq!(hex::encode(data.hash.0), wasm_hash);
+			}
+			_ => panic!("Expected LedgerKey::ContractCode, got something else"),
+		}
+
+		// Test invalid WASM hash
+		let invalid_hash = "invalid_hash";
+		let result = get_contract_code_ledger_key(invalid_hash);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_get_wasm_code_from_ledger_entry_data() {
+		// Test with valid contract code XDR
+		let contract_code_xdr = "AAAABwAAAAEAAAAAAAAAAAAAAEAAAAAFAAAAAwAAAAAAAAAEAAAAAAAAAAAAAAAEAAAABQAAAAAK2r5DjlOc9ad6/YGX+OJcgiyi0nupnY4OMbgLdADJAwAAAkYAYXNtAQAAAAEVBGACfn4BfmADfn5+AX5gAAF+YAAAAhkEAWwBMAAAAWwBMQAAAWwBXwABAWwBOAAAAwYFAgIDAwMFAwEAEAYZA38BQYCAwAALfwBBgIDAAAt/AEGAgMAACwc1BQZtZW1vcnkCAAlpbmNyZW1lbnQABQFfAAgKX19kYXRhX2VuZAMBC19faGVhcF9iYXNlAwIKpAEFCgBCjrrQr4bUOQuFAQIBfwJ+QQAhAAJAAkACQBCEgICAACIBQgIQgICAgABCAVINACABQgIQgYCAgAAiAkL/AYNCBFINASACQiCIpyEACyAAQQFqIgBFDQEgASAArUIghkIEhCICQgIQgoCAgAAaQoSAgICgBkKEgICAwAwQg4CAgAAaIAIPCwALEIaAgIAAAAsJABCHgICAAAALAwAACwIACwBzDmNvbnRyYWN0c3BlY3YwAAAAAAAAAEBJbmNyZW1lbnQgaW5jcmVtZW50cyBhbiBpbnRlcm5hbCBjb3VudGVyLCBhbmQgcmV0dXJucyB0aGUgdmFsdWUuAAAACWluY3JlbWVudAAAAAAAAAAAAAABAAAABAAeEWNvbnRyYWN0ZW52bWV0YXYwAAAAAAAAABYAAAAAAG8OY29udHJhY3RtZXRhdjAAAAAAAAAABXJzdmVyAAAAAAAABjEuODYuMAAAAAAAAAAAAAhyc3Nka3ZlcgAAAC8yMi4wLjcjMjExNTY5YWE0OWM4ZDg5Njg3N2RmY2ExZjJlYjRmZTkwNzExMjFjOAAAAA==";
+		let result = get_wasm_code_from_ledger_entry_data(contract_code_xdr);
+		assert!(result.is_ok());
+		assert!(!result.unwrap().is_empty());
+
+		// Test with invalid XDR
+		let invalid_xdr = "invalid_xdr";
+		let result = get_wasm_code_from_ledger_entry_data(invalid_xdr);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_get_wasm_hash_from_ledger_entry_data() {
+		// Test with valid contract data XDR
+		let contract_data_xdr = "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";
+		let result = get_wasm_hash_from_ledger_entry_data(contract_data_xdr);
+		assert!(result.is_ok());
+		assert_eq!(
+			result.unwrap(),
+			"b54ba37b7bb7dd69a7759caa9eec70e9e13615ba3b009fc23c4626ae9dffa27f"
+		);
+
+		// Test with invalid XDR
+		let invalid_xdr = "invalid_xdr";
+		let result = get_wasm_hash_from_ledger_entry_data(invalid_xdr);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_hex_to_bytes() {
+		// Test valid hex string
+		let hex_string = "48656c6c6f"; // "Hello" in hex
+		let result = hex_to_bytes(hex_string);
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap(), vec![72, 101, 108, 108, 111]);
+
+		// Test invalid hex string
+		let invalid_hex = "invalid";
+		let result = hex_to_bytes(invalid_hex);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_get_contract_spec() {
+		// Test with valid WASM hex
+		let wasm_hex = "0061736d0100000001150460027e7e017e60037e7e7e017e6000017e600000021904016c01300000016c01310000016c015f0001016c01380000030605020203030305030100100619037f01418080c0000b7f00418080c0000b7f00418080c0000b073505066d656d6f7279020009696e6372656d656e740005015f00080a5f5f646174615f656e6403010b5f5f686561705f6261736503020aa401050a00428ebad0af86d4390b850102017f027e41002100024002400240108480808000220142021080808080004201520d0020014202108180808000220242ff01834204520d012002422088a721000b200041016a2200450d0120012000ad422086420484220242021082808080001a4284808080a0064284808080c00c1083808080001a20020f0b000b108680808000000b0900108780808000000b0300000b02000b00730e636f6e74726163747370656376300000000000000040496e6372656d656e7420696e6372656d656e747320616e20696e7465726e616c20636f756e7465722c20616e642072657475726e73207468652076616c75652e00000009696e6372656d656e74000000000000000000000100000004001e11636f6e7472616374656e766d6574617630000000000000001600000000006f0e636f6e74726163746d65746176300000000000000005727376657200000000000006312e38362e3000000000000000000008727373646b7665720000002f32322e302e37233231313536396161343963386438393638373764666361316632656234666539303731313231633800";
+		let result = get_contract_spec(wasm_hex);
+		assert!(result.is_ok());
+		assert!(!result.unwrap().is_empty());
+
+		// Test with invalid WASM hex
+		let invalid_hex = "invalid";
+		let result = get_contract_spec(invalid_hex);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_get_contract_spec_functions() {
+		let spec_entries = vec![
+			create_test_function_entry(
+				"transfer",
+				vec![
+					(0, "to", ScSpecTypeDef::Address),
+					(1, "amount", ScSpecTypeDef::U64),
+				],
+			),
+			create_test_function_entry(
+				"complexFunction",
+				vec![
+					(
+						0,
+						"addresses",
+						ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+							element_type: Box::new(ScSpecTypeDef::Address),
+						})),
+					),
+					(
+						1,
+						"data",
+						ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+							key_type: Box::new(ScSpecTypeDef::String),
+							value_type: Box::new(ScSpecTypeDef::U64),
+						})),
+					),
+				],
+			),
+		];
+
+		let result = get_contract_spec_functions(spec_entries);
+		assert_eq!(result.len(), 2);
+		assert!(matches!(result[0], ScSpecEntry::FunctionV0(_)));
+		assert!(matches!(result[1], ScSpecEntry::FunctionV0(_)));
 	}
 }

@@ -4,7 +4,7 @@
 use base64::Engine;
 use openzeppelin_monitor::{
 	models::{
-		AddressWithABI, FunctionCondition, Monitor, StellarDecodedTransaction,
+		AddressWithABI, FunctionCondition, Monitor, StellarContractSpec, StellarDecodedTransaction,
 		StellarMatchArguments, StellarMatchParamEntry, StellarTransaction, StellarTransactionInfo,
 		TransactionStatus,
 	},
@@ -798,8 +798,10 @@ proptest! {
 			.map(|addr| normalize_address(&addr.address))
 			.collect::<Vec<String>>();
 
+		let contract_specs = vec![];
 		filter.find_matching_functions_for_transaction(
 			&monitored_addresses,
+			&contract_specs,
 			&transaction,
 			&updated_monitor,
 			&mut matched_functions,
@@ -876,8 +878,8 @@ proptest! {
 			Value::String(string_value.to_string()),
 		];
 
-
-		let params = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let params = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		// Verify correct number of parameters
 		prop_assert_eq!(params.len(), 4);
@@ -917,7 +919,8 @@ proptest! {
 		};
 		let arguments = vec![json!(values)];
 
-		let params = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let params = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		// Verify array conversion to parameter entry
 		prop_assert_eq!(params.len(), 1);
@@ -945,7 +948,8 @@ proptest! {
 		});
 		let arguments = vec![map.clone()];
 
-		let params = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let params = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		prop_assert_eq!(params.len(), 1);
 		prop_assert_eq!(&params[0].name, "0");
@@ -961,7 +965,8 @@ proptest! {
 		});
 		let typed_arguments = vec![typed_obj];
 
-		let typed_params = filter.convert_arguments_to_match_param_entry(&typed_arguments);
+		let contract_spec = StellarContractSpec::default();
+		let typed_params = filter.convert_arguments_to_match_param_entry(&typed_arguments, &contract_spec);
 
 		prop_assert_eq!(typed_params.len(), 1);
 		prop_assert_eq!(&typed_params[0].name, "0");
@@ -979,7 +984,8 @@ proptest! {
 		};
 		let arguments = Vec::new();
 
-		let params = filter.convert_arguments_to_match_param_entry(&arguments);
+		let contract_spec = StellarContractSpec::default();
+		let params = filter.convert_arguments_to_match_param_entry(&arguments, &contract_spec);
 
 		// Verify empty input produces empty output
 		prop_assert!(params.is_empty());
