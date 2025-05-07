@@ -4,3 +4,4 @@
 * xref:rpc.adoc[RPC Client]
 * xref:scripts.adoc[Custom scripts]
 * xref:error.adoc[Error Handling]
+* link:https://openzeppelin-monitor.netlify.app/openzeppelin_monitor/[Technical Rust Documentation^]
