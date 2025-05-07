@@ -18,7 +18,7 @@ use openzeppelin_monitor::{
 			EVMBlockFilter,
 		},
 	},
-	utils::tests::evm::monitor::MonitorBuilder,
+	utils::tests::evm::{monitor::MonitorBuilder, receipt::ReceiptBuilder},
 };
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::json;
@@ -505,6 +505,7 @@ proptest! {
 			filter.find_matching_transaction(
 				&status,
 				&tx,
+				&ReceiptBuilder::new().build(),
 				&monitor,
 				&mut matched_transactions
 			);
@@ -551,6 +552,7 @@ proptest! {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx,
+			&ReceiptBuilder::new().build(),
 			&monitor,
 			&mut matched_transactions
 		);

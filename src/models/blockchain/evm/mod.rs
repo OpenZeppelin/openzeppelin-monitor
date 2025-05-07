@@ -13,5 +13,8 @@ pub use monitor::{
 	EVMMonitorMatch, MatchArguments as EVMMatchArguments, MatchParamEntry as EVMMatchParamEntry,
 	MatchParamsMap as EVMMatchParamsMap,
 };
-pub use receipt::{BaseLog as EVMReceiptLog, TransactionReceipt as EVMTransactionReceipt};
+pub use receipt::{
+	BaseLog as EVMReceiptLog, BaseReceipt as EVMBaseReceipt,
+	TransactionReceipt as EVMTransactionReceipt,
+};
 pub use transaction::{BaseTransaction as EVMBaseTransaction, Transaction as EVMTransaction};

@@ -11,7 +11,17 @@ pub fn split_expression(expr: &str) -> Option<(&str, &str, &str)> {
 	let mut operator_start = None;
 	let mut operator_end = None;
 
-	let operators = ["==", "!=", ">=", "<=", ">", "<", "contains"];
+	let operators = [
+		"==",
+		"!=",
+		">=",
+		"<=",
+		">",
+		"<",
+		"contains",
+		"starts_with",
+		"ends_with",
+	];
 
 	// First pass - find operator position
 	for (i, c) in expr.char_indices() {

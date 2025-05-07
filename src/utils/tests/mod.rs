@@ -8,6 +8,8 @@ pub mod builders {
 	// Chain specific test helpers
 	pub mod evm {
 		pub mod monitor;
+		pub mod receipt;
+		pub mod transaction;
 	}
 	pub mod stellar {
 		pub mod monitor;

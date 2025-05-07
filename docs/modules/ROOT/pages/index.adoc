@@ -1288,19 +1288,136 @@ Match events emitted by monitored contracts:
 ----
 
 ===== Transaction Conditions
-Match transaction properties:
+Match transaction properties. The available fields and expression syntax depend on the network type (EVM/Stellar)
 
 [source,json]
 ----
 {
   "transactions": [
     {
-      "status": "Success",
-      "expression": "value > 1500000000000000000"
+      "status": "Success", // Only match successful transactions
+      "expression": "value > 1500000000000000000" // Match transactions with value greater than 1.5 ETH
     }
   ]
 }
 ----
+
+==== Available Transaction Fields (EVM)
+[cols="1,1,2"]
+|===
+| Field | Type | Description
+
+| value
+| uint256
+| Transaction value in wei
+
+| from
+| address
+| Sender address (case-insensitive comparison)
+
+| to
+| address
+| Recipient address (case-insensitive comparison)
+
+| hash
+| string
+| Transaction hash
+
+| gas_price
+| uint256
+| Gas price in wei (legacy transactions)
+
+| max_fee_per_gas
+| uint256
+| EIP-1559 maximum fee per gas
+
+| max_priority_fee_per_gas
+| uint256
+| EIP-1559 priority fee
+
+| gas_limit
+| uint256
+| Gas limit for transaction
+
+| nonce
+| uint256
+| Sender nonce
+
+| input
+| string
+| Hex-encoded input data (e.g., "0xa9059cbb...")
+
+| gas_used
+| uint256
+| Actual gas used (from receipt)
+
+| transaction_index
+| uint64
+| Position in block (from receipt)
+|===
+
+==== Available Transaction Fields (Stellar)
+[cols="1,1,2"]
+|===
+| Field | Type | Description
+
+| hash
+| string
+| Transaction hash
+
+| ledger
+| i64
+| Ledger sequence number where the transaction was included
+
+| value
+| i64
+| Value associated with the *first* relevant operation (e.g., payment amount). Defaults to 0 if no relevant operation or value is found.
+
+| from
+| address
+| Source account address of the *first* relevant operation (e.g., payment sender). Case-insensitive comparison.
+
+| to
+| address
+| Destination account address of the *first* relevant operation (e.g., payment recipient or invoked contract). Case-insensitive comparison.
+|===
+
+==== Expression Syntax Enhancements
+
+*Supported Value Types:*
+
+- *Numeric (uint/int types):* Supports standard comparison operators: `>`, `>=`, `<`, `<=`, `==`, `!=`.
+- *Address:* Supports equality checks `==`, `!=`. Comparisons are **case-insensitive**.
+- *String:* Supports equality (`==`, `!=`). Comparisons are **case-insensitive**.
+- *EVM Specific:* The `input` field also supports `starts_with`, `ends_with`, `contains`.
+- *Boolean (`bool`):* Supports equality checks `==`, `!=`. Values are `true` or `false`.
+
+
+*Logical Operators:*
+
+- AND - All conditions must be true
+- OR - At least one condition must be true
+- () - Parentheses for grouping
+
+*Examples (EVM):*
+
+[source,json]
+-----
+// Match transfers where the amount is between 1000 and 5000
+"amount >= 1000 AND amount <= 5000"
+
+// Match transactions with high value OR sent from a specific address
+"(value > 10000000000000000000) OR (from == 0xDeAdBeef...)"
+
+// Match specific function calls based on input data prefix (case-insensitive)
+"input starts_with 0xa9059cbb"
+
+// Monitor high gas fees (EIP-1559)
+"max_fee_per_gas > 50000000000 AND max_priority_fee_per_gas > 2000000000" // >50 Gwei fee, >2 Gwei tip
+
+// Match transactions at the start of a block with high gas usage
+"transaction_index == 0 AND gas_used > 100000"
+-----
 
 ==== Available Fields
 
