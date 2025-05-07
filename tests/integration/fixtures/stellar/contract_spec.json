@@ -2,6 +2,7 @@
     "functions": [
         {
             "name": "transfer",
+            "signature": "transfer(Address,Address,I128)",
             "inputs": [
                 {
                     "index": 0,
@@ -22,6 +23,7 @@
         },
         {
             "name": "upsert_data",
+            "signature": "upsert_data(Map<String,Union<U32, String>>)",
             "inputs": [
                 {
                     "index": 0,
@@ -32,6 +34,7 @@
         },
         {
             "name": "increment",
+            "signature": "increment()",
             "inputs": []
         }
     ]

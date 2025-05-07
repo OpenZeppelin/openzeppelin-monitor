@@ -25,8 +25,8 @@ use crate::{
 		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
 			stellar_helpers::{
-				are_same_address, are_same_signature, compare_json_values,
-				compare_json_values_vs_string, compare_strings, get_contract_spec_functions,
+				are_same_signature, compare_json_values, compare_json_values_vs_string,
+				compare_strings, get_contract_spec_functions,
 				get_contract_spec_with_function_input_parameters, get_kind_from_value,
 				get_nested_value, normalize_address, parse_json_safe, parse_xdr_value,
 				process_invoke_host_function,
@@ -94,11 +94,11 @@ impl<T> StellarBlockFilter<T> {
 						}
 						OperationBody::InvokeHostFunction(invoke_host_function) => {
 							let parsed_operation =
-								process_invoke_host_function(invoke_host_function);
+								process_invoke_host_function(invoke_host_function, None);
 							let operation = TxOperation {
 								_operation_type: "invoke_host_function".to_string(),
 								sender: from.clone(),
-								receiver: parsed_operation.contract_address.clone(),
+								receiver: parsed_operation.0.contract_address.clone(),
 								value: None,
 							};
 							tx_operations.push(operation);
@@ -303,7 +303,10 @@ impl<T> StellarBlockFilter<T> {
 				for operation in tx.tx.operations.iter() {
 					if let OperationBody::InvokeHostFunction(invoke_host_function) = &operation.body
 					{
-						let parsed_operation = process_invoke_host_function(invoke_host_function);
+						let (parsed_operation, contract_spec) = process_invoke_host_function(
+							invoke_host_function,
+							Some(contract_specs),
+						);
 
 						// Skip if contract address doesn't match
 						if !monitored_addresses
@@ -312,106 +315,103 @@ impl<T> StellarBlockFilter<T> {
 							continue;
 						}
 
-						// Get contract spec for the operation
-						let contract_spec = match contract_specs.iter().find(|(addr, _)| {
-							are_same_address(addr, &parsed_operation.contract_address)
-						}) {
-							Some((_, spec)) => spec,
-							None => {
-								tracing::error!(
-									"No contract spec found for {}",
-									parsed_operation.contract_address
-								);
-								continue;
-							}
-						};
+						if let Some(contract_spec) = contract_spec {
+							// Get function spec from contract spec
+							let function_spec = match contract_spec.functions.iter().find(|f| {
+								are_same_signature(
+									&f.signature,
+									&parsed_operation.function_signature,
+								)
+							}) {
+								Some(spec) => spec,
+								None => {
+									tracing::debug!(
+										"No matching function spec found for {} with signature {}",
+										parsed_operation.function_name,
+										parsed_operation.function_signature
+									);
+									continue;
+								}
+							};
 
-						// Get function spec from contract spec
-						let function_spec = match contract_spec.functions.iter().find(|f| {
-							// Match function name and parameter count
-							f.name == parsed_operation.function_name
-								&& f.inputs.len() == parsed_operation.arguments.len()
-						}) {
-							Some(spec) => spec,
-							None => {
-								tracing::debug!(
-									"No function spec found for {} with {} parameters",
-									parsed_operation.function_name,
-									parsed_operation.arguments.len()
-								);
-								continue;
-							}
-						};
+							// Convert parsed operation arguments into param entries using function spec
+							let param_entries = self.convert_arguments_to_match_param_entry(
+								&parsed_operation.arguments,
+								Some(function_spec),
+							);
 
-						// Convert parsed operation arguments into param entries using function spec
-						let param_entries = self.convert_arguments_to_match_param_entry(
-							&parsed_operation.arguments,
-							Some(function_spec),
-						);
-
-						// Build function signature from spec
-						let function_signature = format!(
-							"{}({})",
-							function_spec.name,
-							function_spec
-								.inputs
-								.iter()
-								.map(|p| p.kind.clone())
-								.collect::<Vec<_>>()
-								.join(",")
-						);
-
-						if monitor.match_conditions.functions.is_empty() {
-							// Match on all functions
-							matched_functions.push(FunctionCondition {
-								signature: function_signature.clone(),
-								expression: None,
-							});
-							if let Some(functions) = &mut matched_on_args.functions {
-								functions.push(StellarMatchParamsMap {
-									signature: function_signature,
-									args: Some(param_entries),
+							if monitor.match_conditions.functions.is_empty() {
+								// Match on all functions
+								matched_functions.push(FunctionCondition {
+									signature: parsed_operation.function_signature.clone(),
+									expression: None,
 								});
-							}
-						} else {
-							// Check function conditions
-							for condition in &monitor.match_conditions.functions {
-								// Check if function signature matches
-								if are_same_signature(&condition.signature, &function_signature) {
-									// Evaluate expression if it exists
-									if let Some(expr) = &condition.expression {
-										if self
-											.evaluate_expression(expr, &Some(param_entries.clone()))
-										{
+								if let Some(functions) = &mut matched_on_args.functions {
+									functions.push(StellarMatchParamsMap {
+										signature: parsed_operation.function_signature.clone(),
+										args: Some(param_entries),
+									});
+								}
+							} else {
+								// Check function conditions
+								for condition in &monitor.match_conditions.functions {
+									// Check if function signature matches
+									if are_same_signature(
+										&condition.signature,
+										&parsed_operation.function_signature,
+									) {
+										// Evaluate expression if it exists
+										if let Some(expr) = &condition.expression {
+											if self.evaluate_expression(
+												expr,
+												&Some(param_entries.clone()),
+											) {
+												matched_functions.push(FunctionCondition {
+													signature: parsed_operation
+														.function_signature
+														.clone(),
+													expression: Some(expr.clone()),
+												});
+												if let Some(functions) =
+													&mut matched_on_args.functions
+												{
+													functions.push(StellarMatchParamsMap {
+														signature: parsed_operation
+															.function_signature
+															.clone(),
+														args: Some(param_entries.clone()),
+													});
+												}
+												break;
+											}
+										} else {
+											// If no expression, match on function name alone
 											matched_functions.push(FunctionCondition {
-												signature: function_signature.clone(),
-												expression: Some(expr.clone()),
+												signature: parsed_operation
+													.function_signature
+													.clone(),
+												expression: None,
 											});
 											if let Some(functions) = &mut matched_on_args.functions
 											{
 												functions.push(StellarMatchParamsMap {
-													signature: function_signature.clone(),
+													signature: parsed_operation
+														.function_signature
+														.clone(),
 													args: Some(param_entries.clone()),
 												});
 											}
 											break;
 										}
-									} else {
-										// If no expression, match on function name alone
-										matched_functions.push(FunctionCondition {
-											signature: function_signature.clone(),
-											expression: None,
-										});
-										if let Some(functions) = &mut matched_on_args.functions {
-											functions.push(StellarMatchParamsMap {
-												signature: function_signature.clone(),
-												args: Some(param_entries.clone()),
-											});
-										}
-										break;
 									}
 								}
 							}
+						} else {
+							tracing::error!(
+								"No contract spec found for {}",
+								parsed_operation.contract_address
+							);
+							continue;
 						}
 					}
 				}
@@ -1811,6 +1811,7 @@ mod tests {
 			StellarContractSpec {
 				functions: vec![StellarContractFunction {
 					name: "mock_function".to_string(),
+					signature: "mock_function(I32,String)".to_string(),
 					inputs: vec![
 						StellarContractInput {
 							name: "param1".to_string(),
@@ -1884,6 +1885,7 @@ mod tests {
 			contract_address.to_string(),
 			StellarContractSpec {
 				functions: vec![StellarContractFunction {
+					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
 					inputs: vec![
 						StellarContractInput {
@@ -1956,6 +1958,7 @@ mod tests {
 			contract_address.to_string(),
 			StellarContractSpec {
 				functions: vec![StellarContractFunction {
+					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
 					inputs: vec![
 						StellarContractInput {
@@ -2028,6 +2031,7 @@ mod tests {
 			contract_address.to_string(),
 			StellarContractSpec {
 				functions: vec![StellarContractFunction {
+					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
 					inputs: vec![
 						StellarContractInput {
@@ -2104,6 +2108,7 @@ mod tests {
 			contract_address.to_string(),
 			StellarContractSpec {
 				functions: vec![StellarContractFunction {
+					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
 					inputs: vec![
 						StellarContractInput {
@@ -3700,6 +3705,7 @@ mod tests {
 
 		let function_spec = StellarContractSpec {
 			functions: vec![StellarContractFunction {
+				signature: "swap(Address,U128,U128)".to_string(),
 				name: "swap".to_string(),
 				inputs: vec![
 					StellarContractInput {

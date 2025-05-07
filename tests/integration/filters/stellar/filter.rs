@@ -650,7 +650,10 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 			if let Some(functions) = &args.functions {
 				assert!(!functions.is_empty(), "Should have function arguments");
 				let function = &functions[0];
-				assert_eq!(function.signature, "upsert_data(Map)");
+				assert_eq!(
+					function.signature,
+					"upsert_data(Map<String,Union<U32, String>>)"
+				);
 			}
 		}
 	}
@@ -761,7 +764,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				&& variables.get("transaction.hash")
 					== Some(&"FAKE5a3a9153e19002517935a5df291b81a341b98ccd80f0919d78cea5ed29d8".to_string())
 				// Function arguments
-				&& variables.get("functions.0.signature") == Some(&"upsert_data(Map)".to_string())
+				&& variables.get("functions.0.signature") == Some(&"upsert_data(Map<String,Union<U32, String>>)".to_string())
 				&& expected_json == actual_json
 			},
 		)

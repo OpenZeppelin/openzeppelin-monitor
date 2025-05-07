@@ -804,6 +804,7 @@ proptest! {
 			contract_address.clone(),
 			StellarContractSpec {
 				functions: vec![StellarContractFunction {
+					signature: function_signature.clone(),
 					name: function_name.to_string(),
 					inputs: vec![StellarContractInput {
 						name: "param0".to_string(),

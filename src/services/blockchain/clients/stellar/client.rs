@@ -438,7 +438,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 				json!({
 					"startLedger": start_block,
 					"pagination": {
-						"limit": PAGE_LIMIT
+						"limit": if end_block.is_none() { 1 } else { PAGE_LIMIT }
 					}
 				})
 			} else {
@@ -481,6 +481,11 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 			// Increment the number of iterations to ensure we break the loop in case there is no cursor
 			current_iteration += 1;
 			cursor = response["result"]["cursor"].as_str().map(|s| s.to_string());
+
+			// If the cursor is the same as the start block, we have reached the end of the range
+			if cursor == Some(start_block.to_string()) {
+				break;
+			}
 
 			if cursor.is_none() {
 				break;

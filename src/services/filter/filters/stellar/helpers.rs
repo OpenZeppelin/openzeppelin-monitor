@@ -7,20 +7,387 @@
 use alloy::primitives::{I256, U256};
 use hex::encode;
 use serde_json::{json, Value};
+use std::fmt;
+use std::fmt::Display;
 // NOTE: this may be moved to stellar_xdr in the future
 use soroban_spec::read;
+use std::collections::BTreeMap;
 use stellar_strkey::{ed25519::PublicKey as StrkeyPublicKey, Contract};
 use stellar_xdr::curr::{
 	AccountId, ContractExecutable, Hash, HostFunction, Int128Parts, Int256Parts,
 	InvokeHostFunctionOp, LedgerEntryData, LedgerKey, LedgerKeyContractCode, Limits, PublicKey,
-	ReadXdr, ScAddress, ScMap, ScMapEntry, ScSpecEntry, ScSpecTypeDef, ScVal, ScVec, UInt128Parts,
-	UInt256Parts,
+	ReadXdr, ScAddress, ScMapEntry, ScSpecEntry, ScSpecTypeDef, ScVal, UInt128Parts, UInt256Parts,
 };
 
 use crate::models::{
-	StellarContractFunction, StellarContractInput, StellarDecodedParamEntry,
+	StellarContractFunction, StellarContractInput, StellarContractSpec, StellarDecodedParamEntry,
 	StellarParsedOperationResult,
 };
+
+/// Represents all possible Stellar smart contract types
+#[derive(Debug, Clone, PartialEq)]
+pub enum StellarType {
+	Bool,
+	Void,
+	U32,
+	I32,
+	U64,
+	I64,
+	U128,
+	I128,
+	U256,
+	I256,
+	Bytes(Option<u32>), // None for variable length, Some(n) for BytesN
+	String,
+	Symbol,
+	Vec(Box<StellarType>),
+	Map(Box<StellarType>, Box<StellarType>),
+	Tuple(Box<StellarType>),
+	Address,
+	Timepoint,
+	Duration,
+	Union(Vec<StellarType>),
+	Sequence(Vec<StellarType>),
+	Udt(String),
+}
+
+/// Represents all possible Stellar smart contract values
+#[derive(Debug, Clone)]
+pub enum StellarValue {
+	Bool(bool),
+	Void,
+	U32(u32),
+	I32(i32),
+	U64(u64),
+	I64(i64),
+	U128(String), // Using string for large numbers
+	I128(String),
+	U256(String),
+	I256(String),
+	Bytes(Vec<u8>),
+	String(String),
+	Symbol(String),
+	Vec(Vec<StellarValue>),
+	Map(BTreeMap<String, StellarValue>),
+	Tuple(Vec<StellarValue>),
+	Address(String),
+	Timepoint(u64),
+	Duration(u64),
+	Udt(String),
+}
+
+impl From<ScVal> for StellarValue {
+	fn from(val: ScVal) -> Self {
+		match val {
+			ScVal::Bool(b) => StellarValue::Bool(b),
+			ScVal::Void => StellarValue::Void,
+			ScVal::U32(n) => StellarValue::U32(n),
+			ScVal::I32(n) => StellarValue::I32(n),
+			ScVal::U64(n) => StellarValue::U64(n),
+			ScVal::I64(n) => StellarValue::I64(n),
+			ScVal::Timepoint(t) => StellarValue::Timepoint(t.0),
+			ScVal::Duration(d) => StellarValue::Duration(d.0),
+			ScVal::U128(n) => StellarValue::U128(combine_u128(&n)),
+			ScVal::I128(n) => StellarValue::I128(combine_i128(&n)),
+			ScVal::U256(n) => StellarValue::U256(combine_u256(&n)),
+			ScVal::I256(n) => StellarValue::I256(combine_i256(&n)),
+			ScVal::Bytes(b) => StellarValue::Bytes(b.to_vec()),
+			ScVal::String(s) => StellarValue::String(s.to_string()),
+			ScVal::Symbol(s) => StellarValue::Symbol(s.to_string()),
+			ScVal::Vec(Some(vec)) => StellarValue::Vec(
+				vec.0
+					.iter()
+					.map(|v| StellarValue::from(v.clone()))
+					.collect(),
+			),
+			ScVal::Map(Some(map)) => {
+				let mut btree = BTreeMap::new();
+				for ScMapEntry { key, val } in map.0.iter() {
+					let key_str = match StellarValue::from(key.clone()) {
+						StellarValue::String(s) => s,
+						other => other.to_string(),
+					};
+					btree.insert(key_str, StellarValue::from(val.clone()));
+				}
+				StellarValue::Map(btree)
+			}
+			ScVal::Address(addr) => StellarValue::Address(match addr {
+				ScAddress::Contract(hash) => Contract(hash.0).to_string(),
+				ScAddress::Account(account_id) => match account_id {
+					AccountId(PublicKey::PublicKeyTypeEd25519(key)) => {
+						StrkeyPublicKey(key.0).to_string()
+					}
+				},
+			}),
+			_ => StellarValue::Void,
+		}
+	}
+}
+
+impl From<ScSpecTypeDef> for StellarType {
+	fn from(type_def: ScSpecTypeDef) -> Self {
+		match type_def {
+			ScSpecTypeDef::Map(t) => StellarType::Map(
+				Box::new(StellarType::from(*t.key_type)),
+				Box::new(StellarType::from(*t.value_type)),
+			),
+			ScSpecTypeDef::Vec(t) => StellarType::Vec(Box::new(StellarType::from(*t.element_type))),
+			ScSpecTypeDef::BytesN(bytes_n) => StellarType::Bytes(Some(bytes_n.n)),
+			ScSpecTypeDef::Tuple(t) => {
+				let types: Vec<StellarType> = t
+					.value_types
+					.iter()
+					.map(|t| StellarType::from(t.clone()))
+					.collect();
+				StellarType::Tuple(Box::new(StellarType::Sequence(types)))
+			}
+			ScSpecTypeDef::U128 => StellarType::U128,
+			ScSpecTypeDef::I128 => StellarType::I128,
+			ScSpecTypeDef::U256 => StellarType::U256,
+			ScSpecTypeDef::I256 => StellarType::I256,
+			ScSpecTypeDef::Address => StellarType::Address,
+			ScSpecTypeDef::Bool => StellarType::Bool,
+			ScSpecTypeDef::Symbol => StellarType::Symbol,
+			ScSpecTypeDef::String => StellarType::String,
+			ScSpecTypeDef::Bytes => StellarType::Bytes(None),
+			ScSpecTypeDef::U32 => StellarType::U32,
+			ScSpecTypeDef::I32 => StellarType::I32,
+			ScSpecTypeDef::U64 => StellarType::U64,
+			ScSpecTypeDef::I64 => StellarType::I64,
+			ScSpecTypeDef::Timepoint => StellarType::Timepoint,
+			ScSpecTypeDef::Duration => StellarType::Duration,
+			ScSpecTypeDef::Void => StellarType::Void,
+			ScSpecTypeDef::Udt(udt) => StellarType::Udt(udt.name.to_string()),
+			_ => StellarType::Void,
+		}
+	}
+}
+
+impl From<Value> for StellarType {
+	fn from(value: Value) -> Self {
+		match value {
+			Value::Number(n) => {
+				if n.is_u64() {
+					StellarType::U64
+				} else {
+					StellarType::I64 // Fallback
+				}
+			}
+			Value::Bool(_) => StellarType::Bool,
+			Value::String(s) => {
+				if is_address(&s) {
+					StellarType::Address
+				} else {
+					StellarType::String
+				}
+			}
+			Value::Array(_) => StellarType::Vec(Box::new(StellarType::Void)), // Generic vector
+			Value::Object(_) => {
+				StellarType::Map(Box::new(StellarType::String), Box::new(StellarType::Void))
+			} // Generic map
+			Value::Null => StellarType::Void,
+		}
+	}
+}
+
+impl StellarValue {
+	pub fn get_type(&self) -> StellarType {
+		match self {
+			StellarValue::Bool(_) => StellarType::Bool,
+			StellarValue::Void => StellarType::Void,
+			StellarValue::U32(_) => StellarType::U32,
+			StellarValue::I32(_) => StellarType::I32,
+			StellarValue::U64(_) => StellarType::U64,
+			StellarValue::I64(_) => StellarType::I64,
+			StellarValue::U128(_) => StellarType::U128,
+			StellarValue::I128(_) => StellarType::I128,
+			StellarValue::U256(_) => StellarType::U256,
+			StellarValue::I256(_) => StellarType::I256,
+			StellarValue::Bytes(b) => {
+				if b.is_empty() {
+					StellarType::Bytes(None)
+				} else {
+					StellarType::Bytes(Some(b.len() as u32))
+				}
+			}
+			StellarValue::String(_) => StellarType::String,
+			StellarValue::Symbol(_) => StellarType::Symbol,
+			StellarValue::Vec(v) => {
+				// Get all unique types in the vector
+				let mut types: Vec<StellarType> =
+					v.iter().map(|val| val.get_type()).collect::<Vec<_>>();
+				// types.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+				types.dedup();
+
+				if types.is_empty() {
+					StellarType::Vec(Box::new(StellarType::Void))
+				} else if types.len() == 1 {
+					// If all elements are the same type, use that
+					StellarType::Vec(Box::new(types[0].clone()))
+				} else {
+					// If elements have different types, create a union type
+					StellarType::Vec(Box::new(StellarType::Union(types)))
+				}
+			}
+			StellarValue::Map(m) => {
+				// Get all unique value types in the map
+				let mut types: Vec<StellarType> =
+					m.values().map(|val| val.get_type()).collect::<Vec<_>>();
+				// types.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+				types.dedup();
+
+				if types.is_empty() {
+					StellarType::Map(Box::new(StellarType::String), Box::new(StellarType::Void))
+				} else if types.len() == 1 {
+					// If all values are the same type, use that
+					StellarType::Map(Box::new(StellarType::String), Box::new(types[0].clone()))
+				} else {
+					// If values have different types, create a union type
+					StellarType::Map(
+						Box::new(StellarType::String),
+						Box::new(StellarType::Union(types)),
+					)
+				}
+			}
+			StellarValue::Tuple(v) => {
+				// For tuples, preserve all types in order
+				let types: Vec<StellarType> = v.iter().map(|val| val.get_type()).collect();
+				if types.is_empty() {
+					StellarType::Tuple(Box::new(StellarType::Void))
+				} else {
+					StellarType::Tuple(Box::new(StellarType::Sequence(types)))
+				}
+			}
+			StellarValue::Address(_) => StellarType::Address,
+			StellarValue::Timepoint(_) => StellarType::Timepoint,
+			StellarValue::Duration(_) => StellarType::Duration,
+			StellarValue::Udt(name) => StellarType::Udt(name.clone()),
+		}
+	}
+
+	pub fn to_json(&self) -> Value {
+		match self {
+			StellarValue::Bool(b) => json!(b),
+			StellarValue::Void => json!(null),
+			StellarValue::U32(n) => json!(n),
+			StellarValue::I32(n) => json!(n),
+			StellarValue::U64(n) => json!(n),
+			StellarValue::I64(n) => json!(n),
+			StellarValue::U128(s) => json!({"type": "U128", "value": s}),
+			StellarValue::I128(s) => json!({"type": "I128", "value": s}),
+			StellarValue::U256(s) => json!({"type": "U256", "value": s}),
+			StellarValue::I256(s) => json!({"type": "I256", "value": s}),
+			StellarValue::Bytes(b) => json!(encode(b)),
+			StellarValue::String(s) => json!(s),
+			StellarValue::Symbol(s) => json!(s),
+			StellarValue::Vec(v) => json!(v.iter().map(|x| x.to_json()).collect::<Vec<_>>()),
+			StellarValue::Map(m) => {
+				let map: serde_json::Map<String, Value> =
+					m.iter().map(|(k, v)| (k.clone(), v.to_json())).collect();
+				json!(map)
+			}
+			StellarValue::Tuple(v) => json!(v.iter().map(|x| x.to_json()).collect::<Vec<_>>()),
+			StellarValue::Address(a) => json!(a),
+			StellarValue::Timepoint(t) => json!(t),
+			StellarValue::Duration(d) => json!(d),
+			StellarValue::Udt(name) => json!(name),
+		}
+	}
+
+	pub fn to_param_entry(&self, indexed: bool) -> StellarDecodedParamEntry {
+		StellarDecodedParamEntry {
+			value: self.to_string(),
+			kind: self.get_type().to_string(),
+			indexed,
+		}
+	}
+}
+
+impl Display for StellarValue {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			StellarValue::Bool(b) => write!(f, "{}", b),
+			StellarValue::Void => write!(f, "null"),
+			StellarValue::U32(n) => write!(f, "{}", n),
+			StellarValue::I32(n) => write!(f, "{}", n),
+			StellarValue::U64(n) => write!(f, "{}", n),
+			StellarValue::I64(n) => write!(f, "{}", n),
+			StellarValue::U128(s) => write!(f, "{}", s),
+			StellarValue::I128(s) => write!(f, "{}", s),
+			StellarValue::U256(s) => write!(f, "{}", s),
+			StellarValue::I256(s) => write!(f, "{}", s),
+			StellarValue::Bytes(b) => write!(f, "{}", encode(b)),
+			StellarValue::String(s) => write!(f, "{}", s),
+			StellarValue::Symbol(s) => write!(f, "{}", s),
+			StellarValue::Vec(v) => {
+				let items: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+				write!(f, "[{}]", items.join(","))
+			}
+			StellarValue::Map(m) => {
+				let items: Vec<String> = m.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
+				write!(f, "{{{}}}", items.join(","))
+			}
+			StellarValue::Tuple(v) => {
+				let items: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+				write!(f, "({})", items.join(","))
+			}
+			StellarValue::Address(a) => write!(f, "{}", a),
+			StellarValue::Timepoint(t) => write!(f, "{}", t),
+			StellarValue::Duration(d) => write!(f, "{}", d),
+			StellarValue::Udt(name) => write!(f, "{}", name),
+		}
+	}
+}
+
+impl fmt::Display for StellarType {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			StellarType::Bool => write!(f, "Bool"),
+			StellarType::Void => write!(f, "Void"),
+			StellarType::U32 => write!(f, "U32"),
+			StellarType::I32 => write!(f, "I32"),
+			StellarType::U64 => write!(f, "U64"),
+			StellarType::I64 => write!(f, "I64"),
+			StellarType::U128 => write!(f, "U128"),
+			StellarType::I128 => write!(f, "I128"),
+			StellarType::U256 => write!(f, "U256"),
+			StellarType::I256 => write!(f, "I256"),
+			StellarType::Bytes(Some(n)) => write!(f, "Bytes{}", n),
+			StellarType::Bytes(None) => write!(f, "Bytes"),
+			StellarType::String => write!(f, "String"),
+			StellarType::Symbol => write!(f, "Symbol"),
+			StellarType::Vec(t) => write!(f, "Vec<{}>", t),
+			StellarType::Map(k, v) => write!(f, "Map<{},{}>", k, v),
+			StellarType::Tuple(t) => write!(f, "Tuple<{}>", t),
+			StellarType::Address => write!(f, "Address"),
+			StellarType::Timepoint => write!(f, "Timepoint"),
+			StellarType::Duration => write!(f, "Duration"),
+			StellarType::Udt(name) => write!(f, "{}", name),
+			StellarType::Union(types) => {
+				write!(
+					f,
+					"Union<{}>",
+					types
+						.iter()
+						.map(|t| t.to_string())
+						.collect::<Vec<_>>()
+						.join(", ")
+				)
+			}
+			StellarType::Sequence(types) => {
+				write!(
+					f,
+					"Sequence<{}>",
+					types
+						.iter()
+						.map(|t| t.to_string())
+						.collect::<Vec<_>>()
+						.join(", ")
+				)
+			}
+		}
+	}
+}
 
 /// Combines the parts of a UInt256 into a single string representation.
 ///
@@ -81,105 +448,25 @@ fn combine_i128(n: &Int128Parts) -> String {
 	(((n.hi as i128) << 64) | (n.lo as i128)).to_string()
 }
 
-/// Processes a Stellar Contract Value (ScVal) into a JSON representation.
+/// Get function signature from `ScSpecEntry`
 ///
 /// # Arguments
-/// * `val` - The ScVal to process
+/// * `entry` - The ScSpecEntry to get the signature for
 ///
 /// # Returns
-/// A JSON Value representing the processed ScVal with appropriate type information
-fn process_sc_val(val: &ScVal) -> Value {
-	match val {
-		ScVal::Bool(b) => json!(b),
-		ScVal::Void => json!(null),
-		ScVal::U32(n) => json!(n),
-		ScVal::I32(n) => json!(n),
-		ScVal::U64(n) => json!(n),
-		ScVal::I64(n) => json!(n),
-		ScVal::Timepoint(t) => json!(t),
-		ScVal::Duration(d) => json!(d),
-		ScVal::U128(n) => json!({ "type": "U128", "value": combine_u128(n) }),
-		ScVal::I128(n) => json!({ "type": "I128", "value": combine_i128(n) }),
-		ScVal::U256(n) => json!({ "type": "U256", "value": combine_u256(n) }),
-		ScVal::I256(n) => json!({ "type": "I256", "value": combine_i256(n) }),
-		ScVal::Bytes(b) => json!(hex::encode(b)),
-		ScVal::String(s) => json!(s.to_string()),
-		ScVal::Symbol(s) => json!(s.to_string()),
-		ScVal::Vec(Some(vec)) => process_sc_vec(vec),
-		ScVal::Map(Some(map)) => process_sc_map(map),
-		ScVal::Address(addr) => json!(match addr {
-			ScAddress::Contract(hash) => Contract(hash.0).to_string(),
-			ScAddress::Account(account_id) => match account_id {
-				AccountId(PublicKey::PublicKeyTypeEd25519(key)) =>
-					StrkeyPublicKey(key.0).to_string(),
-			},
-		}),
-		_ => json!("unsupported_type"),
-	}
-}
-
-/// Processes a Stellar Contract Vector into a JSON array.
-///
-/// # Arguments
-/// * `vec` - The ScVec to process
-///
-/// # Returns
-/// A JSON Value containing an array of processed ScVal elements
-fn process_sc_vec(vec: &ScVec) -> Value {
-	let values: Vec<Value> = vec.0.iter().map(process_sc_val).collect();
-	json!(values)
-}
-
-/// Processes a Stellar Contract Map into a JSON object.
-///
-/// # Arguments
-/// * `map` - The ScMap to process
-///
-/// # Returns
-/// A JSON Value containing key-value pairs of processed ScVal elements
-fn process_sc_map(map: &ScMap) -> Value {
-	let entries: serde_json::Map<String, Value> = map
-		.0
-		.iter()
-		.map(|ScMapEntry { key, val }| {
-			let key_str = process_sc_val(key)
-				.to_string()
-				.trim_matches('"')
-				.to_string();
-			(key_str, process_sc_val(val))
-		})
-		.collect();
-	json!(entries)
-}
-
-/// Gets the type of a Stellar Contract Value as a string.
-///
-/// # Arguments
-/// * `val` - The ScVal to get the type for
-///
-/// # Returns
-/// A string representing the type of the ScVal
-fn get_sc_val_type(val: &ScVal) -> String {
-	match val {
-		ScVal::Bool(_) => "Bool".to_string(),
-		ScVal::Void => "Void".to_string(),
-		ScVal::U32(_) => "U32".to_string(),
-		ScVal::I32(_) => "I32".to_string(),
-		ScVal::U64(_) => "U64".to_string(),
-		ScVal::I64(_) => "I64".to_string(),
-		ScVal::Timepoint(_) => "Timepoint".to_string(),
-		ScVal::Duration(_) => "Duration".to_string(),
-		ScVal::U128(_) => "U128".to_string(),
-		ScVal::I128(_) => "I128".to_string(),
-		ScVal::U256(_) => "U256".to_string(),
-		ScVal::I256(_) => "I256".to_string(),
-		ScVal::Bytes(_) => "Bytes".to_string(),
-		ScVal::String(_) => "String".to_string(),
-		ScVal::Symbol(_) => "Symbol".to_string(),
-		ScVal::Vec(_) => "Vec".to_string(),
-		ScVal::Map(_) => "Map".to_string(),
-		ScVal::Address(_) => "Address".to_string(),
-		_ => "Unknown".to_string(),
+/// A string representing the function signature in the format "function_name(type1,type2,...)"
+fn get_function_signature_from_spec_entry(entry: &ScSpecEntry) -> String {
+	match entry {
+		ScSpecEntry::FunctionV0(func) => {
+			let function_name = func.name.to_string();
+			let arg_types: Vec<String> = func
+				.inputs
+				.iter()
+				.map(|input| StellarType::from(input.type_.clone()).to_string())
+				.collect();
+			format!("{}({})", function_name, arg_types.join(","))
+		}
+		_ => "unknown_function()".to_string(),
 	}
 }
 
@@ -187,16 +474,60 @@ fn get_sc_val_type(val: &ScVal) -> String {
 ///
 /// # Arguments
 /// * `invoke_op` - The InvokeHostFunctionOp to get the signature for
+/// * `contract_spec` - Optional contract spec containing type information
 ///
 /// # Returns
 /// A string representing the function signature in the format "function_name(type1,type2,...)"
-pub fn get_function_signature(invoke_op: &InvokeHostFunctionOp) -> String {
+pub fn get_function_signature(
+	invoke_op: &InvokeHostFunctionOp,
+	contract_spec: Option<&StellarContractSpec>,
+) -> String {
 	match &invoke_op.host_function {
 		HostFunction::InvokeContract(args) => {
 			let function_name = args.function_name.to_string();
-			let arg_types: Vec<String> = args.args.iter().map(get_sc_val_type).collect();
 
-			format!("{}({})", function_name, arg_types.join(","))
+			// If we have a contract spec, try to find the matching function
+			if let Some(spec) = contract_spec {
+				// Get the runtime types of the arguments
+				let arg_types: Vec<String> = args
+					.args
+					.iter()
+					.map(|arg| StellarValue::from(arg.clone()).get_type().to_string())
+					.collect();
+
+				// Find a function that matches both name and parameter types
+				if let Some(function) = spec.functions.iter().find(|f| {
+					f.name == function_name
+						&& f.inputs.len() == args.args.len()
+						&& f.inputs
+							.iter()
+							.zip(arg_types.iter())
+							.all(|(input, arg_type)| {
+								// For UDTs, we need to be more lenient in type matching
+								// since ScVal will show the concrete type structure
+								if input.kind.starts_with("Vec<") && arg_type.starts_with("Vec<")
+									|| input.kind.starts_with("Map<")
+										&& arg_type.starts_with("Map<")
+								{
+									true
+								} else {
+									// For basic types, require exact match
+									input.kind == *arg_type
+								}
+							})
+				}) {
+					// Use the pre-computed signature from the contract spec
+					return function.signature.clone();
+				}
+			}
+
+			// Fallback to runtime type inference if no spec or function not found
+			let types: Vec<String> = args
+				.args
+				.iter()
+				.map(|arg| StellarValue::from(arg.clone()).get_type().to_string())
+				.collect();
+			format!("{}({})", function_name, types.join(","))
 		}
 		_ => "unknown_function()".to_string(),
 	}
@@ -206,12 +537,14 @@ pub fn get_function_signature(invoke_op: &InvokeHostFunctionOp) -> String {
 ///
 /// # Arguments
 /// * `invoke_op` - The InvokeHostFunctionOp to process
+/// * `contract_specs` - Optional contract spec containing type information
 ///
 /// # Returns
 /// A StellarParsedOperationResult containing the processed operation details
 pub fn process_invoke_host_function(
 	invoke_op: &InvokeHostFunctionOp,
-) -> StellarParsedOperationResult {
+	contract_specs: Option<&[(String, StellarContractSpec)]>,
+) -> (StellarParsedOperationResult, Option<StellarContractSpec>) {
 	match &invoke_op.host_function {
 		HostFunction::InvokeContract(args) => {
 			let contract_address = match &args.contract_address {
@@ -225,21 +558,39 @@ pub fn process_invoke_host_function(
 
 			let function_name = args.function_name.to_string();
 
-			let arguments = args.args.iter().map(process_sc_val).collect::<Vec<Value>>();
+			let arguments = args
+				.args
+				.iter()
+				.map(|arg| StellarValue::from(arg.clone()).to_json())
+				.collect();
 
-			StellarParsedOperationResult {
-				contract_address,
-				function_name,
-				function_signature: get_function_signature(invoke_op),
-				arguments,
-			}
+			// Get contract spec for the operation
+			let contract_spec = contract_specs.and_then(|specs| {
+				specs
+					.iter()
+					.find(|(addr, _)| are_same_address(addr, &contract_address))
+					.map(|(_, spec)| spec)
+			});
+
+			(
+				StellarParsedOperationResult {
+					contract_address,
+					function_name,
+					function_signature: get_function_signature(invoke_op, contract_spec),
+					arguments,
+				},
+				contract_spec.cloned(),
+			)
 		}
-		_ => StellarParsedOperationResult {
-			contract_address: "".to_string(),
-			function_name: "".to_string(),
-			function_signature: "".to_string(),
-			arguments: vec![],
-		},
+		_ => (
+			StellarParsedOperationResult {
+				contract_address: "".to_string(),
+				function_name: "".to_string(),
+				function_signature: "".to_string(),
+				arguments: vec![],
+			},
+			None,
+		),
 	}
 }
 
@@ -419,8 +770,11 @@ pub fn parse_sc_val(val: &ScVal, indexed: bool) -> Option<StellarDecodedParamEnt
 /// # Returns
 /// An Option containing the decoded parameter entry if successful, None if parsing fails
 pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedParamEntry> {
-	match ReadXdr::from_xdr(bytes, Limits::none()) {
-		Ok(scval) => parse_sc_val(&scval, indexed),
+	match ScVal::from_xdr(bytes, Limits::none()) {
+		Ok(scval) => {
+			let value = StellarValue::from(scval);
+			Some(value.to_param_entry(indexed))
+		}
 		Err(e) => {
 			tracing::debug!("Failed to parse XDR bytes: {}", e);
 			None
@@ -771,52 +1125,6 @@ pub fn get_contract_spec_functions(spec_entries: Vec<ScSpecEntry>) -> Vec<ScSpec
 		.collect()
 }
 
-/// Format a ScSpecTypeDef into a clean string representation.
-///
-/// # Arguments
-/// * `type_def` - The type definition to format
-///
-/// # Returns
-/// A string representation of the type definition
-fn format_type_def(type_def: &ScSpecTypeDef) -> String {
-	match type_def {
-		ScSpecTypeDef::Map(t) => {
-			format!(
-				"Map<{},{}>",
-				format_type_def(&t.key_type),
-				format_type_def(&t.value_type)
-			)
-		}
-		ScSpecTypeDef::Vec(t) => format!("Vec<{}>", format_type_def(&t.element_type)),
-		ScSpecTypeDef::Tuple(t) => {
-			let types = t
-				.value_types
-				.iter()
-				.map(format_type_def)
-				.collect::<Vec<_>>()
-				.join(",");
-			format!("Tuple<{}>", types)
-		}
-		ScSpecTypeDef::BytesN(bytes_n) => format!("Bytes{}", bytes_n.n),
-		ScSpecTypeDef::U128 => "U128".to_string(),
-		ScSpecTypeDef::I128 => "I128".to_string(),
-		ScSpecTypeDef::U256 => "U256".to_string(),
-		ScSpecTypeDef::I256 => "I256".to_string(),
-		ScSpecTypeDef::Address => "Address".to_string(),
-		ScSpecTypeDef::Bool => "Bool".to_string(),
-		ScSpecTypeDef::Symbol => "Symbol".to_string(),
-		ScSpecTypeDef::String => "String".to_string(),
-		ScSpecTypeDef::Bytes => "Bytes".to_string(),
-		ScSpecTypeDef::U32 => "U32".to_string(),
-		ScSpecTypeDef::I32 => "I32".to_string(),
-		ScSpecTypeDef::U64 => "U64".to_string(),
-		ScSpecTypeDef::I64 => "I64".to_string(),
-		ScSpecTypeDef::Timepoint => "Timepoint".to_string(),
-		ScSpecTypeDef::Duration => "Duration".to_string(),
-		_ => "Unknown".to_string(),
-	}
-}
-
 /// Parse contract spec functions and populate input parameters.
 ///
 /// # Arguments
@@ -829,9 +1137,10 @@ pub fn get_contract_spec_with_function_input_parameters(
 ) -> Vec<StellarContractFunction> {
 	spec_entries
 		.into_iter()
-		.filter_map(|entry| match entry {
+		.filter_map(|entry| match entry.clone() {
 			ScSpecEntry::FunctionV0(func) => Some(StellarContractFunction {
 				name: func.name.to_string(),
+				signature: get_function_signature_from_spec_entry(&entry),
 				inputs: func
 					.inputs
 					.iter()
@@ -839,7 +1148,7 @@ pub fn get_contract_spec_with_function_input_parameters(
 					.map(|(index, input)| StellarContractInput {
 						index: index as u32,
 						name: input.name.to_string(),
-						kind: format_type_def(&input.type_),
+						kind: StellarType::from(input.type_.clone()).to_string(),
 					})
 					.collect(),
 			}),
@@ -854,9 +1163,10 @@ mod tests {
 	use serde_json::json;
 	use std::str::FromStr;
 	use stellar_xdr::curr::{
-		ContractDataEntry, Hash, LedgerEntryData, ScContractInstance, ScSpecFunctionInputV0,
-		ScSpecFunctionV0, ScSpecTypeMap, ScSpecTypeTuple, ScSpecTypeVec, ScString, ScSymbol, ScVal,
-		SequenceNumber, String32, StringM, Uint256, WriteXdr,
+		AccountId, ContractDataEntry, Hash, Int128Parts, LedgerEntryData, PublicKey,
+		ScContractInstance, ScMap, ScSpecEntry, ScSpecFunctionInputV0, ScSpecFunctionV0,
+		ScSpecTypeDef, ScSpecTypeMap, ScSpecTypeTuple, ScSpecTypeUdt, ScSpecTypeVec, ScString,
+		ScSymbol, ScVal, SequenceNumber, String32, StringM, Uint256, WriteXdr,
 	};
 
 	fn create_test_function_entry(
@@ -916,50 +1226,6 @@ mod tests {
 	}
 
 	#[test]
-	fn test_process_sc_val() {
-		// Test basic types
-		assert_eq!(process_sc_val(&ScVal::Bool(true)), json!(true));
-		assert_eq!(process_sc_val(&ScVal::Void), json!(null));
-		assert_eq!(process_sc_val(&ScVal::U32(42)), json!(42));
-		assert_eq!(process_sc_val(&ScVal::I32(-42)), json!(-42));
-		assert_eq!(process_sc_val(&ScVal::U64(42)), json!(42));
-		assert_eq!(process_sc_val(&ScVal::I64(-42)), json!(-42));
-
-		// Test string and symbol
-		assert_eq!(
-			process_sc_val(&ScVal::String(ScString("test".try_into().unwrap()))),
-			json!("test")
-		);
-		assert_eq!(
-			process_sc_val(&ScVal::Symbol(ScSymbol(
-				StringM::<32>::from_str("test").unwrap()
-			))),
-			json!("test")
-		);
-
-		// Test bytes
-		assert_eq!(
-			process_sc_val(&ScVal::Bytes(vec![1, 2, 3].try_into().unwrap())),
-			json!("010203")
-		);
-
-		// Test complex types (Vec and Map)
-		let vec_val = ScVal::Vec(Some(ScVec(
-			vec![ScVal::I32(1), ScVal::I32(2), ScVal::I32(3)]
-				.try_into()
-				.unwrap(),
-		)));
-		assert_eq!(process_sc_val(&vec_val), json!([1, 2, 3]));
-
-		let map_entry = ScMapEntry {
-			key: ScVal::String(ScString("key".try_into().unwrap())),
-			val: ScVal::I32(42),
-		};
-		let map_val = ScVal::Map(Some(ScMap(vec![map_entry].try_into().unwrap())));
-		assert_eq!(process_sc_val(&map_val), json!({"key": 42}));
-	}
-
-	#[test]
 	fn test_get_function_signature() {
 		let function_name: String = "test_function".into();
 		let args = vec![
@@ -977,7 +1243,7 @@ mod tests {
 		};
 
 		assert_eq!(
-			get_function_signature(&invoke_op),
+			get_function_signature(&invoke_op, None),
 			"test_function(I32,String,Bool)"
 		);
 	}
@@ -1278,56 +1544,6 @@ mod tests {
 	}
 
 	#[test]
-	fn test_format_type_def() {
-		// Test basic types
-		assert_eq!(format_type_def(&ScSpecTypeDef::Bool), "Bool");
-		assert_eq!(format_type_def(&ScSpecTypeDef::String), "String");
-		assert_eq!(format_type_def(&ScSpecTypeDef::U64), "U64");
-		assert_eq!(format_type_def(&ScSpecTypeDef::I64), "I64");
-		assert_eq!(format_type_def(&ScSpecTypeDef::Address), "Address");
-		assert_eq!(format_type_def(&ScSpecTypeDef::U128), "U128");
-		assert_eq!(format_type_def(&ScSpecTypeDef::I128), "I128");
-		assert_eq!(format_type_def(&ScSpecTypeDef::U256), "U256");
-		assert_eq!(format_type_def(&ScSpecTypeDef::I256), "I256");
-		assert_eq!(format_type_def(&ScSpecTypeDef::Symbol), "Symbol");
-		assert_eq!(format_type_def(&ScSpecTypeDef::Bytes), "Bytes");
-		assert_eq!(format_type_def(&ScSpecTypeDef::U32), "U32");
-		assert_eq!(format_type_def(&ScSpecTypeDef::I32), "I32");
-		assert_eq!(format_type_def(&ScSpecTypeDef::Timepoint), "Timepoint");
-		assert_eq!(format_type_def(&ScSpecTypeDef::Duration), "Duration");
-
-		// Test complex types
-		let vec_type = ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
-			element_type: Box::new(ScSpecTypeDef::U64),
-		}));
-		assert_eq!(format_type_def(&vec_type), "Vec<U64>");
-
-		let tuple = ScSpecTypeDef::Tuple(Box::new(ScSpecTypeTuple {
-			value_types: vec![ScSpecTypeDef::U64].try_into().unwrap(),
-		}));
-		assert_eq!(format_type_def(&tuple), "Tuple<U64>");
-
-		let map_type = ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
-			key_type: Box::new(ScSpecTypeDef::String),
-			value_type: Box::new(ScSpecTypeDef::U64),
-		}));
-		assert_eq!(format_type_def(&map_type), "Map<String,U64>");
-
-		// Test nested complex types
-		let nested_vec = ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
-			element_type: Box::new(ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
-				key_type: Box::new(ScSpecTypeDef::String),
-				value_type: Box::new(ScSpecTypeDef::U64),
-			}))),
-		}));
-		assert_eq!(format_type_def(&nested_vec), "Vec<Map<String,U64>>");
-
-		// Test BytesN
-		let bytes_n = ScSpecTypeDef::BytesN(stellar_xdr::curr::ScSpecTypeBytesN { n: 32 });
-		assert_eq!(format_type_def(&bytes_n), "Bytes32");
-	}
-
-	#[test]
 	fn test_get_contract_spec_with_function_input_parameters() {
 		let spec_entries = vec![
 			create_test_function_entry(
@@ -1481,5 +1697,535 @@ mod tests {
 			.unwrap_err()
 			.to_string()
 			.contains("Failed to parse contract spec"));
+	}
+
+	#[test]
+	fn test_get_type() {
+		assert_eq!(StellarValue::Bool(true).get_type(), StellarType::Bool);
+		assert_eq!(StellarValue::Void.get_type(), StellarType::Void);
+		assert_eq!(StellarValue::U32(42).get_type(), StellarType::U32);
+		assert_eq!(StellarValue::I32(-42).get_type(), StellarType::I32);
+		assert_eq!(StellarValue::U64(42).get_type(), StellarType::U64);
+		assert_eq!(StellarValue::I64(-42).get_type(), StellarType::I64);
+		assert_eq!(
+			StellarValue::U128("42".to_string()).get_type(),
+			StellarType::U128
+		);
+		assert_eq!(
+			StellarValue::I128("-42".to_string()).get_type(),
+			StellarType::I128
+		);
+		assert_eq!(
+			StellarValue::U256("42".to_string()).get_type(),
+			StellarType::U256
+		);
+		assert_eq!(
+			StellarValue::I256("-42".to_string()).get_type(),
+			StellarType::I256
+		);
+		assert_eq!(
+			StellarValue::Bytes(vec![]).get_type(),
+			StellarType::Bytes(None)
+		);
+		// Test Bytes32
+		let bytes32 = vec![1; 32];
+		assert_eq!(
+			StellarValue::Bytes(bytes32).get_type(),
+			StellarType::Bytes(Some(32))
+		);
+		assert_eq!(
+			StellarValue::String("test".to_string()).get_type(),
+			StellarType::String
+		);
+		assert_eq!(
+			StellarValue::Symbol("test".to_string()).get_type(),
+			StellarType::Symbol
+		);
+		assert_eq!(
+			StellarValue::Vec(vec![StellarValue::U32(42)]).get_type(),
+			StellarType::Vec(Box::new(StellarType::U32))
+		);
+		assert_eq!(
+			StellarValue::Map(BTreeMap::new()).get_type(),
+			StellarType::Map(Box::new(StellarType::String), Box::new(StellarType::Void))
+		);
+		assert_eq!(
+			StellarValue::Tuple(vec![StellarValue::U32(42)]).get_type(),
+			StellarType::Tuple(Box::new(StellarType::Sequence(vec![StellarType::U32])))
+		);
+		assert_eq!(
+			StellarValue::Address("test".to_string()).get_type(),
+			StellarType::Address
+		);
+		assert_eq!(
+			StellarValue::Timepoint(42).get_type(),
+			StellarType::Timepoint
+		);
+		assert_eq!(StellarValue::Duration(42).get_type(), StellarType::Duration);
+
+		// Test nested complex types
+		let nested_tuple = StellarValue::Tuple(vec![
+			StellarValue::Tuple(vec![StellarValue::U32(42)]),
+			StellarValue::Vec(vec![StellarValue::String("test".to_string())]),
+		]);
+		assert_eq!(
+			nested_tuple.get_type(),
+			StellarType::Tuple(Box::new(StellarType::Sequence(vec![
+				StellarType::Tuple(Box::new(StellarType::Sequence(vec![StellarType::U32]))),
+				StellarType::Vec(Box::new(StellarType::String)),
+			])))
+		);
+
+		let tuple_with_map = StellarValue::Tuple(vec![
+			StellarValue::Map({
+				let mut map = BTreeMap::new();
+				map.insert("key".to_string(), StellarValue::U32(42));
+				map
+			}),
+			StellarValue::U64(123),
+		]);
+
+		assert_eq!(
+			tuple_with_map.get_type(),
+			StellarType::Tuple(Box::new(StellarType::Sequence(vec![
+				StellarType::Map(Box::new(StellarType::String), Box::new(StellarType::U32)),
+				StellarType::U64,
+			])))
+		);
+
+		assert_eq!(
+			StellarValue::Address("test".to_string()).to_string(),
+			"test"
+		);
+		assert_eq!(StellarValue::Timepoint(42).to_string(), "42");
+		assert_eq!(StellarValue::Duration(42).to_string(), "42");
+	}
+
+	#[test]
+	fn test_stellar_type_display() {
+		assert_eq!(StellarType::Bool.to_string(), "Bool");
+		assert_eq!(StellarType::Void.to_string(), "Void");
+		assert_eq!(StellarType::U32.to_string(), "U32");
+		assert_eq!(StellarType::I32.to_string(), "I32");
+		assert_eq!(StellarType::U64.to_string(), "U64");
+		assert_eq!(StellarType::I64.to_string(), "I64");
+		assert_eq!(StellarType::U128.to_string(), "U128");
+		assert_eq!(StellarType::I128.to_string(), "I128");
+		assert_eq!(StellarType::U256.to_string(), "U256");
+		assert_eq!(StellarType::I256.to_string(), "I256");
+		assert_eq!(StellarType::Bytes(None).to_string(), "Bytes");
+		assert_eq!(StellarType::Bytes(Some(32)).to_string(), "Bytes32");
+		assert_eq!(StellarType::String.to_string(), "String");
+		assert_eq!(StellarType::Symbol.to_string(), "Symbol");
+		assert_eq!(
+			StellarType::Vec(Box::new(StellarType::U32)).to_string(),
+			"Vec<U32>"
+		);
+		assert_eq!(
+			StellarType::Map(Box::new(StellarType::String), Box::new(StellarType::U32)).to_string(),
+			"Map<String,U32>"
+		);
+		assert_eq!(
+			StellarType::Tuple(Box::new(StellarType::U32)).to_string(),
+			"Tuple<U32>"
+		);
+		assert_eq!(StellarType::Address.to_string(), "Address");
+		assert_eq!(StellarType::Timepoint.to_string(), "Timepoint");
+		assert_eq!(StellarType::Duration.to_string(), "Duration");
+
+		// Test nested complex types
+		assert_eq!(
+			StellarType::Vec(Box::new(StellarType::Vec(Box::new(StellarType::U32)))).to_string(),
+			"Vec<Vec<U32>>"
+		);
+		assert_eq!(
+			StellarType::Map(
+				Box::new(StellarType::String),
+				Box::new(StellarType::Map(
+					Box::new(StellarType::String),
+					Box::new(StellarType::U32)
+				))
+			)
+			.to_string(),
+			"Map<String,Map<String,U32>>"
+		);
+		assert_eq!(
+			StellarType::Tuple(Box::new(StellarType::Tuple(Box::new(StellarType::U32))))
+				.to_string(),
+			"Tuple<Tuple<U32>>"
+		);
+	}
+
+	#[test]
+	fn test_stellar_value_to_string() {
+		assert_eq!(StellarValue::Bool(true).to_string(), "true");
+		assert_eq!(StellarValue::Void.to_string(), "null");
+		assert_eq!(StellarValue::U32(42).to_string(), "42");
+		assert_eq!(StellarValue::I32(-42).to_string(), "-42");
+		assert_eq!(StellarValue::U64(42).to_string(), "42");
+		assert_eq!(StellarValue::I64(-42).to_string(), "-42");
+		assert_eq!(StellarValue::U128("42".to_string()).to_string(), "42");
+		assert_eq!(StellarValue::I128("-42".to_string()).to_string(), "-42");
+		assert_eq!(StellarValue::U256("42".to_string()).to_string(), "42");
+		assert_eq!(StellarValue::I256("-42".to_string()).to_string(), "-42");
+		assert_eq!(StellarValue::Bytes(vec![1, 2, 3]).to_string(), "010203");
+		assert_eq!(StellarValue::String("test".to_string()).to_string(), "test");
+		assert_eq!(StellarValue::Symbol("test".to_string()).to_string(), "test");
+		assert_eq!(
+			StellarValue::Vec(vec![StellarValue::U32(42)]).to_string(),
+			"[42]"
+		);
+		assert_eq!(
+			StellarValue::Map({
+				let mut map = BTreeMap::new();
+				map.insert("key".to_string(), StellarValue::U32(42));
+				map
+			})
+			.to_string(),
+			"{key:42}"
+		);
+		assert_eq!(
+			StellarValue::Tuple(vec![StellarValue::U32(42)]).to_string(),
+			"(42)"
+		);
+		assert_eq!(
+			StellarValue::Address("test".to_string()).to_string(),
+			"test"
+		);
+		assert_eq!(StellarValue::Timepoint(42).to_string(), "42");
+		assert_eq!(StellarValue::Duration(42).to_string(), "42");
+
+		// Test nested complex values
+		assert_eq!(
+			StellarValue::Vec(vec![
+				StellarValue::Vec(vec![StellarValue::U32(42), StellarValue::U32(43)]),
+				StellarValue::Vec(vec![StellarValue::String("test".to_string())])
+			])
+			.to_string(),
+			"[[42,43],[test]]"
+		);
+
+		assert_eq!(
+			StellarValue::Map({
+				let mut map = BTreeMap::new();
+				map.insert(
+					"nested".to_string(),
+					StellarValue::Map({
+						let mut inner_map = BTreeMap::new();
+						inner_map.insert("value".to_string(), StellarValue::U32(42));
+						inner_map
+					}),
+				);
+				map
+			})
+			.to_string(),
+			"{nested:{value:42}}"
+		);
+
+		assert_eq!(
+			StellarValue::Tuple(vec![
+				StellarValue::Tuple(vec![StellarValue::U32(42), StellarValue::U32(43)]),
+				StellarValue::Vec(vec![StellarValue::String("test".to_string())])
+			])
+			.to_string(),
+			"((42,43),[test])"
+		);
+	}
+
+	#[test]
+	fn test_stellar_value_to_json() {
+		assert_eq!(StellarValue::Bool(true).to_json(), json!(true));
+		assert_eq!(StellarValue::Void.to_json(), json!(null));
+		assert_eq!(StellarValue::U32(42).to_json(), json!(42));
+		assert_eq!(StellarValue::I32(-42).to_json(), json!(-42));
+		assert_eq!(StellarValue::U64(42).to_json(), json!(42));
+		assert_eq!(StellarValue::I64(-42).to_json(), json!(-42));
+		assert_eq!(
+			StellarValue::U128("42".to_string()).to_json(),
+			json!({"type": "U128", "value": "42"})
+		);
+		assert_eq!(
+			StellarValue::I128("-42".to_string()).to_json(),
+			json!({"type": "I128", "value": "-42"})
+		);
+		assert_eq!(
+			StellarValue::U256("42".to_string()).to_json(),
+			json!({"type": "U256", "value": "42"})
+		);
+		assert_eq!(
+			StellarValue::I256("-42".to_string()).to_json(),
+			json!({"type": "I256", "value": "-42"})
+		);
+		assert_eq!(
+			StellarValue::Bytes(vec![1, 2, 3]).to_json(),
+			json!("010203")
+		);
+		assert_eq!(
+			StellarValue::String("test".to_string()).to_json(),
+			json!("test")
+		);
+		assert_eq!(
+			StellarValue::Symbol("test".to_string()).to_json(),
+			json!("test")
+		);
+		assert_eq!(
+			StellarValue::Vec(vec![StellarValue::U32(42)]).to_json(),
+			json!([42])
+		);
+		assert_eq!(
+			StellarValue::Map({
+				let mut map = BTreeMap::new();
+				map.insert("key".to_string(), StellarValue::U32(42));
+				map
+			})
+			.to_json(),
+			json!({"key": 42})
+		);
+		assert_eq!(
+			StellarValue::Tuple(vec![StellarValue::U32(42)]).to_json(),
+			json!([42])
+		);
+		assert_eq!(
+			StellarValue::Address("test".to_string()).to_json(),
+			json!("test")
+		);
+		assert_eq!(StellarValue::Timepoint(42).to_json(), json!(42));
+		assert_eq!(StellarValue::Duration(42).to_json(), json!(42));
+
+		// Test nested complex values
+		assert_eq!(
+			StellarValue::Vec(vec![
+				StellarValue::Vec(vec![StellarValue::U32(42)]),
+				StellarValue::Vec(vec![StellarValue::String("test".to_string())])
+			])
+			.to_json(),
+			json!([[42], ["test"]])
+		);
+
+		assert_eq!(
+			StellarValue::Map({
+				let mut map = BTreeMap::new();
+				map.insert(
+					"nested".to_string(),
+					StellarValue::Map({
+						let mut inner_map = BTreeMap::new();
+						inner_map.insert("value".to_string(), StellarValue::U32(42));
+						inner_map
+					}),
+				);
+				map
+			})
+			.to_json(),
+			json!({"nested": {"value": 42}})
+		);
+
+		assert_eq!(
+			StellarValue::Tuple(vec![
+				StellarValue::Tuple(vec![StellarValue::U32(42), StellarValue::U32(43)]),
+				StellarValue::Vec(vec![StellarValue::String("test".to_string())])
+			])
+			.to_json(),
+			json!([[42, 43], ["test"]])
+		);
+	}
+
+	#[test]
+	fn test_udt_types() {
+		// Test simple UDT
+		let udt = ScSpecTypeDef::Udt(ScSpecTypeUdt {
+			name: StringM::<60>::from_str("Request").unwrap(),
+		});
+		assert_eq!(StellarType::from(udt).to_string(), "Request");
+
+		// Test Vec of UDT
+		let vec_udt = ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+			element_type: Box::new(ScSpecTypeDef::Udt(ScSpecTypeUdt {
+				name: StringM::<60>::from_str("Request").unwrap(),
+			})),
+		}));
+		assert_eq!(StellarType::from(vec_udt).to_string(), "Vec<Request>");
+
+		// Test Map with UDT value
+		let map_udt = ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+			key_type: Box::new(ScSpecTypeDef::String),
+			value_type: Box::new(ScSpecTypeDef::Udt(ScSpecTypeUdt {
+				name: StringM::<60>::from_str("Request").unwrap(),
+			})),
+		}));
+		assert_eq!(
+			StellarType::from(map_udt).to_string(),
+			"Map<String,Request>"
+		);
+
+		// Test Tuple with UDT
+		let tuple_udt = ScSpecTypeDef::Tuple(Box::new(ScSpecTypeTuple {
+			value_types: vec![
+				ScSpecTypeDef::Udt(ScSpecTypeUdt {
+					name: StringM::<60>::from_str("Request").unwrap(),
+				}),
+				ScSpecTypeDef::U64,
+			]
+			.try_into()
+			.unwrap(),
+		}));
+		assert_eq!(
+			StellarType::from(tuple_udt).to_string(),
+			"Tuple<Sequence<Request, U64>>"
+		);
+
+		// Test nested UDT in Vec
+		let nested_vec_udt = ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+			element_type: Box::new(ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+				element_type: Box::new(ScSpecTypeDef::Udt(ScSpecTypeUdt {
+					name: StringM::<60>::from_str("Request").unwrap(),
+				})),
+			}))),
+		}));
+		assert_eq!(
+			StellarType::from(nested_vec_udt).to_string(),
+			"Vec<Vec<Request>>"
+		);
+	}
+
+	#[test]
+	fn test_get_function_signature_from_spec_entry() {
+		// Test simple function with basic types
+		let simple_func = create_test_function_entry(
+			"simple_function",
+			vec![
+				(0, "param1", ScSpecTypeDef::U64),
+				(1, "param2", ScSpecTypeDef::String),
+			],
+		);
+		assert_eq!(
+			get_function_signature_from_spec_entry(&simple_func),
+			"simple_function(U64,String)"
+		);
+
+		// Test function with UDT
+		let udt_func = create_test_function_entry(
+			"udt_function",
+			vec![(
+				0,
+				"request",
+				ScSpecTypeDef::Udt(ScSpecTypeUdt {
+					name: StringM::<60>::from_str("Request").unwrap(),
+				}),
+			)],
+		);
+		assert_eq!(
+			get_function_signature_from_spec_entry(&udt_func),
+			"udt_function(Request)"
+		);
+
+		// Test function with complex types
+		let complex_func = create_test_function_entry(
+			"complex_function",
+			vec![
+				(
+					0,
+					"addresses",
+					ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+						element_type: Box::new(ScSpecTypeDef::Address),
+					})),
+				),
+				(
+					1,
+					"data",
+					ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+						key_type: Box::new(ScSpecTypeDef::String),
+						value_type: Box::new(ScSpecTypeDef::U64),
+					})),
+				),
+			],
+		);
+		assert_eq!(
+			get_function_signature_from_spec_entry(&complex_func),
+			"complex_function(Vec<Address>,Map<String,U64>)"
+		);
+
+		// Test function with nested UDT
+		let nested_udt_func = create_test_function_entry(
+			"nested_udt_function",
+			vec![(
+				0,
+				"requests",
+				ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+					element_type: Box::new(ScSpecTypeDef::Udt(ScSpecTypeUdt {
+						name: StringM::<60>::from_str("Request").unwrap(),
+					})),
+				})),
+			)],
+		);
+		assert_eq!(
+			get_function_signature_from_spec_entry(&nested_udt_func),
+			"nested_udt_function(Vec<Request>)"
+		);
+	}
+
+	#[test]
+	fn test_udt_type_matching() {
+		let function_name: String = "process_request".into();
+		let args = vec![
+			ScVal::Address(ScAddress::Contract(Hash([0; 32]))),
+			ScVal::Vec(Some(
+				vec![ScVal::Map(Some(ScMap(
+					vec![
+						ScMapEntry {
+							key: ScVal::String(ScString("type".try_into().unwrap())),
+							val: ScVal::String(ScString("transfer".try_into().unwrap())),
+						},
+						ScMapEntry {
+							key: ScVal::String(ScString("amount".try_into().unwrap())),
+							val: ScVal::I128(Int128Parts { hi: 0, lo: 1000 }),
+						},
+					]
+					.try_into()
+					.unwrap(),
+				)))]
+				.try_into()
+				.unwrap(),
+			)),
+		];
+
+		let invoke_op = InvokeHostFunctionOp {
+			host_function: HostFunction::InvokeContract(stellar_xdr::curr::InvokeContractArgs {
+				contract_address: ScAddress::Contract(Hash([0; 32])),
+				function_name: function_name.clone().try_into().unwrap(),
+				args: args.try_into().unwrap(),
+			}),
+			auth: vec![].try_into().unwrap(),
+		};
+
+		let contract_spec = StellarContractSpec {
+			functions: vec![StellarContractFunction {
+				name: "process_request".to_string(),
+				signature: "process_request(Address,Vec<Request>)".to_string(),
+				inputs: vec![
+					StellarContractInput {
+						name: "validator".to_string(),
+						kind: "Address".to_string(),
+						index: 0,
+					},
+					StellarContractInput {
+						name: "requests".to_string(),
+						kind: "Vec<Request>".to_string(),
+						index: 1,
+					},
+				],
+			}],
+		};
+
+		// Test that the UDT signature is returned even though runtime types are different
+		assert_eq!(
+			get_function_signature(&invoke_op, Some(&contract_spec)),
+			"process_request(Address,Vec<Request>)"
+		);
+
+		// Test without contract spec - should show concrete types
+		assert_eq!(
+			get_function_signature(&invoke_op, None),
+			"process_request(Address,Vec<Map<String,Union<I128, String>>>)"
+		);
 	}
 }

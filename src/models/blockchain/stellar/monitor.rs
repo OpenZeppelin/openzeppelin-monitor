@@ -121,7 +121,8 @@ pub struct ContractSpec {
 ///     "inputs": [
 ///         {"index": 0, "name": "to", "kind": "Address"},
 ///         {"index": 1, "name": "amount", "kind": "U64"}
-///     ]
+///     ],
+///     "signature": "transfer(Address,U64)"
 /// }
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -131,6 +132,9 @@ pub struct ContractFunction {
 
 	/// Ordered list of input parameters accepted by the function
 	pub inputs: Vec<ContractInput>,
+
+	/// Signature of the function
+	pub signature: String,
 }
 
 /// Input parameter specification for a Stellar contract function
