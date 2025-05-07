@@ -486,17 +486,29 @@ pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -
 
 /// Compare a JSON `Value` with a plain string using a specific operator.
 ///
+/// This function handles various string formats including:
+/// - Plain strings
+/// - JSON strings with quotes
+/// - JSON strings with escaped quotes
+///
 /// # Arguments
-/// * `value` - The JSON value to compare
+/// * `value` - The JSON value to compare. Can be a string or other JSON value type
 /// * `operator` - The comparison operator to use ("==" or "!=")
 /// * `compare_value` - The string to compare against
 ///
 /// # Returns
 /// `true` if the comparison is true, `false` otherwise
 pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_value: &str) -> bool {
+	let value_str = match value {
+		Value::String(s) => s.to_string(),
+		_ => value.to_string(),
+	};
+	let value_str = value_str.trim_matches('"').replace("\\\"", "\"");
+	let compare_str = compare_value.trim_matches('"').to_string();
+
 	match operator {
-		"==" => value.to_string().trim_matches('"') == compare_value,
-		"!=" => value.to_string().trim_matches('"') != compare_value,
+		"==" => value_str == compare_str,
+		"!=" => value_str != compare_str,
 		_ => {
 			tracing::debug!(
 				"Unsupported operator for JSON-value vs. string comparison: {operator}"
@@ -842,8 +854,9 @@ mod tests {
 	use serde_json::json;
 	use std::str::FromStr;
 	use stellar_xdr::curr::{
-		Hash, ScSpecFunctionInputV0, ScSpecFunctionV0, ScSpecTypeMap, ScSpecTypeVec, ScString,
-		ScSymbol, StringM,
+		ContractDataEntry, Hash, LedgerEntryData, ScContractInstance, ScSpecFunctionInputV0,
+		ScSpecFunctionV0, ScSpecTypeMap, ScSpecTypeVec, ScString, ScSymbol, ScVal, SequenceNumber,
+		String32, StringM, Uint256, WriteXdr,
 	};
 
 	fn create_test_function_entry(
@@ -918,7 +931,9 @@ mod tests {
 			json!("test")
 		);
 		assert_eq!(
-			process_sc_val(&ScVal::Symbol(ScSymbol(StringM::from_str("test").unwrap()))),
+			process_sc_val(&ScVal::Symbol(ScSymbol(
+				StringM::<32>::from_str("test").unwrap()
+			))),
 			json!("test")
 		);
 
@@ -1232,5 +1247,224 @@ mod tests {
 		assert_eq!(result.len(), 2);
 		assert!(matches!(result[0], ScSpecEntry::FunctionV0(_)));
 		assert!(matches!(result[1], ScSpecEntry::FunctionV0(_)));
+	}
+
+	#[test]
+	fn test_compare_json_values_vs_string() {
+		// Test string comparison
+		assert!(compare_json_values_vs_string(&json!("test"), "==", "test"));
+		assert!(!compare_json_values_vs_string(
+			&json!("test"),
+			"==",
+			"other"
+		));
+		assert!(compare_json_values_vs_string(&json!("test"), "!=", "other"));
+		assert!(!compare_json_values_vs_string(&json!("test"), "!=", "test"));
+
+		// Test with quoted strings
+		assert!(compare_json_values_vs_string(
+			&json!("\"test\""),
+			"==",
+			"test"
+		));
+		assert!(compare_json_values_vs_string(
+			&json!("test"),
+			"==",
+			"\"test\""
+		));
+
+		// Test unsupported operator
+		assert!(!compare_json_values_vs_string(&json!("test"), ">", "test"));
+	}
+
+	#[test]
+	fn test_format_type_def() {
+		// Test basic types
+		assert_eq!(format_type_def(&ScSpecTypeDef::Bool), "Bool");
+		assert_eq!(format_type_def(&ScSpecTypeDef::String), "String");
+		assert_eq!(format_type_def(&ScSpecTypeDef::U64), "U64");
+		assert_eq!(format_type_def(&ScSpecTypeDef::I64), "I64");
+		assert_eq!(format_type_def(&ScSpecTypeDef::Address), "Address");
+
+		// Test complex types
+		let vec_type = ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+			element_type: Box::new(ScSpecTypeDef::U64),
+		}));
+		assert_eq!(format_type_def(&vec_type), "Vec<U64>");
+
+		let map_type = ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+			key_type: Box::new(ScSpecTypeDef::String),
+			value_type: Box::new(ScSpecTypeDef::U64),
+		}));
+		assert_eq!(format_type_def(&map_type), "Map<String,U64>");
+
+		// Test nested complex types
+		let nested_vec = ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+			element_type: Box::new(ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+				key_type: Box::new(ScSpecTypeDef::String),
+				value_type: Box::new(ScSpecTypeDef::U64),
+			}))),
+		}));
+		assert_eq!(format_type_def(&nested_vec), "Vec<Map<String,U64>>");
+
+		// Test BytesN
+		let bytes_n = ScSpecTypeDef::BytesN(stellar_xdr::curr::ScSpecTypeBytesN { n: 32 });
+		assert_eq!(format_type_def(&bytes_n), "Bytes32");
+	}
+
+	#[test]
+	fn test_get_contract_spec_with_function_input_parameters() {
+		let spec_entries = vec![
+			create_test_function_entry(
+				"simple_function",
+				vec![
+					(0, "param1", ScSpecTypeDef::U64),
+					(1, "param2", ScSpecTypeDef::String),
+				],
+			),
+			create_test_function_entry(
+				"complex_function",
+				vec![
+					(
+						0,
+						"addresses",
+						ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+							element_type: Box::new(ScSpecTypeDef::Address),
+						})),
+					),
+					(
+						1,
+						"data",
+						ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+							key_type: Box::new(ScSpecTypeDef::String),
+							value_type: Box::new(ScSpecTypeDef::U64),
+						})),
+					),
+				],
+			),
+		];
+
+		let result = get_contract_spec_with_function_input_parameters(spec_entries);
+
+		assert_eq!(result.len(), 2);
+
+		// Check simple function
+		let simple_func = &result[0];
+		assert_eq!(simple_func.name, "simple_function");
+		assert_eq!(simple_func.inputs.len(), 2);
+		assert_eq!(simple_func.inputs[0].name, "param1");
+		assert_eq!(simple_func.inputs[0].kind, "U64");
+		assert_eq!(simple_func.inputs[1].name, "param2");
+		assert_eq!(simple_func.inputs[1].kind, "String");
+
+		// Check complex function
+		let complex_func = &result[1];
+		assert_eq!(complex_func.name, "complex_function");
+		assert_eq!(complex_func.inputs.len(), 2);
+		assert_eq!(complex_func.inputs[0].name, "addresses");
+		assert_eq!(complex_func.inputs[0].kind, "Vec<Address>");
+		assert_eq!(complex_func.inputs[1].name, "data");
+		assert_eq!(complex_func.inputs[1].kind, "Map<String,U64>");
+	}
+
+	#[test]
+	fn test_get_wasm_code_from_ledger_entry_data_errors() {
+		// Test non-contract code entry
+		let non_code_entry = LedgerEntryData::Account(stellar_xdr::curr::AccountEntry {
+			account_id: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256::from([0; 32]))),
+			balance: 0,
+			seq_num: SequenceNumber(0),
+			num_sub_entries: 0,
+			inflation_dest: None,
+			flags: 0,
+			home_domain: String32::from(StringM::<32>::from_str("").unwrap()),
+			thresholds: stellar_xdr::curr::Thresholds([0; 4]),
+			signers: vec![].try_into().unwrap(),
+			ext: stellar_xdr::curr::AccountEntryExt::V0,
+		});
+		let xdr = non_code_entry.to_xdr_base64(Limits::none()).unwrap();
+		let result = get_wasm_code_from_ledger_entry_data(&xdr);
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("not a contract code entry"));
+	}
+
+	#[test]
+	fn test_get_wasm_hash_from_ledger_entry_data_errors() {
+		// Test non-contract data entry
+		let non_data_entry = LedgerEntryData::Account(stellar_xdr::curr::AccountEntry {
+			account_id: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256::from([0; 32]))),
+			balance: 0,
+			seq_num: SequenceNumber(0),
+			num_sub_entries: 0,
+			inflation_dest: None,
+			flags: 0,
+			home_domain: String32::from(StringM::<32>::from_str("").unwrap()),
+			thresholds: stellar_xdr::curr::Thresholds([0; 4]),
+			signers: vec![].try_into().unwrap(),
+			ext: stellar_xdr::curr::AccountEntryExt::V0,
+		});
+		let xdr = non_data_entry.to_xdr_base64(Limits::none()).unwrap();
+		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("not a contract data entry"));
+
+		// Test non-contract instance
+		let non_instance_data = LedgerEntryData::ContractData(ContractDataEntry {
+			ext: stellar_xdr::curr::ExtensionPoint::V0,
+			contract: ScAddress::Contract(Hash([0; 32])),
+			key: ScVal::Bool(true),
+			durability: stellar_xdr::curr::ContractDataDurability::Persistent,
+			val: ScVal::Bool(true),
+		});
+		let xdr = non_instance_data.to_xdr_base64(Limits::none()).unwrap();
+		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("not a contract instance"));
+
+		// Test non-WASM executable
+		let non_wasm_instance = LedgerEntryData::ContractData(ContractDataEntry {
+			ext: stellar_xdr::curr::ExtensionPoint::V0,
+			contract: ScAddress::Contract(Hash([0; 32])),
+			key: ScVal::LedgerKeyContractInstance,
+			durability: stellar_xdr::curr::ContractDataDurability::Persistent,
+			val: ScVal::ContractInstance(ScContractInstance {
+				executable: ContractExecutable::StellarAsset,
+				storage: Some(ScMap(vec![].try_into().unwrap())),
+			}),
+		});
+		let xdr = non_wasm_instance.to_xdr_base64(Limits::none()).unwrap();
+		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
+		assert!(result.is_err());
+		assert!(result.unwrap_err().to_string().contains("not WASM"));
+	}
+
+	#[test]
+	fn test_get_contract_spec_errors() {
+		// Test invalid WASM hex
+		let invalid_hex = "invalid_hex";
+		let result = get_contract_spec(invalid_hex);
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("Failed to decode hex"));
+
+		// Test invalid WASM format
+		let invalid_wasm = "0000000000000000000000000000000000000000000000000000000000000000";
+		let result = get_contract_spec(invalid_wasm);
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("Failed to parse contract spec"));
 	}
 }
