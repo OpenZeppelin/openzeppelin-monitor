@@ -1166,7 +1166,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 			// Avoid calling get_contract_spec for each address if we already have the specs in the
 			// monitor config
 			let mut contract_specs = Vec::new();
-
+			let mut addresses_without_specs = Vec::new();
 			// First collect addresses that have ABIs configured in the monitor
 			for monitored_addr in &monitor.addresses {
 				if let Some(abi) = &monitored_addr.abi {
@@ -1185,6 +1185,8 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 							));
 						}
 						Err(e) => {
+							// Add the address to the list of addresses without specs and log an error
+							addresses_without_specs.push(monitored_addr.address.clone());
 							tracing::warn!(
 								"Failed to parse configured contract spec for address {}: {}",
 								monitored_addr.address,
@@ -1193,15 +1195,10 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 							continue;
 						}
 					}
+				} else {
+					addresses_without_specs.push(monitored_addr.address.clone());
 				}
 			}
-
-			// Get addresses that don't have specs yet
-			let addresses_without_specs: Vec<String> = monitored_addresses
-				.iter()
-				.filter(|addr| !contract_specs.iter().any(|(a, _)| a == *addr))
-				.cloned()
-				.collect();
 
 			// Fetch remaining specs from chain
 			if !addresses_without_specs.is_empty() {

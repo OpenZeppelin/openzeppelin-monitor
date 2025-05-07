@@ -7,10 +7,10 @@ use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, BlockType, EventCondition, FunctionCondition, MatchConditions, Monitor,
-		MonitorMatch, StellarBlock, StellarEvent, StellarMatchArguments, StellarMatchParamEntry,
-		StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
-		TransactionCondition, TransactionStatus, TransactionType,
+		AddressWithABI, BlockChainType, BlockType, EventCondition, FunctionCondition,
+		MatchConditions, Monitor, MonitorMatch, StellarBlock, StellarEvent, StellarMatchArguments,
+		StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction,
+		StellarTransactionInfo, TransactionCondition, TransactionStatus, TransactionType,
 	},
 	services::filter::{handle_match, FilterError, FilterService},
 };
@@ -23,7 +23,7 @@ use crate::integration::{
 	},
 };
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.functions = vec![];
@@ -1152,6 +1152,89 @@ async fn test_filter_with_invalid_contract_spec() -> Result<(), Box<FilterError>
 	// When the contract spec is not found, the filter should return no matches
 	assert!(result.is_ok());
 	assert!(result.unwrap().is_empty());
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
+	let test_data = load_test_data("stellar");
+	let filter_service = FilterService::new();
+
+	// Load Stellar-specific test data
+	let events: Vec<StellarEvent> =
+		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
+	let transactions: Vec<StellarTransactionInfo> =
+		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let decoded_transactions: Vec<StellarTransaction> = transactions
+		.iter()
+		.map(|tx| StellarTransaction::from(tx.clone()))
+		.collect();
+
+	// Setup mock expectations
+	mock_client
+		.expect_get_transactions()
+		.times(1)
+		.returning(move |_, _| Ok(decoded_transactions.clone()));
+
+	mock_client
+		.expect_get_events()
+		.times(1)
+		.returning(move |_, _| Ok(events.clone()));
+
+	// get_contract_spec should NOT be called since we provide the ABI in config
+	mock_client.expect_get_contract_spec().times(0);
+
+	// Create a monitor with ABI in config
+	let mut monitor = test_data.monitor.clone();
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "increment()".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.transactions = vec![];
+
+	// Add ABI to the monitor's address configuration
+	monitor.addresses = vec![AddressWithABI {
+		address: "CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX".to_string(),
+		abi: Some(json!([{
+			  "function_v0": {
+				"doc": "Increment increments an internal counter, and returns the value.",
+				"name": "increment",
+				"inputs": [],
+				"outputs": [
+				  "u32"
+				]
+			  }
+			}
+		])),
+	}];
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+		)
+		.await?;
+
+	assert!(matches.len() == 1, "Should have found exactly 1 match");
+
+	// Verify that the matches contain the expected function
+	match &matches[0] {
+		MonitorMatch::Stellar(stellar_match) => {
+			assert!(!stellar_match.matched_on.functions.is_empty());
+			assert_eq!(
+				stellar_match.matched_on.functions[0].signature,
+				"increment()"
+			);
+		}
+		_ => panic!("Expected Stellar match"),
+	}
 
 	Ok(())
 }
