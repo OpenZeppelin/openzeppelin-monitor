@@ -27,56 +27,105 @@ use crate::models::{
 /// Represents all possible Stellar smart contract types
 #[derive(Debug, Clone, PartialEq)]
 pub enum StellarType {
+	/// Boolean type
 	Bool,
+	/// Void type (null/empty)
 	Void,
+	/// 32-bit unsigned integer
 	U32,
+	/// 32-bit signed integer
 	I32,
+	/// 64-bit unsigned integer
 	U64,
+	/// 64-bit signed integer
 	I64,
+	/// 128-bit unsigned integer
 	U128,
+	/// 128-bit signed integer
 	I128,
+	/// 256-bit unsigned integer
 	U256,
+	/// 256-bit signed integer
 	I256,
+	/// Byte array, optionally with fixed length
 	Bytes(Option<u32>), // None for variable length, Some(n) for BytesN
+	/// String type
 	String,
+	/// Symbol type (enum-like string)
 	Symbol,
+	/// Vector of values
 	Vec(Box<StellarType>),
+	/// Map of key-value pairs
 	Map(Box<StellarType>, Box<StellarType>),
+	/// Tuple of values
 	Tuple(Box<StellarType>),
+	/// Stellar address type (account or contract)
 	Address,
+	/// Timepoint type (Unix timestamp)
 	Timepoint,
+	/// Duration type (time interval)
 	Duration,
+	/// Union type (multiple possible types)
 	Union(Vec<StellarType>),
+	/// Sequence type (ordered list of types)
 	Sequence(Vec<StellarType>),
+	/// User-defined type
 	Udt(String),
 }
 
 /// Represents all possible Stellar smart contract values
 #[derive(Debug, Clone)]
 pub enum StellarValue {
+	/// Boolean value
 	Bool(bool),
+	/// Void value (null/empty)
 	Void,
+	/// 32-bit unsigned integer value
 	U32(u32),
+	/// 32-bit signed integer value
 	I32(i32),
+	/// 64-bit unsigned integer value
 	U64(u64),
+	/// 64-bit signed integer value
 	I64(i64),
+	/// 128-bit unsigned integer value (as string)
 	U128(String), // Using string for large numbers
+	/// 128-bit signed integer value (as string)
 	I128(String),
+	/// 256-bit unsigned integer value (as string)
 	U256(String),
+	/// 256-bit signed integer value (as string)
 	I256(String),
+	/// Byte array value
 	Bytes(Vec<u8>),
+	/// String value
 	String(String),
+	/// Symbol value
 	Symbol(String),
+	/// Vector of values
 	Vec(Vec<StellarValue>),
+	/// Map of key-value pairs
 	Map(BTreeMap<String, StellarValue>),
+	/// Tuple of values
 	Tuple(Vec<StellarValue>),
+	/// Stellar address value
 	Address(String),
+	/// Timepoint value
 	Timepoint(u64),
+	/// Duration value
 	Duration(u64),
+	/// User-defined type value
 	Udt(String),
 }
 
 impl From<ScVal> for StellarValue {
+	/// Converts a Stellar Contract Value (ScVal) into a StellarValue.
+	///
+	/// # Arguments
+	/// * `val` - The ScVal to convert
+	///
+	/// # Returns
+	/// A StellarValue representing the input ScVal
 	fn from(val: ScVal) -> Self {
 		match val {
 			ScVal::Bool(b) => StellarValue::Bool(b),
@@ -125,6 +174,13 @@ impl From<ScVal> for StellarValue {
 }
 
 impl From<ScSpecTypeDef> for StellarType {
+	/// Converts a Stellar Contract Specification Type Definition into a StellarType.
+	///
+	/// # Arguments
+	/// * `type_def` - The ScSpecTypeDef to convert
+	///
+	/// # Returns
+	/// A StellarType representing the input type definition
 	fn from(type_def: ScSpecTypeDef) -> Self {
 		match type_def {
 			ScSpecTypeDef::Map(t) => StellarType::Map(
@@ -164,6 +220,13 @@ impl From<ScSpecTypeDef> for StellarType {
 }
 
 impl From<Value> for StellarType {
+	/// Converts a JSON Value into a StellarType.
+	///
+	/// # Arguments
+	/// * `value` - The JSON Value to convert
+	///
+	/// # Returns
+	/// A StellarType representing the input JSON value
 	fn from(value: Value) -> Self {
 		match value {
 			Value::Number(n) => {
@@ -191,6 +254,10 @@ impl From<Value> for StellarType {
 }
 
 impl StellarValue {
+	/// Gets the type of this Stellar value.
+	///
+	/// # Returns
+	/// A StellarType representing the type of this value
 	pub fn get_type(&self) -> StellarType {
 		match self {
 			StellarValue::Bool(_) => StellarType::Bool,
@@ -265,6 +332,10 @@ impl StellarValue {
 		}
 	}
 
+	/// Converts this Stellar value to a JSON value.
+	///
+	/// # Returns
+	/// A serde_json::Value representing this Stellar value
 	pub fn to_json(&self) -> Value {
 		match self {
 			StellarValue::Bool(b) => json!(b),
@@ -294,6 +365,13 @@ impl StellarValue {
 		}
 	}
 
+	/// Creates a decoded parameter entry from this Stellar value.
+	///
+	/// # Arguments
+	/// * `indexed` - Whether this parameter is indexed
+	///
+	/// # Returns
+	/// A StellarDecodedParamEntry containing the value and its type
 	pub fn to_param_entry(&self, indexed: bool) -> StellarDecodedParamEntry {
 		StellarDecodedParamEntry {
 			value: self.to_string(),
@@ -304,6 +382,13 @@ impl StellarValue {
 }
 
 impl Display for StellarValue {
+	/// Formats a StellarValue as a string.
+	///
+	/// # Arguments
+	/// * `f` - The formatter to write to
+	///
+	/// # Returns
+	/// A fmt::Result indicating success or failure
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			StellarValue::Bool(b) => write!(f, "{}", b),
@@ -340,6 +425,13 @@ impl Display for StellarValue {
 }
 
 impl fmt::Display for StellarType {
+	/// Formats a StellarType as a string.
+	///
+	/// # Arguments
+	/// * `f` - The formatter to write to
+	///
+	/// # Returns
+	/// A fmt::Result indicating success or failure
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			StellarType::Bool => write!(f, "Bool"),
@@ -448,7 +540,7 @@ fn combine_i128(n: &Int128Parts) -> String {
 	(((n.hi as i128) << 64) | (n.lo as i128)).to_string()
 }
 
-/// Get function signature from `ScSpecEntry`
+/// Gets the function signature from a Stellar Contract Specification Entry.
 ///
 /// # Arguments
 /// * `entry` - The ScSpecEntry to get the signature for
@@ -543,7 +635,9 @@ pub fn get_function_signature(
 /// * `contract_specs` - Optional contract spec containing type information
 ///
 /// # Returns
-/// A StellarParsedOperationResult containing the processed operation details
+/// A tuple containing:
+/// * A StellarParsedOperationResult with the processed operation details
+/// * An optional StellarContractSpec if a matching contract was found
 pub fn process_invoke_host_function(
 	invoke_op: &InvokeHostFunctionOp,
 	contract_specs: Option<&[(String, StellarContractSpec)]>,
@@ -762,16 +856,12 @@ pub fn parse_sc_val(val: &ScVal, indexed: bool) -> Option<StellarDecodedParamEnt
 
 /// Parses XDR-encoded bytes into a decoded parameter entry.
 ///
-/// Attempts to decode XDR-formatted bytes into a Stellar Contract Value (ScVal) and then
-/// converts it into a decoded parameter entry. This is commonly used for processing
-/// contract events and function parameters.
-///
 /// # Arguments
 /// * `bytes` - The XDR-encoded bytes to parse
-/// * `indexed` - Whether this parameter is indexed in the event/function
+/// * `indexed` - Whether this parameter is indexed
 ///
 /// # Returns
-/// An Option containing the decoded parameter entry if successful, None if parsing fails
+/// An Option containing the decoded parameter entry if successful
 pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedParamEntry> {
 	match ScVal::from_xdr(bytes, Limits::none()) {
 		Ok(scval) => {
@@ -802,11 +892,11 @@ pub fn parse_json_safe(input: &str) -> Option<Value> {
 	}
 }
 
-/// Recursively navigate through a JSON structure using dot notation (e.g. "user.address.street").
+/// Recursively navigate through a JSON structure using dot notation.
 ///
 /// # Arguments
 /// * `json_value` - The JSON value to navigate
-/// * `path` - The dot-notation path to follow
+/// * `path` - The dot-notation path to follow (e.g. "user.address.street")
 ///
 /// # Returns
 /// `Some(&Value)` if found, `None` otherwise
@@ -843,13 +933,8 @@ pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -
 
 /// Compare a JSON `Value` with a plain string using a specific operator.
 ///
-/// This function handles various string formats including:
-/// - Plain strings
-/// - JSON strings with quotes
-/// - JSON strings with escaped quotes
-///
 /// # Arguments
-/// * `value` - The JSON value to compare. Can be a string or other JSON value type
+/// * `value` - The JSON value to compare
 /// * `operator` - The comparison operator to use ("==" or "!=")
 /// * `compare_value` - The string to compare against
 ///
@@ -883,7 +968,7 @@ pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_valu
 /// * `compare_val` - The second JSON value to compare
 ///
 /// # Returns
-/// A boolean indicating if the comparison is true
+/// `true` if the comparison is true, `false` otherwise
 pub fn compare_json_values(param_val: &Value, operator: &str, compare_val: &Value) -> bool {
 	match operator {
 		"==" => param_val == compare_val,
@@ -911,9 +996,6 @@ pub fn compare_json_values(param_val: &Value, operator: &str, compare_val: &Valu
 }
 
 /// Get the kind of a value from a JSON value.
-///
-/// This is used to determine the kind of a value for the `kind` field in the
-/// `StellarMatchParamEntry` struct.
 ///
 /// # Arguments
 /// * `value` - The JSON value to get the kind for
@@ -953,37 +1035,7 @@ pub fn get_kind_from_value(value: &Value) -> String {
 /// * `contract_id` - The contract ID in Stellar strkey format (starts with 'C')
 ///
 /// # Returns
-/// A LedgerKey for the deployed contract instance
-///
-/// # Example
-/// When calling `getLedgerEntries` with the output of this function, the result might look like:
-/// ```json
-/// {
-///   "contract_data": {
-///     "ext": "v0",
-///     "contract": "CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX",
-///     "key": "ledger_key_contract_instance",
-///     "durability": "persistent",
-///     "val": {
-///       "contract_instance": {
-///         "executable": {
-///           "wasm": "0adabe438e539cf5a77afd8197f8e25c822ca2d27ba99d8e0e31b80b7400c903"
-///         },
-///         "storage": [
-///           {
-///             "key": {
-///               "symbol": "COUNTER"
-///             },
-///             "val": {
-///               "u32": 17
-///             }
-///           }
-///         ]
-///       }
-///     }
-///   }
-/// }
-/// ```
+/// A Result containing the LedgerKey if successful, or an error if the contract ID is invalid
 pub fn get_contract_instance_ledger_key(contract_id: &str) -> Result<LedgerKey, anyhow::Error> {
 	let contract_id = contract_id.to_uppercase();
 	let contract_address = match Contract::from_string(contract_id.as_str()) {
@@ -1005,35 +1057,23 @@ pub fn get_contract_instance_ledger_key(contract_id: &str) -> Result<LedgerKey, 
 /// Extracts contract code ledger key from a contract's XDR-encoded executable.
 ///
 /// # Arguments
-/// * `wasm_hash` - WASM hash
+/// * `wasm_hash` - The WASM hash of the contract code
 ///
 /// # Returns
-/// A LedgerKey for the contract code if successfully extracted
-///
-/// # Example
-/// When calling `getLedgerEntries` with the output of this function, the result might look like:
-/// ```json
-/// {
-///   "contract_code": {
-///     "ext":  {...},
-///     "hash": "b54ba37b7bb7dd69a7759caa9eec70e9e13615ba3b009fc23c4626ae9dffa27f"
-///     "code": "0061736d0100000001e3023060027e7e017e60017e017e6000017e60037e7e7e..."
-///   }
-/// }
-/// ```
+/// A Result containing the LedgerKey if successful, or an error if the hash is invalid
 pub fn get_contract_code_ledger_key(wasm_hash: &str) -> Result<LedgerKey, anyhow::Error> {
 	Ok(LedgerKey::ContractCode(LedgerKeyContractCode {
 		hash: wasm_hash.parse::<Hash>()?,
 	}))
 }
 
-/// Get wasm code from a contract's XDR-encoded executable.
+/// Get WASM code from a contract's XDR-encoded executable.
 ///
 /// # Arguments
-/// * `ledger_entry_data` - XDR-encoded contract data
+/// * `ledger_entry_data` - The XDR-encoded contract data
 ///
 /// # Returns
-/// The WASM code as a hex string if successfully extracted
+/// A Result containing the WASM code as a hex string if successful, or an error if parsing fails
 pub fn get_wasm_code_from_ledger_entry_data(
 	ledger_entry_data: &str,
 ) -> Result<String, anyhow::Error> {
@@ -1051,13 +1091,13 @@ pub fn get_wasm_code_from_ledger_entry_data(
 	}
 }
 
-/// Get wasm hash from a contract's XDR-encoded executable.
+/// Get WASM hash from a contract's XDR-encoded executable.
 ///
 /// # Arguments
-/// * `ledger_entry_data` - XDR-encoded contract data
+/// * `ledger_entry_data` - The XDR-encoded contract data
 ///
 /// # Returns
-/// The WASM hash as a hex string if successfully extracted
+/// A Result containing the WASM hash as a hex string if successful, or an error if parsing fails
 pub fn get_wasm_hash_from_ledger_entry_data(
 	ledger_entry_data: &str,
 ) -> Result<String, anyhow::Error> {
