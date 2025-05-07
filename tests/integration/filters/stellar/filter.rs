@@ -1027,3 +1027,131 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 
 	Ok(())
 }
+
+#[tokio::test]
+async fn test_filter_with_contract_spec() -> Result<(), Box<FilterError>> {
+	let test_data = load_test_data("stellar");
+	let filter_service = FilterService::new();
+
+	// Load Stellar-specific test data
+	let events: Vec<StellarEvent> =
+		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
+	let transactions: Vec<StellarTransactionInfo> =
+		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let decoded_transactions: Vec<StellarTransaction> = transactions
+		.iter()
+		.map(|tx| StellarTransaction::from(tx.clone()))
+		.collect();
+
+	// Setup mock expectations
+	mock_client
+		.expect_get_transactions()
+		.times(1)
+		.returning(move |_, _| Ok(decoded_transactions.clone()));
+
+	mock_client
+		.expect_get_events()
+		.times(1)
+		.returning(move |_, _| Ok(events.clone()));
+
+	// Expect contract spec to be called
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+
+	// Create a monitor that requires contract spec validation
+	let mut monitor = test_data.monitor.clone();
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "increment()".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.transactions = vec![];
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+		)
+		.await?;
+
+	assert!(matches.len() == 1, "Should have found exactly 1 match");
+
+	// Verify that the matches contain the expected function
+	match &matches[0] {
+		MonitorMatch::Stellar(stellar_match) => {
+			assert!(!stellar_match.matched_on.functions.is_empty());
+			assert_eq!(
+				stellar_match.matched_on.functions[0].signature,
+				"increment()"
+			);
+		}
+		_ => panic!("Expected Stellar match"),
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_with_invalid_contract_spec() -> Result<(), Box<FilterError>> {
+	let test_data = load_test_data("stellar");
+	let filter_service = FilterService::new();
+
+	// Load Stellar-specific test data
+	let events: Vec<StellarEvent> =
+		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
+	let transactions: Vec<StellarTransactionInfo> =
+		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let decoded_transactions: Vec<StellarTransaction> = transactions
+		.iter()
+		.map(|tx| StellarTransaction::from(tx.clone()))
+		.collect();
+
+	// Setup mock expectations
+	mock_client
+		.expect_get_transactions()
+		.times(1)
+		.returning(move |_, _| Ok(decoded_transactions.clone()));
+
+	mock_client
+		.expect_get_events()
+		.times(1)
+		.returning(move |_, _| Ok(events.clone()));
+
+	// Setup mock to return error for contract spec
+	mock_client
+		.expect_get_contract_spec()
+		.returning(|_| Err(anyhow::anyhow!("Failed to get contract spec")));
+
+	// Create a monitor that requires contract spec validation
+	let mut monitor = test_data.monitor.clone();
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "increment()".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.transactions = vec![];
+
+	// Run filter_block with the test data
+	let result = filter_service
+		.filter_block(
+			&mock_client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+		)
+		.await;
+
+	// When the contract spec is not found, the filter should return no matches
+	assert!(result.is_ok());
+	assert!(result.unwrap().is_empty());
+
+	Ok(())
+}
