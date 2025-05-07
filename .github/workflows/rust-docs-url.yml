@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - docs-v*
-      - add-rust-docs
   workflow_call:
     inputs:
       branch:
@@ -37,7 +36,7 @@ jobs:
           echo "branch=${{ inputs.branch }}" >> $GITHUB_OUTPUT
       - name: Update the technical docs link in nav.adoc
         run: |
-          branch="release-v0.1.0"
+          branch="${{ inputs.branch }}"
           # Netlify uses `-` instead of `.` in branch names for constructing the URL
           slug="${branch//./-}"
           target="https://${slug}--openzeppelin-monitor.netlify.app"
@@ -48,10 +47,9 @@ jobs:
           fi
           echo "Updating to branch URL: ${target}"
           sed -i -E "s|(https://)[^/]*openzeppelin-monitor.netlify.app|${target}|g" "${file}"
-          git status
           echo "Updated nav.adoc to use ${target}"
       - name: Create Pull Request to update the technical docs version
-        # if: ${{ steps.get_branch.outputs.branch != '' }}
+        if: ${{ steps.get_branch.outputs.branch != '' }}
         uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e  # v7.0.8
         with:
           token: ${{ steps.gh-app-token.outputs.token }}
