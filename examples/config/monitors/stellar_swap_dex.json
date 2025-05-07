@@ -6,7 +6,45 @@
   ],
   "addresses": [
     {
-      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE"
+      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
+      "abi": [
+        {
+          "function_v0": {
+            "doc": "",
+            "name": "swap",
+            "inputs": [
+              {
+                "doc": "",
+                "name": "user",
+                "type_": "address"
+              },
+              {
+                "doc": "",
+                "name": "in_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "out_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "in_amount",
+                "type_": "u128"
+              },
+              {
+                "doc": "",
+                "name": "out_min",
+                "type_": "u128"
+              }
+            ],
+            "outputs": [
+              "u128"
+            ]
+          }
+        }
+      ]
     }
   ],
   "match_conditions": {

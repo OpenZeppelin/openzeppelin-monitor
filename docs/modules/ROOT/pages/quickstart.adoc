@@ -416,11 +416,6 @@ cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar
 
 This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/monitors/stellar_swap_dex.json[configuration^] monitors large swaps of over 1,000,000,000 tokens. You can customize the notification channels by modifying the `triggers` array.
 
-[TIP]
-====
-You can find the contract's SEP-48 interface and function signatures by visiting the link:https://stellar.expert/explorer/public/contract/CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE?filter=interface[Stellar DEX Contract Interface^] on Stellar Expert.
-====
-
 [source,json]
 ----
 {
@@ -431,7 +426,45 @@ You can find the contract's SEP-48 interface and function signatures by visiting
   ],
   "addresses": [
     {
-      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE"
+     "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
+      "abi": [
+        {
+          "function_v0": {
+            "doc": "",
+            "name": "swap",
+            "inputs": [
+              {
+                "doc": "",
+                "name": "user",
+                "type_": "address"
+              },
+              {
+                "doc": "",
+                "name": "in_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "out_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "in_amount",
+                "type_": "u128"
+              },
+              {
+                "doc": "",
+                "name": "out_min",
+                "type_": "u128"
+              }
+            ],
+            "outputs": [
+              "u128"
+            ]
+          }
+        }
+      ]
     }
   ],
   "match_conditions": {
@@ -462,6 +495,12 @@ You can find the contract's SEP-48 interface and function signatures by visiting
   ]
 }
 ----
+
+[NOTE]
+====
+* The `abi` field is optional for Stellar contracts. If not provided, the monitor will automatically fetch the contract's SEP-48 interface from the chain.
+* You can find the contract specification through Stellar contract explorer tool. For example: link:https://lab.stellar.org/smart-contracts/contract-explorer?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=https:////mainnet.sorobanrpc.com&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;&smartContracts$explorer$contractId=CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE;;[Stellar DEX Contract Interface^]
+====
 
 [NOTE]
 ====

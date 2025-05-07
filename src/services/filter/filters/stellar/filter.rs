@@ -26,7 +26,8 @@ use crate::{
 		filter::{
 			stellar_helpers::{
 				are_same_address, are_same_signature, compare_json_values,
-				compare_json_values_vs_string, compare_strings, get_kind_from_value,
+				compare_json_values_vs_string, compare_strings, get_contract_spec_functions,
+				get_contract_spec_with_function_input_parameters, get_kind_from_value,
 				get_nested_value, normalize_address, parse_json_safe, parse_xdr_value,
 				process_invoke_host_function,
 			},
@@ -1162,15 +1163,61 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 				.map(|addr| normalize_address(&addr.address))
 				.collect::<Vec<String>>();
 
-			let contract_specs =
-				futures::future::join_all(monitored_addresses.iter().map(|address| async move {
-					let spec = client.get_contract_spec(address).await;
-					(address.clone(), spec)
-				}))
+			// Avoid calling get_contract_spec for each address if we already have the specs in the
+			// monitor config
+			let mut contract_specs = Vec::new();
+
+			// First collect addresses that have ABIs configured in the monitor
+			for monitored_addr in &monitor.addresses {
+				if let Some(abi) = &monitored_addr.abi {
+					// Parse the ABI into a contract spec
+					match serde_json::from_str::<Vec<stellar_xdr::curr::ScSpecEntry>>(
+						abi.to_string().as_str(),
+					) {
+						Ok(spec_entries) => {
+							// Process the spec entries using our helper functions
+							let functions = get_contract_spec_with_function_input_parameters(
+								get_contract_spec_functions(spec_entries),
+							);
+							contract_specs.push((
+								normalize_address(&monitored_addr.address),
+								StellarContractSpec { functions },
+							));
+						}
+						Err(e) => {
+							tracing::warn!(
+								"Failed to parse configured contract spec for address {}: {}",
+								monitored_addr.address,
+								e
+							);
+							continue;
+						}
+					}
+				}
+			}
+
+			// Get addresses that don't have specs yet
+			let addresses_without_specs: Vec<String> = monitored_addresses
+				.iter()
+				.filter(|addr| !contract_specs.iter().any(|(a, _)| a == *addr))
+				.cloned()
+				.collect();
+
+			// Fetch remaining specs from chain
+			if !addresses_without_specs.is_empty() {
+				let chain_specs = futures::future::join_all(addresses_without_specs.iter().map(
+					|address| async move {
+						let spec = client.get_contract_spec(address).await;
+						(address.clone(), spec)
+					},
+				))
 				.await
 				.into_iter()
 				.filter_map(|(addr, spec)| spec.ok().map(|s| (addr, s)))
 				.collect::<Vec<_>>();
+
+				contract_specs.extend(chain_specs);
+			}
 
 			let decoded_events = self
 				.decode_events(&events, &monitored_addresses, &contract_specs)
