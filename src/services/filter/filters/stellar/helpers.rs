@@ -503,12 +503,15 @@ pub fn get_function_signature(
 							.iter()
 							.zip(arg_types.iter())
 							.all(|(input, arg_type)| {
+								// This is a best-effort attempt to match the types
 								// For UDTs, we need to be more lenient in type matching
 								// since ScVal will show the concrete type structure
-								if input.kind.starts_with("Vec<") && arg_type.starts_with("Vec<")
-									|| input.kind.starts_with("Map<")
-										&& arg_type.starts_with("Map<")
-								{
+								// For example: Map<Request> could be Map<String, Union<Address, U32>>
+								// So we need to just match the base type
+								const LENIENT_TYPES: [&str; 3] = ["Vec<", "Map<", "Tuple<"];
+								if LENIENT_TYPES.iter().any(|prefix| {
+									input.kind.starts_with(prefix) && arg_type.starts_with(prefix)
+								}) {
 									true
 								} else {
 									// For basic types, require exact match
@@ -1165,8 +1168,9 @@ mod tests {
 	use stellar_xdr::curr::{
 		AccountId, ContractDataEntry, Hash, Int128Parts, LedgerEntryData, PublicKey,
 		ScContractInstance, ScMap, ScSpecEntry, ScSpecFunctionInputV0, ScSpecFunctionV0,
-		ScSpecTypeDef, ScSpecTypeMap, ScSpecTypeTuple, ScSpecTypeUdt, ScSpecTypeVec, ScString,
-		ScSymbol, ScVal, SequenceNumber, String32, StringM, Uint256, WriteXdr,
+		ScSpecTypeDef, ScSpecTypeMap, ScSpecTypeOption, ScSpecTypeTuple, ScSpecTypeUdt,
+		ScSpecTypeVec, ScSpecUdtEnumV0, ScString, ScSymbol, ScVal, SequenceNumber, String32,
+		StringM, Uint256, WriteXdr,
 	};
 
 	fn create_test_function_entry(
@@ -1513,6 +1517,16 @@ mod tests {
 		assert_eq!(result.len(), 2);
 		assert!(matches!(result[0], ScSpecEntry::FunctionV0(_)));
 		assert!(matches!(result[1], ScSpecEntry::FunctionV0(_)));
+
+		// Unknown function
+		let unknown_func = ScSpecEntry::UdtEnumV0(ScSpecUdtEnumV0 {
+			doc: StringM::<1024>::from_str("unknown_function").unwrap(),
+			lib: StringM::<80>::from_str("unknown_function").unwrap(),
+			cases: vec![].try_into().unwrap(),
+			name: StringM::<60>::from_str("unknown_function").unwrap(),
+		});
+		let result = get_contract_spec_functions(vec![unknown_func]);
+		assert!(result.is_empty());
 	}
 
 	#[test]
@@ -1541,6 +1555,13 @@ mod tests {
 
 		// Test unsupported operator
 		assert!(!compare_json_values_vs_string(&json!("test"), ">", "test"));
+
+		// Unsupported operator
+		assert!(!compare_json_values_vs_string(
+			&json!("test"),
+			"~",
+			"Unsupported operator for JSON-value vs. string comparison: ~"
+		));
 	}
 
 	#[test]
@@ -1596,6 +1617,16 @@ mod tests {
 		assert_eq!(complex_func.inputs[0].kind, "Vec<Address>");
 		assert_eq!(complex_func.inputs[1].name, "data");
 		assert_eq!(complex_func.inputs[1].kind, "Map<String,U64>");
+
+		// Unknown function
+		let unknown_func = ScSpecEntry::UdtEnumV0(ScSpecUdtEnumV0 {
+			doc: StringM::<1024>::from_str("unknown_function").unwrap(),
+			lib: StringM::<80>::from_str("unknown_function").unwrap(),
+			cases: vec![].try_into().unwrap(),
+			name: StringM::<60>::from_str("unknown_function").unwrap(),
+		});
+		let result = get_contract_spec_with_function_input_parameters(vec![unknown_func]);
+		assert!(result.is_empty());
 	}
 
 	#[test]
@@ -1799,6 +1830,12 @@ mod tests {
 		);
 		assert_eq!(StellarValue::Timepoint(42).to_string(), "42");
 		assert_eq!(StellarValue::Duration(42).to_string(), "42");
+
+		// Test Udt
+		assert_eq!(
+			StellarValue::Udt("Request".to_string()).to_string(),
+			"Request"
+		);
 	}
 
 	#[test]
@@ -1991,6 +2028,10 @@ mod tests {
 		);
 		assert_eq!(StellarValue::Timepoint(42).to_json(), json!(42));
 		assert_eq!(StellarValue::Duration(42).to_json(), json!(42));
+		assert_eq!(
+			StellarValue::Udt("Request".to_string()).to_json(),
+			json!("Request")
+		);
 
 		// Test nested complex values
 		assert_eq!(
@@ -2102,6 +2143,18 @@ mod tests {
 			"simple_function(U64,String)"
 		);
 
+		// Unknown function
+		let unknown_func = ScSpecEntry::UdtEnumV0(ScSpecUdtEnumV0 {
+			doc: StringM::<1024>::from_str("unknown_function").unwrap(),
+			lib: StringM::<80>::from_str("unknown_function").unwrap(),
+			cases: vec![].try_into().unwrap(),
+			name: StringM::<60>::from_str("unknown_function").unwrap(),
+		});
+		assert_eq!(
+			get_function_signature_from_spec_entry(&unknown_func),
+			"unknown_function()"
+		);
+
 		// Test function with UDT
 		let udt_func = create_test_function_entry(
 			"udt_function",
@@ -2116,6 +2169,18 @@ mod tests {
 		assert_eq!(
 			get_function_signature_from_spec_entry(&udt_func),
 			"udt_function(Request)"
+		);
+
+		// Unknown function
+		let unknown_func = ScSpecEntry::UdtEnumV0(ScSpecUdtEnumV0 {
+			doc: StringM::<1024>::from_str("unknown_function").unwrap(),
+			lib: StringM::<80>::from_str("unknown_function").unwrap(),
+			cases: vec![].try_into().unwrap(),
+			name: StringM::<60>::from_str("unknown_function").unwrap(),
+		});
+		assert_eq!(
+			get_function_signature_from_spec_entry(&unknown_func),
+			"unknown_function()"
 		);
 
 		// Test function with complex types
@@ -2227,5 +2292,296 @@ mod tests {
 			get_function_signature(&invoke_op, None),
 			"process_request(Address,Vec<Map<String,Union<I128, String>>>)"
 		);
+	}
+
+	#[test]
+	fn test_from_scval() {
+		// Test basic types
+		assert!(matches!(
+			StellarValue::from(ScVal::Bool(true)),
+			StellarValue::Bool(true)
+		));
+		assert!(matches!(
+			StellarValue::from(ScVal::Void),
+			StellarValue::Void
+		));
+		assert!(matches!(
+			StellarValue::from(ScVal::U32(42)),
+			StellarValue::U32(42)
+		));
+		assert!(matches!(
+			StellarValue::from(ScVal::I32(-42)),
+			StellarValue::I32(-42)
+		));
+		assert!(matches!(
+			StellarValue::from(ScVal::U64(42)),
+			StellarValue::U64(42)
+		));
+		assert!(matches!(
+			StellarValue::from(ScVal::I64(-42)),
+			StellarValue::I64(-42)
+		));
+
+		// Test Timepoint and Duration
+		assert!(matches!(
+			StellarValue::from(ScVal::Timepoint(stellar_xdr::curr::TimePoint(42))),
+			StellarValue::Timepoint(42)
+		));
+		assert!(matches!(
+			StellarValue::from(ScVal::Duration(stellar_xdr::curr::Duration(42))),
+			StellarValue::Duration(42)
+		));
+
+		// Test large number types
+		let u128_val = UInt128Parts { hi: 1, lo: 2 };
+		assert!(matches!(
+			StellarValue::from(ScVal::U128(u128_val)),
+			StellarValue::U128(_)
+		));
+
+		let i128_val = Int128Parts { hi: 1, lo: 2 };
+		assert!(matches!(
+			StellarValue::from(ScVal::I128(i128_val)),
+			StellarValue::I128(_)
+		));
+
+		let u256_val = UInt256Parts {
+			hi_hi: 1,
+			hi_lo: 2,
+			lo_hi: 3,
+			lo_lo: 4,
+		};
+		assert!(matches!(
+			StellarValue::from(ScVal::U256(u256_val)),
+			StellarValue::U256(_)
+		));
+
+		let i256_val = Int256Parts {
+			hi_hi: 1,
+			hi_lo: 2,
+			lo_hi: 3,
+			lo_lo: 4,
+		};
+		assert!(matches!(
+			StellarValue::from(ScVal::I256(i256_val)),
+			StellarValue::I256(_)
+		));
+
+		// Test complex types
+		let bytes = vec![1, 2, 3].try_into().unwrap();
+		assert!(matches!(
+			StellarValue::from(ScVal::Bytes(bytes)),
+			StellarValue::Bytes(_)
+		));
+
+		let string = ScString("test".try_into().unwrap());
+		assert!(matches!(
+			StellarValue::from(ScVal::String(string)),
+			StellarValue::String(_)
+		));
+
+		let symbol = ScSymbol("test".try_into().unwrap());
+		assert!(matches!(
+			StellarValue::from(ScVal::Symbol(symbol)),
+			StellarValue::Symbol(_)
+		));
+
+		// Test Vec
+		let vec = vec![ScVal::U32(42)].try_into().unwrap();
+		assert!(matches!(
+			StellarValue::from(ScVal::Vec(Some(vec))),
+			StellarValue::Vec(_)
+		));
+
+		// Test Map
+		let map = ScMap(vec![].try_into().unwrap());
+		assert!(matches!(
+			StellarValue::from(ScVal::Map(Some(map))),
+			StellarValue::Map(_)
+		));
+
+		// Test Address
+		let contract_addr = ScAddress::Contract(Hash([0; 32]));
+		assert!(matches!(
+			StellarValue::from(ScVal::Address(contract_addr)),
+			StellarValue::Address(_)
+		));
+
+		// Test Other types
+		assert!(matches!(
+			StellarValue::from(ScVal::LedgerKeyContractInstance),
+			StellarValue::Void
+		));
+	}
+
+	#[test]
+	fn test_from_sc_spec_def_type() {
+		// Test basic types
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Bool),
+			StellarType::Bool
+		));
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Void),
+			StellarType::Void
+		));
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::U32),
+			StellarType::U32
+		));
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::I32),
+			StellarType::I32
+		));
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::U64),
+			StellarType::U64
+		));
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::I64),
+			StellarType::I64
+		));
+
+		// Test Timepoint and Duration
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Timepoint),
+			StellarType::Timepoint
+		));
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Duration),
+			StellarType::Duration
+		));
+
+		// Test large number types
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::U128),
+			StellarType::U128
+		));
+
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::I128),
+			StellarType::I128
+		));
+
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::U256),
+			StellarType::U256
+		));
+
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::I256),
+			StellarType::I256
+		));
+
+		// Test complex types
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Bytes),
+			StellarType::Bytes(_)
+		));
+
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::String),
+			StellarType::String
+		));
+
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Symbol),
+			StellarType::Symbol
+		));
+
+		// Test Vec
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+				element_type: Box::new(ScSpecTypeDef::U32),
+			}))),
+			StellarType::Vec(_)
+		));
+
+		// Test Map
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+				key_type: Box::new(ScSpecTypeDef::U32),
+				value_type: Box::new(ScSpecTypeDef::U32),
+			}))),
+			StellarType::Map(_, _)
+		));
+
+		// Test Address
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Address),
+			StellarType::Address
+		));
+
+		// Test Other types
+		assert!(matches!(
+			StellarType::from(ScSpecTypeDef::Option(Box::new(ScSpecTypeOption {
+				value_type: Box::new(ScSpecTypeDef::Void),
+			}))),
+			StellarType::Void
+		));
+	}
+
+	#[test]
+	fn test_from_json_value() {
+		// Test Number types
+		assert!(matches!(StellarType::from(json!(42)), StellarType::U64));
+		assert!(matches!(StellarType::from(json!(-42)), StellarType::I64));
+
+		// Test Boolean
+		assert!(matches!(StellarType::from(json!(true)), StellarType::Bool));
+
+		// Test String types
+		// Regular string
+		assert!(matches!(
+			StellarType::from(json!("hello")),
+			StellarType::String
+		));
+
+		// Address string (Stellar address)
+		assert!(matches!(
+			StellarType::from(json!(
+				"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+			)),
+			StellarType::Address
+		));
+
+		// Contract address
+		assert!(matches!(
+			StellarType::from(json!(
+				"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
+			)),
+			StellarType::Address
+		));
+
+		// Test Array
+		assert!(matches!(
+			StellarType::from(json!([1, 2, 3])),
+			StellarType::Vec(_)
+		));
+
+		// Test Object
+		assert!(matches!(
+			StellarType::from(json!({"key": "value"})),
+			StellarType::Map(_, _)
+		));
+
+		// Test Null
+		assert!(matches!(StellarType::from(json!(null)), StellarType::Void));
+
+		// Test nested structures
+		let nested_array = json!([{"key": "value"}, [1, 2, 3]]);
+		assert!(matches!(
+			StellarType::from(nested_array),
+			StellarType::Vec(_)
+		));
+
+		let nested_object = json!({
+			"array": [1, 2, 3],
+			"object": {"key": "value"}
+		});
+		assert!(matches!(
+			StellarType::from(nested_object),
+			StellarType::Map(_, _)
+		));
 	}
 }
