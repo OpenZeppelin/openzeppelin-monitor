@@ -855,8 +855,8 @@ mod tests {
 	use std::str::FromStr;
 	use stellar_xdr::curr::{
 		ContractDataEntry, Hash, LedgerEntryData, ScContractInstance, ScSpecFunctionInputV0,
-		ScSpecFunctionV0, ScSpecTypeMap, ScSpecTypeVec, ScString, ScSymbol, ScVal, SequenceNumber,
-		String32, StringM, Uint256, WriteXdr,
+		ScSpecFunctionV0, ScSpecTypeMap, ScSpecTypeTuple, ScSpecTypeVec, ScString, ScSymbol, ScVal,
+		SequenceNumber, String32, StringM, Uint256, WriteXdr,
 	};
 
 	fn create_test_function_entry(
@@ -1285,12 +1285,27 @@ mod tests {
 		assert_eq!(format_type_def(&ScSpecTypeDef::U64), "U64");
 		assert_eq!(format_type_def(&ScSpecTypeDef::I64), "I64");
 		assert_eq!(format_type_def(&ScSpecTypeDef::Address), "Address");
+		assert_eq!(format_type_def(&ScSpecTypeDef::U128), "U128");
+		assert_eq!(format_type_def(&ScSpecTypeDef::I128), "I128");
+		assert_eq!(format_type_def(&ScSpecTypeDef::U256), "U256");
+		assert_eq!(format_type_def(&ScSpecTypeDef::I256), "I256");
+		assert_eq!(format_type_def(&ScSpecTypeDef::Symbol), "Symbol");
+		assert_eq!(format_type_def(&ScSpecTypeDef::Bytes), "Bytes");
+		assert_eq!(format_type_def(&ScSpecTypeDef::U32), "U32");
+		assert_eq!(format_type_def(&ScSpecTypeDef::I32), "I32");
+		assert_eq!(format_type_def(&ScSpecTypeDef::Timepoint), "Timepoint");
+		assert_eq!(format_type_def(&ScSpecTypeDef::Duration), "Duration");
 
 		// Test complex types
 		let vec_type = ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
 			element_type: Box::new(ScSpecTypeDef::U64),
 		}));
 		assert_eq!(format_type_def(&vec_type), "Vec<U64>");
+
+		let tuple = ScSpecTypeDef::Tuple(Box::new(ScSpecTypeTuple {
+			value_types: vec![ScSpecTypeDef::U64].try_into().unwrap(),
+		}));
+		assert_eq!(format_type_def(&tuple), "Tuple<U64>");
 
 		let map_type = ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
 			key_type: Box::new(ScSpecTypeDef::String),
