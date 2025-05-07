@@ -173,6 +173,8 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag }}
     secrets: inherit
+    environment:
+      name: release
 
   # Trigger workflow to publish docker images
   release-docker:
@@ -182,6 +184,8 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag }}
     secrets: inherit
+    environment:
+      name: release
 
   # Trigger workflow to publish docs
   release-docs:
@@ -193,3 +197,5 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag }}
     secrets: inherit
+    environment:
+      name: release
