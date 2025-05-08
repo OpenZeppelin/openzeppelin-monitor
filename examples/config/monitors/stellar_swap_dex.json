@@ -7,7 +7,7 @@
   "addresses": [
     {
       "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
-      "abi": [
+      "contract_spec": [
         {
           "function_v0": {
             "doc": "",

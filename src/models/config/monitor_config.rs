@@ -225,7 +225,7 @@ mod tests {
 			"addresses": [
 				{
 					"address": "0x0000000000000000000000000000000000000000",
-					"abi": null
+					"contract_spec": null
 				}
 			],
             "description": "Test monitor configuration",
@@ -289,7 +289,7 @@ mod tests {
 			"addresses": [
 				{
 					"address": "0x0000000000000000000000000000000000000000",
-					"abi": null
+					"contract_spec": null
 				}
 			],
             "description": "Test monitor configuration",
@@ -318,7 +318,7 @@ mod tests {
 			"addresses": [
 				{
 					"address": "0x0000000000000000000000000000000000000000",
-					"abi": null
+					"contract_spec": null
 				}
 			],
             "description": "Test monitor configuration",

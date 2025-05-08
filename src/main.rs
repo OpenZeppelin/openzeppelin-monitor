@@ -52,7 +52,7 @@ use crate::{
 };
 
 use clap::Parser;
-use dotenvy::dotenv;
+use dotenvy::dotenv_override;
 use std::collections::HashMap;
 use std::env::{set_var, var};
 use std::sync::Arc;
@@ -137,27 +137,48 @@ struct Cli {
 }
 
 impl Cli {
-	/// Apply CLI options to environment variables if they're not already set
+	/// Apply CLI options to environment variables, overriding any existing values
 	fn apply_to_env(&self) {
-		if self.log_file && var("LOG_MODE").is_err() {
+		// Reload environment variables from .env file
+		// Override any existing environment variables
+		dotenv_override().ok();
+
+		// Log file mode - override if CLI flag is set
+		if self.log_file {
 			set_var("LOG_MODE", "file");
 		}
 
+		// Set log level from RUST_LOG if it exists
+		if let Ok(level) = var("RUST_LOG") {
+			set_var("LOG_LEVEL", level);
+		}
+
+		// Log level - override if CLI flag is set
 		if let Some(level) = &self.log_level {
-			if var("LOG_LEVEL").is_err() {
-				set_var("LOG_LEVEL", level);
-			}
+			set_var("LOG_LEVEL", level);
+			set_var("RUST_LOG", level);
 		}
 
+		// Log path - override if CLI flag is set
 		if let Some(path) = &self.log_path {
-			if var("LOG_DATA_DIR").is_err() {
-				set_var("LOG_DATA_DIR", path);
-			}
+			set_var("LOG_DATA_DIR", path);
 		}
 
+		// Log max size - override if CLI flag is set
 		if let Some(max_size) = &self.log_max_size {
-			if var("LOG_MAX_SIZE").is_err() {
-				set_var("LOG_MAX_SIZE", max_size.to_string());
+			set_var("LOG_MAX_SIZE", max_size.to_string());
+		}
+
+		// Metrics server - override if CLI flag is set
+		if self.metrics {
+			set_var("METRICS_ENABLED", "true");
+		}
+
+		// Metrics address - override if CLI flag is set
+		if let Some(address) = &self.metrics_address {
+			// Extract port from address if it's in HOST:PORT format
+			if let Some(port) = address.split(':').nth(1) {
+				set_var("METRICS_PORT", port);
 			}
 		}
 	}
@@ -170,9 +191,6 @@ impl Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
 	let cli = Cli::parse();
-
-	// Load environment variables from .env file
-	dotenv().ok();
 
 	// Apply CLI options to environment
 	cli.apply_to_env();

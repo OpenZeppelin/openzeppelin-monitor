@@ -21,8 +21,8 @@ use tokio::sync::{watch, Mutex};
 
 use crate::{
 	models::{
-		BlockChainType, BlockType, Monitor, MonitorMatch, Network, ProcessedBlock, ScriptLanguage,
-		TriggerConditions,
+		BlockChainType, BlockType, ContractSpec, Monitor, MonitorMatch, Network, ProcessedBlock,
+		ScriptLanguage, TriggerConditions,
 	},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
@@ -30,7 +30,7 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
-		filter::{handle_match, FilterService},
+		filter::{evm_helpers, handle_match, stellar_helpers, FilterService},
 		notification::NotificationService,
 		trigger::{
 			ScriptError, ScriptExecutorFactory, TriggerError, TriggerExecutionService,
@@ -164,11 +164,18 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 					let matches = match network.network_type {
 						BlockChainType::EVM => match client_pools.get_evm_client(&network).await {
 							Ok(client) => {
+								let contract_specs = get_contract_specs(
+									client.as_ref(),
+									&network,
+									&applicable_monitors,
+								)
+								.await;
 								process_block(
 									client.as_ref(),
 									&network,
 									&block,
 									&applicable_monitors,
+									Some(&contract_specs),
 									&filter_service,
 									&mut shutdown_rx,
 								)
@@ -179,11 +186,18 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 						BlockChainType::Stellar => {
 							match client_pools.get_stellar_client(&network).await {
 								Ok(client) => {
+									let contract_specs = get_contract_specs(
+										client.as_ref(),
+										&network,
+										&applicable_monitors,
+									)
+									.await;
 									process_block(
 										client.as_ref(),
 										&network,
 										&block,
 										&applicable_monitors,
+										Some(&contract_specs),
 										&filter_service,
 										&mut shutdown_rx,
 									)
@@ -219,6 +233,7 @@ pub async fn process_block<T>(
 	network: &Network,
 	block: &BlockType,
 	applicable_monitors: &[Monitor],
+	contract_specs: Option<&[(String, ContractSpec)]>,
 	filter_service: &FilterService,
 	shutdown_rx: &mut watch::Receiver<bool>,
 ) -> Option<Vec<MonitorMatch>>
@@ -226,12 +241,120 @@ where
 	T: BlockChainClient + BlockFilterFactory<T>,
 {
 	tokio::select! {
-		result = filter_service.filter_block(client, network, block, applicable_monitors) => {
+		result = filter_service.filter_block(client, network, block, applicable_monitors, contract_specs) => {
 			result.ok()
 		}
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");
 			None
+		}
+	}
+}
+
+/// Get contract specs for all applicable monitors
+///
+/// # Arguments
+/// * `client` - The client to use to get the contract specs
+/// * `network` - The network to get the contract specs for
+/// * `monitors` - The monitors to get the contract specs for
+///
+/// # Returns
+/// Returns a vector of contract specs
+pub async fn get_contract_specs<T>(
+	client: &T,
+	network: &Network,
+	monitors: &[Monitor],
+) -> Vec<(String, ContractSpec)>
+where
+	T: BlockChainClient + BlockFilterFactory<T>,
+{
+	match network.network_type {
+		BlockChainType::Stellar => {
+			let mut contract_specs = Vec::new();
+			let mut addresses_without_specs = Vec::new();
+			for monitor in monitors {
+				// First collect addresses that have contract specs configured in the monitor
+				for monitored_addr in &monitor.addresses {
+					if let Some(spec) = &monitored_addr.contract_spec {
+						let parsed_spec = match spec {
+							ContractSpec::Stellar(spec) => spec,
+							_ => {
+								tracing::warn!(
+									"Skipping non-Stellar contract spec for address {}",
+									monitored_addr.address
+								);
+								continue;
+							}
+						};
+
+						contract_specs.push((
+							stellar_helpers::normalize_address(&monitored_addr.address),
+							ContractSpec::Stellar(parsed_spec.clone()),
+						))
+					} else {
+						addresses_without_specs.push(monitored_addr.address.clone());
+					}
+				}
+			}
+
+			// Fetch remaining specs from chain
+			if !addresses_without_specs.is_empty() {
+				let chain_specs = futures::future::join_all(addresses_without_specs.iter().map(
+					|address| async move {
+						let spec = client.get_contract_spec(address).await;
+						(address.clone(), spec)
+					},
+				))
+				.await
+				.into_iter()
+				.filter_map(|(addr, spec)| match spec {
+					Ok(s) => Some((addr, s)),
+					Err(e) => {
+						tracing::warn!(
+							"Failed to fetch contract spec for address {}: {:?}",
+							addr,
+							e
+						);
+						None
+					}
+				})
+				.collect::<Vec<_>>();
+
+				contract_specs.extend(chain_specs);
+			}
+			contract_specs
+		}
+		BlockChainType::EVM => {
+			let mut contract_specs = Vec::new();
+			for monitor in monitors {
+				// First collect addresses that have contract specs configured in the monitor
+				for monitored_addr in &monitor.addresses {
+					if let Some(spec) = &monitored_addr.contract_spec {
+						let parsed_spec = match spec {
+							ContractSpec::EVM(spec) => spec,
+							_ => {
+								tracing::warn!(
+									"Skipping non-EVM contract spec for address {}",
+									monitored_addr.address
+								);
+								continue;
+							}
+						};
+
+						contract_specs.push((
+							format!(
+								"0x{}",
+								evm_helpers::normalize_address(&monitored_addr.address)
+							),
+							ContractSpec::EVM(parsed_spec.clone()),
+						))
+					}
+				}
+			}
+			contract_specs
+		}
+		_ => {
+			vec![]
 		}
 	}
 }

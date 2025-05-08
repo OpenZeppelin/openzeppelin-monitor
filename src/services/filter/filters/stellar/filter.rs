@@ -16,20 +16,18 @@ use tracing::instrument;
 
 use crate::{
 	models::{
-		BlockType, EventCondition, FunctionCondition, MatchConditions, Monitor, MonitorMatch,
-		Network, StellarContractFunction, StellarContractSpec, StellarEvent, StellarMatchArguments,
-		StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction,
-		TransactionCondition, TransactionStatus,
+		BlockType, ContractSpec, EventCondition, FunctionCondition, MatchConditions, Monitor,
+		MonitorMatch, Network, StellarContractFunction, StellarEvent, StellarFormattedContractSpec,
+		StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch,
+		StellarTransaction, TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
 			stellar_helpers::{
 				are_same_signature, compare_json_values, compare_json_values_vs_string,
-				compare_strings, get_contract_spec_functions,
-				get_contract_spec_with_function_input_parameters, get_kind_from_value,
-				get_nested_value, normalize_address, parse_json_safe, parse_xdr_value,
-				process_invoke_host_function,
+				compare_strings, get_kind_from_value, get_nested_value, normalize_address,
+				parse_json_safe, parse_xdr_value, process_invoke_host_function,
 			},
 			BlockFilter, FilterError,
 		},
@@ -292,7 +290,7 @@ impl<T> StellarBlockFilter<T> {
 	pub fn find_matching_functions_for_transaction(
 		&self,
 		monitored_addresses: &[String],
-		contract_specs: &[(String, StellarContractSpec)],
+		contract_specs: &[(String, StellarFormattedContractSpec)],
 		transaction: &StellarTransaction,
 		monitor: &Monitor,
 		matched_functions: &mut Vec<FunctionCondition>,
@@ -498,7 +496,7 @@ impl<T> StellarBlockFilter<T> {
 		&self,
 		events: &Vec<StellarEvent>,
 		monitored_addresses: &[String],
-		_contract_specs: &[(String, StellarContractSpec)],
+		_contract_specs: &[(String, StellarFormattedContractSpec)],
 	) -> Vec<EventMap> {
 		let mut decoded_events = Vec::new();
 		for event in events {
@@ -1094,6 +1092,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 	/// * `_network` - The network being monitored
 	/// * `block` - The block to filter
 	/// * `monitors` - List of monitors to check against
+	/// * `contract_specs` - List of contract specs to use for decoding events
 	///
 	/// # Returns
 	/// Result containing vector of matching monitors or a filter error
@@ -1104,6 +1103,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
+		contract_specs: Option<&[(String, ContractSpec)]>,
 	) -> Result<Vec<MonitorMatch>, FilterError> {
 		let stellar_block = match block {
 			BlockType::Stellar(block) => block,
@@ -1153,6 +1153,19 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 
 		let mut matching_results = Vec::new();
 
+		// Cast contract specs to StellarContractSpec
+		let contract_specs = contract_specs
+			.unwrap_or(&[])
+			.iter()
+			.filter_map(|(address, spec)| match spec {
+				ContractSpec::Stellar(spec) => Some((
+					address.clone(),
+					StellarFormattedContractSpec::from(spec.clone()),
+				)),
+				_ => None,
+			})
+			.collect::<Vec<(String, StellarFormattedContractSpec)>>();
+
 		// Process each monitor first
 		for monitor in monitors {
 			tracing::debug!("Processing monitor: {}", monitor.name);
@@ -1162,59 +1175,6 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 				.iter()
 				.map(|addr| normalize_address(&addr.address))
 				.collect::<Vec<String>>();
-
-			// Avoid calling get_contract_spec for each address if we already have the specs in the
-			// monitor config
-			let mut contract_specs = Vec::new();
-			let mut addresses_without_specs = Vec::new();
-			// First collect addresses that have ABIs configured in the monitor
-			for monitored_addr in &monitor.addresses {
-				if let Some(abi) = &monitored_addr.abi {
-					// Parse the ABI into a contract spec
-					match serde_json::from_str::<Vec<stellar_xdr::curr::ScSpecEntry>>(
-						abi.to_string().as_str(),
-					) {
-						Ok(spec_entries) => {
-							// Process the spec entries using our helper functions
-							let functions = get_contract_spec_with_function_input_parameters(
-								get_contract_spec_functions(spec_entries),
-							);
-							contract_specs.push((
-								normalize_address(&monitored_addr.address),
-								StellarContractSpec { functions },
-							));
-						}
-						Err(e) => {
-							// Add the address to the list of addresses without specs and log an error
-							addresses_without_specs.push(monitored_addr.address.clone());
-							tracing::warn!(
-								"Failed to parse configured contract spec for address {}: {}",
-								monitored_addr.address,
-								e
-							);
-							continue;
-						}
-					}
-				} else {
-					addresses_without_specs.push(monitored_addr.address.clone());
-				}
-			}
-
-			// Fetch remaining specs from chain
-			if !addresses_without_specs.is_empty() {
-				let chain_specs = futures::future::join_all(addresses_without_specs.iter().map(
-					|address| async move {
-						let spec = client.get_contract_spec(address).await;
-						(address.clone(), spec)
-					},
-				))
-				.await
-				.into_iter()
-				.filter_map(|(addr, spec)| spec.ok().map(|s| (addr, s)))
-				.collect::<Vec<_>>();
-
-				contract_specs.extend(chain_specs);
-			}
 
 			let decoded_events = self
 				.decode_events(&events, &monitored_addresses, &contract_specs)
@@ -1330,9 +1290,9 @@ mod tests {
 	use super::*;
 	use crate::{
 		models::{
-			AddressWithABI, MatchConditions, Monitor, StellarContractInput,
-			StellarDecodedTransaction, StellarTransaction, StellarTransactionInfo,
-			TransactionStatus,
+			AddressWithSpec, MatchConditions, Monitor, StellarContractInput,
+			StellarDecodedTransaction, StellarFormattedContractSpec, StellarTransaction,
+			StellarTransactionInfo, TransactionStatus,
 		},
 		utils::tests::stellar::monitor::MonitorBuilder,
 	};
@@ -1357,16 +1317,16 @@ mod tests {
 		event_conditions: Vec<EventCondition>,
 		function_conditions: Vec<FunctionCondition>,
 		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithABI>,
+		addresses: Vec<AddressWithSpec>,
 	) -> Monitor {
 		MonitorBuilder::new()
 			.name("test")
 			.networks(vec!["stellar_mainnet".to_string()])
 			.paused(false)
-			.addresses_with_abi(
+			.addresses_with_spec(
 				addresses
 					.iter()
-					.map(|a| (a.address.clone(), a.abi.clone()))
+					.map(|a| (a.address.clone(), a.contract_spec.clone()))
 					.collect(),
 			)
 			.match_conditions(MatchConditions {
@@ -1796,9 +1756,9 @@ mod tests {
 			vec![],
 			vec![],
 			vec![],
-			vec![AddressWithABI {
+			vec![AddressWithSpec {
 				address: normalized_contract_address.clone(),
-				abi: None,
+				contract_spec: None,
 			}],
 		);
 
@@ -1808,7 +1768,7 @@ mod tests {
 		// Add contract spec with mock function
 		let contract_specs = vec![(
 			contract_address.to_string(),
-			StellarContractSpec {
+			StellarFormattedContractSpec {
 				functions: vec![StellarContractFunction {
 					name: "mock_function".to_string(),
 					signature: "mock_function(I32,String)".to_string(),
@@ -1874,16 +1834,16 @@ mod tests {
 				expression: None,
 			}],
 			vec![],
-			vec![AddressWithABI {
+			vec![AddressWithSpec {
 				address: normalized_contract_address.clone(),
-				abi: None,
+				contract_spec: None,
 			}],
 		);
 
 		let monitored_addresses = vec![normalized_contract_address];
 		let contract_specs = vec![(
 			contract_address.to_string(),
-			StellarContractSpec {
+			StellarFormattedContractSpec {
 				functions: vec![StellarContractFunction {
 					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
@@ -1947,16 +1907,16 @@ mod tests {
 				expression: Some("0 < 50".to_string()),
 			}],
 			vec![],
-			vec![AddressWithABI {
+			vec![AddressWithSpec {
 				address: normalized_contract_address.clone(),
-				abi: None,
+				contract_spec: None,
 			}],
 		);
 
 		let monitored_addresses = vec![normalized_contract_address];
 		let contract_specs = vec![(
 			contract_address.to_string(),
-			StellarContractSpec {
+			StellarFormattedContractSpec {
 				functions: vec![StellarContractFunction {
 					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
@@ -2020,16 +1980,16 @@ mod tests {
 				expression: None,
 			}],
 			vec![],
-			vec![AddressWithABI {
+			vec![AddressWithSpec {
 				address: normalized_different_address.clone(),
-				abi: None,
+				contract_spec: None,
 			}],
 		);
 
 		let monitored_addresses = vec![normalized_different_address];
 		let contract_specs = vec![(
 			contract_address.to_string(),
-			StellarContractSpec {
+			StellarFormattedContractSpec {
 				functions: vec![StellarContractFunction {
 					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
@@ -2097,16 +2057,16 @@ mod tests {
 				},
 			],
 			vec![],
-			vec![AddressWithABI {
+			vec![AddressWithSpec {
 				address: normalized_contract_address.clone(),
-				abi: None,
+				contract_spec: None,
 			}],
 		);
 
 		let monitored_addresses = vec![normalized_contract_address];
 		let contract_specs = vec![(
 			contract_address.to_string(),
-			StellarContractSpec {
+			StellarFormattedContractSpec {
 				functions: vec![StellarContractFunction {
 					signature: "mock_function(I32,String)".to_string(),
 					name: "mock_function".to_string(),
@@ -3703,7 +3663,7 @@ mod tests {
 			}),
 		];
 
-		let function_spec = StellarContractSpec {
+		let function_spec = StellarFormattedContractSpec {
 			functions: vec![StellarContractFunction {
 				signature: "swap(Address,U128,U128)".to_string(),
 				name: "swap".to_string(),

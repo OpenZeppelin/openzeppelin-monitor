@@ -2,7 +2,7 @@
 //!
 //! This module provides functionality to execute monitors against specific block numbers on blockchain networks.
 use crate::{
-	bootstrap::has_active_monitors,
+	bootstrap::{get_contract_specs, has_active_monitors},
 	models::{BlockChainType, ScriptLanguage},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
@@ -162,10 +162,19 @@ pub async fn execute_monitor<
 					)
 				})?;
 
+				let contract_specs =
+					get_contract_specs(&*client, &network, &[monitor.clone()]).await;
+
 				tracing::debug!(block = %block_number, "Filtering block");
 				config
 					.filter_service
-					.filter_block(&*client, &network, block, &[monitor.clone()])
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
 					.await
 					.map_err(|e| {
 						MonitorExecutionError::execution_error(
@@ -212,9 +221,18 @@ pub async fn execute_monitor<
 					)
 				})?;
 
+				let contract_specs =
+					get_contract_specs(&*client, &network, &[monitor.clone()]).await;
+
 				config
 					.filter_service
-					.filter_block(&*client, &network, block, &[monitor.clone()])
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
 					.await
 					.map_err(|e| {
 						MonitorExecutionError::execution_error(

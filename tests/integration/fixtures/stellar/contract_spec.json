@@ -1,41 +1,53 @@
-{
-    "functions": [
-        {
+[
+    {
+        "function_v0": {
+            "doc": "",
             "name": "transfer",
-            "signature": "transfer(Address,Address,I128)",
             "inputs": [
                 {
-                    "index": 0,
+                    "doc": "",
                     "name": "from",
-                    "kind": "Address"
+                    "type_": "address"
                 },
                 {
-                    "index": 1,
+                    "doc": "",
                     "name": "to",
-                    "kind": "Address"
+                    "type_": "address"
                 },
                 {
-                    "index": 2,
+                    "doc": "",
                     "name": "amount",
-                    "kind": "I128"
+                    "type_": "i128"
                 }
-            ]
-        },
-        {
+            ],
+            "outputs": []
+        }
+    },
+    {
+        "function_v0": {
+            "doc": "",
             "name": "upsert_data",
-            "signature": "upsert_data(Map<String,Union<U32, String>>)",
             "inputs": [
                 {
-                    "index": 0,
+                    "doc": "",
                     "name": "data",
-                    "kind": "Map"
+                    "type_": {
+                        "map": {
+                            "key_type": "string",
+                            "value_type": "string"
+                        }
+                    }
                 }
-            ]
-        },
-        {
-            "name": "increment",
-            "signature": "increment()",
-            "inputs": []
+            ],
+            "outputs": []
         }
-    ]
-}
+    },
+    {
+        "function_v0": {
+            "doc": "",
+            "name": "increment",
+            "inputs": [],
+            "outputs": []
+        }
+    }
+]

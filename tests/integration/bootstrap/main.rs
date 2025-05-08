@@ -6,22 +6,32 @@ use crate::integration::{
 	mocks::{
 		create_test_block, create_test_network, create_test_transaction, MockClientPool,
 		MockEVMTransportClient, MockEvmClientTrait, MockMonitorRepository, MockNetworkRepository,
-		MockStellarClientTrait, MockTriggerExecutionService, MockTriggerRepository,
+		MockStellarClientTrait, MockStellarTransportClient, MockTriggerExecutionService,
+		MockTriggerRepository,
 	},
 };
 use openzeppelin_monitor::{
-	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
+	bootstrap::{
+		create_block_handler, create_trigger_handler, get_contract_specs, initialize_services,
+		process_block,
+	},
 	models::{
-		BlockChainType, EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, Monitor,
-		MonitorMatch, ProcessedBlock, ScriptLanguage, SecretString, SecretValue, StellarBlock,
-		StellarMonitorMatch, TransactionType, Trigger, TriggerConditions,
+		AddressWithSpec, BlockChainType, ContractSpec, EVMContractSpec, EVMMonitorMatch,
+		EVMTransactionReceipt, MatchConditions, Monitor, MonitorMatch, ProcessedBlock,
+		ScriptLanguage, SecretString, SecretValue, StellarBlock, StellarContractSpec,
+		StellarFormattedContractSpec, StellarMonitorMatch, TransactionType, Trigger,
+		TriggerConditions,
 	},
 	services::{
-		filter::FilterService,
+		filter::{stellar_helpers::are_same_address, FilterService},
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 	utils::tests::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
+};
+use std::str::FromStr;
+use stellar_xdr::curr::{
+	ScSpecEntry, ScSpecFunctionInputV0, ScSpecFunctionV0, ScSpecTypeDef, ScSymbol, StringM,
 };
 
 use serde_json::json;
@@ -249,9 +259,7 @@ async fn test_create_trigger_handler_empty_matches() {
 #[tokio::test]
 async fn test_create_block_handler_stellar() {
 	let (shutdown_tx, _) = watch::channel(false);
-
 	let filter_service = Arc::new(FilterService::new());
-
 	let monitors = vec![create_test_monitor(
 		"test",
 		vec!["stellar_mainnet"],
@@ -260,50 +268,43 @@ async fn test_create_block_handler_stellar() {
 	)];
 
 	let block = create_test_block(BlockChainType::Stellar, 100);
-
 	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
 
 	// Create a mock client pool that returns a successful client
-
 	let mut mock_pool = MockClientPool::new();
 
 	mock_pool.expect_get_stellar_client().returning(move |_| {
 		let mut mock_client = MockStellarClientTrait::new();
-
 		// Stellar does an additional call to get the transactions as opposed to EVM where
-
 		// transactions are already in the block
-
 		mock_client
 			.expect_get_transactions()
 			.times(1)
 			.returning(move |_, _| Ok(vec![]));
 
+		mock_client
+			.expect_get_contract_spec()
+			.returning(move |_| Ok(ContractSpec::Stellar(StellarContractSpec::default())));
+
 		Ok(Arc::new(mock_client))
 	});
 
 	let client_pool = Arc::new(mock_pool);
-
 	let block_handler =
 		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
-
 	let result = block_handler(block, network).await;
 
 	assert_eq!(result.block_number, 100);
-
 	assert_eq!(result.network_slug, "stellar_mainnet");
 
 	// The mock client should return no matches
-
 	assert!(result.processing_results.is_empty());
 }
 
 #[tokio::test]
 async fn test_create_block_handler_evm_client_error() {
 	let (shutdown_tx, _) = watch::channel(false);
-
 	let filter_service = Arc::new(FilterService::new());
-
 	let monitors = vec![create_test_monitor(
 		"test",
 		vec!["ethereum_mainnet"],
@@ -312,37 +313,28 @@ async fn test_create_block_handler_evm_client_error() {
 	)];
 
 	let block = create_test_block(BlockChainType::EVM, 100);
-
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	// Create a mock client pool that returns an error
-
 	let mut mock_pool = MockClientPool::new();
 
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Err(anyhow::anyhow!("Failed to get EVM client")));
-
 	let client_pool = Arc::new(mock_pool);
-
 	let block_handler =
 		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
-
 	let result = block_handler(block, network).await;
 
 	assert_eq!(result.block_number, 100);
-
 	assert_eq!(result.network_slug, "ethereum_mainnet");
-
 	assert!(result.processing_results.is_empty());
 }
 
 #[tokio::test]
 async fn test_create_block_handler_stellar_client_error() {
 	let (shutdown_tx, _) = watch::channel(false);
-
 	let filter_service = Arc::new(FilterService::new());
-
 	let monitors = vec![create_test_monitor(
 		"test",
 		vec!["stellar_mainnet"],
@@ -351,28 +343,21 @@ async fn test_create_block_handler_stellar_client_error() {
 	)];
 
 	let block = create_test_block(BlockChainType::Stellar, 100);
-
 	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
 
 	// Create a mock client pool that returns an error
-
 	let mut mock_pool = MockClientPool::new();
-
 	mock_pool
 		.expect_get_stellar_client()
 		.return_once(move |_| Err(anyhow::anyhow!("Failed to get Stellar client")));
 
 	let client_pool = Arc::new(mock_pool);
-
 	let block_handler =
 		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
 
 	let result = block_handler(block, network).await;
-
 	assert_eq!(result.block_number, 100);
-
 	assert_eq!(result.network_slug, "stellar_mainnet");
-
 	assert!(result.processing_results.is_empty());
 }
 
@@ -480,6 +465,7 @@ async fn test_process_block() {
 		&network,
 		&block,
 		&monitors,
+		None,
 		&filter_service,
 		&mut shutdown_rx,
 	)
@@ -523,6 +509,7 @@ async fn test_process_block_with_shutdown() {
 		&network,
 		&block,
 		&monitors,
+		None,
 		&filter_service,
 		&mut shutdown_rx,
 	)
@@ -1039,4 +1026,152 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 	// Verify that both mock servers received their expected calls
 	slack_mock.assert();
 	webhook_mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_contract_specs() {
+	// Test EVM contract specs
+	let mock_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	// Create a monitor with EVM contract specs
+	let mut monitor = create_test_monitor("test", vec!["ethereum_mainnet"], false, vec![]);
+	monitor.addresses.push(AddressWithSpec {
+		address: "0x1234567890123456789012345678901234567890".to_string(),
+		contract_spec: Some(ContractSpec::EVM(EVMContractSpec::from(
+			serde_json::json!([{
+				"type": "function",
+				"name": "transfer",
+				"inputs": [
+					{
+						"name": "to",
+						"type": "address",
+						"internalType": "address"
+					},
+					{
+						"name": "amount",
+						"type": "uint256",
+						"internalType": "uint256"
+					}
+				],
+				"outputs": [
+					{
+						"name": "",
+						"type": "bool",
+						"internalType": "bool"
+					}
+				],
+				"stateMutability": "nonpayable"
+			}]),
+		))),
+	});
+
+	monitor.addresses.push(AddressWithSpec {
+		address: "0x1234567890123456789012345678901234567890".to_string(),
+		contract_spec: None,
+	});
+
+	let monitors = vec![monitor];
+	let specs = get_contract_specs(&mock_client, &network, &monitors).await;
+
+	// Verify EVM specs and second spec is not added
+	assert_eq!(specs.len(), 1);
+
+	let (addr, spec) = &specs[0];
+	assert_eq!(addr, "0x1234567890123456789012345678901234567890");
+	match spec {
+		ContractSpec::EVM(evm_spec) => {
+			let functions: Vec<_> = evm_spec.functions().collect();
+			assert_eq!(functions.len(), 1);
+			assert_eq!(functions[0].name, "transfer");
+			assert_eq!(functions[0].inputs.len(), 2);
+			assert_eq!(functions[0].inputs[0].name, "to");
+			assert_eq!(functions[0].inputs[0].ty, "address");
+			assert_eq!(functions[0].inputs[1].name, "amount");
+			assert_eq!(functions[0].inputs[1].ty, "uint256");
+		}
+		_ => panic!("Expected EVM contract spec"),
+	}
+
+	// Test Stellar contract specs
+	let mut mock_stellar_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let stellar_network =
+		create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
+
+	// Create a monitor with Stellar contract specs
+	let mut stellar_monitor =
+		create_test_monitor("test_stellar", vec!["stellar_mainnet"], false, vec![]);
+
+	// Remove default ZERO address
+	stellar_monitor.addresses = vec![];
+
+	stellar_monitor.addresses.push(AddressWithSpec {
+		address: "GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890".to_string(),
+		contract_spec: Some(ContractSpec::Stellar(StellarContractSpec::from(vec![
+			ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
+				doc: StringM::<1024>::from_str("").unwrap(),
+				name: ScSymbol(StringM::<32>::from_str("transfer").unwrap()),
+				inputs: vec![
+					ScSpecFunctionInputV0 {
+						doc: StringM::<1024>::from_str("").unwrap(),
+						name: StringM::<30>::from_str("to").unwrap(),
+						type_: ScSpecTypeDef::String,
+					},
+					ScSpecFunctionInputV0 {
+						doc: StringM::<1024>::from_str("").unwrap(),
+						name: StringM::<30>::from_str("amount").unwrap(),
+						type_: ScSpecTypeDef::I128,
+					},
+				]
+				.try_into()
+				.unwrap(),
+				outputs: vec![ScSpecTypeDef::Bool].try_into().unwrap(),
+			}),
+		]) as StellarContractSpec)),
+	});
+
+	// Add an address without a contract spec to test fetching from chain
+	stellar_monitor.addresses.push(AddressWithSpec {
+		address: "GZYXWVUTSRQPONMLKJIHGFEDCBA0987654321".to_string(),
+		contract_spec: None,
+	});
+
+	// Mock the get_contract_spec response for the address without a spec
+	mock_stellar_client
+		.expect_get_contract_spec()
+		.withf(|addr| addr == "GZYXWVUTSRQPONMLKJIHGFEDCBA0987654321")
+		.times(1)
+		.returning(|_| {
+			Ok(ContractSpec::Stellar(StellarContractSpec::from(vec![
+				ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
+					doc: StringM::<1024>::from_str("").unwrap(),
+					name: ScSymbol(StringM::<32>::from_str("balance").unwrap()),
+					inputs: vec![].try_into().unwrap(),
+					outputs: vec![ScSpecTypeDef::I128].try_into().unwrap(),
+				}),
+			])))
+		});
+
+	let stellar_monitors = vec![stellar_monitor];
+	let specs = get_contract_specs(&mock_stellar_client, &stellar_network, &stellar_monitors).await;
+
+	// Verify Stellar specs
+	assert_eq!(specs.len(), 2);
+	let (addr, spec) = &specs[0];
+	assert!(are_same_address(
+		addr,
+		"GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+	));
+	match spec {
+		ContractSpec::Stellar(stellar_spec) => {
+			let formatted_spec = StellarFormattedContractSpec::from(stellar_spec.clone());
+			assert_eq!(formatted_spec.functions.len(), 1);
+			let function = &formatted_spec.functions[0];
+			assert_eq!(function.name, "transfer");
+			assert_eq!(function.inputs.len(), 2);
+			assert_eq!(function.inputs[0].name, "to");
+			assert_eq!(function.inputs[1].name, "amount");
+		}
+		_ => panic!("Expected Stellar contract spec"),
+	}
 }

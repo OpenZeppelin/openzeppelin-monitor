@@ -4,8 +4,8 @@
 use base64::Engine;
 use openzeppelin_monitor::{
 	models::{
-		Monitor, StellarContractFunction, StellarContractInput, StellarContractSpec,
-		StellarDecodedTransaction, StellarMatchArguments, StellarMatchParamEntry,
+		Monitor, StellarContractFunction, StellarContractInput, StellarDecodedTransaction,
+		StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
 		StellarTransaction, StellarTransactionInfo, TransactionStatus,
 	},
 	services::{
@@ -802,7 +802,7 @@ proptest! {
 		// Create contract spec matching the function
 		let contract_specs = vec![(
 			contract_address.clone(),
-			StellarContractSpec {
+			StellarFormattedContractSpec {
 				functions: vec![StellarContractFunction {
 					signature: function_signature.clone(),
 					name: function_name.to_string(),

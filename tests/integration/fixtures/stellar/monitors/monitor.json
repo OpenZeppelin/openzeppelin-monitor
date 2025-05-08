@@ -31,7 +31,7 @@
         "expression": "amount > 1000"
       },
       {
-        "signature": "upsert_data(Map<String,Union<U32,String>>)",
+        "signature": "upsert_data(Map<String,String>)",
         "expression": "data.myKey1 >= 1234 AND data.myKey2 == 'Hello, world!'"
       }
     ],
