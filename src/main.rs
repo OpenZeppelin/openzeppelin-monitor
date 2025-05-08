@@ -51,8 +51,10 @@ use crate::{
 	},
 };
 
+use bootstrap::get_contract_specs;
 use clap::Parser;
 use dotenvy::dotenv_override;
+use models::ContractSpec;
 use std::collections::HashMap;
 use std::env::{set_var, var};
 use std::sync::Arc;
@@ -76,6 +78,7 @@ type MonitorServiceType = MonitorService<
 /// * `trigger_execution_service` - Service handling trigger execution
 /// * `active_monitors_trigger_scripts` - Map of active monitors and their trigger scripts
 /// * `raw_output` - Whether to print the raw output of the monitor execution
+/// * `contract_specs` - Vector of contract specs for the active monitors
 struct MonitorExecutionTestConfig {
 	pub path: String,
 	pub network_slug: Option<String>,
@@ -86,6 +89,7 @@ struct MonitorExecutionTestConfig {
 	pub trigger_execution_service: Arc<TriggerExecutionService<TriggerRepository>>,
 	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 	pub raw_output: bool,
+	pub contract_specs: Vec<(String, ContractSpec)>,
 }
 
 #[derive(Parser)]
@@ -233,6 +237,37 @@ async fn main() -> Result<()> {
 	let network_slug = cli.network.clone();
 	let block_number = cli.block;
 
+	let networks_with_monitors: Vec<Network> = networks
+		.values()
+		.filter(|network| has_active_monitors(&active_monitors.clone(), &network.slug))
+		.cloned()
+		.collect();
+
+	if networks_with_monitors.is_empty() {
+		info!("No networks with active monitors found. Exiting...");
+		return Ok(());
+	}
+
+	let client_pool = Arc::new(ClientPool::new());
+
+	// Create a vector of networks with their associated monitors
+	let network_monitors = networks_with_monitors
+		.iter()
+		.map(|network| {
+			(
+				network.clone(),
+				active_monitors
+					.iter()
+					.filter(|m| m.networks.contains(&network.slug))
+					.cloned()
+					.collect::<Vec<_>>(),
+			)
+		})
+		.collect::<Vec<_>>();
+
+	// Fetch all contract specs for all active monitors
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
 	let should_test_monitor_execution = monitor_path.is_some();
 	// If monitor path is provided, test monitor execution else start the service
 	if should_test_monitor_execution {
@@ -249,6 +284,7 @@ async fn main() -> Result<()> {
 			trigger_execution_service: trigger_execution_service.clone(),
 			active_monitors_trigger_scripts,
 			raw_output: false,
+			contract_specs,
 		})
 		.await;
 	}
@@ -292,24 +328,13 @@ async fn main() -> Result<()> {
 		None
 	};
 
-	let networks_with_monitors: Vec<Network> = networks
-		.values()
-		.filter(|network| has_active_monitors(&active_monitors.clone(), &network.slug))
-		.cloned()
-		.collect();
-
-	if networks_with_monitors.is_empty() {
-		info!("No networks with active monitors found. Exiting...");
-		return Ok(());
-	}
-
 	let (shutdown_tx, _) = watch::channel(false);
-	let client_pool = Arc::new(ClientPool::new());
 	let block_handler = create_block_handler(
 		shutdown_tx.clone(),
 		filter_service,
 		active_monitors,
 		client_pool.clone(),
+		contract_specs,
 	);
 	let trigger_handler = create_trigger_handler(
 		shutdown_tx.clone(),
@@ -445,6 +470,7 @@ async fn test_monitor_execution(config: MonitorExecutionTestConfig) -> Result<()
 		trigger_execution_service: config.trigger_execution_service.clone(),
 		active_monitors_trigger_scripts: config.active_monitors_trigger_scripts.clone(),
 		client_pool,
+		contract_specs: config.contract_specs.clone(),
 	})
 	.await;
 
@@ -735,6 +761,7 @@ mod tests {
 			trigger_execution_service: trigger_execution_service.clone(),
 			active_monitors_trigger_scripts: HashMap::new(),
 			raw_output: false,
+			contract_specs: vec![],
 		})
 		.await;
 
@@ -775,6 +802,7 @@ mod tests {
 			trigger_execution_service: trigger_execution_service.clone(),
 			active_monitors_trigger_scripts: HashMap::new(),
 			raw_output: false,
+			contract_specs: vec![],
 		})
 		.await;
 

@@ -30,6 +30,8 @@ pub struct TriggerConfigFile {
 #[async_trait]
 impl ConfigLoader for Trigger {
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		dotenvy::dotenv().ok();
+
 		let mut trigger = self.clone();
 
 		match &mut trigger.config {

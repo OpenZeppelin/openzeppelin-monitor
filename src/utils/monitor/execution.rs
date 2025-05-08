@@ -2,8 +2,8 @@
 //!
 //! This module provides functionality to execute monitors against specific block numbers on blockchain networks.
 use crate::{
-	bootstrap::{get_contract_specs, has_active_monitors},
-	models::{BlockChainType, ScriptLanguage},
+	bootstrap::has_active_monitors,
+	models::{BlockChainType, ContractSpec, ScriptLanguage},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
 		TriggerRepositoryTrait,
@@ -19,6 +19,20 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::Mutex;
 use tracing::{info, instrument};
 
+/// Configuration for executing a monitor
+///
+/// # Arguments
+///
+/// * `path` - The path to the monitor to execute
+/// * `network_slug` - The network slug to execute the monitor against
+/// * `block_number` - The block number to execute the monitor against
+/// * `monitor_service` - The monitor service to use
+/// * `network_service` - The network service to use
+/// * `filter_service` - The filter service to use
+/// * `trigger_execution_service` - The trigger execution service to use
+/// * `active_monitors_trigger_scripts` - The active monitors trigger scripts to use
+/// * `client_pool` - The client pool to use
+/// * `contract_specs` - The contract specs to use
 pub struct MonitorExecutionConfig<
 	T: ClientPoolTrait,
 	M: MonitorRepositoryTrait<N, TR>,
@@ -34,6 +48,7 @@ pub struct MonitorExecutionConfig<
 	pub trigger_execution_service: Arc<TriggerExecutionService<TR>>,
 	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 	pub client_pool: T,
+	pub contract_specs: Vec<(String, ContractSpec)>,
 }
 pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 
@@ -162,9 +177,6 @@ pub async fn execute_monitor<
 					)
 				})?;
 
-				let contract_specs =
-					get_contract_specs(&*client, &network, &[monitor.clone()]).await;
-
 				tracing::debug!(block = %block_number, "Filtering block");
 				config
 					.filter_service
@@ -173,7 +185,7 @@ pub async fn execute_monitor<
 						&network,
 						block,
 						&[monitor.clone()],
-						Some(&contract_specs),
+						Some(&config.contract_specs),
 					)
 					.await
 					.map_err(|e| {
@@ -221,9 +233,6 @@ pub async fn execute_monitor<
 					)
 				})?;
 
-				let contract_specs =
-					get_contract_specs(&*client, &network, &[monitor.clone()]).await;
-
 				config
 					.filter_service
 					.filter_block(
@@ -231,7 +240,7 @@ pub async fn execute_monitor<
 						&network,
 						block,
 						&[monitor.clone()],
-						Some(&contract_specs),
+						Some(&config.contract_specs),
 					)
 					.await
 					.map_err(|e| {

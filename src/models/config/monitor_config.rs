@@ -15,6 +15,7 @@ use crate::{
 impl ConfigLoader for Monitor {
 	/// Resolve all secrets in the monitor configuration
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		dotenvy::dotenv().ok();
 		Ok(self.clone())
 	}
 

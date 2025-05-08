@@ -178,8 +178,16 @@ async fn test_create_block_handler_evm() {
 		.return_once(move |_| Ok(Arc::new(MockEvmClientTrait::new())));
 	let client_pool = Arc::new(mock_pool);
 
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		client_pool,
+		contract_specs,
+	);
 
 	let result = block_handler(block, network).await;
 	assert_eq!(result.block_number, 100);
@@ -270,28 +278,69 @@ async fn test_create_block_handler_stellar() {
 	let block = create_test_block(BlockChainType::Stellar, 100);
 	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
 
-	// Create a mock client pool that returns a successful client
-	let mut mock_pool = MockClientPool::new();
+	let mut contract_spec_pool = MockClientPool::new();
+	let mut handle_block_client_pool = MockClientPool::new();
 
-	mock_pool.expect_get_stellar_client().returning(move |_| {
-		let mut mock_client = MockStellarClientTrait::new();
-		// Stellar does an additional call to get the transactions as opposed to EVM where
-		// transactions are already in the block
-		mock_client
-			.expect_get_transactions()
-			.times(1)
-			.returning(move |_, _| Ok(vec![]));
+	contract_spec_pool
+		.expect_get_stellar_client()
+		.returning(move |_| {
+			let mut mock_client = MockStellarClientTrait::new();
+			mock_client
+				.expect_get_contract_spec()
+				.times(1)
+				.returning(move |_| {
+					let contract_spec = ContractSpec::Stellar(StellarContractSpec::from(json!(
+						{
+							"function_v0": {
+								"doc": "",
+								"name": "transfer",
+								"inputs": [
+									{
+										"doc": "",
+										"name": "from",
+										"type_": "address"
+									},
+									{
+										"doc": "",
+										"name": "to",
+										"type_": "address"
+									},
+									{
+										"doc": "",
+										"name": "amount",
+										"type_": "i128"
+									}
+								],
+								"outputs": []
+							}
+						}
+					)));
+					Ok(contract_spec.clone())
+				});
+			Ok(Arc::new(mock_client))
+		});
 
-		mock_client
-			.expect_get_contract_spec()
-			.returning(move |_| Ok(ContractSpec::Stellar(StellarContractSpec::default())));
+	handle_block_client_pool
+		.expect_get_stellar_client()
+		.returning(move |_| {
+			let mut mock_client = MockStellarClientTrait::new();
+			mock_client
+				.expect_get_transactions()
+				.times(1)
+				.returning(move |_, _| Ok(vec![]));
+			Ok(Arc::new(mock_client))
+		});
 
-		Ok(Arc::new(mock_client))
-	});
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&Arc::new(contract_spec_pool), &network_monitors).await;
 
-	let client_pool = Arc::new(mock_pool);
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		Arc::new(handle_block_client_pool),
+		contract_specs,
+	);
 	let result = block_handler(block, network).await;
 
 	assert_eq!(result.block_number, 100);
@@ -322,8 +371,17 @@ async fn test_create_block_handler_evm_client_error() {
 		.expect_get_evm_client()
 		.return_once(move |_| Err(anyhow::anyhow!("Failed to get EVM client")));
 	let client_pool = Arc::new(mock_pool);
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		client_pool,
+		contract_specs,
+	);
 	let result = block_handler(block, network).await;
 
 	assert_eq!(result.block_number, 100);
@@ -349,11 +407,20 @@ async fn test_create_block_handler_stellar_client_error() {
 	let mut mock_pool = MockClientPool::new();
 	mock_pool
 		.expect_get_stellar_client()
-		.return_once(move |_| Err(anyhow::anyhow!("Failed to get Stellar client")));
+		.returning(move |_| Err(anyhow::anyhow!("Failed to get Stellar client")));
 
 	let client_pool = Arc::new(mock_pool);
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		client_pool,
+		contract_specs,
+	);
 
 	let result = block_handler(block, network).await;
 	assert_eq!(result.block_number, 100);
@@ -1034,6 +1101,13 @@ async fn test_get_contract_specs() {
 	let mock_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
+	// Create a mock client pool that returns a successful client
+	let mut mock_pool = MockClientPool::new();
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+	let client_pool = Arc::new(mock_pool);
+
 	// Create a monitor with EVM contract specs
 	let mut monitor = create_test_monitor("test", vec!["ethereum_mainnet"], false, vec![]);
 	monitor.addresses.push(AddressWithSpec {
@@ -1072,12 +1146,17 @@ async fn test_get_contract_specs() {
 	});
 
 	let monitors = vec![monitor];
-	let specs = get_contract_specs(&mock_client, &network, &monitors).await;
+
+	// Create a vector of networks with their associated monitors
+	let network_monitors = vec![(network, monitors)];
+
+	// Fetch all contract specs for all active monitors
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
 
 	// Verify EVM specs and second spec is not added
-	assert_eq!(specs.len(), 1);
+	assert_eq!(contract_specs.len(), 1);
 
-	let (addr, spec) = &specs[0];
+	let (addr, spec) = &contract_specs[0];
 	assert_eq!(addr, "0x1234567890123456789012345678901234567890");
 	match spec {
 		ContractSpec::EVM(evm_spec) => {
@@ -1094,9 +1173,31 @@ async fn test_get_contract_specs() {
 	}
 
 	// Test Stellar contract specs
-	let mut mock_stellar_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
-	let stellar_network =
-		create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
+
+	// Mock the get_contract_spec response for the address without a spec
+	mock_client
+		.expect_get_contract_spec()
+		.withf(|addr| addr == "GZYXWVUTSRQPONMLKJIHGFEDCBA0987654321")
+		.times(1)
+		.returning(|_| {
+			Ok(ContractSpec::Stellar(StellarContractSpec::from(vec![
+				ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
+					doc: StringM::<1024>::from_str("").unwrap(),
+					name: ScSymbol(StringM::<32>::from_str("balance").unwrap()),
+					inputs: vec![].try_into().unwrap(),
+					outputs: vec![ScSpecTypeDef::I128].try_into().unwrap(),
+				}),
+			])))
+		});
+
+	// Create a mock client pool that returns a successful client
+	let mut mock_pool = MockClientPool::new();
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+	let client_pool = Arc::new(mock_pool);
 
 	// Create a monitor with Stellar contract specs
 	let mut stellar_monitor =
@@ -1136,28 +1237,13 @@ async fn test_get_contract_specs() {
 		contract_spec: None,
 	});
 
-	// Mock the get_contract_spec response for the address without a spec
-	mock_stellar_client
-		.expect_get_contract_spec()
-		.withf(|addr| addr == "GZYXWVUTSRQPONMLKJIHGFEDCBA0987654321")
-		.times(1)
-		.returning(|_| {
-			Ok(ContractSpec::Stellar(StellarContractSpec::from(vec![
-				ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
-					doc: StringM::<1024>::from_str("").unwrap(),
-					name: ScSymbol(StringM::<32>::from_str("balance").unwrap()),
-					inputs: vec![].try_into().unwrap(),
-					outputs: vec![ScSpecTypeDef::I128].try_into().unwrap(),
-				}),
-			])))
-		});
+	let network_monitors = vec![(network, vec![stellar_monitor])];
 
-	let stellar_monitors = vec![stellar_monitor];
-	let specs = get_contract_specs(&mock_stellar_client, &stellar_network, &stellar_monitors).await;
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
 
 	// Verify Stellar specs
-	assert_eq!(specs.len(), 2);
-	let (addr, spec) = &specs[0];
+	assert_eq!(contract_specs.len(), 2);
+	let (addr, spec) = &contract_specs[0];
 	assert!(are_same_address(
 		addr,
 		"GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
