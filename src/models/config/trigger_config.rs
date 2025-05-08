@@ -180,7 +180,9 @@ impl ConfigLoader for Trigger {
 					})?;
 
 				// Validate each trigger before adding it
-				for (name, trigger) in file_triggers.triggers {
+				for (name, mut trigger) in file_triggers.triggers {
+					// Resolve secrets before validating
+					trigger = trigger.resolve_secrets().await?;
 					if let Err(validation_error) = trigger.validate() {
 						return Err(ConfigError::validation_error(
 							format!(
