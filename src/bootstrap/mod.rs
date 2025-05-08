@@ -285,22 +285,23 @@ pub async fn get_contract_specs<P: ClientPoolTrait + 'static>(
 
 					// Fetch remaining specs from chain
 					if !addresses_without_specs.is_empty() {
+						// Get the client once
+						let client: Arc<P::StellarClient> =
+							match client_pool.get_stellar_client(network).await {
+								Ok(client) => client,
+								Err(_) => {
+									tracing::warn!("Failed to get stellar client");
+									continue;
+								}
+							};
+
 						let chain_specs = futures::future::join_all(
-							addresses_without_specs.iter().map(|address| async move {
-								let client: Arc<P::StellarClient> = match client_pool
-									.get_stellar_client(network)
-									.await
-								{
-									Ok(client) => client,
-									Err(_) => {
-										return (
-											address.clone(),
-											Err(anyhow::anyhow!("Failed to get stellar client")),
-										)
-									}
-								};
-								let spec = client.get_contract_spec(address).await;
-								(address.clone(), spec)
+							addresses_without_specs.iter().map(|address| {
+								let client = client.clone();
+								async move {
+									let spec = client.get_contract_spec(address).await;
+									(address.clone(), spec)
+								}
 							}),
 						)
 						.await
