@@ -1,6 +1,6 @@
 use mockall::predicate;
 use openzeppelin_monitor::{
-	models::BlockType,
+	models::{BlockType, ContractSpec, StellarFormattedContractSpec},
 	services::blockchain::{BlockChainClient, StellarClient, StellarClientTrait},
 };
 use serde_json::{json, Value};
@@ -449,10 +449,16 @@ async fn test_get_contract_spec_success() {
 
 	assert!(result.is_ok());
 	let spec = result.unwrap();
-	assert!(
-		!spec.functions.is_empty(),
-		"Should have at least one function in spec"
-	);
+	match spec {
+		ContractSpec::Stellar(stellar_spec) => {
+			let stellar_spec = StellarFormattedContractSpec::from(stellar_spec);
+			assert!(
+				!stellar_spec.functions.is_empty(),
+				"Should have at least one function in spec"
+			);
+		}
+		_ => panic!("Expected Stellar contract spec"),
+	}
 }
 
 #[tokio::test]

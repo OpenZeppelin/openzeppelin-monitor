@@ -204,7 +204,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
   "addresses": [
     {
       "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      "abi": [
+      "contract_spec": [
         {
           "anonymous": false,
           "inputs": [
@@ -427,7 +427,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
   "addresses": [
     {
      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
-      "abi": [
+      "contract_spec": [
         {
           "function_v0": {
             "doc": "",

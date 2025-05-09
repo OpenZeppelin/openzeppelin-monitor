@@ -14,9 +14,9 @@ pub use event::Event as StellarEvent;
 pub use monitor::{
 	ContractFunction as StellarContractFunction, ContractInput as StellarContractInput,
 	ContractSpec as StellarContractSpec, DecodedParamEntry as StellarDecodedParamEntry,
-	MatchArguments as StellarMatchArguments, MatchParamEntry as StellarMatchParamEntry,
-	MatchParamsMap as StellarMatchParamsMap, MonitorMatch as StellarMonitorMatch,
-	ParsedOperationResult as StellarParsedOperationResult,
+	FormattedContractSpec as StellarFormattedContractSpec, MatchArguments as StellarMatchArguments,
+	MatchParamEntry as StellarMatchParamEntry, MatchParamsMap as StellarMatchParamsMap,
+	MonitorMatch as StellarMonitorMatch, ParsedOperationResult as StellarParsedOperationResult,
 };
 pub use transaction::{
 	DecodedTransaction as StellarDecodedTransaction, Transaction as StellarTransaction,

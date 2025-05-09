@@ -20,8 +20,8 @@ use stellar_xdr::curr::{
 };
 
 use crate::models::{
-	StellarContractFunction, StellarContractInput, StellarContractSpec, StellarDecodedParamEntry,
-	StellarParsedOperationResult,
+	StellarContractFunction, StellarContractInput, StellarDecodedParamEntry,
+	StellarFormattedContractSpec, StellarParsedOperationResult,
 };
 
 /// Represents all possible Stellar smart contract types
@@ -572,7 +572,7 @@ fn get_function_signature_from_spec_entry(entry: &ScSpecEntry) -> String {
 /// A string representing the function signature in the format "function_name(type1,type2,...)"
 pub fn get_function_signature(
 	invoke_op: &InvokeHostFunctionOp,
-	contract_spec: Option<&StellarContractSpec>,
+	contract_spec: Option<&StellarFormattedContractSpec>,
 ) -> String {
 	match &invoke_op.host_function {
 		HostFunction::InvokeContract(args) => {
@@ -640,8 +640,11 @@ pub fn get_function_signature(
 /// * An optional StellarContractSpec if a matching contract was found
 pub fn process_invoke_host_function(
 	invoke_op: &InvokeHostFunctionOp,
-	contract_specs: Option<&[(String, StellarContractSpec)]>,
-) -> (StellarParsedOperationResult, Option<StellarContractSpec>) {
+	contract_specs: Option<&[(String, StellarFormattedContractSpec)]>,
+) -> (
+	StellarParsedOperationResult,
+	Option<StellarFormattedContractSpec>,
+) {
 	match &invoke_op.host_function {
 		HostFunction::InvokeContract(args) => {
 			let contract_address = match &args.contract_address {
@@ -2302,7 +2305,7 @@ mod tests {
 			auth: vec![].try_into().unwrap(),
 		};
 
-		let contract_spec = StellarContractSpec {
+		let contract_spec = StellarFormattedContractSpec {
 			functions: vec![StellarContractFunction {
 				name: "process_request".to_string(),
 				signature: "process_request(Address,Vec<Request>)".to_string(),

@@ -7,10 +7,11 @@ use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		AddressWithABI, BlockChainType, BlockType, EventCondition, FunctionCondition,
-		MatchConditions, Monitor, MonitorMatch, StellarBlock, StellarEvent, StellarMatchArguments,
-		StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction,
-		StellarTransactionInfo, TransactionCondition, TransactionStatus, TransactionType,
+		AddressWithSpec, BlockChainType, BlockType, ContractSpec, EventCondition,
+		FunctionCondition, MatchConditions, Monitor, MonitorMatch, StellarBlock,
+		StellarContractSpec, StellarEvent, StellarMatchArguments, StellarMatchParamEntry,
+		StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
+		TransactionCondition, TransactionStatus, TransactionType,
 	},
 	services::filter::{handle_match, FilterError, FilterService},
 };
@@ -107,7 +108,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -116,6 +117,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -179,7 +181,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -188,6 +190,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -263,6 +266,11 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA".to_string(),
+		contract_spec.clone(),
+	);
 
 	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
@@ -283,7 +291,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(contract_spec.clone()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -292,6 +300,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -337,6 +346,11 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA".to_string(),
+		contract_spec.clone(),
+	);
 
 	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
@@ -357,7 +371,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(contract_spec.clone()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -366,6 +380,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -450,7 +465,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -459,6 +474,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -520,7 +536,7 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -529,6 +545,7 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -565,6 +582,15 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+	let contract_spec = test_data.contract_spec.unwrap();
+	let transfer_contract_with_spec: (String, ContractSpec) = (
+		"CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA".to_string(),
+		contract_spec.clone(),
+	);
+	let upsert_contract_with_spec: (String, ContractSpec) = (
+		"CBWRWC2IFNRXKAW2HG5473V5U25OMUKVIE3BFZBIWOOD3VLEIBUIOQG6".to_string(),
+		contract_spec.clone(),
+	);
 
 	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
@@ -585,7 +611,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(contract_spec.clone()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -594,6 +620,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 			&test_data.network,
 			&test_data.blocks[0],
 			&[test_data.monitor],
+			Some(&[transfer_contract_with_spec, upsert_contract_with_spec]),
 		)
 		.await?;
 
@@ -650,10 +677,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 			if let Some(functions) = &args.functions {
 				assert!(!functions.is_empty(), "Should have function arguments");
 				let function = &functions[0];
-				assert_eq!(
-					function.signature,
-					"upsert_data(Map<String,Union<U32, String>>)"
-				);
+				assert_eq!(function.signature, "upsert_data(Map<String,String>)");
 			}
 		}
 	}
@@ -676,6 +700,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			&invalid_block,
 			&[test_data.monitor],
+			None,
 		)
 		.await;
 
@@ -700,6 +725,12 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"CBWRWC2IFNRXKAW2HG5473V5U25OMUKVIE3BFZBIWOOD3VLEIBUIOQG6".to_string(),
+		contract_spec.clone(),
+	);
+
 	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
@@ -719,7 +750,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(contract_spec.clone()));
 
 	let mut trigger_execution_service =
 		setup_trigger_execution_service("tests/integration/fixtures/stellar/triggers/trigger.json")
@@ -764,7 +795,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				&& variables.get("transaction.hash")
 					== Some(&"FAKE5a3a9153e19002517935a5df291b81a341b98ccd80f0919d78cea5ed29d8".to_string())
 				// Function arguments
-				&& variables.get("functions.0.signature") == Some(&"upsert_data(Map<String,Union<U32, String>>)".to_string())
+				&& variables.get("functions.0.signature") == Some(&"upsert_data(Map<String,String>)".to_string())
 				&& expected_json == actual_json
 			},
 		)
@@ -777,6 +808,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			&test_data.blocks[0],
 			&[test_data.monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -814,6 +846,11 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX".to_string(),
+		contract_spec.clone(),
+	);
 
 	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
@@ -834,7 +871,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(contract_spec.clone()));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -843,6 +880,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -1042,6 +1080,12 @@ async fn test_filter_with_contract_spec() -> Result<(), Box<FilterError>> {
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
 
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX".to_string(),
+		contract_spec.clone(),
+	);
+
 	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
 		.iter()
@@ -1062,7 +1106,7 @@ async fn test_filter_with_contract_spec() -> Result<(), Box<FilterError>> {
 	// Expect contract spec to be called
 	mock_client
 		.expect_get_contract_spec()
-		.returning(move |_| Ok(test_data.stellar_contract_spec.clone().unwrap()));
+		.returning(move |_| Ok(contract_spec.clone()));
 
 	// Create a monitor that requires contract spec validation
 	let mut monitor = test_data.monitor.clone();
@@ -1080,6 +1124,7 @@ async fn test_filter_with_contract_spec() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -1149,6 +1194,7 @@ async fn test_filter_with_invalid_contract_spec() -> Result<(), Box<FilterError>
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await;
 
@@ -1169,6 +1215,11 @@ async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
 		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
 	let transactions: Vec<StellarTransactionInfo> =
 		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX".to_string(),
+		contract_spec.clone(),
+	);
 
 	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 	let decoded_transactions: Vec<StellarTransaction> = transactions
@@ -1200,19 +1251,9 @@ async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
 	monitor.match_conditions.transactions = vec![];
 
 	// Add ABI to the monitor's address configuration
-	monitor.addresses = vec![AddressWithABI {
-		address: "CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX".to_string(),
-		abi: Some(json!([{
-			  "function_v0": {
-				"doc": "Increment increments an internal counter, and returns the value.",
-				"name": "increment",
-				"inputs": [],
-				"outputs": [
-				  "u32"
-				]
-			  }
-			}
-		])),
+	monitor.addresses = vec![AddressWithSpec {
+		address: contract_with_spec.0.clone(),
+		contract_spec: Some(contract_with_spec.1.clone()),
 	}];
 
 	// Run filter_block with the test data
@@ -1222,6 +1263,7 @@ async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -1234,6 +1276,131 @@ async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
 			assert_eq!(
 				stellar_match.matched_on.functions[0].signature,
 				"increment()"
+			);
+		}
+		_ => panic!("Expected Stellar match"),
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_with_udt_expression() -> Result<(), Box<FilterError>> {
+	let test_data = load_test_data("stellar");
+	let filter_service = FilterService::new();
+
+	// Load Stellar-specific test data
+	let events: Vec<StellarEvent> =
+		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
+	let transactions: Vec<StellarTransactionInfo> =
+		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+	let contract_spec = ContractSpec::Stellar(StellarContractSpec::from(json!([{
+		"function_v0": {
+			"doc": "",
+			"name": "submit",
+			"inputs": [
+				{
+					"doc": "",
+					"name": "from",
+					"type_": "address"
+				},
+				{
+					"doc": "",
+					"name": "spender",
+					"type_": "address"
+				},
+				{
+					"doc": "",
+					"name": "to",
+					"type_": "address"
+				},
+				{
+					"doc": "",
+					"name": "requests",
+					"type_": {
+						"vec": {
+							"element_type": {
+								"udt": {
+									"name": "Request"
+								}
+							}
+						}
+					}
+				}
+			],
+			"outputs": [
+				{
+					"udt": {
+						"name": "Positions"
+					}
+				}
+			]
+		}
+	}])));
+
+	let contract_with_spec: (String, ContractSpec) = (
+		"CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD".to_string(),
+		contract_spec.clone(),
+	);
+
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let decoded_transactions: Vec<StellarTransaction> = transactions
+		.iter()
+		.map(|tx| StellarTransaction::from(tx.clone()))
+		.collect();
+
+	// Setup mock expectations
+	mock_client
+		.expect_get_transactions()
+		.times(1)
+		.returning(move |_, _| Ok(decoded_transactions.clone()));
+
+	mock_client
+		.expect_get_events()
+		.times(1)
+		.returning(move |_, _| Ok(events.clone()));
+
+	// get_contract_spec should NOT be called since we provide the ABI in config
+	mock_client.expect_get_contract_spec().times(0);
+
+	// Create a monitor with ABI in config
+	let mut monitor = test_data.monitor.clone();
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "submit(Address,Address,Address,Vec<Request>)".to_string(),
+		expression: Some(
+			"requests contains CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+				.to_string(),
+		),
+	}];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.transactions = vec![];
+
+	// Add ABI to the monitor's address configuration
+	monitor.addresses = vec![AddressWithSpec {
+		address: contract_with_spec.0.clone(),
+		contract_spec: Some(contract_with_spec.1.clone()),
+	}];
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(matches.len() == 1, "Should have found exactly 1 match");
+
+	// Verify that the matches contain the expected function
+	match &matches[0] {
+		MonitorMatch::Stellar(stellar_match) => {
+			assert!(!stellar_match.matched_on.functions.is_empty());
+			assert_eq!(
+				stellar_match.matched_on.functions[0].signature,
+				"submit(Address,Address,Address,Vec<Request>)"
 			);
 		}
 		_ => panic!("Expected Stellar match"),

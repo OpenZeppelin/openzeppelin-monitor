@@ -6,8 +6,8 @@ use mockall::predicate;
 use mockito::Server;
 use openzeppelin_monitor::{
 	models::{
-		BlockType, StellarBlock, StellarEvent, StellarLedgerInfo, StellarTransaction,
-		StellarTransactionInfo,
+		BlockType, ContractSpec, StellarBlock, StellarEvent, StellarFormattedContractSpec,
+		StellarLedgerInfo, StellarTransaction, StellarTransactionInfo,
 	},
 	services::blockchain::{BlockChainClient, StellarClient, StellarClientTrait},
 };
@@ -383,10 +383,16 @@ async fn test_get_contract_spec() {
 
 	assert!(result.is_ok(), "Should successfully get contract spec");
 	let spec = result.unwrap();
-	assert!(
-		!spec.functions.is_empty(),
-		"Contract spec should have at least one function"
-	);
+	match spec {
+		ContractSpec::Stellar(spec) => {
+			let stellar_spec = StellarFormattedContractSpec::from(spec);
+			assert!(
+				!stellar_spec.functions.is_empty(),
+				"Contract spec should have at least one function"
+			);
+		}
+		_ => panic!("Expected Stellar contract spec"),
+	}
 
 	mock.assert_async().await;
 	instance_mock.assert_async().await;

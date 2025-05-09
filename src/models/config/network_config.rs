@@ -38,6 +38,7 @@ impl Network {
 impl ConfigLoader for Network {
 	/// Resolve all secrets in the network configuration
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		dotenvy::dotenv().ok();
 		let mut network = self.clone();
 
 		for rpc_url in &mut network.rpc_urls {

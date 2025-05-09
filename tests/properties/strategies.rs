@@ -1,7 +1,7 @@
 use email_address::EmailAddress;
 use openzeppelin_monitor::{
 	models::{
-		AddressWithABI, BlockChainType, EventCondition, FunctionCondition, MatchConditions,
+		AddressWithSpec, BlockChainType, EventCondition, FunctionCondition, MatchConditions,
 		Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage, SecretString, SecretValue,
 		TransactionCondition, TransactionStatus, Trigger, TriggerConditions, TriggerType,
 		TriggerTypeConfig,
@@ -33,8 +33,12 @@ pub fn monitor_strategy(
 		"[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()),
 		proptest::arbitrary::any::<bool>(),
 		proptest::collection::vec(
-			("[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string()))
-				.prop_map(|address| AddressWithABI { address, abi: None }),
+			("[a-zA-Z0-9_]{1,10}".prop_map(|s| s.to_string())).prop_map(|address| {
+				AddressWithSpec {
+					address,
+					contract_spec: None,
+				}
+			}),
 			MIN_COLLECTION_SIZE..MAX_ADDRESSES,
 		),
 		match_conditions_strategy(),
