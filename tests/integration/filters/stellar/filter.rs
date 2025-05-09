@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use openzeppelin_monitor::{
 	models::{
 		AddressWithSpec, BlockChainType, BlockType, ContractSpec, EventCondition,
-		FunctionCondition, MatchConditions, Monitor, MonitorMatch, StellarBlock, StellarEvent,
-		StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch,
-		StellarTransaction, StellarTransactionInfo, TransactionCondition, TransactionStatus,
-		TransactionType,
+		FunctionCondition, MatchConditions, Monitor, MonitorMatch, StellarBlock,
+		StellarContractSpec, StellarEvent, StellarMatchArguments, StellarMatchParamEntry,
+		StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction, StellarTransactionInfo,
+		TransactionCondition, TransactionStatus, TransactionType,
 	},
 	services::filter::{handle_match, FilterError, FilterService},
 };
@@ -24,7 +24,7 @@ use crate::integration::{
 	},
 };
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.functions = vec![];
@@ -1276,6 +1276,131 @@ async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
 			assert_eq!(
 				stellar_match.matched_on.functions[0].signature,
 				"increment()"
+			);
+		}
+		_ => panic!("Expected Stellar match"),
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_with_udt_expression() -> Result<(), Box<FilterError>> {
+	let test_data = load_test_data("stellar");
+	let filter_service = FilterService::new();
+
+	// Load Stellar-specific test data
+	let events: Vec<StellarEvent> =
+		read_and_parse_json("tests/integration/fixtures/stellar/events.json");
+	let transactions: Vec<StellarTransactionInfo> =
+		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+	let contract_spec = ContractSpec::Stellar(StellarContractSpec::from(json!([{
+		"function_v0": {
+			"doc": "",
+			"name": "submit",
+			"inputs": [
+				{
+					"doc": "",
+					"name": "from",
+					"type_": "address"
+				},
+				{
+					"doc": "",
+					"name": "spender",
+					"type_": "address"
+				},
+				{
+					"doc": "",
+					"name": "to",
+					"type_": "address"
+				},
+				{
+					"doc": "",
+					"name": "requests",
+					"type_": {
+						"vec": {
+							"element_type": {
+								"udt": {
+									"name": "Request"
+								}
+							}
+						}
+					}
+				}
+			],
+			"outputs": [
+				{
+					"udt": {
+						"name": "Positions"
+					}
+				}
+			]
+		}
+	}])));
+
+	let contract_with_spec: (String, ContractSpec) = (
+		"CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD".to_string(),
+		contract_spec.clone(),
+	);
+
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let decoded_transactions: Vec<StellarTransaction> = transactions
+		.iter()
+		.map(|tx| StellarTransaction::from(tx.clone()))
+		.collect();
+
+	// Setup mock expectations
+	mock_client
+		.expect_get_transactions()
+		.times(1)
+		.returning(move |_, _| Ok(decoded_transactions.clone()));
+
+	mock_client
+		.expect_get_events()
+		.times(1)
+		.returning(move |_, _| Ok(events.clone()));
+
+	// get_contract_spec should NOT be called since we provide the ABI in config
+	mock_client.expect_get_contract_spec().times(0);
+
+	// Create a monitor with ABI in config
+	let mut monitor = test_data.monitor.clone();
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "submit(Address,Address,Address,Vec<Request>)".to_string(),
+		expression: Some(
+			"requests contains CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+				.to_string(),
+		),
+	}];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.transactions = vec![];
+
+	// Add ABI to the monitor's address configuration
+	monitor.addresses = vec![AddressWithSpec {
+		address: contract_with_spec.0.clone(),
+		contract_spec: Some(contract_with_spec.1.clone()),
+	}];
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(matches.len() == 1, "Should have found exactly 1 match");
+
+	// Verify that the matches contain the expected function
+	match &matches[0] {
+		MonitorMatch::Stellar(stellar_match) => {
+			assert!(!stellar_match.matched_on.functions.is_empty());
+			assert_eq!(
+				stellar_match.matched_on.functions[0].signature,
+				"submit(Address,Address,Address,Vec<Request>)"
 			);
 		}
 		_ => panic!("Expected Stellar match"),

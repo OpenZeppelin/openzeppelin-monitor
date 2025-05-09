@@ -867,21 +867,64 @@ impl<T> StellarBlockFilter<T> {
 	}
 
 	fn compare_vec(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		// Split by comma and trim whitespace
-		let values: Vec<&str> = param_value.split(',').map(|s| s.trim()).collect();
-
-		// arguments[0] contains "some_value"
-		// arguments[0] == "value1,value2,value3"
-		match operator {
-			"contains" => values.contains(&compare_value),
-			"==" => param_value == compare_value, // For exact array match
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!(
-					"Only contains, == and != operators are supported for vec type: {}",
-					operator
-				);
-				false
+		// Try to parse the param_value as JSON array
+		if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(param_value) {
+			match operator {
+				"contains" => {
+					// For each object in array, check if any field matches the compare_value
+					array.iter().any(|item| {
+						match item {
+							serde_json::Value::Object(map) => {
+								// Check each field in the object
+								map.values().any(|v| {
+									match v {
+										// Direct value match
+										serde_json::Value::String(s) => s == compare_value,
+										// For nested objects with type/value pattern
+										serde_json::Value::Object(nested) => nested
+											.get("value")
+											.and_then(|v| v.as_str())
+											.map(|s| s == compare_value)
+											.unwrap_or(false),
+										// Convert other types to string for comparison
+										_ => v.to_string().trim_matches('"') == compare_value,
+									}
+								})
+							}
+							// For non-object array elements, compare directly
+							_ => item
+								.as_str()
+								.map(|s| s == compare_value)
+								.unwrap_or_else(|| {
+									item.to_string().trim_matches('"') == compare_value
+								}),
+						}
+					})
+				}
+				"==" => param_value == compare_value,
+				"!=" => param_value != compare_value,
+				_ => {
+					tracing::warn!(
+						"Only contains, == and != operators are supported for vec type: {}",
+						operator
+					);
+					false
+				}
+			}
+		} else {
+			// Fallback to original comma-separated string behavior
+			let values: Vec<&str> = param_value.split(',').map(|s| s.trim()).collect();
+			match operator {
+				"contains" => values.contains(&compare_value),
+				"==" => param_value == compare_value,
+				"!=" => param_value != compare_value,
+				_ => {
+					tracing::warn!(
+						"Only contains, == and != operators are supported for vec type: {}",
+						operator
+					);
+					false
+				}
 			}
 		}
 	}
@@ -3239,6 +3282,48 @@ mod tests {
 		assert!(!filter.compare_vec("value1,value2,value3", "<", "value1"));
 		assert!(!filter.compare_vec("value1,value2,value3", ">=", "value1"));
 		assert!(!filter.compare_vec("value1,value2,value3", "<=", "value1"));
+	}
+
+	#[test]
+	fn test_compare_vec_json_array() {
+		let filter = create_test_filter();
+
+		// Test JSON array with objects
+		let json_array = r#"[
+			{
+				"address": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+				"amount": {
+					"type": "I128",
+					"value": "699998999"
+				},
+				"request_type": 3
+			}
+		]"#;
+
+		// Test direct string match in object
+		assert!(filter.compare_vec(
+			json_array,
+			"contains",
+			"CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+		));
+
+		// Test nested type/value object match
+		assert!(filter.compare_vec(json_array, "contains", "699998999"));
+
+		// Test numeric value match
+		assert!(filter.compare_vec(json_array, "contains", "3"));
+
+		// Test non-existent value
+		assert!(!filter.compare_vec(json_array, "contains", "nonexistent"));
+
+		// Test exact array equality
+		assert!(filter.compare_vec(json_array, "==", json_array));
+
+		// Test array inequality
+		assert!(filter.compare_vec(json_array, "!=", "[{\"different\": \"content\"}]"));
+
+		// Test invalid operator
+		assert!(!filter.compare_vec(json_array, ">", "something"));
 	}
 
 	//////////////////////////////////////////////////////////////////////////////

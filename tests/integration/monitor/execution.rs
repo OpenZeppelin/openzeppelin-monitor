@@ -9,7 +9,6 @@ use crate::integration::{
 };
 use mockall::predicate;
 use openzeppelin_monitor::{
-	bootstrap::get_contract_specs,
 	models::{
 		BlockChainType, EVMTransactionReceipt, Monitor, ScriptLanguage, Trigger, TriggerConditions,
 	},
@@ -183,25 +182,12 @@ async fn test_execute_monitor_evm() {
 		});
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Ok(mock_client));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 21305050;
 
@@ -219,8 +205,7 @@ async fn test_execute_monitor_evm() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(
@@ -258,25 +243,12 @@ async fn test_execute_monitor_evm_wrong_network() {
 		TriggerExecutionService::new(trigger_service, notification_service);
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Ok(mock_client));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 22197425;
 
@@ -289,8 +261,7 @@ async fn test_execute_monitor_evm_wrong_network() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -325,25 +296,12 @@ async fn test_execute_monitor_evm_wrong_block_number() {
 		.return_once(move |_, _| Ok(vec![]));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Ok(mock_client));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 1;
 
@@ -356,8 +314,7 @@ async fn test_execute_monitor_evm_wrong_block_number() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -392,25 +349,12 @@ async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
 		.return_once(move |_, _| Err(anyhow::anyhow!("Failed to get block by number")));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Ok(mock_client));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 1;
 
@@ -423,8 +367,7 @@ async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -456,18 +399,7 @@ async fn test_execute_monitor_evm_failed_to_get_evm_client() {
 		.expect_get_evm_client()
 		.return_once(move |_| Err(anyhow::anyhow!("Failed to get evm client")));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Err(anyhow::anyhow!("Failed to get evm client")));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 1;
 
@@ -480,8 +412,7 @@ async fn test_execute_monitor_evm_failed_to_get_evm_client() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -526,25 +457,13 @@ async fn test_execute_monitor_stellar() {
 		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_stellar_client()
-		.return_once(move |_| Ok(mock_client));
+		.times(2)
+		.returning(move |_| Ok(mock_client.clone()));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_stellar_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 172627;
 
@@ -557,8 +476,7 @@ async fn test_execute_monitor_stellar() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(
@@ -604,25 +522,13 @@ async fn test_execute_monitor_failed_to_get_block() {
 		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_stellar_client()
-		.return_once(move |_| Ok(mock_client));
+		.times(2)
+		.returning(move |_| Ok(mock_client.clone()));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_stellar_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 172627;
 
@@ -635,8 +541,7 @@ async fn test_execute_monitor_failed_to_get_block() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -668,18 +573,7 @@ async fn test_execute_monitor_failed_to_get_stellar_client() {
 		.expect_get_stellar_client()
 		.returning(move |_| Err(anyhow::anyhow!("Failed to get stellar client")));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		mock_pool
-			.expect_get_stellar_client()
-			.returning(move |_| Err(anyhow::anyhow!("Failed to get stellar client")));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 172627;
 
@@ -692,8 +586,7 @@ async fn test_execute_monitor_failed_to_get_stellar_client() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -732,25 +625,13 @@ async fn test_execute_monitor_failed_to_get_block_by_number() {
 		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_stellar_client()
-		.return_once(move |_| Ok(mock_client));
+		.times(2)
+		.returning(move |_| Ok(mock_client.clone()));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_stellar_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let block_number = 172627;
 
@@ -763,8 +644,7 @@ async fn test_execute_monitor_failed_to_get_block_by_number() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -798,25 +678,13 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 		.return_once(move || Err(anyhow::anyhow!("Failed to get latest block number")));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_evm_client()
-		.return_once(move |_| Ok(mock_client));
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -827,8 +695,7 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -885,25 +752,13 @@ async fn test_execute_monitor_network_slug_not_defined() {
 		.return_once(move |_, _| Ok(test_data.blocks.clone()));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_evm_client()
-		.return_once(move |_| Ok(mock_client));
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -914,8 +769,7 @@ async fn test_execute_monitor_network_slug_not_defined() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 
@@ -940,22 +794,11 @@ async fn test_execute_monitor_midnight() {
 	let trigger_execution_service =
 		TriggerExecutionService::new(trigger_service, notification_service);
 
-	let mut mock_pool = MockClientPool::new();
+	let mock_pool = MockClientPool::new();
 	let mock_network_service =
 		setup_mocked_network_service("Midnight", "midnight_mainnet", BlockChainType::Midnight);
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(Arc::new(MockEvmClientTrait::new())));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -966,8 +809,7 @@ async fn test_execute_monitor_midnight() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 
@@ -992,21 +834,11 @@ async fn test_execute_monitor_solana() {
 	let trigger_execution_service =
 		TriggerExecutionService::new(trigger_service, notification_service);
 
-	let mut mock_pool = MockClientPool::new();
+	let mock_pool = MockClientPool::new();
 	let mock_network_service =
 		setup_mocked_network_service("Solana", "solana_mainnet", BlockChainType::Solana);
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(Arc::new(MockEvmClientTrait::new())));
-		mock_pool
-	});
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -1017,8 +849,7 @@ async fn test_execute_monitor_solana() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 
@@ -1057,25 +888,13 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
 
 	let mock_client = Arc::new(mock_client);
-	let mock_client_clone = mock_client.clone();
 
 	mock_pool
 		.expect_get_stellar_client()
-		.return_once(move |_| Ok(mock_client));
+		.times(2)
+		.returning(move |_| Ok(mock_client.clone()));
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		let mock_client = mock_client_clone.clone();
-		mock_pool
-			.expect_get_stellar_client()
-			.returning(move |_| Ok(mock_client.clone()));
-		mock_pool
-	});
-
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -1086,8 +905,7 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(result.is_err());
@@ -1153,17 +971,7 @@ async fn test_execute_monitor_evm_with_trigger_scripts() {
 		),
 	);
 
-	mock_pool.expect_clone().returning(move || {
-		let mut mock_pool = MockClientPool::new();
-		mock_pool
-			.expect_get_evm_client()
-			.returning(move |_| Ok(Arc::new(MockEvmClientTrait::new())));
-		mock_pool
-	});
-	let client_pool = Arc::new(mock_pool.clone());
-
-	let network_monitors = vec![(test_data.network.clone(), vec![test_data.monitor.clone()])];
-	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+	let client_pool = Arc::new(mock_pool);
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
@@ -1174,8 +982,7 @@ async fn test_execute_monitor_evm_with_trigger_scripts() {
 		filter_service: Arc::new(FilterService::new()),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: trigger_scripts,
-		client_pool: mock_pool,
-		contract_specs,
+		client_pool,
 	})
 	.await;
 	assert!(

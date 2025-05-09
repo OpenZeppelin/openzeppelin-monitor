@@ -254,6 +254,7 @@ pub async fn get_contract_specs<P: ClientPoolTrait + 'static>(
 	network_monitors: &[(Network, Vec<Monitor>)],
 ) -> Vec<(String, ContractSpec)> {
 	let mut all_specs = Vec::new();
+
 	for (network, monitors) in network_monitors {
 		for monitor in monitors {
 			let specs = match network.network_type {
