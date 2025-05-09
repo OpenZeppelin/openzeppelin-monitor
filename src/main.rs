@@ -26,8 +26,8 @@ pub mod utils;
 
 use crate::{
 	bootstrap::{
-		create_block_handler, create_trigger_handler, has_active_monitors, initialize_services,
-		Result,
+		create_block_handler, create_trigger_handler, get_contract_specs, has_active_monitors,
+		initialize_services, Result,
 	},
 	models::{BlockChainType, Network, ScriptLanguage},
 	repositories::{
@@ -52,7 +52,7 @@ use crate::{
 };
 
 use clap::Parser;
-use dotenvy::dotenv;
+use dotenvy::dotenv_override;
 use std::collections::HashMap;
 use std::env::{set_var, var};
 use std::sync::Arc;
@@ -76,6 +76,7 @@ type MonitorServiceType = MonitorService<
 /// * `trigger_execution_service` - Service handling trigger execution
 /// * `active_monitors_trigger_scripts` - Map of active monitors and their trigger scripts
 /// * `raw_output` - Whether to print the raw output of the monitor execution
+/// * `client_pool` - Client pool of blockchain clients
 struct MonitorExecutionTestConfig {
 	pub path: String,
 	pub network_slug: Option<String>,
@@ -86,6 +87,7 @@ struct MonitorExecutionTestConfig {
 	pub trigger_execution_service: Arc<TriggerExecutionService<TriggerRepository>>,
 	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 	pub raw_output: bool,
+	pub client_pool: Arc<ClientPool>,
 }
 
 #[derive(Parser)]
@@ -137,27 +139,48 @@ struct Cli {
 }
 
 impl Cli {
-	/// Apply CLI options to environment variables if they're not already set
+	/// Apply CLI options to environment variables, overriding any existing values
 	fn apply_to_env(&self) {
-		if self.log_file && var("LOG_MODE").is_err() {
+		// Reload environment variables from .env file
+		// Override any existing environment variables
+		dotenv_override().ok();
+
+		// Log file mode - override if CLI flag is set
+		if self.log_file {
 			set_var("LOG_MODE", "file");
 		}
 
+		// Set log level from RUST_LOG if it exists
+		if let Ok(level) = var("RUST_LOG") {
+			set_var("LOG_LEVEL", level);
+		}
+
+		// Log level - override if CLI flag is set
 		if let Some(level) = &self.log_level {
-			if var("LOG_LEVEL").is_err() {
-				set_var("LOG_LEVEL", level);
-			}
+			set_var("LOG_LEVEL", level);
+			set_var("RUST_LOG", level);
 		}
 
+		// Log path - override if CLI flag is set
 		if let Some(path) = &self.log_path {
-			if var("LOG_DATA_DIR").is_err() {
-				set_var("LOG_DATA_DIR", path);
-			}
+			set_var("LOG_DATA_DIR", path);
 		}
 
+		// Log max size - override if CLI flag is set
 		if let Some(max_size) = &self.log_max_size {
-			if var("LOG_MAX_SIZE").is_err() {
-				set_var("LOG_MAX_SIZE", max_size.to_string());
+			set_var("LOG_MAX_SIZE", max_size.to_string());
+		}
+
+		// Metrics server - override if CLI flag is set
+		if self.metrics {
+			set_var("METRICS_ENABLED", "true");
+		}
+
+		// Metrics address - override if CLI flag is set
+		if let Some(address) = &self.metrics_address {
+			// Extract port from address if it's in HOST:PORT format
+			if let Some(port) = address.split(':').nth(1) {
+				set_var("METRICS_PORT", port);
 			}
 		}
 	}
@@ -170,9 +193,6 @@ impl Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
 	let cli = Cli::parse();
-
-	// Load environment variables from .env file
-	dotenv().ok();
 
 	// Apply CLI options to environment
 	cli.apply_to_env();
@@ -215,6 +235,8 @@ async fn main() -> Result<()> {
 	let network_slug = cli.network.clone();
 	let block_number = cli.block;
 
+	let client_pool = Arc::new(ClientPool::new());
+
 	let should_test_monitor_execution = monitor_path.is_some();
 	// If monitor path is provided, test monitor execution else start the service
 	if should_test_monitor_execution {
@@ -231,6 +253,7 @@ async fn main() -> Result<()> {
 			trigger_execution_service: trigger_execution_service.clone(),
 			active_monitors_trigger_scripts,
 			raw_output: false,
+			client_pool,
 		})
 		.await;
 	}
@@ -285,13 +308,31 @@ async fn main() -> Result<()> {
 		return Ok(());
 	}
 
+	// Create a vector of networks with their associated monitors
+	let network_monitors = networks_with_monitors
+		.iter()
+		.map(|network| {
+			(
+				network.clone(),
+				active_monitors
+					.iter()
+					.filter(|m| m.networks.contains(&network.slug))
+					.cloned()
+					.collect::<Vec<_>>(),
+			)
+		})
+		.collect::<Vec<_>>();
+
+	// Fetch all contract specs for all active monitors
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
 	let (shutdown_tx, _) = watch::channel(false);
-	let client_pool = Arc::new(ClientPool::new());
 	let block_handler = create_block_handler(
 		shutdown_tx.clone(),
 		filter_service,
 		active_monitors,
 		client_pool.clone(),
+		contract_specs,
 	);
 	let trigger_handler = create_trigger_handler(
 		shutdown_tx.clone(),
@@ -416,7 +457,6 @@ async fn test_monitor_execution(config: MonitorExecutionTestConfig) -> Result<()
 		block = config.block_number,
 	);
 
-	let client_pool = ClientPool::new();
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: config.path.clone(),
 		network_slug: config.network_slug.clone(),
@@ -426,7 +466,7 @@ async fn test_monitor_execution(config: MonitorExecutionTestConfig) -> Result<()
 		filter_service: config.filter_service.clone(),
 		trigger_execution_service: config.trigger_execution_service.clone(),
 		active_monitors_trigger_scripts: config.active_monitors_trigger_scripts.clone(),
-		client_pool,
+		client_pool: config.client_pool.clone(),
 	})
 	.await;
 
@@ -705,7 +745,7 @@ mod tests {
 
 		let path = "test_monitor.json".to_string();
 		let block_number = Some(12345);
-
+		let client_pool = Arc::new(ClientPool::new());
 		// Execute test
 		let result = test_monitor_execution(MonitorExecutionTestConfig {
 			path,
@@ -717,6 +757,7 @@ mod tests {
 			trigger_execution_service: trigger_execution_service.clone(),
 			active_monitors_trigger_scripts: HashMap::new(),
 			raw_output: false,
+			client_pool: client_pool.clone(),
 		})
 		.await;
 
@@ -746,6 +787,7 @@ mod tests {
 		let network_slug = Some("test_network".to_string());
 		let block_number = Some(12345);
 
+		let client_pool = Arc::new(ClientPool::new());
 		// Execute test
 		let result = test_monitor_execution(MonitorExecutionTestConfig {
 			path,
@@ -757,6 +799,7 @@ mod tests {
 			trigger_execution_service: trigger_execution_service.clone(),
 			active_monitors_trigger_scripts: HashMap::new(),
 			raw_output: false,
+			client_pool: client_pool.clone(),
 		})
 		.await;
 

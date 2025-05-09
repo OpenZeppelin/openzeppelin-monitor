@@ -9,25 +9,6 @@
 /// variant string matching case-insensitive. It works with enums that use string
 /// representation in serialization (e.g., with `#[serde(tag = "type")]`).
 ///
-/// # Example
-///
-/// ```
-/// use serde::{Serialize, Deserialize};
-/// use crate::models::utils::case_insensitive::impl_case_insensitive_enum;
-///
-/// #[derive(Debug, Clone, Serialize)]
-/// #[serde(tag = "type", content = "value")]
-/// pub enum MyEnum {
-///     Variant1(String),
-///     Variant2(String),
-/// }
-///
-/// impl_case_insensitive_enum!(MyEnum, {
-///     "variant1" => Variant1,
-///     "variant2" => Variant2,
-/// });
-/// ```
-///
 /// The generated implementation will match variant names case-insensitively, so both
 /// `"variant1"` and `"VARIANT1"` will be deserialized as `MyEnum::Variant1`.
 #[macro_export]
@@ -99,25 +80,6 @@ macro_rules! impl_case_insensitive_enum {
 ///
 /// Similar to `impl_case_insensitive_enum` but for enums where variants contain structs
 /// rather than simple types.
-///
-/// # Example
-///
-/// ```
-/// use serde::{Serialize, Deserialize};
-/// use crate::models::utils::case_insensitive::impl_case_insensitive_enum_struct;
-///
-/// #[derive(Debug, Clone, Serialize)]
-/// #[serde(tag = "type")]
-/// pub enum MyEnum {
-///     Variant1 { field1: String, field2: i32 },
-///     Variant2 { other_field: bool },
-/// }
-///
-/// impl_case_insensitive_enum_struct!(MyEnum, {
-///     "variant1" => Variant1,
-///     "variant2" => Variant2,
-/// });
-/// ```
 #[macro_export]
 macro_rules! impl_case_insensitive_enum_struct {
     ($enum_name:ident, { $($variant_str:expr => $variant:ident),* $(,)? }) => {

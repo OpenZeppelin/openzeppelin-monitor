@@ -695,7 +695,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
       },
       "message": {
         "title": "large_transfer_usdc_slack triggered",
-        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.2} USDC to ${functions.0.args.1} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.amount} USDC to ${functions.0.args.to} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   }
@@ -1097,8 +1097,8 @@ The monitor uses a structured JSON format with nested objects for template varia
 |events.[index].args.[position]
 |Event parameters by position
 
-|functions.[index].args.[position]
-|Function parameters by position
+|functions.[index].args.[param]
+|Function parameters by name
 |===
 
 [NOTE]
@@ -1218,7 +1218,7 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
   "addresses": [
     {
       "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-      "abi": [ ... ]
+      "contract_spec": [ ... ]
     }
   ],
   "match_conditions": {
@@ -1469,7 +1469,7 @@ Match transaction properties. The available fields and expression syntax depend 
 |Network Type |Access Method
 
 |Stellar
-|Arguments accessed by numeric index (e.g., [0, 1, 2])
+|Arguments accessed by parameter names for functions and numeric index for events (e.g., [0, 1, 2])
 
 |EVM
 |Arguments accessed by parameter names from ABI
@@ -1485,13 +1485,29 @@ For EVM event `Transfer(address from, address to, uint256 value)`:
 }
 ----
 
-For Stellar function `transfer(Address,Address,I128)`:
+For Stellar event `Transfer(address, address, uint256)`:
 [source,json]
 ----
 {
-  "expression": "2 > 1000"
+  "expression": "2 > 10000000000"
 }
 ----
+
+For EVM or Stellar function `transfer(Address from, Address to, I128 amount)`:
+[source,json]
+----
+{
+  "expression": "amount > 1000"
+}
+----
+
+[NOTE]
+====
+With SEP-48 support, Stellar functions can now reference parameters by name (e.g., `amount > 1000`) instead of position (e.g., `2 > 1000`). Events still use indexed parameters until SEP-48 support is added for events.
+
+You can find the contract specification through Stellar contract explorer tool. For example:
+link:https://lab.stellar.org/smart-contracts/contract-explorer?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=https:////mainnet.sorobanrpc.com&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;&smartContracts$explorer$contractId=CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE;;[Stellar DEX Contract Interface^]
+====
 
 ==== Trigger Conditions (Custom filters)
 
@@ -1544,7 +1560,9 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 * Network slugs in the monitor must match valid network configurations.
 * Trigger IDs must match configured triggers.
 * Expression syntax and available variables differ between EVM and Stellar networks.
-* ABIs are only relevant for EVM networks.
+* ABIs can be provided in two ways:
+** For EVM networks: Through the monitor configuration using standard Ethereum ABI format
+** For Stellar networks: Through the monitor configuration using SEP-48 format, or automatically fetched from the chain if not provided
 * The monitoring frequency is controlled by the network's `cron_schedule`.
 * Each monitor can watch multiple networks and addresses simultaneously.
 * Monitors can be paused without removing their configuration.

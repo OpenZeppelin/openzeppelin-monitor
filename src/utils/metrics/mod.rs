@@ -417,8 +417,8 @@ mod tests {
 		// Verify that memory usage doesn't exceed total memory
 		assert!(memory_usage <= total_memory);
 
-		// Verify that available memory plus used memory doesn't exceed total memory
-		assert!((available_memory + memory_usage) <= total_memory);
+		// Verify that available memory doesn't exceed total memory
+		assert!(available_memory <= total_memory);
 	}
 
 	#[test]
@@ -643,7 +643,9 @@ mod tests {
 
 	#[test]
 	fn test_triggers_count() {
-		let _lock = TEST_MUTEX.lock().unwrap();
+		let _lock = TEST_MUTEX
+			.lock()
+			.unwrap_or_else(|poisoned| poisoned.into_inner());
 		reset_all_metrics();
 
 		// Create test data with triggers

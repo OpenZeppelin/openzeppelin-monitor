@@ -7,7 +7,7 @@
   "addresses": [
     {
       "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      "abi": [
+      "contract_spec": [
         {
           "anonymous": false,
           "inputs": [
@@ -1398,7 +1398,7 @@
     },
     {
       "address": "0xf18206B2289CF6CE15CDDBee9C6f6a0F059EfB56",
-      "abi": [
+      "contract_spec": [
         {
           "inputs": [],
           "name": "increment",

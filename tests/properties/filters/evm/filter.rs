@@ -6,8 +6,8 @@ use std::marker::PhantomData;
 
 use openzeppelin_monitor::{
 	models::{
-		EVMBaseTransaction, EVMMatchArguments, EVMMatchParamEntry, EVMTransaction, Monitor,
-		TransactionStatus,
+		ContractSpec, EVMBaseTransaction, EVMContractSpec, EVMMatchArguments, EVMMatchParamEntry,
+		EVMTransaction, Monitor, TransactionStatus,
 	},
 	services::{
 		blockchain::{EVMTransportClient, EvmClient},
@@ -129,47 +129,45 @@ prop_compose! {
 	) -> Monitor {
 		MonitorBuilder::new()
 			.name("Test Monitor")
-			.address_with_abi(address.as_str(), json!([
+			.address_with_spec(address.as_str(), Some(ContractSpec::EVM(EVMContractSpec::from(json!([
 				{
 					"anonymous": false,
 					"inputs": [
-					  {
-						"indexed": false,
-						"internalType": "uint256",
-						"name": "value",
-						"type": "uint256"
-					  }
+						{
+							"indexed": false,
+							"internalType": "uint256",
+							"name": "value",
+							"type": "uint256"
+						}
 					],
 					"name": "ValueChanged",
 					"type": "event"
-				  },
-				  {
-					"inputs": [],
-					"name": "retrieve",
-					"outputs": [
-					  {
-						"internalType": "uint256",
-						"name": "",
-						"type": "uint256"
-					  }
-					],
-					"stateMutability": "view",
-					"type": "function"
-				  },
-				  {
+				},
+				{
 					"inputs": [
-					  {
-						"internalType": "uint256",
-						"name": "value",
-						"type": "uint256"
-					  }
+						{
+							"internalType": "address",
+							"name": "recipient",
+							"type": "address"
+						},
+						{
+							"internalType": "uint256",
+							"name": "amount",
+							"type": "uint256"
+						}
 					],
-					"name": "store",
-					"outputs": [],
+					"name": "transfer",
+					"outputs": [
+						{
+							"internalType": "bool",
+							"name": "",
+							"type": "bool"
+						}
+					],
 					"stateMutability": "nonpayable",
 					"type": "function"
-				  }
-			]))
+				}
+			])))))
 			.function(format!("{}({})", function_name, param_type).as_str(), Some(format!("value >= {}", min_value)))
 			.function(format!("not_{}({})", function_name, param_type).as_str(), Some(format!("value >= {}", min_value)))
 			.build()
@@ -594,7 +592,28 @@ proptest! {
 			..Default::default()
 		});
 
+		// Create contract spec matching the function
+		let contract_specs = vec![(
+			monitor.addresses[0].address.clone(),
+			EVMContractSpec::from(json!([
+				{
+					"inputs": [
+						{
+							"internalType": "uint256",
+							"name": "value",
+							"type": "uint256"
+						}
+					],
+					"name": "store",
+					"outputs": [],
+					"stateMutability": "nonpayable",
+					"type": "function"
+				}
+			]))
+		)];
+
 		filter.find_matching_functions_for_transaction(
+			&contract_specs,
 			&tx,
 			&monitor,
 			&mut matched_functions,

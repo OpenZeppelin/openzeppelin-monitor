@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::models::blockchain::ContractSpec;
+
 /// Configuration for monitoring specific blockchain activity.
 ///
 /// A Monitor defines what blockchain activity to watch for through a combination of:
@@ -20,8 +22,8 @@ pub struct Monitor {
 	/// Whether this monitor is currently paused
 	pub paused: bool,
 
-	/// Contract addresses to monitor, optionally with their ABIs
-	pub addresses: Vec<AddressWithABI>,
+	/// Contract addresses to monitor, optionally with their contract specs
+	pub addresses: Vec<AddressWithSpec>,
 
 	/// Conditions that should trigger this monitor
 	pub match_conditions: MatchConditions,
@@ -35,12 +37,12 @@ pub struct Monitor {
 
 /// Contract address with optional ABI for decoding transactions and events
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct AddressWithABI {
+pub struct AddressWithSpec {
 	/// Contract address in the network's native format
 	pub address: String,
 
-	/// Optional ABI for decoding contract interactions
-	pub abi: Option<serde_json::Value>,
+	/// Optional contract spec for decoding contract interactions
+	pub contract_spec: Option<ContractSpec>,
 }
 
 /// Collection of conditions that can trigger a monitor

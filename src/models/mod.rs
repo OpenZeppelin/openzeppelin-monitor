@@ -13,22 +13,27 @@ mod core;
 mod security;
 
 // Re-export blockchain types
-pub use blockchain::{BlockChainType, BlockType, MonitorMatch, ProcessedBlock, TransactionType};
+pub use blockchain::{
+	BlockChainType, BlockType, ContractSpec, MonitorMatch, ProcessedBlock, TransactionType,
+};
 
 pub use blockchain::evm::{
-	EVMBaseReceipt, EVMBaseTransaction, EVMBlock, EVMMatchArguments, EVMMatchParamEntry,
-	EVMMatchParamsMap, EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt,
+	EVMBaseReceipt, EVMBaseTransaction, EVMBlock, EVMContractSpec, EVMMatchArguments,
+	EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EVMReceiptLog, EVMTransaction,
+	EVMTransactionReceipt,
 };
 
 pub use blockchain::stellar::{
-	StellarBlock, StellarDecodedParamEntry, StellarDecodedTransaction, StellarEvent,
-	StellarLedgerInfo, StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap,
-	StellarMonitorMatch, StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
+	StellarBlock, StellarContractFunction, StellarContractInput, StellarContractSpec,
+	StellarDecodedParamEntry, StellarDecodedTransaction, StellarEvent,
+	StellarFormattedContractSpec, StellarLedgerInfo, StellarMatchArguments, StellarMatchParamEntry,
+	StellarMatchParamsMap, StellarMonitorMatch, StellarParsedOperationResult, StellarTransaction,
+	StellarTransactionInfo,
 };
 
 // Re-export core types
 pub use core::{
-	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, Network,
+	AddressWithSpec, EventCondition, FunctionCondition, MatchConditions, Monitor, Network,
 	NotificationMessage, RpcUrl, ScriptLanguage, TransactionCondition, TransactionStatus, Trigger,
 	TriggerConditions, TriggerType, TriggerTypeConfig,
 };

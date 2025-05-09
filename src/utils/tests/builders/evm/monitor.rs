@@ -3,8 +3,8 @@
 //! - `MonitorBuilder`: Builder for creating test Monitor instances
 
 use crate::models::{
-	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, ScriptLanguage,
-	TransactionCondition, TransactionStatus, TriggerConditions,
+	AddressWithSpec, ContractSpec, EventCondition, FunctionCondition, MatchConditions, Monitor,
+	ScriptLanguage, TransactionCondition, TransactionStatus, TriggerConditions,
 };
 
 /// Builder for creating test Monitor instances
@@ -12,7 +12,7 @@ pub struct MonitorBuilder {
 	name: String,
 	networks: Vec<String>,
 	paused: bool,
-	addresses: Vec<AddressWithABI>,
+	addresses: Vec<AddressWithSpec>,
 	match_conditions: MatchConditions,
 	trigger_conditions: Vec<TriggerConditions>,
 	triggers: Vec<String>,
@@ -24,9 +24,9 @@ impl Default for MonitorBuilder {
 			name: "TestMonitor".to_string(),
 			networks: vec!["ethereum_mainnet".to_string()],
 			paused: false,
-			addresses: vec![AddressWithABI {
+			addresses: vec![AddressWithSpec {
 				address: "0x0000000000000000000000000000000000000000".to_string(),
-				abi: None,
+				contract_spec: None,
 			}],
 			match_conditions: MatchConditions {
 				functions: vec![],
@@ -60,9 +60,9 @@ impl MonitorBuilder {
 	}
 
 	pub fn address(mut self, address: &str) -> Self {
-		self.addresses = vec![AddressWithABI {
+		self.addresses = vec![AddressWithSpec {
 			address: address.to_string(),
-			abi: None,
+			contract_spec: None,
 		}];
 		self
 	}
@@ -70,39 +70,36 @@ impl MonitorBuilder {
 	pub fn addresses(mut self, addresses: Vec<String>) -> Self {
 		self.addresses = addresses
 			.into_iter()
-			.map(|addr| AddressWithABI {
+			.map(|addr| AddressWithSpec {
 				address: addr,
-				abi: None,
+				contract_spec: None,
 			})
 			.collect();
 		self
 	}
 
 	pub fn add_address(mut self, address: &str) -> Self {
-		self.addresses.push(AddressWithABI {
+		self.addresses.push(AddressWithSpec {
 			address: address.to_string(),
-			abi: None,
+			contract_spec: None,
 		});
 		self
 	}
 
-	pub fn address_with_abi(mut self, address: &str, abi: serde_json::Value) -> Self {
-		self.addresses = vec![AddressWithABI {
+	pub fn address_with_spec(mut self, address: &str, spec: Option<ContractSpec>) -> Self {
+		self.addresses = vec![AddressWithSpec {
 			address: address.to_string(),
-			abi: Some(abi),
+			contract_spec: spec,
 		}];
 		self
 	}
 
-	pub fn addresses_with_abi(
-		mut self,
-		addresses: Vec<(String, Option<serde_json::Value>)>,
-	) -> Self {
+	pub fn addresses_with_spec(mut self, addresses: Vec<(String, Option<ContractSpec>)>) -> Self {
 		self.addresses = addresses
 			.into_iter()
-			.map(|(addr, abi)| AddressWithABI {
+			.map(|(addr, spec)| AddressWithSpec {
 				address: addr.to_string(),
-				abi,
+				contract_spec: spec,
 			})
 			.collect();
 		self
@@ -172,6 +169,8 @@ impl MonitorBuilder {
 
 #[cfg(test)]
 mod tests {
+	use crate::models::EVMContractSpec;
+
 	use super::*;
 	use serde_json::json;
 
@@ -187,7 +186,7 @@ mod tests {
 			monitor.addresses[0].address,
 			"0x0000000000000000000000000000000000000000"
 		);
-		assert!(monitor.addresses[0].abi.is_none());
+		assert!(monitor.addresses[0].contract_spec.is_none());
 		assert!(monitor.match_conditions.functions.is_empty());
 		assert!(monitor.match_conditions.events.is_empty());
 		assert!(monitor.match_conditions.transactions.is_empty());
@@ -228,33 +227,51 @@ mod tests {
 	fn test_address_with_abi() {
 		let abi = json!({"some": "abi"});
 		let monitor = MonitorBuilder::new()
-			.address_with_abi("0x123", abi.clone())
+			.address_with_spec(
+				"0x123",
+				Some(ContractSpec::EVM(EVMContractSpec::from(abi.clone()))),
+			)
 			.build();
 
 		assert_eq!(monitor.addresses.len(), 1);
 		assert_eq!(monitor.addresses[0].address, "0x123");
-		assert_eq!(monitor.addresses[0].abi, Some(abi));
+		assert_eq!(
+			monitor.addresses[0].contract_spec,
+			Some(ContractSpec::EVM(EVMContractSpec::from(abi)))
+		);
 	}
 
 	#[test]
 	fn test_addresses_with_abi() {
-		let abi1 = json!({"abi": "1"});
-		let abi2 = json!({"abi": "2"});
+		let abi1 = json!({"contract_spec": "1"});
+		let abi2 = json!({"contract_spec": "2"});
 		let monitor = MonitorBuilder::new()
-			.addresses_with_abi(vec![
-				("0x123".to_string(), Some(abi1.clone())),
+			.addresses_with_spec(vec![
+				(
+					"0x123".to_string(),
+					Some(ContractSpec::EVM(EVMContractSpec::from(abi1.clone()))),
+				),
 				("0x456".to_string(), None),
-				("0x789".to_string(), Some(abi2.clone())),
+				(
+					"0x789".to_string(),
+					Some(ContractSpec::EVM(EVMContractSpec::from(abi2.clone()))),
+				),
 			])
 			.build();
 
 		assert_eq!(monitor.addresses.len(), 3);
 		assert_eq!(monitor.addresses[0].address, "0x123");
-		assert_eq!(monitor.addresses[0].abi, Some(abi1));
+		assert_eq!(
+			monitor.addresses[0].contract_spec,
+			Some(ContractSpec::EVM(EVMContractSpec::from(abi1)))
+		);
 		assert_eq!(monitor.addresses[1].address, "0x456");
-		assert_eq!(monitor.addresses[1].abi, None);
+		assert_eq!(monitor.addresses[1].contract_spec, None);
 		assert_eq!(monitor.addresses[2].address, "0x789");
-		assert_eq!(monitor.addresses[2].abi, Some(abi2));
+		assert_eq!(
+			monitor.addresses[2].contract_spec,
+			Some(ContractSpec::EVM(EVMContractSpec::from(abi2)))
+		);
 	}
 
 	#[test]
@@ -358,7 +375,10 @@ mod tests {
 			.paused(true)
 			.addresses(vec!["0x123".to_string(), "0x456".to_string()])
 			.add_address("0x789")
-			.address_with_abi("0xabc", abi.clone())
+			.address_with_spec(
+				"0xabc",
+				Some(ContractSpec::EVM(EVMContractSpec::from(abi.clone()))),
+			)
 			.function("transfer(address,uint256)", Some("value >= 0".to_string()))
 			.event("Transfer(address,address,uint256)", None)
 			.transaction(TransactionStatus::Success, None)
@@ -372,7 +392,10 @@ mod tests {
 		assert!(monitor.paused);
 		assert_eq!(monitor.addresses.len(), 1); // address_with_abi overwrites previous addresses
 		assert_eq!(monitor.addresses[0].address, "0xabc");
-		assert_eq!(monitor.addresses[0].abi, Some(abi));
+		assert_eq!(
+			monitor.addresses[0].contract_spec,
+			Some(ContractSpec::EVM(EVMContractSpec::from(abi)))
+		);
 		assert_eq!(monitor.match_conditions.functions.len(), 1);
 		assert_eq!(
 			monitor.match_conditions.functions[0].expression,

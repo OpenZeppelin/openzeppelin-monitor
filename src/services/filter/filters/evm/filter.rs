@@ -11,16 +11,15 @@ use alloy::primitives::{U256, U64};
 use anyhow::Context;
 use async_trait::async_trait;
 use ethabi::Contract;
-use serde_json::Value;
 use std::{marker::PhantomData, str::FromStr};
 use tracing::instrument;
 
 use crate::{
 	models::{
-		AddressWithABI, BlockType, EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap,
-		EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt, EventCondition,
-		FunctionCondition, MatchConditions, Monitor, MonitorMatch, Network, TransactionCondition,
-		TransactionStatus,
+		AddressWithSpec, BlockType, ContractSpec, EVMContractSpec, EVMMatchArguments,
+		EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EVMReceiptLog, EVMTransaction,
+		EVMTransactionReceipt, EventCondition, FunctionCondition, MatchConditions, Monitor,
+		MonitorMatch, Network, TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, EvmClientTrait},
@@ -184,6 +183,7 @@ impl<T> EVMBlockFilter<T> {
 	/// * `matched_on_args` - Arguments from matched function calls
 	pub fn find_matching_functions_for_transaction(
 		&self,
+		contract_specs: &[(String, EVMContractSpec)],
 		transaction: &EVMTransaction,
 		monitor: &Monitor,
 		matched_functions: &mut Vec<FunctionCondition>,
@@ -199,7 +199,10 @@ impl<T> EVMBlockFilter<T> {
 					.is_some_and(|to| are_same_address(&addr.address, &h160_to_string(to)))
 			}) {
 				// Process the matching address's ABI
-				if let Some(abi) = &monitored_addr.abi {
+				if let Some((_, abi)) = contract_specs
+					.iter()
+					.find(|(address, _)| are_same_address(address, &monitored_addr.address))
+				{
 					// Create contract object from ABI
 					let contract = match Contract::load(abi.to_string().as_bytes()) {
 						Ok(c) => c,
@@ -342,7 +345,7 @@ impl<T> EVMBlockFilter<T> {
 			involved_addresses.push(h160_to_string(log.address));
 
 			// Process the matching address's ABI
-			if let Some(abi) = &monitored_addr.abi {
+			if let Some(abi) = &monitored_addr.contract_spec {
 				let decoded_log = self.decode_events(abi, log).await;
 
 				if let Some(event_condition) = decoded_log {
@@ -537,13 +540,16 @@ impl<T> EVMBlockFilter<T> {
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
 	pub async fn decode_events(
 		&self,
-		abi: &Value,
+		abi: &ContractSpec,
 		log: &EVMReceiptLog,
 	) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
-		let contract = Contract::load(abi.to_string().as_bytes())
-			.with_context(|| "Failed to parse ABI")
-			.ok()?;
+		let contract = match abi {
+			ContractSpec::EVM(evm_spec) => Contract::load(evm_spec.to_string().as_bytes())
+				.with_context(|| "Failed to parse ABI")
+				.ok()?,
+			_ => return None,
+		};
 
 		let decoded_log = contract
 			.events()
@@ -619,6 +625,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
+		contract_specs: Option<&[(String, ContractSpec)]>,
 	) -> Result<Vec<MonitorMatch>, FilterError> {
 		let evm_block = match block {
 			BlockType::EVM(block) => block,
@@ -676,6 +683,16 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		}
 
 		let mut matching_results = Vec::new();
+
+		// Cast contract specs to EVMContractSpec
+		let contract_specs = contract_specs
+			.unwrap_or(&[])
+			.iter()
+			.filter_map(|(address, spec)| match spec {
+				ContractSpec::EVM(spec) => Some((address.clone(), spec.clone())),
+				_ => None,
+			})
+			.collect::<Vec<(String, EVMContractSpec)>>();
 
 		tracing::debug!("Processing {} monitor(s)", monitors.len());
 
@@ -743,6 +760,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 					// Check function match conditions
 					self.find_matching_functions_for_transaction(
+						&contract_specs,
 						transaction,
 						monitor,
 						&mut matched_functions,
@@ -797,8 +815,8 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 									addresses: monitor
 										.addresses
 										.iter()
-										.map(|addr| AddressWithABI {
-											abi: None,
+										.map(|addr| AddressWithSpec {
+											contract_spec: None,
 											..addr.clone()
 										})
 										.collect(),
@@ -849,8 +867,11 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 #[cfg(test)]
 mod tests {
-	use crate::utils::tests::evm::{
-		monitor::MonitorBuilder, receipt::ReceiptBuilder, transaction::TransactionBuilder,
+	use crate::{
+		models::{ContractSpec, EVMContractSpec},
+		utils::tests::evm::{
+			monitor::MonitorBuilder, receipt::ReceiptBuilder, transaction::TransactionBuilder,
+		},
 	};
 
 	use super::*;
@@ -869,7 +890,7 @@ mod tests {
 		event_conditions: Vec<EventCondition>,
 		function_conditions: Vec<FunctionCondition>,
 		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithABI>,
+		addresses: Vec<AddressWithSpec>,
 	) -> Monitor {
 		MonitorBuilder::new()
 			.name("test")
@@ -879,12 +900,17 @@ mod tests {
 				functions: function_conditions,
 				transactions: transaction_conditions,
 			})
-			.addresses_with_abi(addresses.into_iter().map(|a| (a.address, a.abi)).collect())
+			.addresses_with_spec(
+				addresses
+					.into_iter()
+					.map(|a| (a.address, a.contract_spec))
+					.collect(),
+			)
 			.build()
 	}
 
-	fn create_test_abi(abi_type: &str) -> Value {
-		match abi_type {
+	fn create_test_abi(abi_type: &str) -> ContractSpec {
+		let spec = match abi_type {
 			"function" => json!([{
 				"type": "function",
 				"name": "transfer",
@@ -892,13 +918,11 @@ mod tests {
 					{
 						"name": "recipient",
 						"type": "address",
-						"indexed": false,
 						"internalType": "address"
 					},
 					{
 						"name": "amount",
 						"type": "uint256",
-						"indexed": false,
 						"internalType": "uint256"
 					}
 				],
@@ -906,13 +930,10 @@ mod tests {
 					{
 						"name": "",
 						"type": "bool",
-						"indexed": false,
 						"internalType": "bool"
 					}
 				],
-				"stateMutability": "nonpayable",
-				"payable": false,
-				"constant": false
+				"stateMutability": "nonpayable"
 			}]),
 			"event" => json!([{
 				"type": "event",
@@ -937,14 +958,15 @@ mod tests {
 				"anonymous": false,
 			}]),
 			_ => json!([]),
-		}
+		};
+		ContractSpec::EVM(EVMContractSpec::from(spec))
 	}
 
 	/// Creates a test address with ABI
-	fn create_test_address(address: &str, abi: Option<Value>) -> AddressWithABI {
-		AddressWithABI {
+	fn create_test_address(address: &str, spec: Option<ContractSpec>) -> AddressWithSpec {
+		AddressWithSpec {
 			address: address.to_string(),
-			abi,
+			contract_spec: spec,
 		}
 	}
 
@@ -1600,6 +1622,11 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
 		// Create a monitor with a simple function match condition
 		let monitor = create_test_monitor(
 			vec![], // events
@@ -1609,8 +1636,8 @@ mod tests {
 			}], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000004321",
-				Some(create_test_abi("function")),
+				&contract_with_spec.0,
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
 			)], // addresses
 		);
 
@@ -1653,8 +1680,8 @@ mod tests {
 			.input(Bytes(encoded.into()))
 			.build();
 
-		// Test function matching
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1679,6 +1706,11 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
 		// Create a monitor with a function match condition including an expression
 		let monitor = create_test_monitor(
 			vec![], // events
@@ -1688,8 +1720,8 @@ mod tests {
 			}], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000004321",
-				Some(create_test_abi("function")),
+				&contract_with_spec.0,
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
 			)], // addresses
 		);
 
@@ -1732,6 +1764,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec.clone()],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1764,6 +1797,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1782,6 +1816,11 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
 		let monitor = create_test_monitor(
 			vec![],
 			vec![FunctionCondition {
@@ -1789,10 +1828,10 @@ mod tests {
 				expression: None,
 			}],
 			vec![],
-			vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000004321".to_string(),
-				abi: Some(create_test_abi("function")),
-			}],
+			vec![create_test_address(
+				&contract_with_spec.0,
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
+			)],
 		);
 
 		// Create transaction with non-matching 'to' address
@@ -1834,6 +1873,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1852,6 +1892,11 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
 		let monitor = MonitorBuilder::new()
 			.match_conditions(MatchConditions {
 				functions: vec![FunctionCondition {
@@ -1861,9 +1906,9 @@ mod tests {
 				events: vec![],
 				transactions: vec![],
 			})
-			.addresses_with_abi(vec![(
-				"0x0000000000000000000000000000000000004321".to_string(),
-				Some(create_test_abi("function")),
+			.addresses_with_spec(vec![(
+				contract_with_spec.0.clone(),
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
 			)])
 			.name("test")
 			.networks(vec!["evm_mainnet".to_string()])
@@ -1877,6 +1922,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -2348,7 +2394,9 @@ mod tests {
 			"anonymous": false,
 		}]);
 
-		let result = filter.decode_events(&invalid_abi, &log).await;
+		let result = filter
+			.decode_events(&ContractSpec::EVM(EVMContractSpec::from(invalid_abi)), &log)
+			.await;
 		assert!(result.is_none());
 	}
 

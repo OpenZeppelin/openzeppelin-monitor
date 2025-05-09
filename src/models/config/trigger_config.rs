@@ -30,6 +30,8 @@ pub struct TriggerConfigFile {
 #[async_trait]
 impl ConfigLoader for Trigger {
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		dotenvy::dotenv().ok();
+
 		let mut trigger = self.clone();
 
 		match &mut trigger.config {
@@ -180,7 +182,9 @@ impl ConfigLoader for Trigger {
 					})?;
 
 				// Validate each trigger before adding it
-				for (name, trigger) in file_triggers.triggers {
+				for (name, mut trigger) in file_triggers.triggers {
+					// Resolve secrets before validating
+					trigger = trigger.resolve_secrets().await?;
 					if let Err(validation_error) = trigger.validate() {
 						return Err(ConfigError::validation_error(
 							format!(

@@ -241,8 +241,9 @@ mod tests {
 	use super::*;
 	use crate::{
 		models::{
-			AddressWithABI, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, EventCondition,
-			FunctionCondition, MatchConditions, Monitor, MonitorMatch, TransactionCondition,
+			AddressWithSpec, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt,
+			EventCondition, FunctionCondition, MatchConditions, Monitor, MonitorMatch,
+			TransactionCondition,
 		},
 		utils::tests::evm::monitor::MonitorBuilder,
 	};
@@ -267,7 +268,7 @@ mod tests {
 		event_conditions: Vec<EventCondition>,
 		function_conditions: Vec<FunctionCondition>,
 		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithABI>,
+		addresses: Vec<AddressWithSpec>,
 	) -> Monitor {
 		let mut builder = MonitorBuilder::new()
 			.name("test")
@@ -283,8 +284,12 @@ mod tests {
 			builder = builder.transaction(transaction.status, transaction.expression);
 		}
 
-		builder =
-			builder.addresses_with_abi(addresses.into_iter().map(|a| (a.address, a.abi)).collect());
+		builder = builder.addresses_with_spec(
+			addresses
+				.into_iter()
+				.map(|a| (a.address, a.contract_spec))
+				.collect(),
+		);
 
 		builder.build()
 	}

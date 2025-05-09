@@ -1,0 +1,53 @@
+[
+    {
+        "function_v0": {
+            "doc": "",
+            "name": "transfer",
+            "inputs": [
+                {
+                    "doc": "",
+                    "name": "from",
+                    "type_": "address"
+                },
+                {
+                    "doc": "",
+                    "name": "to",
+                    "type_": "address"
+                },
+                {
+                    "doc": "",
+                    "name": "amount",
+                    "type_": "i128"
+                }
+            ],
+            "outputs": []
+        }
+    },
+    {
+        "function_v0": {
+            "doc": "",
+            "name": "upsert_data",
+            "inputs": [
+                {
+                    "doc": "",
+                    "name": "data",
+                    "type_": {
+                        "map": {
+                            "key_type": "string",
+                            "value_type": "string"
+                        }
+                    }
+                }
+            ],
+            "outputs": []
+        }
+    },
+    {
+        "function_v0": {
+            "doc": "",
+            "name": "increment",
+            "inputs": [],
+            "outputs": []
+        }
+    }
+]

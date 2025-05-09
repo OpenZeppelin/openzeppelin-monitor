@@ -204,7 +204,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
   "addresses": [
     {
       "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      "abi": [
+      "contract_spec": [
         {
           "anonymous": false,
           "inputs": [
@@ -426,14 +426,52 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
   ],
   "addresses": [
     {
-      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE"
+     "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
+      "contract_spec": [
+        {
+          "function_v0": {
+            "doc": "",
+            "name": "swap",
+            "inputs": [
+              {
+                "doc": "",
+                "name": "user",
+                "type_": "address"
+              },
+              {
+                "doc": "",
+                "name": "in_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "out_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "in_amount",
+                "type_": "u128"
+              },
+              {
+                "doc": "",
+                "name": "out_min",
+                "type_": "u128"
+              }
+            ],
+            "outputs": [
+              "u128"
+            ]
+          }
+        }
+      ]
     }
   ],
   "match_conditions": {
     "functions": [
       {
         "signature": "swap(Address,U32,U32,U128,U128)",
-        "expression": "4 > 1000000000"
+        "expression": "out_min > 1000000000"
       }
     ],
     "events": [],
@@ -457,6 +495,12 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
   ]
 }
 ----
+
+[NOTE]
+====
+* The `abi` field is optional for Stellar contracts. If not provided, the monitor will automatically fetch the contract's SEP-48 interface from the chain.
+* You can find the contract specification through Stellar contract explorer tool. For example: link:https://lab.stellar.org/smart-contracts/contract-explorer?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=https:////mainnet.sorobanrpc.com&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;&smartContracts$explorer$contractId=CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE;;[Stellar DEX Contract Interface^]
+====
 
 [NOTE]
 ====
@@ -487,7 +531,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
       },
       "message": {
         "title": "large_swap_by_dex_slack triggered",
-        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.4} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
   }
