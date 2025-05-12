@@ -16,7 +16,6 @@ use std::ops::Deref;
 ///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L200-L211>
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
 pub enum RpcTransaction {
 	MidnightTransaction {
 		#[serde(skip)]
@@ -33,7 +32,6 @@ pub enum RpcTransaction {
 ///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L185-L192>
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
 pub enum Operation {
 	Call {
 		address: String,
