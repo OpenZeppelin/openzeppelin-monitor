@@ -14,8 +14,8 @@ use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, EventCondition, FunctionCondition, Monitor, MonitorMatch, TransactionCondition,
-		TransactionStatus,
+		BlockType, ContractSpec, EventCondition, FunctionCondition, Monitor, MonitorMatch,
+		TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::EvmClient,
@@ -119,6 +119,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -166,6 +167,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -226,6 +228,12 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 
 	let monitor = make_monitor_with_functions(test_data.monitor, false);
 
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+		contract_spec.clone(),
+	);
+
 	// Run filter_block with the test data
 	let matches = filter_service
 		.filter_block(
@@ -233,6 +241,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -271,6 +280,12 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 
 	let monitor = make_monitor_with_functions(test_data.monitor, true);
 
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+		contract_spec.clone(),
+	);
+
 	// Run filter_block with the test data
 	let matches = filter_service
 		.filter_block(
@@ -278,6 +293,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -336,6 +352,7 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -379,6 +396,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 			&test_data.network,
 			&test_data.blocks[0],
 			&[monitor],
+			None,
 		)
 		.await?;
 
@@ -415,12 +433,19 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 	let mock_transport = setup_mock_transport(test_data.clone());
 	let client = EvmClient::new_with_transport(mock_transport);
 
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+		contract_spec.clone(),
+	);
+
 	let matches = filter_service
 		.filter_block(
 			&client,
 			&test_data.network,
 			&test_data.blocks[0],
 			&[test_data.monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -480,6 +505,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			&invalid_block,
 			&[test_data.monitor],
+			None,
 		)
 		.await;
 
@@ -505,6 +531,12 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	let mut trigger_execution_service =
 		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
 			.await;
+
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+		contract_spec.clone(),
+	);
 
 	// Set up expectations for execute()
 	trigger_execution_service.expect_execute()
@@ -536,6 +568,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			&test_data.blocks[0],
 			&[test_data.monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 
@@ -576,6 +609,12 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 	monitor.match_conditions.events = vec![];
 	monitor.match_conditions.transactions = vec![];
 
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xf18206b2289cf6ce15cddbee9c6f6a0f059efb56".to_string(),
+		contract_spec.clone(),
+	);
+
 	// Run filter_block with the test data
 	let matches = filter_service
 		.filter_block(
@@ -583,6 +622,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 			&test_data.network,
 			test_data.blocks.last().unwrap(), // last block contains increment() transaction
 			&[monitor],
+			Some(&[contract_with_spec]),
 		)
 		.await?;
 

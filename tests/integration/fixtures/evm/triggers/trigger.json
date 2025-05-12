@@ -31,7 +31,7 @@
       },
       "message": {
         "title": "example_trigger_webhook triggered",
-        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://etherscan.io/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.amount} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   },
@@ -45,7 +45,7 @@
       },
       "message": {
         "title": "example_trigger_discord triggered",
-        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://etherscan.io/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.amount} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   },
@@ -61,7 +61,7 @@
       "disable_web_preview": true,
       "message": {
         "title": "example_trigger_telegram triggered",
-        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://etherscan.io/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.value} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   }

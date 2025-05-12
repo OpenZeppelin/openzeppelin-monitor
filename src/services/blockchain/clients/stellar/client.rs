@@ -3,16 +3,17 @@
 //! This module provides functionality to interact with the Stellar blockchain,
 //! supporting operations like block retrieval, transaction lookup, and event filtering.
 
-use std::marker::PhantomData;
-
 use anyhow::Context;
 use async_trait::async_trait;
 use serde_json::json;
+use std::marker::PhantomData;
+use stellar_xdr::curr::{Limits, WriteXdr};
 use tracing::instrument;
 
 use crate::{
 	models::{
-		BlockType, Network, StellarBlock, StellarEvent, StellarTransaction, StellarTransactionInfo,
+		BlockType, ContractSpec, Network, StellarBlock, StellarContractSpec, StellarEvent,
+		StellarTransaction, StellarTransactionInfo,
 	},
 	services::{
 		blockchain::{
@@ -20,7 +21,13 @@ use crate::{
 			transports::StellarTransportClient,
 			BlockchainTransport,
 		},
-		filter::StellarBlockFilter,
+		filter::{
+			stellar_helpers::{
+				get_contract_code_ledger_key, get_contract_instance_ledger_key, get_contract_spec,
+				get_wasm_code_from_ledger_entry_data, get_wasm_hash_from_ledger_entry_data,
+			},
+			StellarBlockFilter,
+		},
 	},
 };
 
@@ -332,7 +339,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 				json!({
 					"startLedger": start_block,
 					"pagination": {
-						"limit": PAGE_LIMIT
+						"limit": if end_block.is_none() { 1 } else { PAGE_LIMIT }
 					}
 				})
 			} else {
@@ -376,10 +383,96 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 			current_iteration += 1;
 			cursor = response["result"]["cursor"].as_str().map(|s| s.to_string());
 
+			// If the cursor is the same as the start block, we have reached the end of the range
+			if cursor == Some(start_block.to_string()) {
+				break;
+			}
+
 			if cursor.is_none() {
 				break;
 			}
 		}
 		Ok(blocks)
+	}
+
+	/// Retrieves the contract spec for a given contract ID
+	///
+	/// # Arguments
+	/// * `contract_id` - The ID of the contract to retrieve the spec for
+	///
+	/// # Returns
+	/// * `Result<ContractSpec, anyhow::Error>` - The contract spec or error
+	#[instrument(skip(self), fields(contract_id))]
+	async fn get_contract_spec(&self, contract_id: &str) -> Result<ContractSpec, anyhow::Error> {
+		// Get contract wasm code from contract ID
+		let contract_instance_ledger_key = get_contract_instance_ledger_key(contract_id)
+			.map_err(|e| anyhow::anyhow!("Failed to get contract instance ledger key: {}", e))?;
+
+		let contract_instance_ledger_key_xdr = contract_instance_ledger_key
+			.to_xdr_base64(Limits::none())
+			.map_err(|e| {
+				anyhow::anyhow!(
+					"Failed to convert contract instance ledger key to XDR: {}",
+					e
+				)
+			})?;
+
+		let params = json!({
+			"keys": [contract_instance_ledger_key_xdr],
+			"xdrFormat": "base64"
+		});
+
+		let response = self
+			.http_client
+			.send_raw_request("getLedgerEntries", Some(params))
+			.await
+			.with_context(|| format!("Failed to get contract wasm code for {}", contract_id))?;
+
+		let contract_data_xdr_base64 = match response["result"]["entries"][0]["xdr"].as_str() {
+			Some(xdr) => xdr,
+			None => {
+				return Err(anyhow::anyhow!("Failed to get contract data XDR"));
+			}
+		};
+
+		let wasm_hash = get_wasm_hash_from_ledger_entry_data(contract_data_xdr_base64)
+			.map_err(|e| anyhow::anyhow!("Failed to get wasm hash: {}", e))?;
+
+		let contract_code_ledger_key = get_contract_code_ledger_key(wasm_hash.as_str())
+			.map_err(|e| anyhow::anyhow!("Failed to get contract code ledger key: {}", e))?;
+
+		let contract_code_ledger_key_xdr = contract_code_ledger_key
+			.to_xdr_base64(Limits::none())
+			.map_err(|e| {
+			anyhow::anyhow!("Failed to convert contract code ledger key to XDR: {}", e)
+		})?;
+
+		let params = json!({
+			"keys": [contract_code_ledger_key_xdr],
+			"xdrFormat": "base64"
+		});
+
+		let response = self
+			.http_client
+			.send_raw_request("getLedgerEntries", Some(params))
+			.await
+			.with_context(|| format!("Failed to get contract wasm code for {}", contract_id))?;
+
+		let contract_code_xdr_base64 = match response["result"]["entries"][0]["xdr"].as_str() {
+			Some(xdr) => xdr,
+			None => {
+				return Err(anyhow::anyhow!("Failed to get contract code XDR"));
+			}
+		};
+
+		let wasm_code = get_wasm_code_from_ledger_entry_data(contract_code_xdr_base64)
+			.map_err(|e| anyhow::anyhow!("Failed to get wasm code: {}", e))?;
+
+		let contract_spec = get_contract_spec(wasm_code.as_str())
+			.map_err(|e| anyhow::anyhow!("Failed to get contract spec: {}", e))?;
+
+		Ok(ContractSpec::Stellar(StellarContractSpec::from(
+			contract_spec,
+		)))
 	}
 }

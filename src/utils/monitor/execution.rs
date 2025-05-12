@@ -2,7 +2,7 @@
 //!
 //! This module provides functionality to execute monitors against specific block numbers on blockchain networks.
 use crate::{
-	bootstrap::has_active_monitors,
+	bootstrap::{get_contract_specs, has_active_monitors},
 	models::{BlockChainType, ScriptLanguage},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
@@ -19,11 +19,24 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::Mutex;
 use tracing::{info, instrument};
 
+/// Configuration for executing a monitor
+///
+/// # Arguments
+///
+/// * `path` - The path to the monitor to execute
+/// * `network_slug` - The network slug to execute the monitor against
+/// * `block_number` - The block number to execute the monitor against
+/// * `monitor_service` - The monitor service to use
+/// * `network_service` - The network service to use
+/// * `filter_service` - The filter service to use
+/// * `trigger_execution_service` - The trigger execution service to use
+/// * `active_monitors_trigger_scripts` - The active monitors trigger scripts to use
+/// * `client_pool` - The client pool to use
 pub struct MonitorExecutionConfig<
-	T: ClientPoolTrait,
 	M: MonitorRepositoryTrait<N, TR>,
 	N: NetworkRepositoryTrait + Send + Sync + 'static,
 	TR: TriggerRepositoryTrait + Send + Sync + 'static,
+	CP: ClientPoolTrait + Send + Sync + 'static,
 > {
 	pub path: String,
 	pub network_slug: Option<String>,
@@ -33,7 +46,7 @@ pub struct MonitorExecutionConfig<
 	pub filter_service: Arc<FilterService>,
 	pub trigger_execution_service: Arc<TriggerExecutionService<TR>>,
 	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
-	pub client_pool: T,
+	pub client_pool: Arc<CP>,
 }
 pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 
@@ -58,12 +71,12 @@ pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 #[instrument(skip_all)]
 #[allow(clippy::too_many_arguments)]
 pub async fn execute_monitor<
-	T: ClientPoolTrait,
 	M: MonitorRepositoryTrait<N, TR>,
 	N: NetworkRepositoryTrait + Send + Sync + 'static,
 	TR: TriggerRepositoryTrait + Send + Sync + 'static,
+	CP: ClientPoolTrait + Send + Sync + 'static,
 >(
-	config: MonitorExecutionConfig<T, M, N, TR>,
+	config: MonitorExecutionConfig<M, N, TR, CP>,
 ) -> ExecutionResult<String> {
 	tracing::debug!("Loading monitor configuration");
 	let monitor = config
@@ -117,6 +130,12 @@ pub async fn execute_monitor<
 			"Processing network"
 		);
 
+		let contract_specs = get_contract_specs(
+			&config.client_pool,
+			&[(network.clone(), vec![monitor.clone()])],
+		)
+		.await;
+
 		let matches = match network.network_type {
 			BlockChainType::EVM => {
 				let client = config
@@ -165,7 +184,13 @@ pub async fn execute_monitor<
 				tracing::debug!(block = %block_number, "Filtering block");
 				config
 					.filter_service
-					.filter_block(&*client, &network, block, &[monitor.clone()])
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
 					.await
 					.map_err(|e| {
 						MonitorExecutionError::execution_error(
@@ -214,7 +239,13 @@ pub async fn execute_monitor<
 
 				config
 					.filter_service
-					.filter_block(&*client, &network, block, &[monitor.clone()])
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
 					.await
 					.map_err(|e| {
 						MonitorExecutionError::execution_error(

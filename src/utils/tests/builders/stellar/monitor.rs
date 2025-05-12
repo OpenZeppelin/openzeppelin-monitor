@@ -3,8 +3,8 @@
 //! - `MonitorBuilder`: Builder for creating test Monitor instances
 
 use crate::models::{
-	AddressWithABI, EventCondition, FunctionCondition, MatchConditions, Monitor, ScriptLanguage,
-	TransactionCondition, TransactionStatus, TriggerConditions,
+	AddressWithSpec, ContractSpec, EventCondition, FunctionCondition, MatchConditions, Monitor,
+	ScriptLanguage, TransactionCondition, TransactionStatus, TriggerConditions,
 };
 
 /// Builder for creating test Monitor instances
@@ -12,7 +12,7 @@ pub struct MonitorBuilder {
 	name: String,
 	networks: Vec<String>,
 	paused: bool,
-	addresses: Vec<AddressWithABI>,
+	addresses: Vec<AddressWithSpec>,
 	match_conditions: MatchConditions,
 	trigger_conditions: Vec<TriggerConditions>,
 	triggers: Vec<String>,
@@ -24,9 +24,9 @@ impl Default for MonitorBuilder {
 			name: "TestMonitor".to_string(),
 			networks: vec!["stellar_mainnet".to_string()],
 			paused: false,
-			addresses: vec![AddressWithABI {
+			addresses: vec![AddressWithSpec {
 				address: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF".to_string(),
-				abi: None,
+				contract_spec: None,
 			}],
 			match_conditions: MatchConditions {
 				functions: vec![],
@@ -60,9 +60,9 @@ impl MonitorBuilder {
 	}
 
 	pub fn address(mut self, address: &str) -> Self {
-		self.addresses = vec![AddressWithABI {
+		self.addresses = vec![AddressWithSpec {
 			address: address.to_string(),
-			abi: None,
+			contract_spec: None,
 		}];
 		self
 	}
@@ -70,39 +70,36 @@ impl MonitorBuilder {
 	pub fn addresses(mut self, addresses: Vec<String>) -> Self {
 		self.addresses = addresses
 			.into_iter()
-			.map(|addr| AddressWithABI {
+			.map(|addr| AddressWithSpec {
 				address: addr,
-				abi: None,
+				contract_spec: None,
 			})
 			.collect();
 		self
 	}
 
 	pub fn add_address(mut self, address: &str) -> Self {
-		self.addresses.push(AddressWithABI {
+		self.addresses.push(AddressWithSpec {
 			address: address.to_string(),
-			abi: None,
+			contract_spec: None,
 		});
 		self
 	}
 
-	pub fn address_with_abi(mut self, address: &str, abi: serde_json::Value) -> Self {
-		self.addresses = vec![AddressWithABI {
+	pub fn address_with_spec(mut self, address: &str, spec: ContractSpec) -> Self {
+		self.addresses = vec![AddressWithSpec {
 			address: address.to_string(),
-			abi: Some(abi),
+			contract_spec: Some(spec),
 		}];
 		self
 	}
 
-	pub fn addresses_with_abi(
-		mut self,
-		addresses: Vec<(String, Option<serde_json::Value>)>,
-	) -> Self {
+	pub fn addresses_with_spec(mut self, addresses: Vec<(String, Option<ContractSpec>)>) -> Self {
 		self.addresses = addresses
 			.into_iter()
-			.map(|(addr, abi)| AddressWithABI {
+			.map(|(addr, spec)| AddressWithSpec {
 				address: addr.to_string(),
-				abi,
+				contract_spec: spec,
 			})
 			.collect();
 		self
@@ -172,6 +169,8 @@ impl MonitorBuilder {
 
 #[cfg(test)]
 mod tests {
+	use crate::models::StellarContractSpec;
+
 	use super::*;
 	use serde_json::json;
 
@@ -187,7 +186,7 @@ mod tests {
 			monitor.addresses[0].address,
 			"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
 		);
-		assert!(monitor.addresses[0].abi.is_none());
+		assert!(monitor.addresses[0].contract_spec.is_none());
 		assert!(monitor.match_conditions.functions.is_empty());
 		assert!(monitor.match_conditions.events.is_empty());
 		assert!(monitor.match_conditions.transactions.is_empty());
@@ -243,9 +242,9 @@ mod tests {
 	fn test_address_with_abi() {
 		let abi = json!({"some": "abi"});
 		let monitor = MonitorBuilder::new()
-			.address_with_abi(
+			.address_with_spec(
 				"GBXGQJWVLWOYHFLVTKWV5FGHA3LNYY2JQKM7OAJAUEQFU6LPCSEFVXON",
-				abi.clone(),
+				ContractSpec::Stellar(StellarContractSpec::from(abi.clone())),
 			)
 			.build();
 
@@ -254,18 +253,23 @@ mod tests {
 			monitor.addresses[0].address,
 			"GBXGQJWVLWOYHFLVTKWV5FGHA3LNYY2JQKM7OAJAUEQFU6LPCSEFVXON"
 		);
-		assert_eq!(monitor.addresses[0].abi, Some(abi));
+		assert_eq!(
+			monitor.addresses[0].contract_spec,
+			Some(ContractSpec::Stellar(StellarContractSpec::from(abi)))
+		);
 	}
 
 	#[test]
 	fn test_addresses_with_abi() {
-		let abi1 = json!({"abi": "1"});
-		let abi2 = json!({"abi": "2"});
+		let abi1 = json!({"contract_spec": "1"});
+		let abi2 = json!({"contract_spec": "2"});
 		let monitor = MonitorBuilder::new()
-			.addresses_with_abi(vec![
+			.addresses_with_spec(vec![
 				(
 					"GBXGQJWVLWOYHFLVTKWV5FGHA3LNYY2JQKM7OAJAUEQFU6LPCSEFVXON".to_string(),
-					Some(abi1.clone()),
+					Some(ContractSpec::Stellar(StellarContractSpec::from(
+						abi1.clone(),
+					))),
 				),
 				(
 					"GCXKMKSWKQYYGTJA7KKTHG3ICTYR7VCXKCO7SBTBHADS45TVCJ4O6NA".to_string(),
@@ -273,7 +277,9 @@ mod tests {
 				),
 				(
 					"GC5SXLNAM3C4NMGK2PXK4R34B5GNZ47FYQ24ZIBFDFOCU6D4KBN4POAE".to_string(),
-					Some(abi2.clone()),
+					Some(ContractSpec::Stellar(StellarContractSpec::from(
+						abi2.clone(),
+					))),
 				),
 			])
 			.build();
@@ -283,17 +289,23 @@ mod tests {
 			monitor.addresses[0].address,
 			"GBXGQJWVLWOYHFLVTKWV5FGHA3LNYY2JQKM7OAJAUEQFU6LPCSEFVXON"
 		);
-		assert_eq!(monitor.addresses[0].abi, Some(abi1));
+		assert_eq!(
+			monitor.addresses[0].contract_spec,
+			Some(ContractSpec::Stellar(StellarContractSpec::from(abi1)))
+		);
 		assert_eq!(
 			monitor.addresses[1].address,
 			"GCXKMKSWKQYYGTJA7KKTHG3ICTYR7VCXKCO7SBTBHADS45TVCJ4O6NA"
 		);
-		assert_eq!(monitor.addresses[1].abi, None);
+		assert_eq!(monitor.addresses[1].contract_spec, None);
 		assert_eq!(
 			monitor.addresses[2].address,
 			"GC5SXLNAM3C4NMGK2PXK4R34B5GNZ47FYQ24ZIBFDFOCU6D4KBN4POAE"
 		);
-		assert_eq!(monitor.addresses[2].abi, Some(abi2));
+		assert_eq!(
+			monitor.addresses[2].contract_spec,
+			Some(ContractSpec::Stellar(StellarContractSpec::from(abi2)))
+		);
 	}
 
 	#[test]
@@ -416,9 +428,9 @@ mod tests {
 				"GCXKMKSWKQYYGTJA7KKTHG3ICTYR7VCXKCO7SBTBHADS45TVCJ4O6NA".to_string(),
 			])
 			.add_address("GC5SXLNAM3C4NMGK2PXK4R34B5GNZ47FYQ24ZIBFDFOCU6D4KBN4POAE")
-			.address_with_abi(
+			.address_with_spec(
 				"GBXGQJWVLWOYHFLVTKWV5FGHA3LNYY2JQKM7OAJAUEQFU6LPCSEFVXON",
-				abi.clone(),
+				ContractSpec::Stellar(StellarContractSpec::from(abi.clone())),
 			)
 			.function(
 				"transfer(to:address,amount:i128)",
@@ -439,7 +451,10 @@ mod tests {
 			monitor.addresses[0].address,
 			"GBXGQJWVLWOYHFLVTKWV5FGHA3LNYY2JQKM7OAJAUEQFU6LPCSEFVXON"
 		);
-		assert_eq!(monitor.addresses[0].abi, Some(abi));
+		assert_eq!(
+			monitor.addresses[0].contract_spec,
+			Some(ContractSpec::Stellar(StellarContractSpec::from(abi)))
+		);
 		assert_eq!(monitor.match_conditions.functions.len(), 1);
 		assert_eq!(
 			monitor.match_conditions.functions[0].expression,

@@ -15,6 +15,7 @@ use crate::{
 impl ConfigLoader for Monitor {
 	/// Resolve all secrets in the monitor configuration
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		dotenvy::dotenv().ok();
 		Ok(self.clone())
 	}
 
@@ -225,7 +226,7 @@ mod tests {
 			"addresses": [
 				{
 					"address": "0x0000000000000000000000000000000000000000",
-					"abi": null
+					"contract_spec": null
 				}
 			],
             "description": "Test monitor configuration",
@@ -289,7 +290,7 @@ mod tests {
 			"addresses": [
 				{
 					"address": "0x0000000000000000000000000000000000000000",
-					"abi": null
+					"contract_spec": null
 				}
 			],
             "description": "Test monitor configuration",
@@ -318,7 +319,7 @@ mod tests {
 			"addresses": [
 				{
 					"address": "0x0000000000000000000000000000000000000000",
-					"abi": null
+					"contract_spec": null
 				}
 			],
             "description": "Test monitor configuration",

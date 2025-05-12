@@ -69,7 +69,7 @@ Custom filter scripts allow you to apply additional conditions to matches detect
       "monitor": {
         "addresses": [
           {
-            "abi": null,
+            "contract_spec": null,
             "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
           }
         ],
@@ -157,14 +157,14 @@ Custom filter scripts allow you to apply additional conditions to matches detect
         "addresses": [
           {
             "address": "GCXYK...",
-            "abi": null
+            "contract_spec": null
           }
         ],
         "match_conditions": {
           "functions": [
             {
               "signature": "swap(Address,U32,U32,U128,U128)",
-              "expression": "4 > 1000000000"
+              "expression": "out_min > 1000000000"
             }
           ],
           "events": [],
@@ -217,7 +217,7 @@ Custom filter scripts allow you to apply additional conditions to matches detect
         "functions": [
           {
             "signature": "swap(Address,U32,U32,U128,U128)",
-            "expression": "4 > 1000000000"
+            "expression": "out_min > 1000000000"
           }
         ],
         "events": [],
