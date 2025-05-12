@@ -317,11 +317,109 @@ main() {
 main
 ----
 
-This example script filters EVM transactions based on their block number:
+=== Example Filter Script (JavaScript)
+
+[source,bash]
+----
+#!/bin/bash
+
+try {
+    let inputData = '';
+    // Read from stdin
+    process.stdin.on('data', chunk => {
+        inputData += chunk;
+    });
+
+    process.stdin.on('end', () => {
+        const data = JSON.parse(inputData);
+        const monitorMatch = data.monitor_match;
+        const args = data.args;
+
+        // Extract block_number
+        let blockNumber = null;
+        if (monitorMatch.EVM) {
+            const hexBlock = monitorMatch.EVM.transaction?.blockNumber;
+            if (hexBlock) {
+                // Convert hex string to integer
+                blockNumber = parseInt(hexBlock, 16);
+            }
+        }
+
+        if (blockNumber === null) {
+            console.log('false');
+            return;
+        }
+
+        const result = blockNumber % 2 === 0;
+        console.log(`Block number ${blockNumber} is ${result ? 'even' : 'odd'}`);
+        console.log(result.toString());
+    });
+} catch (e) {
+    console.log(`Error processing input: ${e}`);
+    console.log('false');
+}
+
+----
+
+=== Example Filter Script (Python)
+
+[source,bash]
+----
+#!/bin/bash
+
+import sys
+import json
+
+def main():
+    try:
+        # Read input from stdin
+        input_data = sys.stdin.read()
+        if not input_data:
+            print("No input JSON provided", flush=True)
+            return False
+
+        # Parse input JSON
+        try:
+            data = json.loads(input_data)
+            monitor_match = data['monitor_match']
+            args = data['args']
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON input: {e}", flush=True)
+            return False
+
+        # Extract block_number
+        block_number = None
+        if "EVM" in monitor_match:
+            hex_block = monitor_match['EVM']['transaction'].get('blockNumber')
+            if hex_block:
+                # Convert hex string to integer
+                block_number = int(hex_block, 16)
+
+        if block_number is None:
+            print("Block number is None")
+            return False
+
+        result = block_number % 2 == 0
+        print(f"Block number {block_number} is {'even' if result else 'odd'}", flush=True)
+        return result
+
+    except Exception as e:
+        print(f"Error processing input: {e}", flush=True)
+        return False
+
+if __name__ == "__main__":
+    result = main()
+    # Print the final boolean result
+    print(str(result).lower(), flush=True)
+
+----
+
+This examples script filters EVM transactions based on their block number:
 
 * Returns `true` (filter out) for transactions in even-numbered blocks
 * Returns `false` (allow) for transactions in odd-numbered blocks
 * Accepts a `--verbose` flag for detailed logging
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/filters[`examples/config/filters` directory].
 
 === Integration
 
@@ -412,12 +510,84 @@ main() {
 main
 ----
 
-This example demonstrates how to:
+=== Example Notification Script (JavaScript)
+
+[source,bash]
+----
+#!/bin/bash
+
+try {
+    let inputData = '';
+    // Read from stdin
+    process.stdin.on('data', chunk => {
+        inputData += chunk;
+    });
+
+    process.stdin.on('end', () => {
+        // Parse input JSON
+        const data = JSON.parse(inputData);
+        const monitorMatch = data.monitor_match;
+        const args = data.args;
+
+        // Log args if they exist
+        if (args && args.length > 0) {
+            console.log(`Args: ${JSON.stringify(args)}`);
+        }
+
+        // Validate monitor match data
+        if (!monitorMatch) {
+            console.log("No monitor match data provided");
+            return;
+        }
+    });
+} catch (e) {
+    console.log(`Error processing input: ${e}`);
+}
+
+----
+
+=== Example Notification Script (Python)
+
+[source,bash]
+----
+#!/bin/bash
+
+import sys
+import json
+
+def main():
+    try:
+        # Read input from stdin
+        input_data = sys.stdin.read()
+        if not input_data:
+            print("No input JSON provided", flush=True)
+
+        # Parse input JSON
+        try:
+            data = json.loads(input_data)
+            monitor_match = data['monitor_match']
+            args = data['args']
+            if args:
+                print(f"Args: {args}")
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON input: {e}", flush=True)
+
+
+    except Exception as e:
+        print(f"Error processing input: {e}", flush=True)
+
+if __name__ == "__main__":
+    main()
+
+----
+
+This examples demonstrates how to:
 
 * Process the input JSON data
 * Handle verbose mode for debugging
 * Return error messages via `stderr`
 * Set appropriate exit codes
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/triggers/scripts[`examples/config/triggers/scripts` directory].
 
 === Integration
 

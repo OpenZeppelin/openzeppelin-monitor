@@ -12,14 +12,12 @@ Input: JSON object containing:
 Output:
     - Prints 'true' for transactions in even-numbered blocks
     - Prints 'false' for transactions in odd-numbered blocks or invalid input
-    - Includes additional logging of block number status
 
 Note: Block numbers are extracted from the EVM transaction data and converted
 from hexadecimal to decimal before processing.
 """
 import sys
 import json
-import logging
 
 def main():
     try:
@@ -52,7 +50,6 @@ def main():
 
         result = block_number % 2 == 0
         print(f"Block number {block_number} is {'even' if result else 'odd'}", flush=True)
-        logging.info(f"Block number {block_number} is {'even' if result else 'odd'}")
         return result
 
     except Exception as e:
