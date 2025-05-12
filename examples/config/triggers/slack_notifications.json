@@ -37,7 +37,7 @@
       },
       "message": {
         "title": "large_swap_by_dex_slack triggered",
-        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.4} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
   }

@@ -9,7 +9,7 @@
       },
       "message": {
         "title": "example_trigger_slack triggered",
-        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.2} USDC to ${functions.0.args.1} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.amount} USDC to ${functions.0.args.to} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   },
@@ -31,7 +31,7 @@
       },
       "message": {
         "title": "example_trigger_webhook triggered",
-        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.amount} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   },
@@ -45,7 +45,7 @@
       },
       "message": {
         "title": "example_trigger_discord triggered",
-        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.amount} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   },
@@ -61,7 +61,7 @@
       "disable_web_preview": true,
       "message": {
         "title": "example_trigger_telegram triggered",
-        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.0} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.amount} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
       }
     }
   }

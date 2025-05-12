@@ -5,7 +5,10 @@
 
 use async_trait::async_trait;
 
-use crate::{models::BlockType, services::filter::BlockFilter};
+use crate::{
+	models::{BlockType, ContractSpec},
+	services::filter::BlockFilter,
+};
 
 /// Defines the core interface for blockchain clients
 ///
@@ -36,6 +39,17 @@ pub trait BlockChainClient: Send + Sync + Clone {
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error>;
+
+	/// Retrieves the contract spec for a given contract ID
+	///
+	/// # Arguments
+	/// * `contract_id` - The ID of the contract to retrieve the spec for
+	///
+	/// # Returns
+	/// * `Result<ContractSpec, anyhow::Error>` - The contract spec or an error
+	async fn get_contract_spec(&self, _contract_id: &str) -> Result<ContractSpec, anyhow::Error> {
+		Err(anyhow::anyhow!("get_contract_spec not implemented"))
+	}
 }
 
 /// Defines the factory interface for creating block filters

@@ -55,6 +55,16 @@ pub enum TransactionType {
 	Stellar(stellar::StellarTransaction),
 }
 
+/// Contract spec from different blockchain platforms
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum ContractSpec {
+	/// EVM contract spec
+	EVM(evm::EVMContractSpec),
+	/// Stellar contract spec
+	Stellar(stellar::StellarContractSpec),
+}
+
 /// Monitor match results from different blockchain platforms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorMatch {
