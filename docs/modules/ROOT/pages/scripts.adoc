@@ -419,7 +419,7 @@ This examples script filters EVM transactions based on their block number:
 * Returns `true` (filter out) for transactions in even-numbered blocks
 * Returns `false` (allow) for transactions in odd-numbered blocks
 * Accepts a `--verbose` flag for detailed logging
-* For more details about filters and scripts, see the sample implementations https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/filters[here]
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/filters[`examples/config/filters` directory].
 
 === Integration
 
@@ -587,7 +587,7 @@ This examples demonstrates how to:
 * Handle verbose mode for debugging
 * Return error messages via `stderr`
 * Set appropriate exit codes
-* For more details about scripts, see the sample implementations https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/triggers/scripts[here]
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/triggers/scripts[`examples/config/triggers/scripts` directory].
 
 === Integration
 
