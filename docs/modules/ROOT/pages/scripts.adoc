@@ -419,7 +419,7 @@ This examples script filters EVM transactions based on their block number:
 * Returns `true` (filter out) for transactions in even-numbered blocks
 * Returns `false` (allow) for transactions in odd-numbered blocks
 * Accepts a `--verbose` flag for detailed logging
-* For more examples on how to implement filters and scripts, see the sample implementations in the `examples/config/filters` directory
+* For more details about filters and scripts, see the sample implementations in the `examples/config/filters` directory
 
 === Integration
 
@@ -587,7 +587,7 @@ This examples demonstrates how to:
 * Handle verbose mode for debugging
 * Return error messages via `stderr`
 * Set appropriate exit codes
-* For more examples on how to implement scripts, see the sample implementations in the `examples/triggers/scripts` directory
+* For more details about scripts, see the sample implementations in the `examples/triggers/scripts` directory
 
 === Integration
 
