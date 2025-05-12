@@ -7,16 +7,25 @@
 //! - cron_utils: Utilities for working with cron schedules and time intervals
 //! - expression: Utilities for working with cron expressions
 //! - logging: Logging utilities
+//! - macros: Macros for common functionality
 //! - metrics: Metrics utilities
+//! - monitor: Monitor utilities
+//! - parsing: Parsing utilities
+//! - tests: Test utilities
 
 mod cron_utils;
 mod expression;
 
 pub mod constants;
 pub mod logging;
+pub mod macros;
 pub mod metrics;
 pub mod monitor;
+pub mod parsing;
+pub mod tests;
 
 pub use constants::*;
 pub use cron_utils::*;
 pub use expression::*;
+pub use macros::*;
+pub use parsing::*;

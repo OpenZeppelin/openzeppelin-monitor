@@ -3,10 +3,11 @@
 //! Provides shared functionality for loading test fixtures and setting up
 //! test environments for supported chain tests.
 
+use alloy::json_abi::JsonAbi;
 use openzeppelin_monitor::{
 	models::{
-		BlockType, EVMTransactionReceipt, Monitor, Network, StellarEvent, StellarTransaction,
-		Trigger,
+		BlockType, ContractSpec, EVMContractSpec, EVMTransactionReceipt, Monitor, Network,
+		StellarContractSpec, StellarEvent, StellarTransaction, Trigger,
 	},
 	repositories::{
 		MonitorService, NetworkService, RepositoryError, TriggerRepositoryTrait, TriggerService,
@@ -14,6 +15,7 @@ use openzeppelin_monitor::{
 	services::notification::NotificationService,
 };
 use std::{collections::HashMap, fs};
+use stellar_xdr::curr::ScSpecEntry;
 
 use crate::integration::mocks::{
 	MockMonitorRepository, MockNetworkRepository, MockTriggerExecutionService,
@@ -30,6 +32,7 @@ pub struct TestData {
 	pub receipts: Vec<EVMTransactionReceipt>,
 	pub stellar_transactions: Vec<StellarTransaction>,
 	pub stellar_events: Vec<StellarEvent>,
+	pub contract_spec: Option<ContractSpec>,
 }
 
 pub fn load_test_data(chain: &str) -> TestData {
@@ -56,6 +59,16 @@ pub fn load_test_data(chain: &str) -> TestData {
 		Vec::new()
 	};
 
+	let contract_spec: Option<ContractSpec> = if chain == "stellar" {
+		Some(ContractSpec::Stellar(StellarContractSpec::from(
+			read_and_parse_json::<Vec<ScSpecEntry>>(&format!("{}/contract_spec.json", base_path)),
+		)))
+	} else {
+		Some(ContractSpec::EVM(EVMContractSpec::from(
+			read_and_parse_json::<JsonAbi>(&format!("{}/contract_spec.json", base_path)),
+		)))
+	};
+
 	TestData {
 		blocks,
 		monitor,
@@ -63,6 +76,7 @@ pub fn load_test_data(chain: &str) -> TestData {
 		receipts,
 		stellar_transactions,
 		stellar_events,
+		contract_spec,
 	}
 }
 
@@ -72,7 +86,7 @@ pub fn read_and_parse_json<T: serde::de::DeserializeOwned>(path: &str) -> T {
 	serde_json::from_str(&content).unwrap_or_else(|_| panic!("Failed to parse JSON from: {}", path))
 }
 
-pub fn setup_trigger_execution_service(
+pub async fn setup_trigger_execution_service(
 	trigger_json: &str,
 ) -> MockTriggerExecutionService<MockTriggerRepository> {
 	let trigger_map: HashMap<String, Trigger> = read_and_parse_json(trigger_json);
@@ -89,7 +103,7 @@ pub fn setup_trigger_execution_service(
 		.withf(|_| true)
 		.returning(|_| Ok(MockTriggerRepository::default()));
 
-	let mut mock_trigger_repository = MockTriggerRepository::new(None).unwrap();
+	let mut mock_trigger_repository = MockTriggerRepository::new(None).await.unwrap();
 
 	mock_trigger_repository
 		.expect_get()

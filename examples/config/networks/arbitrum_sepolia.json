@@ -1,0 +1,20 @@
+{
+  "network_type": "EVM",
+  "slug": "arbitrum_sepolia",
+  "name": "Arbitrum Sepolia",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "https://sepolia-rollup.arbitrum.io/rpc"
+      },
+      "weight": 100
+    }
+  ],
+  "chain_id": 421614,
+  "block_time_ms": 250,
+  "confirmation_blocks": 12,
+  "cron_schedule": "0 */1 * * * *",
+  "store_blocks": false
+}

@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://eth.drpc.org",
+      "url": {
+        "type": "plain",
+        "value": "https://eth.drpc.org"
+      },
       "weight": 100
     }
   ],

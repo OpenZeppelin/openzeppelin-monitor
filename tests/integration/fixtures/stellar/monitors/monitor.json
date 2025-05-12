@@ -19,17 +19,20 @@
     },
     {
       "address": "CBWRWC2IFNRXKAW2HG5473V5U25OMUKVIE3BFZBIWOOD3VLEIBUIOQG6"
+    },
+    {
+      "address": "CDMZ6LU66KEMLKI3EJBIGXTZ4KZ2CRTSHZETMY3QQZBWRKVKB5EIOHTX"
     }
   ],
   "match_conditions": {
     "functions": [
       {
         "signature": "transfer(Address,Address,I128)",
-        "expression": "2 > 1000"
+        "expression": "amount > 1000"
       },
       {
-        "signature": "upsert_data(Map)",
-        "expression": "0.myKey1 >= 1234 AND 0.myKey2 == 'Hello, world!'"
+        "signature": "upsert_data(Map<String,String>)",
+        "expression": "data.myKey1 >= 1234 AND data.myKey2 == 'Hello, world!'"
       }
     ],
     "events": [

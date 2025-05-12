@@ -2,23 +2,52 @@
 //!
 //! This module provides functionality to execute monitors against specific block numbers on blockchain networks.
 use crate::{
-	bootstrap::has_active_monitors,
-	models::BlockChainType,
+	bootstrap::{get_contract_specs, has_active_monitors},
+	models::{BlockChainType, ScriptLanguage},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
 		TriggerRepositoryTrait,
 	},
 	services::{
 		blockchain::{BlockChainClient, ClientPoolTrait},
-		filter::FilterService,
+		filter::{handle_match, FilterService},
+		trigger::TriggerExecutionService,
 	},
 	utils::monitor::MonitorExecutionError,
 };
-use std::path::Path;
-use std::sync::Arc;
+use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::Mutex;
-use tracing::instrument;
+use tracing::{info, instrument};
 
+/// Configuration for executing a monitor
+///
+/// # Arguments
+///
+/// * `path` - The path to the monitor to execute
+/// * `network_slug` - The network slug to execute the monitor against
+/// * `block_number` - The block number to execute the monitor against
+/// * `monitor_service` - The monitor service to use
+/// * `network_service` - The network service to use
+/// * `filter_service` - The filter service to use
+/// * `trigger_execution_service` - The trigger execution service to use
+/// * `active_monitors_trigger_scripts` - The active monitors trigger scripts to use
+/// * `client_pool` - The client pool to use
+pub struct MonitorExecutionConfig<
+	M: MonitorRepositoryTrait<N, TR>,
+	N: NetworkRepositoryTrait + Send + Sync + 'static,
+	TR: TriggerRepositoryTrait + Send + Sync + 'static,
+	CP: ClientPoolTrait + Send + Sync + 'static,
+> {
+	pub path: String,
+	pub network_slug: Option<String>,
+	pub block_number: Option<u64>,
+	pub monitor_service: Arc<Mutex<MonitorService<M, N, TR>>>,
+	pub network_service: Arc<Mutex<NetworkService<N>>>,
+	pub filter_service: Arc<FilterService>,
+	pub trigger_execution_service: Arc<TriggerExecutionService<TR>>,
+	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
+	pub client_pool: Arc<CP>,
+}
 pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 
 /// Executes a monitor against a specific block number on a blockchain network.
@@ -40,35 +69,33 @@ pub type ExecutionResult<T> = std::result::Result<T, MonitorExecutionError>;
 /// # Returns
 /// * `Result<String, ExecutionError>` - JSON string containing matches or error
 #[instrument(skip_all)]
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_monitor<
-	T: ClientPoolTrait,
 	M: MonitorRepositoryTrait<N, TR>,
-	N: NetworkRepositoryTrait,
-	TR: TriggerRepositoryTrait,
+	N: NetworkRepositoryTrait + Send + Sync + 'static,
+	TR: TriggerRepositoryTrait + Send + Sync + 'static,
+	CP: ClientPoolTrait + Send + Sync + 'static,
 >(
-	monitor_path: &str,
-	network_slug: Option<&String>,
-	block_number: Option<&u64>,
-	monitor_service: Arc<Mutex<MonitorService<M, N, TR>>>,
-	network_service: Arc<Mutex<NetworkService<N>>>,
-	filter_service: Arc<FilterService>,
-	client_pool: T,
+	config: MonitorExecutionConfig<M, N, TR, CP>,
 ) -> ExecutionResult<String> {
 	tracing::debug!("Loading monitor configuration");
-	let monitor = monitor_service
+	let monitor = config
+		.monitor_service
 		.lock()
 		.await
-		.load_from_path(Some(Path::new(monitor_path)), None, None)
+		.load_from_path(Some(Path::new(&config.path)), None, None)
+		.await
 		.map_err(|e| MonitorExecutionError::execution_error(e.to_string(), None, None))?;
 
 	tracing::debug!(monitor_name = %monitor.name, "Monitor loaded successfully");
 
-	let networks_for_monitor = if let Some(network_slug) = network_slug {
+	let networks_for_monitor = if let Some(network_slug) = config.network_slug {
 		tracing::debug!(network = %network_slug, "Finding specific network");
-		let network = network_service
+		let network = config
+			.network_service
 			.lock()
 			.await
-			.get(network_slug)
+			.get(network_slug.as_str())
 			.ok_or_else(|| {
 				MonitorExecutionError::not_found(
 					format!("Network '{}' not found", network_slug),
@@ -79,7 +106,8 @@ pub async fn execute_monitor<
 		vec![network.clone()]
 	} else {
 		tracing::debug!("Finding all active networks for monitor");
-		network_service
+		config
+			.network_service
 			.lock()
 			.await
 			.get_all()
@@ -102,20 +130,30 @@ pub async fn execute_monitor<
 			"Processing network"
 		);
 
+		let contract_specs = get_contract_specs(
+			&config.client_pool,
+			&[(network.clone(), vec![monitor.clone()])],
+		)
+		.await;
+
 		let matches = match network.network_type {
 			BlockChainType::EVM => {
-				let client = client_pool.get_evm_client(&network).await.map_err(|e| {
-					MonitorExecutionError::execution_error(
-						format!("Failed to get EVM client: {}", e),
-						None,
-						None,
-					)
-				})?;
+				let client = config
+					.client_pool
+					.get_evm_client(&network)
+					.await
+					.map_err(|e| {
+						MonitorExecutionError::execution_error(
+							format!("Failed to get EVM client: {}", e),
+							None,
+							None,
+						)
+					})?;
 
-				let block_number = match block_number {
+				let block_number = match config.block_number {
 					Some(block_number) => {
 						tracing::debug!(block = %block_number, "Using specified block number");
-						*block_number
+						block_number
 					}
 					None => {
 						let latest = client.get_latest_block_number().await.map_err(|e| {
@@ -144,8 +182,15 @@ pub async fn execute_monitor<
 				})?;
 
 				tracing::debug!(block = %block_number, "Filtering block");
-				filter_service
-					.filter_block(&*client, &network, block, &[monitor.clone()])
+				config
+					.filter_service
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
 					.await
 					.map_err(|e| {
 						MonitorExecutionError::execution_error(
@@ -156,7 +201,8 @@ pub async fn execute_monitor<
 					})?
 			}
 			BlockChainType::Stellar => {
-				let client = client_pool
+				let client = config
+					.client_pool
 					.get_stellar_client(&network)
 					.await
 					.map_err(|e| {
@@ -168,8 +214,8 @@ pub async fn execute_monitor<
 					})?;
 
 				// If block number is not provided, get the latest block number
-				let block_number = match block_number {
-					Some(block_number) => *block_number,
+				let block_number = match config.block_number {
+					Some(block_number) => block_number,
 					None => client.get_latest_block_number().await.map_err(|e| {
 						MonitorExecutionError::execution_error(e.to_string(), None, None)
 					})?,
@@ -191,8 +237,15 @@ pub async fn execute_monitor<
 					)
 				})?;
 
-				filter_service
-					.filter_block(&*client, &network, block, &[monitor.clone()])
+				config
+					.filter_service
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
 					.await
 					.map_err(|e| {
 						MonitorExecutionError::execution_error(
@@ -203,7 +256,8 @@ pub async fn execute_monitor<
 					})?
 			}
 			BlockChainType::Midnight => {
-				let client = client_pool
+				let client = config
+					.client_pool
 					.get_midnight_client(&network)
 					.await
 					.map_err(|e| {
@@ -215,8 +269,8 @@ pub async fn execute_monitor<
 					})?;
 
 				// If block number is not provided, get the latest block number
-				let block_number = match block_number {
-					Some(block_number) => *block_number,
+				let block_number = match config.block_number {
+					Some(block_number) => block_number,
 					None => client.get_latest_block_number().await.map_err(|e| {
 						MonitorExecutionError::execution_error(e.to_string(), None, None)
 					})?,
@@ -238,8 +292,15 @@ pub async fn execute_monitor<
 					)
 				})?;
 
-				filter_service
-					.filter_block(&*client, &network, block, &[monitor.clone()])
+				config
+					.filter_service
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
 					.await
 					.map_err(|e| {
 						MonitorExecutionError::execution_error(
@@ -253,6 +314,23 @@ pub async fn execute_monitor<
 
 		tracing::debug!(matches_count = matches.len(), "Found matches for network");
 		all_matches.extend(matches);
+	}
+
+	// Send notifications for each match
+	for match_result in all_matches.clone() {
+		let result = handle_match(
+			match_result,
+			&*config.trigger_execution_service,
+			&config.active_monitors_trigger_scripts,
+		)
+		.await;
+		match result {
+			Ok(_result) => info!("Successfully sent notifications for match"),
+			Err(e) => {
+				tracing::error!("Error sending notifications: {}", e);
+				continue;
+			}
+		};
 	}
 
 	tracing::debug!(total_matches = all_matches.len(), "Serializing results");

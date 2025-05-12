@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::BlockChainType;
+use crate::models::{BlockChainType, SecretValue};
 
 /// Configuration for connecting to and interacting with a blockchain network.
 ///
@@ -47,8 +47,8 @@ pub struct RpcUrl {
 	/// Type of RPC endpoint (e.g. "rpc")
 	pub type_: String,
 
-	/// URL of the RPC endpoint
-	pub url: String,
+	/// URL of the RPC endpoint (can be a secret value)
+	pub url: SecretValue,
 
 	/// Weight for load balancing (0-100)
 	pub weight: u32,

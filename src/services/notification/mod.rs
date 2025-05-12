@@ -24,7 +24,7 @@ pub use error::NotificationError;
 pub use script::ScriptNotifier;
 pub use slack::SlackNotifier;
 pub use telegram::TelegramNotifier;
-pub use webhook::WebhookNotifier;
+pub use webhook::{WebhookConfig, WebhookNotifier};
 
 /// Interface for notification implementations
 ///
@@ -40,6 +40,23 @@ pub trait Notifier {
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), anyhow::Error>;
+
+	/// Sends a notification with custom payload fields
+	///
+	/// # Arguments
+	/// * `message` - The formatted message to send
+	/// * `payload_fields` - Additional fields to include in the payload
+	///
+	/// # Returns
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify_with_payload(
+		&self,
+		message: &str,
+		_payload_fields: HashMap<String, serde_json::Value>,
+	) -> Result<(), anyhow::Error> {
+		// Default implementation just calls notify
+		self.notify(message).await
+	}
 }
 
 /// Interface for executing scripts
@@ -239,10 +256,13 @@ impl Default for NotificationService {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		AddressWithABI, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, EventCondition,
-		FunctionCondition, MatchConditions, Monitor, MonitorMatch, NotificationMessage,
-		ScriptLanguage, TransactionCondition, Trigger, TriggerType, TriggerTypeConfig,
+	use crate::{
+		models::{
+			AddressWithSpec, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt,
+			EventCondition, FunctionCondition, MatchConditions, Monitor, MonitorMatch,
+			ScriptLanguage, TransactionCondition, TriggerType,
+		},
+		utils::tests::builders::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
 	};
 	use std::collections::HashMap;
 
@@ -250,19 +270,29 @@ mod tests {
 		event_conditions: Vec<EventCondition>,
 		function_conditions: Vec<FunctionCondition>,
 		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithABI>,
+		addresses: Vec<AddressWithSpec>,
 	) -> Monitor {
-		Monitor {
-			match_conditions: MatchConditions {
-				events: event_conditions,
-				functions: function_conditions,
-				transactions: transaction_conditions,
-			},
-			addresses,
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			..Default::default()
+		let mut builder = MonitorBuilder::new()
+			.name("test")
+			.networks(vec!["evm_mainnet".to_string()]);
+
+		// Add all conditions
+		for event in event_conditions {
+			builder = builder.event(&event.signature, event.expression);
 		}
+		for function in function_conditions {
+			builder = builder.function(&function.signature, function.expression);
+		}
+		for transaction in transaction_conditions {
+			builder = builder.transaction(transaction.status, transaction.expression);
+		}
+
+		// Add addresses
+		for addr in addresses {
+			builder = builder.address(&addr.address);
+		}
+
+		builder.build()
 	}
 
 	fn create_test_evm_transaction() -> EVMTransaction {
@@ -317,17 +347,11 @@ mod tests {
 	async fn test_slack_notification_invalid_config() {
 		let service = NotificationService::new();
 
-		let trigger = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Script {
-				// Intentionally wrong config type
-				script_path: "invalid".to_string(),
-				language: ScriptLanguage::Python,
-				arguments: None,
-				timeout_ms: 1000,
-			},
-		};
+		let trigger = TriggerBuilder::new()
+			.name("test_slack")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Slack) // Intentionally wrong config type
+			.build();
 
 		let variables = HashMap::new();
 		let result = service
@@ -351,17 +375,11 @@ mod tests {
 	async fn test_email_notification_invalid_config() {
 		let service = NotificationService::new();
 
-		let trigger = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Script {
-				// Intentionally wrong config type
-				script_path: "invalid".to_string(),
-				language: ScriptLanguage::Python,
-				arguments: None,
-				timeout_ms: 1000,
-			},
-		};
+		let trigger = TriggerBuilder::new()
+			.name("test_email")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Email) // Intentionally wrong config type
+			.build();
 
 		let variables = HashMap::new();
 		let result = service
@@ -385,18 +403,11 @@ mod tests {
 	async fn test_webhook_notification_invalid_config() {
 		let service = NotificationService::new();
 
-		// Create a trigger with invalid Webhook config
-		let trigger = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Script {
-				// Intentionally wrong config type
-				script_path: "invalid".to_string(),
-				language: ScriptLanguage::Python,
-				arguments: None,
-				timeout_ms: 1000,
-			},
-		};
+		let trigger = TriggerBuilder::new()
+			.name("test_webhook")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Webhook) // Intentionally wrong config type
+			.build();
 
 		let variables = HashMap::new();
 		let result = service
@@ -420,17 +431,11 @@ mod tests {
 	async fn test_discord_notification_invalid_config() {
 		let service = NotificationService::new();
 
-		let trigger = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Script {
-				// Intentionally wrong config type
-				script_path: "invalid".to_string(),
-				language: ScriptLanguage::Python,
-				arguments: None,
-				timeout_ms: 1000,
-			},
-		};
+		let trigger = TriggerBuilder::new()
+			.name("test_discord")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Discord) // Intentionally wrong config type
+			.build();
 
 		let variables = HashMap::new();
 		let result = service
@@ -454,17 +459,11 @@ mod tests {
 	async fn test_telegram_notification_invalid_config() {
 		let service = NotificationService::new();
 
-		let trigger = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Script {
-				// Intentionally wrong config type
-				script_path: "invalid".to_string(),
-				language: ScriptLanguage::Python,
-				arguments: None,
-				timeout_ms: 1000,
-			},
-		};
+		let trigger = TriggerBuilder::new()
+			.name("test_telegram")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Telegram) // Intentionally wrong config type
+			.build();
 
 		let variables = HashMap::new();
 		let result = service
@@ -488,20 +487,11 @@ mod tests {
 	async fn test_script_notification_invalid_config() {
 		let service = NotificationService::new();
 
-		let trigger = Trigger {
-			name: "test_script".to_string(),
-			trigger_type: TriggerType::Script,
-			// Intentionally wrong config type
-			config: TriggerTypeConfig::Telegram {
-				token: "invalid".to_string(),
-				chat_id: "invalid".to_string(),
-				disable_web_preview: None,
-				message: NotificationMessage {
-					title: "invalid".to_string(),
-					body: "invalid".to_string(),
-				},
-			},
-		};
+		let trigger = TriggerBuilder::new()
+			.name("test_script")
+			.telegram("invalid", "invalid", false)
+			.trigger_type(TriggerType::Script) // Intentionally wrong config type
+			.build();
 
 		let variables = HashMap::new();
 

@@ -243,20 +243,32 @@ As the number of blocks being processed increases, the number of RPC calls grows
 [mermaid,width=100%]
 ....
 graph TD
-    A[Main] -->|EVM| B[Network #1]
-    A[Main] -->|Stellar| C[Network #2]
-    B -->|net_version| D[Process New Blocks]
-    C -->|getNetwork| D
-    D -->|eth_blockNumber| E[For every block in range]
-    D -->|getLatestLedger| F[In batches of 200 blocks]
-    E -->|eth_getBlockByNumber| G[Filter Block]
-    F -->|getLedgers| G
-    G -->|EVM| J[For every transaction in block]
-    J -->|eth_getTransactionReceipt| I[Complete]
-    G -->|Stellar| K[In batches of 200 transactions and events]
-    K -->|getTransactions| L[Complete]
-    K -->|getEvents| L[Complete]
+    subgraph Common Operations
+        A[Main] --> D[Process New Blocks]
+    end
 
+    subgraph EVM Network Calls
+        B[Network Init] -->|net_version| D
+        D -->|eth_blockNumber| E[For every block in range]
+        E -->|eth_getBlockByNumber| G1[Process Block]
+        G1 -->|For every transaction| J[Get Transaction Receipt]
+        J -->|eth_getTransactionReceipt| I[Complete]
+    end
+
+    subgraph Stellar Network Calls
+        C[Network Init] -->|getNetwork| D
+        D -->|getLatestLedger| F[In batches of 200 blocks]
+        F -->|getLedgers| G2[Process Block]
+        G2 -->|For each monitored contract without ABI| M[Fetch Contract Spec]
+        M -->|getLedgerEntries| N[Get WASM Hash]
+        N -->|getLedgerEntries| O[Get WASM Code]
+        O --> G2
+        G2 -->|In batches of 200| P[Fetch Block Data]
+        P -->|getTransactions| L1[Get Transactions]
+        P -->|getEvents| L2[Get Events]
+        L1 --> Q[Complete]
+        L2 --> Q
+    end
 ....
 
 *EVM*
@@ -271,6 +283,9 @@ graph TD
 * RPC Client initialization (per active network): `getNetwork`
 * Fetching the latest ledger (per cron iteration): `getLatestLedger`
 * Fetching ledger data (batched up to 200 in a single request): `getLedgers`
+* During block filtering, for each monitored contract without an ABI in config:
+** Fetching contract instance data: `getLedgerEntries`
+** Fetching contract WASM code: `getLedgerEntries`
 * Fetching transactions (batched up to 200 in a single request): `getTransactions`
 * Fetching events (batched up to 200 in a single request): `getEvents`
 

@@ -1,0 +1,21 @@
+{
+  "network_type": "EVM",
+  "slug": "ethereum_sepolia",
+  "name": "Ethereum Sepolia",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "https://sepolia.drpc.org"
+      },
+      "weight": 100
+    }
+  ],
+  "chain_id": 1,
+  "block_time_ms": 12000,
+  "confirmation_blocks": 12,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 18,
+  "store_blocks": false
+}

@@ -1,7 +1,10 @@
 use crate::properties::strategies::trigger_strategy;
 
 use openzeppelin_monitor::{
-	models::{ConfigLoader, NotificationMessage, TriggerType, TriggerTypeConfig},
+	models::{
+		ConfigLoader, NotificationMessage, SecretString, SecretValue, TriggerType,
+		TriggerTypeConfig,
+	},
 	repositories::{TriggerRepository, TriggerRepositoryTrait},
 };
 use proptest::{prelude::*, test_runner::Config};
@@ -93,7 +96,7 @@ proptest! {
 					if let TriggerTypeConfig::Slack { slack_url: _, message: _ } = &trigger.config {
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Slack { slack_url, .. } = &mut invalid_trigger.config {
-							*slack_url = "not-a-url".to_string(); // Invalid URL format
+							*slack_url = SecretValue::Plain(SecretString::new("not-a-url".to_string())); // Invalid URL format
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
 
@@ -158,7 +161,7 @@ proptest! {
 						// Test invalid URL
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Webhook { url: u, .. } = &mut invalid_trigger.config {
-							*u = "not-a-url".to_string();
+							*u = SecretValue::Plain(SecretString::new("not-a-url".to_string()));
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
 
@@ -188,7 +191,7 @@ proptest! {
 						// Test invalid URL
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Discord { discord_url: u, .. } = &mut invalid_trigger.config {
-							*u = "not-a-url".to_string();
+							*u = SecretValue::Plain(SecretString::new("not-a-url".to_string()));
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
 
@@ -218,7 +221,7 @@ proptest! {
 						// Test invalid token
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Telegram { token: t, .. } = &mut invalid_trigger.config {
-							*t = "INVALID_TOKEN".to_string();
+							*t = SecretValue::Plain(SecretString::new("INVALID_TOKEN".to_string()));
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
 

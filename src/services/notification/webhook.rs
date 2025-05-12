@@ -22,22 +22,46 @@ use crate::{
 /// HMAC SHA256 type alias
 type HmacSha256 = Hmac<Sha256>;
 
+/// Represents a webhook payload with additional fields
+#[derive(Serialize, Debug)]
+pub struct WebhookPayload {
+	#[serde(flatten)]
+	fields: HashMap<String, serde_json::Value>,
+}
+
+/// Represents a webhook configuration
+#[derive(Clone)]
+pub struct WebhookConfig {
+	pub url: String,
+	pub url_params: Option<HashMap<String, String>>,
+	pub title: String,
+	pub body_template: String,
+	pub method: Option<String>,
+	pub secret: Option<String>,
+	pub headers: Option<HashMap<String, String>>,
+	pub payload_fields: Option<HashMap<String, serde_json::Value>>,
+}
+
 /// Implementation of webhook notifications via webhooks
 pub struct WebhookNotifier {
 	/// Webhook URL for message delivery
-	url: String,
+	pub url: String,
+	/// URL parameters to use for the webhook request
+	pub url_params: Option<HashMap<String, String>>,
 	/// Title to display in the message
-	title: String,
+	pub title: String,
 	/// Message template with variable placeholders
-	body_template: String,
+	pub body_template: String,
 	/// HTTP client for webhook requests
-	client: Client,
+	pub client: Client,
 	/// HTTP method to use for the webhook request
-	method: Option<String>,
+	pub method: Option<String>,
 	/// Secret to use for the webhook request
-	secret: Option<String>,
+	pub secret: Option<String>,
 	/// Headers to use for the webhook request
-	headers: Option<HashMap<String, String>>,
+	pub headers: Option<HashMap<String, String>>,
+	/// Payload fields to use for the webhook request
+	pub payload_fields: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Represents a formatted webhook message
@@ -52,28 +76,25 @@ impl WebhookNotifier {
 	/// Creates a new Webhook notifier instance
 	///
 	/// # Arguments
-	/// * `url` - Webhook URL
-	/// * `title` - Message title
-	/// * `body_template` - Message template with variables
-	/// * `method` - HTTP method to use for the webhook request (optional, defaults to POST)
-	/// * `secret` - Secret to use for the webhook request (optional)
-	/// * `headers` - Headers to use for the webhook request (optional)
-	pub fn new(
-		url: String,
-		title: String,
-		body_template: String,
-		method: Option<String>,
-		secret: Option<String>,
-		headers: Option<HashMap<String, String>>,
-	) -> Result<Self, Box<NotificationError>> {
+	/// * `config` - Webhook configuration
+	///
+	/// # Returns
+	/// * `Result<Self, Box<NotificationError>>` - Notifier instance if config is valid
+	pub fn new(config: WebhookConfig) -> Result<Self, Box<NotificationError>> {
+		let mut headers = config.headers.unwrap_or_default();
+		if !headers.contains_key("Content-Type") {
+			headers.insert("Content-Type".to_string(), "application/json".to_string());
+		}
 		Ok(Self {
-			url,
-			title,
-			body_template,
+			url: config.url,
+			url_params: config.url_params,
+			title: config.title,
+			body_template: config.body_template,
 			client: Client::new(),
-			method: Some(method.unwrap_or("POST".to_string())),
-			secret: secret.map(|s| s.to_string()),
-			headers,
+			method: Some(config.method.unwrap_or("POST".to_string())),
+			secret: config.secret,
+			headers: Some(headers),
+			payload_fields: config.payload_fields,
 		})
 	}
 
@@ -108,13 +129,15 @@ impl WebhookNotifier {
 				secret,
 				headers,
 			} => Some(Self {
-				url: url.clone(),
+				url: url.as_ref().to_string(),
+				url_params: None,
 				title: message.title.clone(),
 				body_template: message.body.clone(),
 				client: Client::new(),
 				method: method.clone(),
-				secret: secret.clone(),
+				secret: secret.as_ref().map(|s| s.as_ref().to_string()),
 				headers: headers.clone(),
+				payload_fields: None,
 			}),
 			_ => None,
 		}
@@ -153,10 +176,47 @@ impl Notifier for WebhookNotifier {
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
-		let payload = WebhookMessage {
-			title: self.title.clone(),
-			body: message.to_string(),
-		};
+		// Default payload with title and body
+		let mut payload_fields = HashMap::new();
+		payload_fields.insert("title".to_string(), serde_json::json!(self.title));
+		payload_fields.insert("body".to_string(), serde_json::json!(message));
+
+		self.notify_with_payload(message, payload_fields).await
+	}
+
+	/// Sends a formatted message to Webhook with custom payload fields
+	///
+	/// # Arguments
+	/// * `message` - The formatted message to send
+	/// * `payload_fields` - Additional fields to include in the payload
+	///
+	/// # Returns
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn notify_with_payload(
+		&self,
+		message: &str,
+		mut payload_fields: HashMap<String, serde_json::Value>,
+	) -> Result<(), anyhow::Error> {
+		let mut url = self.url.clone();
+		// Add URL parameters if present
+		if let Some(params) = &self.url_params {
+			let params_str: Vec<String> = params
+				.iter()
+				.map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
+				.collect();
+			if !params_str.is_empty() {
+				url = format!("{}?{}", url, params_str.join("&"));
+			}
+		}
+
+		// Merge with default payload fields if they exist
+		if let Some(default_fields) = &self.payload_fields {
+			for (key, value) in default_fields {
+				if !payload_fields.contains_key(key) {
+					payload_fields.insert(key.clone(), value.clone());
+				}
+			}
+		}
 
 		let method = if let Some(ref m) = self.method {
 			Method::from_bytes(m.as_bytes()).unwrap_or(Method::POST)
@@ -164,74 +224,66 @@ impl Notifier for WebhookNotifier {
 			Method::POST
 		};
 
+		// Add default headers
 		let mut headers = HeaderMap::new();
+		headers.insert(
+			HeaderName::from_static("content-type"),
+			HeaderValue::from_static("application/json"),
+		);
 
 		if let Some(secret) = &self.secret {
+			// Create a WebhookMessage for signing
+			let payload_for_signing = WebhookMessage {
+				title: self.title.clone(),
+				body: message.to_string(),
+			};
+
 			let (signature, timestamp) = self
-				.sign_request(secret, &payload)
+				.sign_request(secret, &payload_for_signing)
 				.map_err(|e| NotificationError::internal_error(e.to_string(), None, None))?;
 
-			// Handle X-Signature header
-			if let Ok(header_name) = HeaderName::from_bytes(b"X-Signature") {
-				if let Ok(header_value) = HeaderValue::from_str(&signature) {
-					headers.insert(header_name, header_value);
-				} else {
-					return Err(anyhow::anyhow!("Invalid signature value",));
-				}
-			} else {
-				return Err(anyhow::anyhow!("Invalid signature header name",));
-			}
-
-			// Handle X-Timestamp header
-			if let Ok(header_name) = HeaderName::from_bytes(b"X-Timestamp") {
-				if let Ok(header_value) = HeaderValue::from_str(&timestamp) {
-					headers.insert(header_name, header_value);
-				} else {
-					return Err(anyhow::anyhow!("Invalid timestamp value",));
-				}
-			} else {
-				return Err(anyhow::anyhow!("Invalid timestamp header name",));
-			}
+			// Add signature headers
+			headers.insert(
+				HeaderName::from_static("x-signature"),
+				HeaderValue::from_str(&signature)
+					.map_err(|_| anyhow::anyhow!("Invalid signature value"))?,
+			);
+			headers.insert(
+				HeaderName::from_static("x-timestamp"),
+				HeaderValue::from_str(&timestamp)
+					.map_err(|_| anyhow::anyhow!("Invalid timestamp value"))?,
+			);
 		}
 
+		// Add custom headers
 		if let Some(headers_map) = &self.headers {
 			for (key, value) in headers_map {
-				let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
-					return Err(anyhow::anyhow!("Invalid header name: {}", key));
-				};
-				let Ok(header_value) = HeaderValue::from_str(value) else {
-					return Err(anyhow::anyhow!(format!(
-						"Invalid header value for key: {}",
-						key
-					),));
-				};
+				let header_name = HeaderName::from_bytes(key.as_bytes())
+					.map_err(|_| anyhow::anyhow!("Invalid header name: {}", key))?;
+				let header_value = HeaderValue::from_str(value)
+					.map_err(|_| anyhow::anyhow!("Invalid header value for key: {}", key))?;
 				headers.insert(header_name, header_value);
 			}
 		}
 
-		let response = match self
+		let payload = WebhookPayload {
+			fields: payload_fields,
+		};
+
+		// Send request with custom payload
+		let response = self
 			.client
-			.request(method, self.url.as_str())
+			.request(method, url.as_str())
 			.headers(headers)
 			.json(&payload)
 			.send()
 			.await
-		{
-			Ok(resp) => resp,
-			Err(e) => {
-				// Pass the original error as source instead of just its string representation
-				return Err(anyhow::anyhow!(
-					"Failed to send webhook notification: {}",
-					e
-				));
-			}
-		};
+			.map_err(|e| anyhow::anyhow!("Failed to send webhook notification: {}", e))?;
 
-		if !response.status().is_success() {
-			return Err(anyhow::anyhow!(
-				"Webhook returned error status: {}",
-				response.status()
-			));
+		let status = response.status();
+
+		if !status.is_success() {
+			return Err(anyhow::anyhow!("Webhook returned error status: {}", status));
 		}
 
 		Ok(())
@@ -240,10 +292,11 @@ impl Notifier for WebhookNotifier {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::NotificationMessage;
+	use crate::models::{NotificationMessage, SecretString, SecretValue};
 
 	use super::*;
 	use mockito::{Matcher, Mock};
+	use serde_json::json;
 
 	fn create_test_notifier(
 		url: &str,
@@ -251,20 +304,22 @@ mod tests {
 		secret: Option<&str>,
 		headers: Option<HashMap<String, String>>,
 	) -> WebhookNotifier {
-		WebhookNotifier::new(
-			url.to_string(),
-			"Alert".to_string(),
-			body_template.to_string(),
-			Some("POST".to_string()),
-			secret.map(|s| s.to_string()),
+		WebhookNotifier::new(WebhookConfig {
+			url: url.to_string(),
+			url_params: None,
+			title: "Alert".to_string(),
+			body_template: body_template.to_string(),
+			method: Some("POST".to_string()),
+			secret: secret.map(|s| s.to_string()),
 			headers,
-		)
+			payload_fields: None,
+		})
 		.unwrap()
 	}
 
 	fn create_test_webhook_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Webhook {
-			url: "https://webhook.example.com".to_string(),
+			url: SecretValue::Plain(SecretString::new("https://webhook.example.com".to_string())),
 			method: Some("POST".to_string()),
 			secret: None,
 			headers: None,
@@ -525,5 +580,197 @@ mod tests {
 			timestamp.parse::<i64>().is_ok(),
 			"Timestamp should be valid i64"
 		);
+	}
+
+	////////////////////////////////////////////////////////////
+	// notify_with_payload tests
+	////////////////////////////////////////////////////////////
+
+	#[tokio::test]
+	async fn test_notify_with_payload_success() {
+		let mut server = mockito::Server::new_async().await;
+		let expected_payload = json!({
+			"title": "Alert",
+			"body": "Test message",
+			"custom_field": "custom_value"
+		});
+
+		let mock = server
+			.mock("POST", "/")
+			.match_header("content-type", "application/json")
+			.match_body(Matcher::Json(expected_payload))
+			.with_header("content-type", "application/json")
+			.with_body("{}")
+			.with_status(200)
+			.expect(1)  // Expect exactly one request
+			.create_async()
+			.await;
+
+		let notifier = create_test_notifier(server.url().as_str(), "Test message", None, None);
+		let mut payload = HashMap::new();
+		// Insert fields in the same order as they appear in expected_payload
+		payload.insert("title".to_string(), serde_json::json!("Alert"));
+		payload.insert("body".to_string(), serde_json::json!("Test message"));
+		payload.insert(
+			"custom_field".to_string(),
+			serde_json::json!("custom_value"),
+		);
+
+		let result = notifier.notify_with_payload("Test message", payload).await;
+		assert!(result.is_ok());
+		mock.assert();
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_and_url_params() {
+		let mut server = mockito::Server::new_async().await;
+		let mock = server
+			.mock("POST", "/")
+			.match_query(mockito::Matcher::AllOf(vec![
+				mockito::Matcher::UrlEncoded("param1".into(), "value1".into()),
+				mockito::Matcher::UrlEncoded("param2".into(), "value2".into()),
+			]))
+			.with_status(200)
+			.create_async()
+			.await;
+
+		let mut url_params = HashMap::new();
+		url_params.insert("param1".to_string(), "value1".to_string());
+		url_params.insert("param2".to_string(), "value2".to_string());
+
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: server.url(),
+			url_params: Some(url_params),
+			title: "Alert".to_string(),
+			body_template: "Test message".to_string(),
+			method: None,
+			secret: None,
+			headers: None,
+			payload_fields: None,
+		})
+		.unwrap();
+
+		let result = notifier
+			.notify_with_payload("Test message", HashMap::new())
+			.await;
+		assert!(result.is_ok());
+		mock.assert();
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_and_method_override() {
+		let mut server = mockito::Server::new_async().await;
+		let mock = server
+			.mock("GET", "/")
+			.with_status(200)
+			.create_async()
+			.await;
+
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: server.url(),
+			url_params: None,
+			title: "Alert".to_string(),
+			body_template: "Test message".to_string(),
+			method: Some("GET".to_string()),
+			secret: None,
+			headers: None,
+			payload_fields: None,
+		})
+		.unwrap();
+
+		let result = notifier
+			.notify_with_payload("Test message", HashMap::new())
+			.await;
+		assert!(result.is_ok());
+		mock.assert();
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_merges_default_fields() {
+		let mut server = mockito::Server::new_async().await;
+
+		let expected_payload = json!({
+			"default_field": "default_value",
+			"custom_field": "custom_value"
+		});
+
+		let mock = server
+			.mock("POST", "/")
+			.match_body(mockito::Matcher::Json(expected_payload))
+			.with_status(200)
+			.create_async()
+			.await;
+
+		let mut default_fields = HashMap::new();
+		default_fields.insert(
+			"default_field".to_string(),
+			serde_json::json!("default_value"),
+		);
+
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: server.url(),
+			url_params: None,
+			title: "Alert".to_string(),
+			body_template: "Test message".to_string(),
+			method: None,
+			secret: None,
+			headers: None,
+			payload_fields: Some(default_fields),
+		})
+		.unwrap();
+
+		let mut payload = HashMap::new();
+		payload.insert(
+			"custom_field".to_string(),
+			serde_json::json!("custom_value"),
+		);
+
+		let result = notifier.notify_with_payload("Test message", payload).await;
+		assert!(result.is_ok());
+		mock.assert();
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_custom_fields_override_defaults() {
+		let mut server = mockito::Server::new_async().await;
+
+		let expected_payload = json!({
+			 "custom_field": "custom_value"
+		});
+
+		let mock = server
+			.mock("POST", "/")
+			.match_body(mockito::Matcher::Json(expected_payload))
+			.with_status(200)
+			.create_async()
+			.await;
+
+		let mut default_fields = HashMap::new();
+		default_fields.insert(
+			"custom_field".to_string(),
+			serde_json::json!("default_value"),
+		);
+
+		let notifier = WebhookNotifier::new(WebhookConfig {
+			url: server.url(),
+			url_params: None,
+			title: "Alert".to_string(),
+			body_template: "Test message".to_string(),
+			method: None,
+			secret: None,
+			headers: None,
+			payload_fields: Some(default_fields),
+		})
+		.unwrap();
+
+		let mut payload = HashMap::new();
+		payload.insert(
+			"custom_field".to_string(),
+			serde_json::json!("custom_value"),
+		);
+
+		let result = notifier.notify_with_payload("Test message", payload).await;
+		assert!(result.is_ok());
+		mock.assert();
 	}
 }

@@ -19,6 +19,7 @@ use openzeppelin_monitor::{
 
 use std::{collections::HashMap, path::Path};
 
+use async_trait::async_trait;
 use mockall::{mock, predicate::*};
 
 mock! {
@@ -28,11 +29,14 @@ mock! {
 	/// for testing purposes.
 	pub TriggerRepository {}
 
+	#[async_trait]
 	impl TriggerRepositoryTrait for TriggerRepository {
 		#[mockall::concretize]
-		fn new(path: Option<&Path>) -> Result<Self, RepositoryError>;
+		async fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
+		where
+			Self: Sized;
 		#[mockall::concretize]
-		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
+		async fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
 		fn get(&self, trigger_id: &str) -> Option<Trigger>;
 		fn get_all(&self) -> HashMap<String, Trigger>;
 	}
@@ -51,11 +55,14 @@ mock! {
 	/// operations for testing purposes.
 	pub NetworkRepository {}
 
+	#[async_trait]
 	impl NetworkRepositoryTrait for NetworkRepository {
 		#[mockall::concretize]
-		fn new(path: Option<&Path>) -> Result<Self, RepositoryError>;
+		async fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
+		where
+			Self: Sized;
 		#[mockall::concretize]
-		fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
+		async fn load_all(path: Option<&Path>) -> Result<HashMap<String, Network>, RepositoryError>;
 		fn get(&self, network_id: &str) -> Option<Network>;
 		fn get_all(&self) -> HashMap<String, Network>;
 	}
@@ -72,25 +79,28 @@ mock! {
 	///
 	/// Provides methods to simulate monitor configuration storage and retrieval
 	/// operations for testing purposes.
-	pub MonitorRepository<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static> {}
+	pub MonitorRepository<N: NetworkRepositoryTrait + Send + Sync + 'static, T: TriggerRepositoryTrait + Send + Sync + 'static> {}
 
-	impl<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static>
+	#[async_trait]
+	impl<N: NetworkRepositoryTrait + Send + Sync + 'static, T: TriggerRepositoryTrait + Send + Sync + 'static>
 		MonitorRepositoryTrait<N, T> for MonitorRepository<N, T>
 	{
 		#[mockall::concretize]
-		fn new(
+		async fn new(
 			path: Option<&Path>,
 			network_service: Option<NetworkService<N>>,
 			trigger_service: Option<TriggerService<T>>,
-		) -> Result<Self, RepositoryError>;
+		) -> Result<Self, RepositoryError>
+		where
+			Self: Sized;
 		#[mockall::concretize]
-		fn load_all(
+		async fn load_all(
 			path: Option<&Path>,
 			network_service: Option<NetworkService<N>>,
 			trigger_service: Option<TriggerService<T>>,
 		) -> Result<HashMap<String, Monitor>, RepositoryError>;
 		#[mockall::concretize]
-		fn load_from_path(
+		async fn load_from_path(
 			&self,
 			path: Option<&Path>,
 			network_service: Option<NetworkService<N>>,
@@ -100,7 +110,7 @@ mock! {
 		fn get_all(&self) -> HashMap<String, Monitor>;
 	}
 
-	impl<N: NetworkRepositoryTrait + 'static, T: TriggerRepositoryTrait + 'static> Clone
+	impl<N: NetworkRepositoryTrait + Send + Sync + 'static, T: TriggerRepositoryTrait + Send + Sync + 'static> Clone
 		for MonitorRepository<N, T>
 	{
 		fn clone(&self) -> Self {

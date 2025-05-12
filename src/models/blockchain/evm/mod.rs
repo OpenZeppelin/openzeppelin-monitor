@@ -10,8 +10,12 @@ mod transaction;
 
 pub use block::Block as EVMBlock;
 pub use monitor::{
-	MatchArguments as EVMMatchArguments, MatchParamEntry as EVMMatchParamEntry,
-	MatchParamsMap as EVMMatchParamsMap, MonitorMatch as EVMMonitorMatch,
+	ContractSpec as EVMContractSpec, MatchArguments as EVMMatchArguments,
+	MatchParamEntry as EVMMatchParamEntry, MatchParamsMap as EVMMatchParamsMap,
+	MonitorMatch as EVMMonitorMatch,
 };
-pub use receipt::{BaseLog as EVMReceiptLog, TransactionReceipt as EVMTransactionReceipt};
+pub use receipt::{
+	BaseLog as EVMReceiptLog, BaseReceipt as EVMBaseReceipt,
+	TransactionReceipt as EVMTransactionReceipt,
+};
 pub use transaction::{BaseTransaction as EVMBaseTransaction, Transaction as EVMTransaction};

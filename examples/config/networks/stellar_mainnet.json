@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://mainnet.sorobanrpc.com",
+      "url": {
+        "type": "plain",
+        "value": "https://mainnet.sorobanrpc.com"
+      },
       "weight": 100
     }
   ],

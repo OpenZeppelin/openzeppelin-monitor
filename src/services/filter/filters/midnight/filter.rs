@@ -13,16 +13,14 @@ use tracing::instrument;
 
 use crate::{
 	models::{
-		BlockType, EventCondition, FunctionCondition, MidnightBlock, MidnightMatchArguments,
-		MidnightMatchParamEntry, MidnightRpcTransactionEnum, MidnightTransaction, Monitor,
-		MonitorMatch, Network, TransactionCondition, TransactionStatus,
+		BlockType, ContractSpec, EventCondition, FunctionCondition, MidnightBlock,
+		MidnightMatchArguments, MidnightMatchParamEntry, MidnightRpcTransactionEnum,
+		MidnightTransaction, Monitor, MonitorMatch, Network, TransactionCondition,
+		TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
-		filter::{
-			filters::midnight::helpers::{map_chain_type, parse_tx_index_item},
-			BlockFilter, FilterError,
-		},
+		filter::{filters::midnight::helpers::map_chain_type, BlockFilter, FilterError},
 	},
 };
 
@@ -105,25 +103,26 @@ impl<T> MidnightBlockFilter<T> {
 
 	pub fn deserialize_transactions(
 		&self,
-		block: &MidnightBlock,
-		network_id: NetworkId,
+		_block: &MidnightBlock,
+		_network_id: NetworkId,
 	) -> Result<Vec<MidnightTransaction>, FilterError> {
-		let mut txs = Vec::<MidnightTransaction>::new();
-		let tx_index = block.transactions_index.iter().rev();
-		for (hash, body) in tx_index {
-			let (_hash, tx) = match parse_tx_index_item(hash, body, network_id) {
-				Ok(res) => res,
-				Err(e) => {
-					tracing::error!("Error deserializing transaction: {:?}", e);
-					return Err(FilterError::network_error(
-						"Error deserializing transaction",
-						Some(e.into()),
-						None,
-					));
-				}
-			};
-			txs.push(MidnightTransaction::from(tx));
-		}
+		let txs = Vec::<MidnightTransaction>::new();
+		// let tx_index = block.transactions_index.iter().rev();
+		// for (hash, body) in tx_index {
+		// 	let (_hash, tx) = match parse_tx_index_item::<Proof, DefaultDB>(hash, body, network_id)
+		// 	{
+		// 		Ok(res) => res,
+		// 		Err(e) => {
+		// 			tracing::error!("Error deserializing transaction: {:?}", e);
+		// 			return Err(FilterError::network_error(
+		// 				"Error deserializing transaction",
+		// 				Some(e.into()),
+		// 				None,
+		// 			));
+		// 		}
+		// 	};
+		// 	txs.push(MidnightTransaction::from(tx));
+		// }
 		Ok(txs)
 	}
 }
@@ -148,6 +147,7 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
+		_contract_specs: Option<&[(String, ContractSpec)]>,
 	) -> Result<Vec<MonitorMatch>, FilterError> {
 		let midnight_block = match block {
 			BlockType::Midnight(block) => block,

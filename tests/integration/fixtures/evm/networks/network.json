@@ -4,13 +4,19 @@
   "name": "Ethereum Mainnet",
   "rpc_urls": [
     {
-      "url": "https://eth.drpc.org",
+      "url": {
+        "type": "Plain",
+        "value": "https://eth.drpc.org"
+      },
       "type_": "rpc",
       "weight": 100
     },
     {
       "type_": "rpc",
-      "url": "https://ethereum-rpc.publicnode.com",
+      "url": {
+        "type": "Plain",
+        "value": "https://ethereum-rpc.publicnode.com"
+      },
       "weight": 90
     }
   ],

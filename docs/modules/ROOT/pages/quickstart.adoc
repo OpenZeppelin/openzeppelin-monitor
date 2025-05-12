@@ -73,6 +73,9 @@ mv ./target/release/openzeppelin-monitor .
 
 # Enable metrics server
 ./openzeppelin-monitor --metrics
+
+# Validate configuration files without starting the service
+./openzeppelin-monitor --check
 ----
 
 === Run with Docker
@@ -164,7 +167,10 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "YOUR_RPC_URL_HERE",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_RPC_URL_HERE"
+      },
       "weight": 100
     }
   ],
@@ -198,7 +204,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
   "addresses": [
     {
       "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      "abi": [
+      "contract_spec": [
         {
           "anonymous": false,
           "inputs": [
@@ -277,10 +283,13 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
         "name": "Large Transfer Slack Notification",
         "trigger_type": "slack",
         "config": {
-            "slack_url": "https://hooks.slack.com/services/A/B/C",
+            "slack_url": {
+                "type": "plain",
+                "value": "SLACK_WEBHOOK_URL"
+            },
             "message": {
                 "title": "large_transfer_slack triggered",
-                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+                "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
             }
         }
     }
@@ -305,11 +314,17 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
         "config": {
             "host": "smtp.gmail.com",
             "port": 465,
-            "username": "your_email@gmail.com",
-            "password": "your_password",
+            "username": {
+                "type": "plain",
+                "value": "your_email@gmail.com"
+            },
+            "password": {
+                "type": "plain",
+                "value": "SMTP_PASSWORD"
+            },
             "message": {
                 "title": "large_transfer_usdc_email triggered",
-                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+                "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
             },
             "sender": "your_email@gmail.com",
             "recipients": [
@@ -327,7 +342,7 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
 
 [source,bash]
 ----
-cargo run
+./openzeppelin-monitor
 ----
 
 **Docker Deployment**
@@ -348,6 +363,7 @@ The monitor will now:
 * Adjust the transfer threshold by modifying the `expression` value.
 * Monitor additional ERC20 tokens by creating new monitor configurations.
 * xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
+* xref:index.adoc#secret_management[Configure secure secret management] for sensitive data using environment variables or Hashicorp Cloud Vault
 * Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].
 
 === Monitoring Dex Swaps (Stellar):
@@ -372,7 +388,10 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
   "rpc_urls": [
      {
       "type_": "rpc",
-      "url": "YOUR_RPC_URL_HERE",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_RPC_URL_HERE"
+      },
       "weight": 100
     }
   ],
@@ -407,14 +426,52 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
   ],
   "addresses": [
     {
-      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE"
+     "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
+      "contract_spec": [
+        {
+          "function_v0": {
+            "doc": "",
+            "name": "swap",
+            "inputs": [
+              {
+                "doc": "",
+                "name": "user",
+                "type_": "address"
+              },
+              {
+                "doc": "",
+                "name": "in_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "out_idx",
+                "type_": "u32"
+              },
+              {
+                "doc": "",
+                "name": "in_amount",
+                "type_": "u128"
+              },
+              {
+                "doc": "",
+                "name": "out_min",
+                "type_": "u128"
+              }
+            ],
+            "outputs": [
+              "u128"
+            ]
+          }
+        }
+      ]
     }
   ],
   "match_conditions": {
     "functions": [
       {
         "signature": "swap(Address,U32,U32,U128,U128)",
-        "expression": "4 > 1000000000"
+        "expression": "out_min > 1000000000"
       }
     ],
     "events": [],
@@ -441,6 +498,12 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
 
 [NOTE]
 ====
+* The `abi` field is optional for Stellar contracts. If not provided, the monitor will automatically fetch the contract's SEP-48 interface from the chain.
+* You can find the contract specification through Stellar contract explorer tool. For example: link:https://lab.stellar.org/smart-contracts/contract-explorer?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=https:////mainnet.sorobanrpc.com&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;&smartContracts$explorer$contractId=CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE;;[Stellar DEX Contract Interface^]
+====
+
+[NOTE]
+====
 Remove the `trigger_conditions` array to disable additional filtering.
 ====
 
@@ -462,10 +525,13 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
     "name": "Large Swap By Dex Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "slack_url": "https://hooks.slack.com/services/A/B/C",
+      "slack_url": {
+        "type": "plain",
+        "value": "slack-webhook-url"
+      },
       "message": {
         "title": "large_swap_by_dex_slack triggered",
-        "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
   }
@@ -478,7 +544,7 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
 
 [source,bash]
 ----
-cargo run
+./openzeppelin-monitor
 ----
 
 **Docker Deployment**
@@ -499,4 +565,5 @@ The monitor will now:
 * Adjust the swap threshold by modifying the `expression` value.
 * Monitor additional dex swaps by creating new monitor configurations.
 * xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
+* xref:index.adoc#secret_management[Configure secure secret management] for sensitive data using environment variables or Hashicorp Cloud Vault
 * Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].

@@ -3,10 +3,13 @@
     "name": "Example Trigger Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "slack_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/AAA/BBB/CCC"
+      },
       "message": {
         "title": "example_trigger_slack triggered",
-        "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+        "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }
   },
@@ -14,15 +17,21 @@
     "name": "Example Trigger Webhook Notification",
     "trigger_type": "webhook",
     "config": {
-      "url": "https://webhook.site/123",
+      "url": {
+        "type": "plain",
+        "value": "https://webhook.site/123"
+      },
       "method": "POST",
-      "secret": "some-secret",
+      "secret": {
+        "type": "plain",
+        "value": "some-secret"
+      },
       "headers": {
         "Content-Type": "application/json"
       },
       "message": {
         "title": "example_trigger_webhook triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_value} | https://etherscan.io/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.amount} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   },
@@ -30,10 +39,13 @@
     "name": "Example Trigger Discord Notification",
     "trigger_type": "discord",
     "config": {
-      "discord_url": "https://discord.com/api/webhooks/123/123",
+      "discord_url": {
+        "type": "plain",
+        "value": "https://discord.com/api/webhooks/123/123"
+      },
       "message": {
         "title": "example_trigger_discord triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_value} | https://etherscan.io/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.amount} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   },
@@ -41,12 +53,15 @@
     "name": "Example Trigger Telegram Notification",
     "trigger_type": "telegram",
     "config": {
-      "token": "123",
+      "token": {
+        "type": "plain",
+        "value": "123"
+      },
       "chat_id": "123",
       "disable_web_preview": true,
       "message": {
         "title": "example_trigger_telegram triggered",
-        "body": "${monitor_name} triggered because someone called the ${function_0_signature} function with value ${function_0_value} | https://etherscan.io/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.value} | https://etherscan.io/tx/${transaction.hash}"
       }
     }
   }

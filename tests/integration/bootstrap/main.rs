@@ -6,22 +6,32 @@ use crate::integration::{
 	mocks::{
 		create_test_block, create_test_network, create_test_transaction, MockClientPool,
 		MockEVMTransportClient, MockEvmClientTrait, MockMonitorRepository, MockNetworkRepository,
-		MockStellarClientTrait, MockTriggerExecutionService, MockTriggerRepository,
+		MockStellarClientTrait, MockStellarTransportClient, MockTriggerExecutionService,
+		MockTriggerRepository,
 	},
 };
 use openzeppelin_monitor::{
-	bootstrap::{create_block_handler, create_trigger_handler, initialize_services, process_block},
+	bootstrap::{
+		create_block_handler, create_trigger_handler, get_contract_specs, initialize_services,
+		process_block,
+	},
 	models::{
-		BlockChainType, EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, Monitor,
-		MonitorMatch, NotificationMessage, ProcessedBlock, ScriptLanguage, StellarBlock,
-		StellarMonitorMatch, TransactionType, Trigger, TriggerConditions, TriggerType,
-		TriggerTypeConfig,
+		AddressWithSpec, BlockChainType, ContractSpec, EVMContractSpec, EVMMonitorMatch,
+		EVMTransactionReceipt, MatchConditions, Monitor, MonitorMatch, ProcessedBlock,
+		ScriptLanguage, SecretString, SecretValue, StellarBlock, StellarContractSpec,
+		StellarFormattedContractSpec, StellarMonitorMatch, TransactionType, Trigger,
+		TriggerConditions,
 	},
 	services::{
-		filter::FilterService,
+		filter::{stellar_helpers::are_same_address, FilterService},
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
+	utils::tests::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
+};
+use std::str::FromStr;
+use stellar_xdr::curr::{
+	ScSpecEntry, ScSpecFunctionInputV0, ScSpecFunctionV0, ScSpecTypeDef, ScSymbol, StringM,
 };
 
 use serde_json::json;
@@ -34,29 +44,20 @@ fn create_test_monitor(
 	paused: bool,
 	triggers: Vec<&str>,
 ) -> Monitor {
-	Monitor {
-		name: name.to_string(),
-		networks: networks.into_iter().map(|s| s.to_string()).collect(),
-		paused,
-		triggers: triggers.into_iter().map(|s| s.to_string()).collect(),
-		..Default::default()
-	}
+	MonitorBuilder::new()
+		.name(name)
+		.networks(networks.into_iter().map(String::from).collect())
+		.paused(paused)
+		.triggers(triggers.into_iter().map(String::from).collect())
+		.build()
 }
 
 fn create_test_trigger(name: &str) -> Trigger {
-	Trigger {
-		name: name.to_string(),
-		trigger_type: TriggerType::Slack,
-		config: TriggerTypeConfig::Slack {
-			slack_url:
-				"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
-					.to_string(),
-			message: NotificationMessage {
-				title: "Test Title".to_string(),
-				body: "Test Body".to_string(),
-			},
-		},
-	}
+	TriggerBuilder::new()
+		.name(name)
+		.slack("https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX") //noboost
+		.message("Test Title", "Test Body")
+		.build()
 }
 
 fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
@@ -134,6 +135,7 @@ async fn test_initialize_services() {
 		Some(mock_network_service),
 		Some(mock_trigger_service),
 	)
+	.await
 	.expect("Failed to initialize services");
 
 	assert!(
@@ -176,8 +178,16 @@ async fn test_create_block_handler_evm() {
 		.return_once(move |_| Ok(Arc::new(MockEvmClientTrait::new())));
 	let client_pool = Arc::new(mock_pool);
 
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		client_pool,
+		contract_specs,
+	);
 
 	let result = block_handler(block, network).await;
 	assert_eq!(result.block_number, 100);
@@ -202,7 +212,8 @@ async fn test_create_trigger_handler() {
 
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
+			.await;
 
 	let (shutdown_tx, _) = watch::channel(false);
 	let trigger_handler = create_trigger_handler(
@@ -229,7 +240,8 @@ async fn test_create_trigger_handler() {
 async fn test_create_trigger_handler_empty_matches() {
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
+			.await;
 
 	let (shutdown_tx, _) = watch::channel(false);
 	let trigger_handler = create_trigger_handler(
@@ -255,9 +267,7 @@ async fn test_create_trigger_handler_empty_matches() {
 #[tokio::test]
 async fn test_create_block_handler_stellar() {
 	let (shutdown_tx, _) = watch::channel(false);
-
 	let filter_service = Arc::new(FilterService::new());
-
 	let monitors = vec![create_test_monitor(
 		"test",
 		vec!["stellar_mainnet"],
@@ -266,50 +276,84 @@ async fn test_create_block_handler_stellar() {
 	)];
 
 	let block = create_test_block(BlockChainType::Stellar, 100);
-
 	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
 
-	// Create a mock client pool that returns a successful client
+	let mut contract_spec_pool = MockClientPool::new();
+	let mut handle_block_client_pool = MockClientPool::new();
 
-	let mut mock_pool = MockClientPool::new();
+	contract_spec_pool
+		.expect_get_stellar_client()
+		.returning(move |_| {
+			let mut mock_client = MockStellarClientTrait::new();
+			mock_client
+				.expect_get_contract_spec()
+				.times(1)
+				.returning(move |_| {
+					let contract_spec = ContractSpec::Stellar(StellarContractSpec::from(json!(
+						{
+							"function_v0": {
+								"doc": "",
+								"name": "transfer",
+								"inputs": [
+									{
+										"doc": "",
+										"name": "from",
+										"type_": "address"
+									},
+									{
+										"doc": "",
+										"name": "to",
+										"type_": "address"
+									},
+									{
+										"doc": "",
+										"name": "amount",
+										"type_": "i128"
+									}
+								],
+								"outputs": []
+							}
+						}
+					)));
+					Ok(contract_spec.clone())
+				});
+			Ok(Arc::new(mock_client))
+		});
 
-	mock_pool.expect_get_stellar_client().returning(move |_| {
-		let mut mock_client = MockStellarClientTrait::new();
+	handle_block_client_pool
+		.expect_get_stellar_client()
+		.returning(move |_| {
+			let mut mock_client = MockStellarClientTrait::new();
+			mock_client
+				.expect_get_transactions()
+				.times(1)
+				.returning(move |_, _| Ok(vec![]));
+			Ok(Arc::new(mock_client))
+		});
 
-		// Stellar does an additional call to get the transactions as opposed to EVM where
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&Arc::new(contract_spec_pool), &network_monitors).await;
 
-		// transactions are already in the block
-
-		mock_client
-			.expect_get_transactions()
-			.times(1)
-			.returning(move |_, _| Ok(vec![]));
-
-		Ok(Arc::new(mock_client))
-	});
-
-	let client_pool = Arc::new(mock_pool);
-
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
-
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		Arc::new(handle_block_client_pool),
+		contract_specs,
+	);
 	let result = block_handler(block, network).await;
 
 	assert_eq!(result.block_number, 100);
-
 	assert_eq!(result.network_slug, "stellar_mainnet");
 
 	// The mock client should return no matches
-
 	assert!(result.processing_results.is_empty());
 }
 
 #[tokio::test]
 async fn test_create_block_handler_evm_client_error() {
 	let (shutdown_tx, _) = watch::channel(false);
-
 	let filter_service = Arc::new(FilterService::new());
-
 	let monitors = vec![create_test_monitor(
 		"test",
 		vec!["ethereum_mainnet"],
@@ -318,37 +362,37 @@ async fn test_create_block_handler_evm_client_error() {
 	)];
 
 	let block = create_test_block(BlockChainType::EVM, 100);
-
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
 	// Create a mock client pool that returns an error
-
 	let mut mock_pool = MockClientPool::new();
 
 	mock_pool
 		.expect_get_evm_client()
 		.return_once(move |_| Err(anyhow::anyhow!("Failed to get EVM client")));
-
 	let client_pool = Arc::new(mock_pool);
 
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
 
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		client_pool,
+		contract_specs,
+	);
 	let result = block_handler(block, network).await;
 
 	assert_eq!(result.block_number, 100);
-
 	assert_eq!(result.network_slug, "ethereum_mainnet");
-
 	assert!(result.processing_results.is_empty());
 }
 
 #[tokio::test]
 async fn test_create_block_handler_stellar_client_error() {
 	let (shutdown_tx, _) = watch::channel(false);
-
 	let filter_service = Arc::new(FilterService::new());
-
 	let monitors = vec![create_test_monitor(
 		"test",
 		vec!["stellar_mainnet"],
@@ -357,28 +401,30 @@ async fn test_create_block_handler_stellar_client_error() {
 	)];
 
 	let block = create_test_block(BlockChainType::Stellar, 100);
-
 	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
 
 	// Create a mock client pool that returns an error
-
 	let mut mock_pool = MockClientPool::new();
-
 	mock_pool
 		.expect_get_stellar_client()
-		.return_once(move |_| Err(anyhow::anyhow!("Failed to get Stellar client")));
+		.returning(move |_| Err(anyhow::anyhow!("Failed to get Stellar client")));
 
 	let client_pool = Arc::new(mock_pool);
 
-	let block_handler =
-		create_block_handler::<MockClientPool>(shutdown_tx, filter_service, monitors, client_pool);
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		client_pool,
+		contract_specs,
+	);
 
 	let result = block_handler(block, network).await;
-
 	assert_eq!(result.block_number, 100);
-
 	assert_eq!(result.network_slug, "stellar_mainnet");
-
 	assert!(result.processing_results.is_empty());
 }
 
@@ -398,7 +444,8 @@ async fn test_create_trigger_handler_with_conditions() {
 
 	// Setup test triggers in JSON with known configurations
 	let trigger_execution_service =
-		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json");
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
+			.await;
 
 	// Create a HashMap with trigger conditions
 	let mut trigger_scripts = HashMap::new();
@@ -485,6 +532,7 @@ async fn test_process_block() {
 		&network,
 		&block,
 		&monitors,
+		None,
 		&filter_service,
 		&mut shutdown_rx,
 	)
@@ -528,6 +576,7 @@ async fn test_process_block_with_shutdown() {
 		&network,
 		&block,
 		&monitors,
+		None,
 		&filter_service,
 		&mut shutdown_rx,
 	)
@@ -549,16 +598,17 @@ async fn test_load_scripts() {
 		.unwrap();
 
 	// Create test monitors with real trigger conditions
-	let monitors = vec![Monitor {
-		name: "test_monitor".to_string(),
-		trigger_conditions: vec![TriggerConditions {
-			script_path: script_path.to_str().unwrap().to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		}],
-		..Default::default()
-	}];
+
+	let monitor = MonitorBuilder::new()
+		.name("test_monitor")
+		.networks(vec!["evm_mainnet".to_string()])
+		.trigger_condition(
+			script_path.to_str().unwrap(),
+			1000,
+			ScriptLanguage::Python,
+			None,
+		)
+		.build();
 
 	// Create actual TriggerExecutionService instance
 	let trigger_service = setup_trigger_service(HashMap::new());
@@ -568,7 +618,7 @@ async fn test_load_scripts() {
 
 	// Test loading scripts
 	let scripts = trigger_execution_service
-		.load_scripts(&monitors)
+		.load_scripts(&[monitor])
 		.await
 		.unwrap();
 
@@ -589,16 +639,10 @@ async fn test_load_scripts() {
 #[tokio::test]
 async fn test_load_scripts_error() {
 	// Create test monitors with non-existent script path
-	let monitors = vec![Monitor {
-		name: "test_monitor".to_string(),
-		trigger_conditions: vec![TriggerConditions {
-			script_path: "non_existent_script.py".to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		}],
-		..Default::default()
-	}];
+	let monitors = vec![MonitorBuilder::new()
+		.name("test_monitor")
+		.trigger_condition("non_existent_script.py", 1000, ScriptLanguage::Python, None)
+		.build()];
 
 	// Create actual TriggerExecutionService instance
 	let trigger_service = setup_trigger_service(HashMap::new());
@@ -616,11 +660,7 @@ async fn test_load_scripts_error() {
 #[tokio::test]
 async fn test_load_scripts_empty_conditions() {
 	// Create test monitors with empty trigger conditions
-	let monitors = vec![Monitor {
-		name: "test_monitor".to_string(),
-		trigger_conditions: vec![], // Empty trigger conditions
-		..Default::default()
-	}];
+	let monitors = vec![MonitorBuilder::new().name("test_monitor").build()];
 
 	// Create actual TriggerExecutionService instance
 	let trigger_service = setup_trigger_service(HashMap::new());
@@ -654,29 +694,27 @@ async fn test_load_scripts_for_custom_triggers_notifications() {
 		.await
 		.unwrap();
 
-	let monitors = vec![Monitor {
-		name: "test_monitor".to_string(),
-		trigger_conditions: vec![TriggerConditions {
-			script_path: script_path.to_str().unwrap().to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		}],
-		triggers: vec!["custom_trigger".to_string()],
-		..Default::default()
-	}];
+	let monitors = vec![MonitorBuilder::new()
+		.name("test_monitor")
+		.trigger_condition(
+			script_path.to_str().unwrap(),
+			1000,
+			ScriptLanguage::Python,
+			None,
+		)
+		.triggers(vec!["custom_trigger".to_string()])
+		.build()];
 
 	let mut mocked_triggers = HashMap::new();
-	let custom_trigger = Trigger {
-		name: "custom_trigger".to_string(),
-		trigger_type: TriggerType::Script,
-		config: TriggerTypeConfig::Script {
-			script_path: script_trigger_path.to_str().unwrap().to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		},
-	};
+
+	let custom_trigger = TriggerBuilder::new()
+		.name("custom_trigger")
+		.script(
+			script_trigger_path.to_str().unwrap(),
+			ScriptLanguage::Python,
+		)
+		.build();
+
 	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
 
 	// Set up mock repository
@@ -723,29 +761,22 @@ async fn test_load_scripts_for_custom_triggers_notifications_error() {
 		.await
 		.unwrap();
 
-	let monitors = vec![Monitor {
-		name: "test_monitor".to_string(),
-		trigger_conditions: vec![TriggerConditions {
-			script_path: script_path.to_str().unwrap().to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		}],
-		triggers: vec!["custom_trigger".to_string()],
-		..Default::default()
-	}];
+	let monitors = vec![MonitorBuilder::new()
+		.name("test_monitor")
+		.trigger_condition(
+			script_path.to_str().unwrap(),
+			1000,
+			ScriptLanguage::Python,
+			None,
+		)
+		.triggers(vec!["custom_trigger".to_string()])
+		.build()];
 
 	let mut mocked_triggers = HashMap::new();
-	let custom_trigger = Trigger {
-		name: "custom_trigger".to_string(),
-		trigger_type: TriggerType::Script,
-		config: TriggerTypeConfig::Script {
-			script_path: "non_existent_script.py".to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		},
-	};
+	let custom_trigger = TriggerBuilder::new()
+		.name("custom_trigger")
+		.script("non_existent_script.py", ScriptLanguage::Python)
+		.build();
 	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
 
 	// Set up mock repository
@@ -775,29 +806,22 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 		.await
 		.unwrap();
 
-	let monitors = vec![Monitor {
-		name: "test_monitor".to_string(),
-		trigger_conditions: vec![TriggerConditions {
-			script_path: script_path.to_str().unwrap().to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		}],
-		triggers: vec!["custom_trigger_not_found".to_string()],
-		..Default::default()
-	}];
+	let monitors = vec![MonitorBuilder::new()
+		.name("test_monitor")
+		.trigger_condition(
+			script_path.to_str().unwrap(),
+			1000,
+			ScriptLanguage::Python,
+			None,
+		)
+		.triggers(vec!["custom_trigger_not_found".to_string()])
+		.build()];
 
 	let mut mocked_triggers = HashMap::new();
-	let custom_trigger = Trigger {
-		name: "custom_trigger_not_found".to_string(),
-		trigger_type: TriggerType::Script,
-		config: TriggerTypeConfig::Script {
-			script_path: script_path.to_str().unwrap().to_string(),
-			language: ScriptLanguage::Python,
-			timeout_ms: 1000,
-			arguments: None,
-		},
-	};
+	let custom_trigger = TriggerBuilder::new()
+		.name("custom_trigger_not_found")
+		.script(script_path.to_str().unwrap(), ScriptLanguage::Python)
+		.build();
 	mocked_triggers.insert("custom_trigger".to_string(), custom_trigger.clone());
 
 	// Set up mock repository
@@ -827,7 +851,15 @@ async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 	let mock = server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(500)
 		.create_async()
@@ -836,50 +868,31 @@ async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 
 	mocked_triggers.insert(
 		"example_trigger_slack".to_string(),
-		Trigger {
-			name: "test_trigger".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: server.url(),
-				message: openzeppelin_monitor::models::NotificationMessage {
-					title: "Test Alert".to_string(),
-					body: "Test message with value ${value}".to_string(),
-				},
-			},
-		},
+		TriggerBuilder::new()
+			.name("test_trigger")
+			.slack(&server.url())
+			.message("Test Alert", "Test message with value ${value}")
+			.build(),
 	);
 	mocked_triggers.insert(
 		"example_trigger_webhook".to_string(),
-		Trigger {
-			name: "example_trigger_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url:
-					"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
-						.to_string(),
-				method: Some("POST".to_string()),
-				secret: Some("secret".to_string()),
-				headers: Some(HashMap::new()),
-				message: NotificationMessage {
-					title: "Test Title".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		},
+		TriggerBuilder::new()
+			.name("example_trigger_webhook")
+			.webhook(
+				"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX", //noboost
+			)
+			.webhook_secret(SecretValue::Plain(SecretString::new("secret".to_string())))
+			.webhook_method("POST")
+			.message("Test Title", "Test Body")
+			.build(),
 	);
 	let script_path = "tests/integration/fixtures/evm/triggers/scripts/custom_notification.py";
 	mocked_triggers.insert(
 		"example_trigger_script".to_string(),
-		Trigger {
-			name: "example_trigger_script".to_string(),
-			trigger_type: TriggerType::Script,
-			config: TriggerTypeConfig::Script {
-				script_path: script_path.to_string(),
-				language: ScriptLanguage::Python,
-				timeout_ms: 1000,
-				arguments: None,
-			},
-		},
+		TriggerBuilder::new()
+			.name("example_trigger_script")
+			.script(script_path, ScriptLanguage::Python)
+			.build(),
 	);
 	let mock_trigger_service = setup_trigger_service(mocked_triggers);
 	let notification_service = NotificationService::new();
@@ -921,7 +934,15 @@ async fn test_trigger_execution_service_execute_multiple_triggers_success() {
 	let slack_mock = slack_server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(200)
 		.create_async()
@@ -940,36 +961,24 @@ async fn test_trigger_execution_service_execute_multiple_triggers_success() {
 	// Add Slack trigger
 	mocked_triggers.insert(
 		"example_trigger_slack".to_string(),
-		Trigger {
-			name: "test_trigger".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: slack_server.url(),
-				message: openzeppelin_monitor::models::NotificationMessage {
-					title: "Test Alert".to_string(),
-					body: "Test message with value ${value}".to_string(),
-				},
-			},
-		},
+		TriggerBuilder::new()
+			.name("test_trigger")
+			.slack(&slack_server.url())
+			.message("Test Alert", "Test message with value ${value}")
+			.build(),
 	);
 
 	// Add Webhook trigger
 	mocked_triggers.insert(
 		"example_trigger_webhook".to_string(),
-		Trigger {
-			name: "example_trigger_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: webhook_server.url(),
-				method: Some("POST".to_string()),
-				secret: Some("secret".to_string()),
-				headers: Some(HashMap::new()),
-				message: NotificationMessage {
-					title: "Test Title".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		},
+		TriggerBuilder::new()
+			.name("example_trigger_webhook")
+			.webhook(&webhook_server.url())
+			.webhook_headers(HashMap::new())
+			.webhook_secret(SecretValue::Plain(SecretString::new("secret".to_string())))
+			.webhook_method("POST")
+			.message("Test Title", "Test Body")
+			.build(),
 	);
 
 	let mock_trigger_service = setup_trigger_service(mocked_triggers);
@@ -1006,7 +1015,15 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 	let slack_mock = slack_server
 		.mock("POST", "/")
 		.match_body(mockito::Matcher::Json(json!({
-			"text": "*Test Alert*\n\nTest message with value 42"
+			"blocks": [
+				{
+					"type": "section",
+					"text": {
+						"type": "mrkdwn",
+						"text": "*Test Alert*\n\nTest message with value 42"
+					}
+				}
+			]
 		})))
 		.with_status(500)
 		.create_async()
@@ -1025,36 +1042,24 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 	// Add Slack trigger
 	mocked_triggers.insert(
 		"example_trigger_slack".to_string(),
-		Trigger {
-			name: "test_trigger".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: slack_server.url(),
-				message: openzeppelin_monitor::models::NotificationMessage {
-					title: "Test Alert".to_string(),
-					body: "Test message with value ${value}".to_string(),
-				},
-			},
-		},
+		TriggerBuilder::new()
+			.name("test_trigger")
+			.slack(&slack_server.url())
+			.message("Test Alert", "Test message with value ${value}")
+			.build(),
 	);
 
 	// Add Webhook trigger
 	mocked_triggers.insert(
 		"example_trigger_webhook".to_string(),
-		Trigger {
-			name: "example_trigger_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: webhook_server.url(),
-				method: Some("POST".to_string()),
-				secret: Some("secret".to_string()),
-				headers: Some(HashMap::new()),
-				message: NotificationMessage {
-					title: "Test Title".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		},
+		TriggerBuilder::new()
+			.name("example_trigger_webhook")
+			.webhook(&webhook_server.url())
+			.webhook_headers(HashMap::new())
+			.webhook_secret(SecretValue::Plain(SecretString::new("secret".to_string())))
+			.webhook_method("POST")
+			.message("Test Title", "Test Body")
+			.build(),
 	);
 
 	let mock_trigger_service = setup_trigger_service(mocked_triggers);
@@ -1088,4 +1093,171 @@ async fn test_trigger_execution_service_execute_multiple_triggers_partial_succes
 	// Verify that both mock servers received their expected calls
 	slack_mock.assert();
 	webhook_mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_contract_specs() {
+	// Test EVM contract specs
+	let mock_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	// Create a mock client pool that returns a successful client
+	let mut mock_pool = MockClientPool::new();
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+	let client_pool = Arc::new(mock_pool);
+
+	// Create a monitor with EVM contract specs
+	let mut monitor = create_test_monitor("test", vec!["ethereum_mainnet"], false, vec![]);
+	monitor.addresses.push(AddressWithSpec {
+		address: "0x1234567890123456789012345678901234567890".to_string(),
+		contract_spec: Some(ContractSpec::EVM(EVMContractSpec::from(
+			serde_json::json!([{
+				"type": "function",
+				"name": "transfer",
+				"inputs": [
+					{
+						"name": "to",
+						"type": "address",
+						"internalType": "address"
+					},
+					{
+						"name": "amount",
+						"type": "uint256",
+						"internalType": "uint256"
+					}
+				],
+				"outputs": [
+					{
+						"name": "",
+						"type": "bool",
+						"internalType": "bool"
+					}
+				],
+				"stateMutability": "nonpayable"
+			}]),
+		))),
+	});
+
+	monitor.addresses.push(AddressWithSpec {
+		address: "0x1234567890123456789012345678901234567890".to_string(),
+		contract_spec: None,
+	});
+
+	let monitors = vec![monitor];
+
+	// Create a vector of networks with their associated monitors
+	let network_monitors = vec![(network, monitors)];
+
+	// Fetch all contract specs for all active monitors
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	// Verify EVM specs and second spec is not added
+	assert_eq!(contract_specs.len(), 1);
+
+	let (addr, spec) = &contract_specs[0];
+	assert_eq!(addr, "0x1234567890123456789012345678901234567890");
+	match spec {
+		ContractSpec::EVM(evm_spec) => {
+			let functions: Vec<_> = evm_spec.functions().collect();
+			assert_eq!(functions.len(), 1);
+			assert_eq!(functions[0].name, "transfer");
+			assert_eq!(functions[0].inputs.len(), 2);
+			assert_eq!(functions[0].inputs[0].name, "to");
+			assert_eq!(functions[0].inputs[0].ty, "address");
+			assert_eq!(functions[0].inputs[1].name, "amount");
+			assert_eq!(functions[0].inputs[1].ty, "uint256");
+		}
+		_ => panic!("Expected EVM contract spec"),
+	}
+
+	// Test Stellar contract specs
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let network = create_test_network("Stellar", "stellar_mainnet", BlockChainType::Stellar);
+
+	// Mock the get_contract_spec response for the address without a spec
+	mock_client
+		.expect_get_contract_spec()
+		.withf(|addr| addr == "GZYXWVUTSRQPONMLKJIHGFEDCBA0987654321")
+		.times(1)
+		.returning(|_| {
+			Ok(ContractSpec::Stellar(StellarContractSpec::from(vec![
+				ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
+					doc: StringM::<1024>::from_str("").unwrap(),
+					name: ScSymbol(StringM::<32>::from_str("balance").unwrap()),
+					inputs: vec![].try_into().unwrap(),
+					outputs: vec![ScSpecTypeDef::I128].try_into().unwrap(),
+				}),
+			])))
+		});
+
+	// Create a mock client pool that returns a successful client
+	let mut mock_pool = MockClientPool::new();
+	mock_pool
+		.expect_get_stellar_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+	let client_pool = Arc::new(mock_pool);
+
+	// Create a monitor with Stellar contract specs
+	let mut stellar_monitor =
+		create_test_monitor("test_stellar", vec!["stellar_mainnet"], false, vec![]);
+
+	// Remove default ZERO address
+	stellar_monitor.addresses = vec![];
+
+	stellar_monitor.addresses.push(AddressWithSpec {
+		address: "GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890".to_string(),
+		contract_spec: Some(ContractSpec::Stellar(StellarContractSpec::from(vec![
+			ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
+				doc: StringM::<1024>::from_str("").unwrap(),
+				name: ScSymbol(StringM::<32>::from_str("transfer").unwrap()),
+				inputs: vec![
+					ScSpecFunctionInputV0 {
+						doc: StringM::<1024>::from_str("").unwrap(),
+						name: StringM::<30>::from_str("to").unwrap(),
+						type_: ScSpecTypeDef::String,
+					},
+					ScSpecFunctionInputV0 {
+						doc: StringM::<1024>::from_str("").unwrap(),
+						name: StringM::<30>::from_str("amount").unwrap(),
+						type_: ScSpecTypeDef::I128,
+					},
+				]
+				.try_into()
+				.unwrap(),
+				outputs: vec![ScSpecTypeDef::Bool].try_into().unwrap(),
+			}),
+		]) as StellarContractSpec)),
+	});
+
+	// Add an address without a contract spec to test fetching from chain
+	stellar_monitor.addresses.push(AddressWithSpec {
+		address: "GZYXWVUTSRQPONMLKJIHGFEDCBA0987654321".to_string(),
+		contract_spec: None,
+	});
+
+	let network_monitors = vec![(network, vec![stellar_monitor])];
+
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	// Verify Stellar specs
+	assert_eq!(contract_specs.len(), 2);
+	let (addr, spec) = &contract_specs[0];
+	assert!(are_same_address(
+		addr,
+		"GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+	));
+	match spec {
+		ContractSpec::Stellar(stellar_spec) => {
+			let formatted_spec = StellarFormattedContractSpec::from(stellar_spec.clone());
+			assert_eq!(formatted_spec.functions.len(), 1);
+			let function = &formatted_spec.functions[0];
+			assert_eq!(function.name, "transfer");
+			assert_eq!(function.inputs.len(), 2);
+			assert_eq!(function.inputs[0].name, "to");
+			assert_eq!(function.inputs[1].name, "amount");
+		}
+		_ => panic!("Expected Stellar contract spec"),
+	}
 }

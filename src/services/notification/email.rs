@@ -19,6 +19,7 @@ use crate::{
 	models::TriggerTypeConfig,
 	services::notification::{NotificationError, Notifier},
 };
+use pulldown_cmark::{html, Options, Parser};
 
 /// Implementation of email notifications via SMTP
 pub struct EmailNotifier<T: Transport + Send + Sync> {
@@ -109,19 +110,32 @@ impl EmailNotifier<SmtpTransport> {
 		})
 	}
 
-	/// Formats a message by substituting variables in the template
+	/// Formats a message by substituting variables in the template and converts it to HTML
 	///
 	/// # Arguments
 	/// * `variables` - Map of variable names to values
 	///
 	/// # Returns
-	/// * `String` - Formatted message with variables replaced
+	/// * `String` - Formatted message with variables replaced and converted to HTML
 	pub fn format_message(&self, variables: &HashMap<String, String>) -> String {
-		variables
+		let formatted_message = variables
 			.iter()
 			.fold(self.body_template.clone(), |message, (key, value)| {
 				message.replace(&format!("${{{}}}", key), value)
-			})
+			});
+
+		Self::markdown_to_html(&formatted_message)
+	}
+
+	/// Convert a Markdown string into HTML
+	pub fn markdown_to_html(md: &str) -> String {
+		// enable all the extensions you like; or just Parser::new(md) for pure CommonMark
+		let opts = Options::all();
+		let parser = Parser::new_ext(md, opts);
+
+		let mut html_out = String::new();
+		html::push_html(&mut html_out, parser);
+		html_out
 	}
 
 	/// Creates an email notifier from a trigger configuration
@@ -145,8 +159,8 @@ impl EmailNotifier<SmtpTransport> {
 				let smtp_config = SmtpConfig {
 					host: host.clone(),
 					port: port.unwrap_or(465),
-					username: username.clone(),
-					password: password.clone(),
+					username: username.as_ref().to_string(),
+					password: password.as_ref().to_string(),
 				};
 
 				let email_content = EmailContent {
@@ -203,7 +217,7 @@ where
 					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
 			)
 			.subject(&self.subject)
-			.header(ContentType::TEXT_PLAIN)
+			.header(ContentType::TEXT_HTML)
 			.body(message.to_owned())
 			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
@@ -217,7 +231,7 @@ where
 
 #[cfg(test)]
 mod tests {
-	use crate::models::NotificationMessage;
+	use crate::models::{NotificationMessage, SecretString, SecretValue};
 
 	use super::*;
 
@@ -243,8 +257,8 @@ mod tests {
 		TriggerTypeConfig::Email {
 			host: "smtp.test.com".to_string(),
 			port,
-			username: "testuser".to_string(),
-			password: "testpass".to_string(),
+			username: SecretValue::Plain(SecretString::new("testuser".to_string())),
+			password: SecretValue::Plain(SecretString::new("testpass".to_string())),
 			message: NotificationMessage {
 				title: "Test Subject".to_string(),
 				body: "Hello ${name}".to_string(),
@@ -266,7 +280,8 @@ mod tests {
 		variables.insert("balance".to_string(), "100".to_string());
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello Alice, your balance is 100");
+		let expected_result = "<p>Hello Alice, your balance is 100</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	#[test]
@@ -276,7 +291,8 @@ mod tests {
 		variables.insert("name".to_string(), "Bob".to_string());
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello Bob, your balance is ${balance}");
+		let expected_result = "<p>Hello Bob, your balance is ${balance}</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	#[test]
@@ -285,7 +301,8 @@ mod tests {
 		let variables = HashMap::new();
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello ${name}, your balance is ${balance}");
+		let expected_result = "<p>Hello ${name}, your balance is ${balance}</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	#[test]
@@ -296,7 +313,8 @@ mod tests {
 		variables.insert("balance".to_string(), "".to_string());
 
 		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Hello , your balance is ");
+		let expected_result = "<p>Hello , your balance is</p>\n";
+		assert_eq!(result, expected_result);
 	}
 
 	////////////////////////////////////////////////////////////

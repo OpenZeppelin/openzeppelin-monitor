@@ -17,6 +17,7 @@ The main source code directory contains the core implementation files organized 
 *** `stellar/`: Stellar blockchain specific types
 ** `config/`: Configuration loading and validation
 ** `core/`: Core domain models
+** `security/`: Security and secret management
 
 * `repositories/`: Configuration storage
 ** Handles loading and validating configuration files
@@ -45,8 +46,13 @@ The main source code directory contains the core implementation files organized 
 ** `cron_utils`: Cron schedule utilities
 ** `expression`: Expression evaluation
 ** `logging/`: Logging utilities
+** `macros/`: Macros for common functionality
 ** `metrics/`: Metrics utilities
 ** `monitor/`: Monitor configuration test utilities
+** `tests/`: Contains test utilities and helper functions
+*** `builders/`: Test builder patterns implementing fluent interfaces for creating test fixtures
+**** `evm/`: Builder implementations specific to Ethereum Virtual Machine (EVM) testing
+**** `stellar/`: Builder implementations specific to Stellar blockchain testing
 
 == Configuration and Data
 

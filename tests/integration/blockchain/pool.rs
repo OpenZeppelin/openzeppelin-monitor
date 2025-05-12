@@ -1,9 +1,10 @@
 use openzeppelin_monitor::{
-	models::{BlockChainType, Network, RpcUrl},
+	models::BlockChainType,
 	services::blockchain::{
 		ClientPool, ClientPoolTrait, EVMTransportClient, EvmClient, MidnightClient,
 		MidnightTransportClient, StellarClient, StellarTransportClient,
 	},
+	utils::tests::network::NetworkBuilder,
 };
 
 use std::sync::Arc;
@@ -156,23 +157,12 @@ async fn test_different_evm_networks_get_different_clients() {
 	let mock_2 = create_evm_valid_server_mock_network_response(&mut mock_server_2);
 
 	let network1 = create_evm_test_network_with_urls(vec![&mock_server.url()]);
-	let network2 = Network {
-		name: "test-2".to_string(),
-		slug: "test-2".to_string(),
-		network_type: BlockChainType::EVM,
-		rpc_urls: vec![RpcUrl {
-			url: mock_server_2.url(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: None,
-		network_passphrase: None,
-		block_time_ms: 5000,
-		max_past_blocks: None,
-	};
+	let network2 = NetworkBuilder::new()
+		.name("test-2")
+		.slug("test-2")
+		.network_type(BlockChainType::EVM)
+		.rpc_urls(vec![&mock_server_2.url()])
+		.build();
 
 	let client1 = pool.get_evm_client(&network1).await.unwrap();
 	let client2 = pool.get_evm_client(&network2).await.unwrap();
@@ -200,23 +190,12 @@ async fn test_different_stellar_networks_get_different_clients() {
 	let mock_2 = create_stellar_valid_server_mock_network_response(&mut mock_server_2);
 
 	let network1 = create_stellar_test_network_with_urls(vec![&mock_server.url()]);
-	let network2 = Network {
-		name: "test-2".to_string(),
-		slug: "test-2".to_string(),
-		network_type: BlockChainType::EVM,
-		rpc_urls: vec![RpcUrl {
-			url: mock_server_2.url(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: None,
-		network_passphrase: None,
-		block_time_ms: 5000,
-		max_past_blocks: None,
-	};
+	let network2 = NetworkBuilder::new()
+		.name("test-2")
+		.slug("test-2")
+		.network_type(BlockChainType::EVM)
+		.rpc_urls(vec![&mock_server_2.url()])
+		.build();
 
 	let client1 = pool.get_stellar_client(&network1).await.unwrap();
 	let client2 = pool.get_stellar_client(&network2).await.unwrap();
@@ -244,23 +223,12 @@ async fn test_different_midnight_networks_get_different_clients() {
 	let mock_2 = create_midnight_valid_server_mock_network_response(&mut mock_server_2);
 
 	let network1 = create_midnight_test_network_with_urls(vec![&mock_server.url()]);
-	let network2 = Network {
-		name: "test-2".to_string(),
-		slug: "test-2".to_string(),
-		network_type: BlockChainType::EVM,
-		rpc_urls: vec![RpcUrl {
-			url: mock_server_2.url(),
-			type_: "rpc".to_string(),
-			weight: 100,
-		}],
-		cron_schedule: "*/5 * * * * *".to_string(),
-		confirmation_blocks: 1,
-		store_blocks: Some(false),
-		chain_id: None,
-		network_passphrase: None,
-		block_time_ms: 5000,
-		max_past_blocks: None,
-	};
+	let network2 = NetworkBuilder::new()
+		.name("test-2")
+		.slug("test-2")
+		.network_type(BlockChainType::EVM)
+		.rpc_urls(vec![&mock_server_2.url()])
+		.build();
 
 	let client1 = pool.get_midnight_client(&network1).await.unwrap();
 	let client2 = pool.get_midnight_client(&network2).await.unwrap();

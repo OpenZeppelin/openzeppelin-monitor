@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://sepolia.optimism.io",
+      "url": {
+        "type": "plain",
+        "value": "https://sepolia.optimism.io"
+      },
       "weight": 100
     }
   ],

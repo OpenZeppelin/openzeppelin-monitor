@@ -5,6 +5,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use async_trait::async_trait;
 use std::path::Path;
 
 mod error;
@@ -14,21 +15,27 @@ mod trigger_config;
 
 pub use error::ConfigError;
 /// Common interface for loading configuration files
+#[async_trait]
 pub trait ConfigLoader: Sized {
 	/// Load all configuration files from a directory
 	///
 	/// If no path is provided, uses the default config directory.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, error::ConfigError>
+	async fn load_all<T>(path: Option<&Path>) -> Result<T, error::ConfigError>
 	where
 		T: FromIterator<(String, Self)>;
 
 	/// Load configuration from a specific file path
-	fn load_from_path(path: &Path) -> Result<Self, error::ConfigError>;
+	async fn load_from_path(path: &Path) -> Result<Self, error::ConfigError>;
 
 	/// Validate the configuration
 	///
 	/// Returns Ok(()) if valid, or an error message if invalid.
 	fn validate(&self) -> Result<(), error::ConfigError>;
+
+	/// Validate safety of the protocol
+	///
+	/// Returns if safe, or logs a warning message if unsafe.
+	fn validate_protocol(&self);
 
 	/// Check if a file is a JSON file based on extension
 	fn is_json_file(path: &Path) -> bool {
@@ -36,4 +43,7 @@ pub trait ConfigLoader: Sized {
 			.map(|ext| ext.to_string_lossy().to_lowercase() == "json")
 			.unwrap_or(false)
 	}
+
+	/// Resolve all secrets in the configuration
+	async fn resolve_secrets(&self) -> Result<Self, ConfigError>;
 }

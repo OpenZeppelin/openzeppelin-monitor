@@ -96,8 +96,9 @@ proptest! {
 
 		let empty_vars = HashMap::new();
 		let formatted = notifier.format_message(&empty_vars);
+		let escaped = TelegramNotifier::escape_markdown_v2(&template);
 
 		// Template should remain unchanged when no variables are provided
-		prop_assert_eq!(formatted, format!("*Test* \n\n{}", template));
+		prop_assert_eq!(formatted, format!("*Test* \n\n{}", escaped));
 	}
 }

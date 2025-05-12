@@ -1,7 +1,7 @@
 use crate::properties::strategies::network_strategy;
 
 use openzeppelin_monitor::{
-	models::ConfigLoader,
+	models::{ConfigLoader, SecretString, SecretValue},
 	repositories::{NetworkRepository, NetworkRepositoryTrait},
 };
 use proptest::{prelude::*, test_runner::Config};
@@ -93,7 +93,7 @@ proptest! {
 			prop_assert!(invalid_network.validate().is_err());
 
 			invalid_network = network.clone();
-			invalid_network.rpc_urls[0].url = "invalid-url".to_string(); // Invalid RPC URL
+			invalid_network.rpc_urls[0].url = SecretValue::Plain(SecretString::new("invalid-url".to_string())); // Invalid RPC URL
 			prop_assert!(invalid_network.validate().is_err());
 
 			invalid_network = network.clone();

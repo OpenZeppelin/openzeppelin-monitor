@@ -4,12 +4,12 @@
 //! <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs>
 
 use alloy::hex::ToHexExt;
-use midnight_ledger::structure::{Proofish, TransactionIdentifier};
+use midnight_ledger::{
+	storage::db::DB,
+	structure::{ContractAction, Proofish, Transaction as MidnightTx, TransactionIdentifier},
+};
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
-
-// TODO: This import and transaction type might change in the future
-use midnight_node_ledger_helpers::{ContractAction, Tx};
 
 /// Represents a Midnight RPC transaction Enum
 ///
@@ -92,8 +92,8 @@ impl From<MidnightRpcTransaction> for Transaction {
 	}
 }
 
-impl<P: Proofish> From<ContractAction<P>> for Operation {
-	fn from(action: ContractAction<P>) -> Self {
+impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
+	fn from(action: ContractAction<P, D>) -> Self {
 		match action {
 			ContractAction::Call(call) => Operation::Call {
 				address: call.address.0 .0.encode_hex(),
@@ -109,10 +109,11 @@ impl<P: Proofish> From<ContractAction<P>> for Operation {
 	}
 }
 
-impl From<Tx> for Transaction {
-	fn from(tx: Tx) -> Self {
+impl<P: Proofish<D>, D: DB> From<MidnightTx<P, D>> for Transaction {
+	fn from(tx: MidnightTx<P, D>) -> Self {
 		// Get hash and identifiers before moving tx
-		let tx_hash = tx.transaction_hash().0 .0.encode_hex();
+		// TODO: Implement this correctly
+		let tx_hash = "0x0".to_string(); // &tx.transaction_hash().0 .0.encode_hex();
 
 		let identifiers = tx
 			.identifiers()
@@ -123,7 +124,7 @@ impl From<Tx> for Transaction {
 			.collect();
 
 		let operations = match tx {
-			Tx::Standard(stx) => {
+			MidnightTx::Standard(stx) => {
 				let mut ops = Vec::new();
 				// Add guaranteed coins operation
 				ops.push(Operation::GuaranteedCoins);
@@ -139,7 +140,7 @@ impl From<Tx> for Transaction {
 				}
 				ops
 			}
-			Tx::ClaimMint(mtx) => {
+			MidnightTx::ClaimMint(mtx) => {
 				vec![Operation::ClaimMint {
 					value: mtx.mint.coin.value,
 					coin_type: mtx.mint.coin.type_.0 .0.encode_hex(),

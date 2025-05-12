@@ -7,7 +7,7 @@
   "addresses": [
     {
       "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      "abi": [
+      "contract_spec": [
         {
           "anonymous": false,
           "inputs": [
@@ -1395,6 +1395,31 @@
           "type": "function"
         }
       ]
+    },
+    {
+      "address": "0xf18206B2289CF6CE15CDDBee9C6f6a0F059EfB56",
+      "contract_spec": [
+        {
+          "inputs": [],
+          "name": "increment",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "retrieve",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        }
+      ]
     }
   ],
   "match_conditions": {
@@ -1402,6 +1427,10 @@
       {
         "signature": "transfer(address, uint256)",
         "expression": "value > 0"
+      },
+      {
+        "signature": "increment()",
+        "expression": null
       }
     ],
     "events": [

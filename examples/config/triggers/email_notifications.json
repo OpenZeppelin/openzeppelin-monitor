@@ -5,11 +5,42 @@
         "config": {
             "host": "smtp.gmail.com",
             "port": 465,
-            "username": "your_email@gmail.com",
-            "password": "your_password",
+            "username": {
+                "type": "plain",
+                "value": "your_email@gmail.com"
+            },
+            "password": {
+                "type": "plain",
+                "value": "your_password"
+            },
             "message": {
                 "title": "large_transfer_usdc_email triggered",
-                "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+                "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
+            },
+            "sender": "your_email@gmail.com",
+            "recipients": [
+                "recipient1@example.com",
+                "recipient2@example.com"
+            ]
+        }
+    },
+    "evm_large_transfer_usdc_email_markdown": {
+        "name": "Large Transfer Email Notification",
+        "trigger_type": "email",
+        "config": {
+            "host": "smtp.gmail.com",
+            "port": 465,
+            "username": {
+                "type": "plain",
+                "value": "your_email@gmail.com"
+            },
+            "password": {
+                "type": "plain",
+                "value": "your_password"
+            },
+            "message": {
+                "title": "large_transfer_usdc_email triggered",
+                "body": "## Large Transfer Alert\n\n**Amount:** ${events.0.args.value} USDC\n\n**From:** ${events.0.args.from}\n\n**To:** ${events.0.args.to}\n\n[View transaction on Etherscan](https://etherscan.io/tx/${transaction.hash}#eventlog)"
             },
             "sender": "your_email@gmail.com",
             "recipients": [

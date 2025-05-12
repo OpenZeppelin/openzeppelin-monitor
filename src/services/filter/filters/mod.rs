@@ -24,7 +24,7 @@ pub mod midnight {
 use async_trait::async_trait;
 
 use crate::{
-	models::{BlockType, Monitor, MonitorMatch, Network},
+	models::{BlockType, ContractSpec, Monitor, MonitorMatch, Network},
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
 pub use evm::filter::EVMBlockFilter;
@@ -44,6 +44,7 @@ pub trait BlockFilter {
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
+		contract_specs: Option<&[(String, ContractSpec)]>,
 	) -> Result<Vec<MonitorMatch>, FilterError>;
 }
 
@@ -71,8 +72,11 @@ impl FilterService {
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
+		contract_specs: Option<&[(String, ContractSpec)]>,
 	) -> Result<Vec<MonitorMatch>, FilterError> {
 		let filter = T::filter();
-		filter.filter_block(client, network, block, monitors).await
+		filter
+			.filter_block(client, network, block, monitors, contract_specs)
+			.await
 	}
 }

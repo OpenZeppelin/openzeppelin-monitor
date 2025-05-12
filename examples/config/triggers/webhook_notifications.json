@@ -3,15 +3,43 @@
     "name": "Large Transfer Webhook Notification",
     "trigger_type": "webhook",
     "config": {
-      "url": "https://webhook.site/123-456-789",
+      "url": {
+        "type": "plain",
+        "value": "https://webhook.site/123-456-789"
+      },
       "method": "POST",
-      "secret": "some-secret",
+      "secret": {
+        "type": "plain",
+        "value": "some-secret"
+      },
       "headers": {
         "Content-Type": "application/json"
       },
       "message": {
         "title": "large_transfer_webhook triggered",
-        "body": "Large transfer of ${event_0_value} USDC from ${event_0_from} to ${event_0_to} | https://etherscan.io/tx/${transaction_hash}#eventlog"
+        "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
+      }
+    }
+  },
+  "evm_large_transfer_usdc_webhook_markdown": {
+    "name": "Large Transfer Webhook Notification",
+    "trigger_type": "webhook",
+    "config": {
+      "url": {
+        "type": "plain",
+        "value": "https://webhook.site/123-456-789"
+      },
+      "method": "POST",
+      "secret": {
+        "type": "plain",
+        "value": "some-secret"
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "message": {
+        "title": "large_transfer_webhook triggered",
+        "body": "# USDC Transfer Alert\n\n**Large transfer detected**\n\n- **Amount:** ${events.0.args.value} USDC\n- **From:** `${events.0.args.from}`\n- **To:** `${events.0.args.to}`\n\n[View on Etherscan](https://etherscan.io/tx/${transaction.hash}#eventlog)"
       }
     }
   },
@@ -19,15 +47,21 @@
     "name": "Large Swap By Dex Webhook Notification",
     "trigger_type": "webhook",
     "config": {
-      "url": "https://webhook.site/123-456-789",
+      "url": {
+        "type": "plain",
+        "value": "https://webhook.site/123-456-789"
+      },
       "method": "POST",
-      "secret": "some-secret",
+      "secret": {
+        "type": "plain",
+        "value": "some-secret"
+      },
       "headers": {
         "Content-Type": "application/json"
       },
       "message": {
         "title": "large_swap_by_dex_webhook triggered",
-        "body": "${monitor_name} triggered because of a large swap of ${function_0_4} tokens | https://stellar.expert/explorer/public/tx/${transaction_hash}"
+        "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
   }

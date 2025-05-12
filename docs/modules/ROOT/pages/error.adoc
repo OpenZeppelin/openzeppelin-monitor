@@ -105,6 +105,13 @@ a|* `ValidationError` - Configuration validation failures
 * `FileError` - File system related errors
 * `Other` - Unclassified errors
 
+|Security
+|`SecurityError`
+a|* `ValidationError` - Security validation failures
+* `ParseError` - Security data parsing issues
+* `NetworkError` - Security service connectivity issues
+* `Other` - Unclassified security-related errors
+
 |Blockchain Service
 |`BlockChainError`
 a|* `ConnectionError` - Network connectivity issues

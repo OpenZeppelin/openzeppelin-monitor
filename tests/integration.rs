@@ -65,4 +65,8 @@ mod integration {
 	mod monitor {
 		mod execution;
 	}
+
+	mod security {
+		mod secret;
+	}
 }

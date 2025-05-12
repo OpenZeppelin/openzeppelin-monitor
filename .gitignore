@@ -37,7 +37,7 @@ tests/**/*.proptest-regressions
 coverage-*.profraw
 coverage-data/
 coverage/
-lcov.info*
+*-lcov.info
 
 # docs
 docs/build/

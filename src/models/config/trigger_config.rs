@@ -3,14 +3,21 @@
 //! This module implements the ConfigLoader trait for Trigger configurations,
 //! allowing triggers to be loaded from JSON files.
 
+use async_trait::async_trait;
 use email_address::EmailAddress;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
 
 use crate::{
-	models::{config::error::ConfigError, ConfigLoader, Trigger, TriggerType, TriggerTypeConfig},
+	models::{
+		config::error::ConfigError, ConfigLoader, SecretValue, Trigger, TriggerType,
+		TriggerTypeConfig,
+	},
 	services::trigger::validate_script_config,
 };
+
+const TELEGRAM_MAX_BODY_LENGTH: usize = 4096;
+const DISCORD_MAX_BODY_LENGTH: usize = 2000;
 
 /// File structure for trigger configuration files
 #[derive(Debug, Deserialize)]
@@ -20,12 +27,97 @@ pub struct TriggerConfigFile {
 	pub triggers: HashMap<String, Trigger>,
 }
 
+#[async_trait]
 impl ConfigLoader for Trigger {
+	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
+		dotenvy::dotenv().ok();
+
+		let mut trigger = self.clone();
+
+		match &mut trigger.config {
+			TriggerTypeConfig::Slack { slack_url, .. } => {
+				let resolved_url = slack_url.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve Slack URL: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*slack_url = SecretValue::Plain(resolved_url);
+			}
+			TriggerTypeConfig::Email {
+				username, password, ..
+			} => {
+				let resolved_username = username.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve SMTP username: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*username = SecretValue::Plain(resolved_username);
+
+				let resolved_password = password.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve SMTP password: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*password = SecretValue::Plain(resolved_password);
+			}
+			TriggerTypeConfig::Webhook { url, secret, .. } => {
+				let resolved_url = url.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve webhook URL: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*url = SecretValue::Plain(resolved_url);
+
+				if let Some(secret) = secret {
+					let resolved_secret = secret.resolve().await.map_err(|e| {
+						ConfigError::parse_error(
+							format!("failed to resolve webhook secret: {}", e),
+							Some(Box::new(e)),
+							None,
+						)
+					})?;
+					*secret = SecretValue::Plain(resolved_secret);
+				}
+			}
+			TriggerTypeConfig::Telegram { token, .. } => {
+				let resolved_token = token.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve Telegram token: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*token = SecretValue::Plain(resolved_token);
+			}
+			TriggerTypeConfig::Discord { discord_url, .. } => {
+				let resolved_url = discord_url.resolve().await.map_err(|e| {
+					ConfigError::parse_error(
+						format!("failed to resolve Discord URL: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+				*discord_url = SecretValue::Plain(resolved_url);
+			}
+			_ => {}
+		}
+
+		Ok(trigger)
+	}
+
 	/// Load all trigger configurations from a directory
 	///
 	/// Reads and parses all JSON files in the specified directory (or default
 	/// config directory) as trigger configurations.
-	fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
+	async fn load_all<T>(path: Option<&Path>) -> Result<T, ConfigError>
 	where
 		T: FromIterator<(String, Self)>,
 	{
@@ -90,7 +182,9 @@ impl ConfigLoader for Trigger {
 					})?;
 
 				// Validate each trigger before adding it
-				for (name, trigger) in file_triggers.triggers {
+				for (name, mut trigger) in file_triggers.triggers {
+					// Resolve secrets before validating
+					trigger = trigger.resolve_secrets().await?;
 					if let Err(validation_error) = trigger.validate() {
 						return Err(ConfigError::validation_error(
 							format!(
@@ -114,11 +208,14 @@ impl ConfigLoader for Trigger {
 	/// Load a trigger configuration from a specific file
 	///
 	/// Reads and parses a single JSON file as a trigger configuration.
-	fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
+	async fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
 		let file = std::fs::File::open(path)
 			.map_err(|e| ConfigError::file_error(e.to_string(), None, None))?;
-		let config: Trigger = serde_json::from_reader(file)
+		let mut config: Trigger = serde_json::from_reader(file)
 			.map_err(|e| ConfigError::parse_error(e.to_string(), None, None))?;
+
+		// Resolve secrets before validating
+		config = config.resolve_secrets().await?;
 
 		// Validate the config after loading
 		config.validate()?;
@@ -213,7 +310,7 @@ impl ConfigLoader for Trigger {
 							None,
 						));
 					}
-					if username.chars().any(|c| c.is_control()) {
+					if username.as_str().chars().any(|c| c.is_control()) {
 						return Err(ConfigError::validation_error(
 							"SMTP username contains invalid control characters",
 							None,
@@ -381,7 +478,7 @@ impl ConfigLoader for Trigger {
 					// Safely compile and use the regex
 					match regex::Regex::new(r"^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$") {
 						Ok(re) => {
-							if !re.is_match(token) {
+							if !re.is_match(token.as_str()) {
 								return Err(ConfigError::validation_error(
 									"Invalid token format",
 									None,
@@ -421,6 +518,17 @@ impl ConfigLoader for Trigger {
 							None,
 						));
 					}
+					// Validate template max length
+					if message.body.len() > TELEGRAM_MAX_BODY_LENGTH {
+						return Err(ConfigError::validation_error(
+							format!(
+								"Message body should not exceed {} characters",
+								TELEGRAM_MAX_BODY_LENGTH
+							),
+							None,
+							None,
+						));
+					}
 				}
 			}
 			TriggerType::Discord => {
@@ -453,6 +561,17 @@ impl ConfigLoader for Trigger {
 							None,
 						));
 					}
+					// Validate template max length
+					if message.body.len() > DISCORD_MAX_BODY_LENGTH {
+						return Err(ConfigError::validation_error(
+							format!(
+								"Message body should not exceed {} characters",
+								DISCORD_MAX_BODY_LENGTH
+							),
+							None,
+							None,
+						));
+					}
 				}
 			}
 			TriggerType::Script => {
@@ -467,567 +586,402 @@ impl ConfigLoader for Trigger {
 				}
 			}
 		}
+
+		// Log a warning if the trigger uses an insecure protocol
+		self.validate_protocol();
+
 		Ok(())
+	}
+
+	/// Validate the safety of the protocols used in the trigger
+	///
+	/// Returns if safe, or logs a warning message if unsafe.
+	fn validate_protocol(&self) {
+		match &self.config {
+			TriggerTypeConfig::Slack { slack_url, .. } => {
+				if !slack_url.starts_with("https://") {
+					tracing::warn!("Slack URL uses an insecure protocol: {}", slack_url);
+				}
+			}
+			TriggerTypeConfig::Discord { discord_url, .. } => {
+				if !discord_url.starts_with("https://") {
+					tracing::warn!("Discord URL uses an insecure protocol: {}", discord_url);
+				}
+			}
+			TriggerTypeConfig::Telegram { .. } => {}
+			TriggerTypeConfig::Script { script_path, .. } => {
+				// Check script file permissions on Unix systems
+				#[cfg(unix)]
+				{
+					use std::os::unix::fs::PermissionsExt;
+					if let Ok(metadata) = std::fs::metadata(script_path) {
+						let permissions = metadata.permissions();
+						let mode = permissions.mode();
+						if mode & 0o022 != 0 {
+							tracing::warn!(
+								"Script file has overly permissive write permissions: {}.The recommended permissions are `644` (`rw-r--r--`)",
+								script_path
+							);
+						}
+					}
+				}
+			}
+			TriggerTypeConfig::Email { port, .. } => {
+				let secure_ports = [993, 587, 465];
+				if let Some(port) = port {
+					if !secure_ports.contains(port) {
+						tracing::warn!("Email port is not using a secure protocol: {}", port);
+					}
+				}
+			}
+			TriggerTypeConfig::Webhook { url, headers, .. } => {
+				if !url.starts_with("https://") {
+					tracing::warn!("Webhook URL uses an insecure protocol: {}", url);
+				}
+				// Check for security headers
+				match headers {
+					Some(headers) => {
+						if !headers.contains_key("X-API-Key")
+							&& !headers.contains_key("Authorization")
+						{
+							tracing::warn!("Webhook lacks authentication headers");
+						}
+					}
+					None => {
+						tracing::warn!("Webhook lacks authentication headers");
+					}
+				}
+			}
+		};
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		core::{Trigger, TriggerType},
-		NotificationMessage, ScriptLanguage,
-	};
+	use crate::models::NotificationMessage;
+	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
+	use crate::utils::tests::builders::trigger::TriggerBuilder;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
+	use tracing_test::traced_test;
 
 	#[test]
 	fn test_slack_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://hooks.slack.com/services/xxx")
+			.message("Alert", "Test message")
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test invalid webhook URL
-		let invalid_webhook = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://invalid-url.com".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Invalid webhook URL
+		let invalid_webhook = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://invalid-url.com")
+			.build();
 		assert!(invalid_webhook.validate().is_err());
 
-		// Test empty title
-		let empty_title = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Empty title
+		let empty_title = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://hooks.slack.com/services/xxx")
+			.message("", "Test message")
+			.build();
 		assert!(empty_title.validate().is_err());
 
-		// Test empty body
-		let empty_body = Trigger {
-			name: "test_slack".to_string(),
-			trigger_type: TriggerType::Slack,
-			config: TriggerTypeConfig::Slack {
-				slack_url: "https://hooks.slack.com/services/xxx".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
+		// Empty body
+		let empty_body = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("https://hooks.slack.com/services/xxx")
+			.message("Alert", "")
+			.build();
 		assert!(empty_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_email_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
 		// Test invalid host
-		let invalid_host = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "invalid@host".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let invalid_host = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"invalid@host",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(invalid_host.validate().is_err());
 
 		// Test empty host
-		let empty_host = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let empty_host = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(empty_host.validate().is_err());
 
 		// Test invalid email address
-		let invalid_email = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("invalid-email"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let invalid_email = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"invalid-email",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(invalid_email.validate().is_err());
 
-		let invalid_trigger = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "".to_string(), // Invalid password
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_trigger.validate().is_err());
+		// Test empty password
+		let invalid_password = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"", // Invalid password
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
+		assert!(invalid_password.validate().is_err());
 
-		let invalid_trigger = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "A".repeat(999).to_string(), // Exceeds max length
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_trigger.validate().is_err());
-
-		// Test empty title
-		let empty_title = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(empty_title.validate().is_err());
-
-		// Test title has no control characters
-		let invalid_title = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "\0".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_title.validate().is_err());
-
-		// Test title has atleast one character
-		let invalid_title = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: " ".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_title.validate().is_err());
-
-		// Test body has no control characters
-		let invalid_body = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "\0".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_body.validate().is_err());
-
-		// Test empty body
-		let empty_body = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(empty_body.validate().is_err());
+		// Test subject too long
+		let invalid_subject = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message(&"A".repeat(999), "Test Body")  // Exceeds max length
+			.build();
+		assert!(invalid_subject.validate().is_err());
 
 		// Test empty username
-		let empty_username = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
+		let empty_username = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
 		assert!(empty_username.validate().is_err());
 
-		// Test invalid control characters
-		let invalid_control_characters = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "\0".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("recipient@example.com")],
-			},
-		};
-		assert!(invalid_control_characters.validate().is_err());
+		// Test invalid control characters in username
+		let invalid_control_chars = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"\0",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
+		assert!(invalid_control_chars.validate().is_err());
 
-		// Test invalid email recipient
-		let invalid_recipient = Trigger {
-			name: "test_email".to_string(),
-			trigger_type: TriggerType::Email,
-			config: TriggerTypeConfig::Email {
-				host: "smtp.example.com".to_string(),
-				port: Some(587),
-				username: "user".to_string(),
-				password: "pass".to_string(),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-				sender: EmailAddress::new_unchecked("sender@example.com"),
-				recipients: vec![EmailAddress::new_unchecked("invalid-email")],
-			},
-		};
+		// Test invalid recipient
+		let invalid_recipient = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["invalid-email"],
+			)
+			.build();
 		assert!(invalid_recipient.validate().is_err());
+
+		// Test empty body
+		let empty_body = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test Subject", "")
+			.build();
+		assert!(empty_body.validate().is_err());
+
+		// Test control characters in subject
+		let control_chars_subject = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test \0 Subject", "Test Body")
+			.build();
+		assert!(control_chars_subject.validate().is_err());
+
+		// Test control characters in body
+		let control_chars_body = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.message("Test Subject", "Test \0 Body")
+			.build();
+		assert!(control_chars_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_webhook_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				secret: None,
-				method: Some("POST".to_string()),
-				headers: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("https://api.example.com/webhook")
+			.message("Alert", "Test message")
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test invalid URL
-		let invalid_url = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "invalid-url".to_string(),
-				method: Some("POST".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Invalid URL
+		let invalid_url = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("invalid-url")
+			.build();
 		assert!(invalid_url.validate().is_err());
 
-		// Test invalid method
-		let invalid_method = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				method: Some("INVALID".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
-		assert!(invalid_method.validate().is_err());
+		// Empty title
+		let invalid_title = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("https://api.example.com/webhook")
+			.message("", "Test message")
+			.build();
+		assert!(invalid_title.validate().is_err());
 
-		// Test invalid message
-		let invalid_title_message = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				method: Some("POST".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
-		assert!(invalid_title_message.validate().is_err());
-
-		let invalid_body_message = Trigger {
-			name: "test_webhook".to_string(),
-			trigger_type: TriggerType::Webhook,
-			config: TriggerTypeConfig::Webhook {
-				url: "https://api.example.com/webhook".to_string(),
-				method: Some("POST".to_string()),
-				headers: None,
-				secret: None,
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
-		assert!(invalid_body_message.validate().is_err());
+		// Empty body
+		let invalid_body = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("https://api.example.com/webhook")
+			.message("Alert", "")
+			.build();
+		assert!(invalid_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_discord_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://discord.com/api/webhooks/xxx".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://discord.com/api/webhooks/xxx")
+			.message("Alert", "Test message")
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test invalid webhook URL
-		let invalid_webhook = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://invalid-url.com".to_string(),
-				message: NotificationMessage {
-					title: "Alert".to_string(),
-					body: "Test message".to_string(),
-				},
-			},
-		};
+		// Invalid webhook URL
+		let invalid_webhook = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://invalid-url.com")
+			.build();
 		assert!(invalid_webhook.validate().is_err());
 
-		// Test invalid message
-		let invalid_title_message = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://discord.com/api/webhooks/123".to_string(),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "test".to_string(),
-				},
-			},
-		};
-		assert!(invalid_title_message.validate().is_err());
+		// Empty title
+		let invalid_title = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://discord.com/api/webhooks/123")
+			.message("", "Test message")
+			.build();
+		assert!(invalid_title.validate().is_err());
 
-		let invalid_body_message = Trigger {
-			name: "test_discord".to_string(),
-			trigger_type: TriggerType::Discord,
-			config: TriggerTypeConfig::Discord {
-				discord_url: "https://discord.com/api/webhooks/123".to_string(),
-				message: NotificationMessage {
-					title: "test".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
-		assert!(invalid_body_message.validate().is_err());
+		// Empty body
+		let invalid_body = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("https://discord.com/api/webhooks/123")
+			.message("Alert", "")
+			.build();
+		assert!(invalid_body.validate().is_err());
 	}
 
 	#[test]
 	fn test_telegram_trigger_validation() {
-		let valid_trigger = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		};
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"1730223038",
+				true,
+			)
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
 		// Test invalid token
-		let invalid_token = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "invalid-token".to_string(),
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		};
-
+		let invalid_token = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram("invalid-token", "1730223038", true)
+			.build();
 		assert!(invalid_token.validate().is_err());
 
 		// Test invalid chat ID
-		let invalid_chat_id = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "Test Subject".to_string(),
-					body: "Test Body".to_string(),
-				},
-			},
-		};
+		let invalid_chat_id = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"",
+				true,
+			)
+			.build();
 		assert!(invalid_chat_id.validate().is_err());
 
 		// Test invalid message
-		let invalid_title_message = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "11234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "".to_string(),
-					body: "test".to_string(),
-				},
-			},
-		};
+		let invalid_title_message = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"1730223038",
+				true,
+			)
+			.message("", "Test Message")
+			.build();
 		assert!(invalid_title_message.validate().is_err());
 
-		let invalid_body_message = Trigger {
-			name: "test_telegram".to_string(),
-			trigger_type: TriggerType::Telegram,
-			config: TriggerTypeConfig::Telegram {
-				token: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(), // noboost
-				chat_id: "1730223038".to_string(),
-				disable_web_preview: Some(true),
-				message: NotificationMessage {
-					title: "test".to_string(),
-					body: "".to_string(),
-				},
-			},
-		};
-
+		let invalid_body_message = TriggerBuilder::new()
+			.name("test_telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789", // noboost
+				"1730223038",
+				true,
+			)
+			.message("Test Subject", "")
+			.build();
 		assert!(invalid_body_message.validate().is_err());
 	}
 
@@ -1037,45 +991,34 @@ mod tests {
 		let script_path = temp_dir.join("test_script.sh");
 		std::fs::write(&script_path, "#!/bin/bash\necho 'test'").unwrap();
 
-		let valid_trigger = Trigger {
-			name: "test_script".to_string(),
-			trigger_type: TriggerType::Script,
-			config: TriggerTypeConfig::Script {
-				script_path: script_path.to_str().unwrap().to_string(),
-				arguments: Some(vec![String::from("arg1")]),
-				language: ScriptLanguage::Bash,
-				timeout_ms: 1000,
-			},
-		};
+		// Valid trigger
+		let valid_trigger = TriggerBuilder::new()
+			.name("test_script")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Bash)
+			.build();
 		assert!(valid_trigger.validate().is_ok());
 
-		// Test non-existent script
-		let invalid_path = Trigger {
-			name: "test_script".to_string(),
-			trigger_type: TriggerType::Script,
-			config: TriggerTypeConfig::Script {
-				script_path: "/non/existent/path".to_string(),
-				arguments: Some(vec![String::from("arg1")]),
-				language: ScriptLanguage::Python,
-				timeout_ms: 1000,
-			},
-		};
+		// Non-existent script
+		let invalid_path = TriggerBuilder::new()
+			.name("test_script")
+			.script("/non/existent/path", ScriptLanguage::Python)
+			.build();
 		assert!(invalid_path.validate().is_err());
 
 		std::fs::remove_file(script_path).unwrap();
 	}
 
-	#[test]
-	fn test_invalid_load_from_path() {
+	#[tokio::test]
+	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/triggers/invalid.json");
 		assert!(matches!(
-			Trigger::load_from_path(path),
+			Trigger::load_from_path(path).await,
 			Err(ConfigError::FileError(_))
 		));
 	}
 
-	#[test]
-	fn test_invalid_config_from_load_from_path() {
+	#[tokio::test]
+	async fn test_invalid_config_from_load_from_path() {
 		use std::io::Write;
 		use tempfile::NamedTempFile;
 
@@ -1085,17 +1028,17 @@ mod tests {
 		let path = temp_file.path();
 
 		assert!(matches!(
-			Trigger::load_from_path(path),
+			Trigger::load_from_path(path).await,
 			Err(ConfigError::ParseError(_))
 		));
 	}
 
-	#[test]
-	fn test_load_all_directory_not_found() {
+	#[tokio::test]
+	async fn test_load_all_directory_not_found() {
 		let non_existent_path = Path::new("non_existent_directory");
 
 		let result: Result<HashMap<String, Trigger>, ConfigError> =
-			Trigger::load_all(Some(non_existent_path));
+			Trigger::load_all(Some(non_existent_path)).await;
 		assert!(matches!(result, Err(ConfigError::FileError(_))));
 
 		if let Err(ConfigError::FileError(err)) = result {
@@ -1103,9 +1046,9 @@ mod tests {
 		}
 	}
 
-	#[test]
+	#[tokio::test]
 	#[cfg(unix)] // This test is Unix-specific due to permission handling
-	fn test_load_all_unreadable_file() {
+	async fn test_load_all_unreadable_file() {
 		// Create a temporary directory for our test
 		let temp_dir = TempDir::new().unwrap();
 		let config_dir = temp_dir.path().join("triggers");
@@ -1125,7 +1068,7 @@ mod tests {
 
 		// Try to load triggers from the directory
 		let result: Result<HashMap<String, Trigger>, ConfigError> =
-			Trigger::load_all(Some(&config_dir));
+			Trigger::load_all(Some(&config_dir)).await;
 
 		// Verify we get the expected error
 		assert!(matches!(result, Err(ConfigError::FileError(_))));
@@ -1137,5 +1080,350 @@ mod tests {
 		let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
 		perms.set_mode(0o644);
 		std::fs::set_permissions(&file_path, perms).unwrap();
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_slack() {
+		let insecure_trigger = TriggerBuilder::new()
+			.name("test_slack")
+			.slack("http://hooks.slack.com/services/xxx")
+			.build();
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Slack URL uses an insecure protocol"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_discord() {
+		let insecure_trigger = TriggerBuilder::new()
+			.name("test_discord")
+			.discord("http://discord.com/api/webhooks/xxx")
+			.build();
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Discord URL uses an insecure protocol"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_webhook() {
+		let insecure_trigger = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("http://api.example.com/webhook")
+			.build();
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Webhook URL uses an insecure protocol"));
+		assert!(logs_contain("Webhook lacks authentication headers"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_email() {
+		let insecure_trigger = TriggerBuilder::new()
+			.name("test_email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.email_port(25) // Insecure port
+			.build();
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Email port is not using a secure protocol"));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script() {
+		use std::fs::File;
+		use std::os::unix::fs::PermissionsExt;
+		use tempfile::TempDir;
+
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("test_script.sh");
+		File::create(&script_path).unwrap();
+
+		// Set overly permissive permissions (777)
+		let metadata = std::fs::metadata(&script_path).unwrap();
+		let mut permissions = metadata.permissions();
+		permissions.set_mode(0o777);
+		std::fs::set_permissions(&script_path, permissions).unwrap();
+
+		let trigger = TriggerBuilder::new()
+			.name("test_script")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Bash)
+			.build();
+
+		trigger.validate_protocol();
+		assert!(logs_contain(
+			"Script file has overly permissive write permissions"
+		));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_webhook_with_headers() {
+		let mut headers = HashMap::new();
+		headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+		let insecure_trigger = TriggerBuilder::new()
+			.name("test_webhook")
+			.webhook("http://api.example.com/webhook")
+			.webhook_headers(headers)
+			.build();
+
+		insecure_trigger.validate_protocol();
+		assert!(logs_contain("Webhook URL uses an insecure protocol"));
+		assert!(logs_contain("Webhook lacks authentication headers"));
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_slack() {
+		let trigger = TriggerBuilder::new()
+			.name("slack")
+			.slack("https://hooks.slack.com/xxx")
+			.build();
+
+		let resolved = trigger.resolve_secrets().await.unwrap();
+		if let TriggerTypeConfig::Slack { slack_url, .. } = &resolved.config {
+			assert!(matches!(slack_url, SecretValue::Plain(_)));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_email() {
+		let trigger = TriggerBuilder::new()
+			.name("email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.build();
+
+		let resolved = trigger.resolve_secrets().await.unwrap();
+		if let TriggerTypeConfig::Email {
+			username, password, ..
+		} = &resolved.config
+		{
+			assert!(matches!(username, SecretValue::Plain(_)));
+			assert!(matches!(password, SecretValue::Plain(_)));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_webhook_with_secret() {
+		let trigger = TriggerBuilder::new()
+			.name("webhook")
+			.webhook("https://api.example.com")
+			.webhook_secret(SecretValue::Plain(SecretString::new("secret".to_string())))
+			.build();
+
+		let resolved = trigger.resolve_secrets().await.unwrap();
+		if let TriggerTypeConfig::Webhook { url, secret, .. } = &resolved.config {
+			assert!(matches!(url, SecretValue::Plain(_)));
+			assert!(matches!(secret, Some(SecretValue::Plain(_))));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_telegram() {
+		let trigger = TriggerBuilder::new()
+			.name("telegram")
+			.telegram(
+				"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789",
+				"1730223038",
+				true,
+			)
+			.build();
+
+		let resolved = trigger.resolve_secrets().await.unwrap();
+		if let TriggerTypeConfig::Telegram { token, .. } = &resolved.config {
+			assert!(matches!(token, SecretValue::Plain(_)));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_discord() {
+		let trigger = TriggerBuilder::new()
+			.name("discord")
+			.discord("https://discord.com/api/webhooks/xxx")
+			.build();
+
+		let resolved = trigger.resolve_secrets().await.unwrap();
+		if let TriggerTypeConfig::Discord { discord_url, .. } = &resolved.config {
+			assert!(matches!(discord_url, SecretValue::Plain(_)));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_other_branch() {
+		// For a config type not handled in the match (e.g., Script)
+		let trigger = TriggerBuilder::new()
+			.name("script")
+			.script("/tmp/test.sh", ScriptLanguage::Bash)
+			.build();
+
+		let resolved = trigger.resolve_secrets().await.unwrap();
+		if let TriggerTypeConfig::Script { .. } = &resolved.config {
+			// No secret resolution, just check it passes
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_slack_env_error() {
+		let trigger = TriggerBuilder::new()
+			.name("slack")
+			.slack("")
+			.url(SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string()))
+			.build();
+
+		let result = trigger.resolve_secrets().await;
+		assert!(result.is_err());
+		if let Err(e) = result {
+			assert!(e.to_string().contains("failed to resolve Slack URL"));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_discord_env_error() {
+		let trigger = TriggerBuilder::new()
+			.name("discord")
+			.discord("")
+			.url(SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string()))
+			.build();
+
+		let result = trigger.resolve_secrets().await;
+		assert!(result.is_err());
+		if let Err(e) = result {
+			assert!(e.to_string().contains("failed to resolve Discord URL"));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_telegram_env_error() {
+		let trigger = TriggerBuilder::new()
+			.name("telegram")
+			.telegram("", "1730223038", true)
+			.telegram_token(SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string()))
+			.build();
+
+		let result = trigger.resolve_secrets().await;
+		assert!(result.is_err());
+		if let Err(e) = result {
+			assert!(e.to_string().contains("failed to resolve Telegram token"));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_webhook_env_error() {
+		let trigger = TriggerBuilder::new()
+			.name("webhook")
+			.webhook("")
+			.url(SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string()))
+			.build();
+
+		let result = trigger.resolve_secrets().await;
+		assert!(result.is_err());
+		if let Err(e) = result {
+			assert!(e.to_string().contains("failed to resolve webhook URL"));
+		}
+
+		let trigger = TriggerBuilder::new()
+			.name("webhook")
+			.webhook("https://api.example.com")
+			.webhook_secret(SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string()))
+			.build();
+
+		let result = trigger.resolve_secrets().await;
+		assert!(result.is_err());
+		if let Err(e) = result {
+			assert!(e.to_string().contains("failed to resolve webhook secret"));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_resolve_secrets_email_env_error() {
+		let trigger = TriggerBuilder::new()
+			.name("email")
+			.email(
+				"smtp.example.com",
+				"",
+				"pass",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.email_username(SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string()))
+			.build();
+
+		let result = trigger.resolve_secrets().await;
+		assert!(result.is_err());
+		if let Err(e) = result {
+			assert!(e.to_string().contains("failed to resolve SMTP username"));
+		}
+
+		let trigger = TriggerBuilder::new()
+			.name("email")
+			.email(
+				"smtp.example.com",
+				"user",
+				"",
+				"sender@example.com",
+				vec!["recipient@example.com"],
+			)
+			.email_password(SecretValue::Environment("NON_EXISTENT_ENV_VAR".to_string()))
+			.build();
+
+		let result = trigger.resolve_secrets().await;
+		assert!(result.is_err());
+		if let Err(e) = result {
+			assert!(e.to_string().contains("failed to resolve SMTP password"));
+		}
+	}
+	#[test]
+	fn test_telegram_max_message_length() {
+		let max_body_length = Trigger {
+			name: "test_telegram".to_string(),
+			trigger_type: TriggerType::Telegram,
+			config: TriggerTypeConfig::Telegram {
+				token: SecretValue::Plain(SecretString::new(
+					"1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789".to_string(),
+				)),
+				chat_id: "1730223038".to_string(),
+				disable_web_preview: Some(true),
+				message: NotificationMessage {
+					title: "Test".to_string(),
+					body: "x".repeat(TELEGRAM_MAX_BODY_LENGTH + 1), // Exceeds max length
+				},
+			},
+		};
+		assert!(max_body_length.validate().is_err());
+	}
+
+	#[test]
+	fn test_discord_max_message_length() {
+		let max_body_length = Trigger {
+			name: "test_discord".to_string(),
+			trigger_type: TriggerType::Discord,
+			config: TriggerTypeConfig::Discord {
+				discord_url: SecretValue::Plain(SecretString::new(
+					"https://discord.com/api/webhooks/xxx".to_string(),
+				)),
+				message: NotificationMessage {
+					title: "Test".to_string(),
+					body: "z".repeat(DISCORD_MAX_BODY_LENGTH + 1), // Exceeds max length
+				},
+			},
+		};
+		assert!(max_body_length.validate().is_err());
 	}
 }

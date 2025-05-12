@@ -109,7 +109,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_execution_error_formatting() {
+	fn test_parse_error_formatting() {
 		let error = ConfigError::parse_error("test error", None, None);
 		assert_eq!(error.to_string(), "Parse error: test error");
 
@@ -123,7 +123,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_internal_error_formatting() {
+	fn test_file_error_formatting() {
 		let error = ConfigError::file_error("test error", None, None);
 		assert_eq!(error.to_string(), "File error: test error");
 

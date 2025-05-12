@@ -17,7 +17,6 @@ use crate::{
 };
 
 // Type aliases to simplify complex types in function signatures
-
 //  MonitorService
 pub type MonitorServiceData = web::Data<
 	Arc<
@@ -125,34 +124,142 @@ pub fn create_metrics_server(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::repositories::{
-		MonitorService, NetworkRepository, NetworkService, TriggerRepository, TriggerService,
+	use crate::{
+		models::{BlockChainType, Monitor, Network, Trigger},
+		repositories::{
+			MonitorService, NetworkRepository, NetworkService, TriggerRepository, TriggerService,
+		},
+		utils::tests::{
+			evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder,
+		},
 	};
 	use actix_web::{test, App};
+	use std::{fs, path::PathBuf};
+	use tempfile::TempDir;
 	use tokio::net::TcpListener;
 
-	// Helper function to create test services with mock repositories
-	fn create_test_services() -> (MonitorServiceArc, NetworkServiceArc, TriggerServiceArc) {
-		let network_service = NetworkService::<NetworkRepository>::new(None).unwrap();
-		let trigger_service = TriggerService::<TriggerRepository>::new(None).unwrap();
+	fn create_test_monitor(
+		name: &str,
+		networks: Vec<&str>,
+		paused: bool,
+		triggers: Vec<&str>,
+	) -> Monitor {
+		MonitorBuilder::new()
+			.name(name)
+			.networks(networks.into_iter().map(|s| s.to_string()).collect())
+			.paused(paused)
+			.triggers(triggers.into_iter().map(|s| s.to_string()).collect())
+			.build()
+	}
+
+	fn create_test_trigger(name: &str) -> Trigger {
+		TriggerBuilder::new()
+			.name(name)
+			.slack("https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX") //noboost
+			.message("Test Title", "Test Body")
+			.build()
+	}
+
+	pub fn create_test_network(name: &str, slug: &str, network_type: BlockChainType) -> Network {
+		NetworkBuilder::new()
+			.name(name)
+			.slug(slug)
+			.network_type(network_type)
+			.chain_id(1)
+			.rpc_url("http://localhost:8545")
+			.block_time_ms(1000)
+			.confirmation_blocks(1)
+			.cron_schedule("*/5 * * * * *")
+			.store_blocks(false)
+			.build()
+	}
+
+	fn create_mock_configs() -> (PathBuf, PathBuf, PathBuf, TempDir) {
+		// Create a temporary directory
+		let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+		let config_path = temp_dir.path().join("config");
+		let monitor_dir = config_path.join("monitors");
+		let trigger_dir = config_path.join("triggers");
+		let network_dir = config_path.join("networks");
+
+		// Create directories
+		fs::create_dir_all(&monitor_dir).expect("Failed to create monitor directory");
+		fs::create_dir_all(&trigger_dir).expect("Failed to create trigger directory");
+		fs::create_dir_all(&network_dir).expect("Failed to create network directory");
+
+		let monitor_path = monitor_dir.join("test_monitor.json");
+		let trigger_path = trigger_dir.join("test_trigger.json");
+		let network_path = network_dir.join("test_network.json");
+
+		fs::write(
+			&monitor_path,
+			serde_json::to_string(&create_test_monitor(
+				"test_monitor",
+				vec!["ethereum_mainnet"],
+				false,
+				vec!["test_trigger"],
+			))
+			.unwrap(),
+		)
+		.expect("Failed to create mock monitor");
+
+		fs::write(
+			&trigger_path,
+			serde_json::to_string(&create_test_trigger("test_trigger")).unwrap(),
+		)
+		.expect("Failed to create mock trigger");
+
+		fs::write(
+			&network_path,
+			serde_json::to_string(&create_test_network(
+				"Ethereum Mainnet",
+				"ethereum_mainnet",
+				BlockChainType::EVM,
+			))
+			.unwrap(),
+		)
+		.expect("Failed to create mock network");
+
+		// Return directory paths and temp_dir to keep it alive
+		(monitor_dir, trigger_dir, network_dir, temp_dir)
+	}
+
+	async fn create_test_services() -> (
+		MonitorServiceArc,
+		NetworkServiceArc,
+		TriggerServiceArc,
+		TempDir,
+	) {
+		let (monitor_path, trigger_path, network_path, temp_dir) = create_mock_configs();
+		let network_service =
+			NetworkService::<NetworkRepository>::new(Some(network_path.parent().unwrap()))
+				.await
+				.unwrap();
+		let trigger_service =
+			TriggerService::<TriggerRepository>::new(Some(trigger_path.parent().unwrap()))
+				.await
+				.unwrap();
 		let monitor_service = MonitorService::new(
-			None,
+			Some(monitor_path.parent().unwrap()),
 			Some(network_service.clone()),
 			Some(trigger_service.clone()),
 		)
+		.await
 		.unwrap();
 
 		(
 			Arc::new(Mutex::new(monitor_service)),
 			Arc::new(Mutex::new(network_service)),
 			Arc::new(Mutex::new(trigger_service)),
+			temp_dir,
 		)
 	}
 
 	#[actix_web::test]
 	async fn test_metrics_handler() {
 		// Create test services
-		let (monitor_service, network_service, trigger_service) = create_test_services();
+		let (monitor_service, network_service, trigger_service, _temp_dir) =
+			create_test_services().await;
 
 		// Create test app
 		let app = test::init_service(
@@ -193,7 +300,8 @@ mod tests {
 	#[tokio::test]
 	async fn test_create_metrics_server() {
 		// Create test services
-		let (monitor_service, network_service, trigger_service) = create_test_services();
+		let (monitor_service, network_service, trigger_service, _temp_dir) =
+			create_test_services().await;
 
 		// Find an available port
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

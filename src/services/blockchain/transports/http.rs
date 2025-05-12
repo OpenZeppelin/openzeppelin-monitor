@@ -95,7 +95,7 @@ impl HttpTransportClient {
 			.build();
 
 		for rpc_url in rpc_urls.iter() {
-			let url = match Url::parse(&rpc_url.url) {
+			let url = match Url::parse(rpc_url.url.as_ref()) {
 				Ok(url) => url,
 				Err(_) => continue,
 			};
@@ -126,7 +126,7 @@ impl HttpTransportClient {
 					let fallback_urls: Vec<String> = rpc_urls
 						.iter()
 						.filter(|url| url.url != rpc_url.url)
-						.map(|url| url.url.clone())
+						.map(|url| url.url.as_ref().to_string())
 						.collect();
 
 					// Successfully connected - create and return the client

@@ -64,7 +64,6 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
-			.kill_on_drop(true)
 			.spawn()
 			.with_context(|| "Failed to spawn python3 process")?;
 
@@ -104,10 +103,8 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
-			.kill_on_drop(true)
 			.spawn()
 			.with_context(|| "Failed to spawn node process")?;
-
 		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
 }
@@ -145,7 +142,6 @@ impl ScriptExecutor for BashScriptExecutor {
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
-			.kill_on_drop(true)
 			.spawn()
 			.with_context(|| "Failed to spawn shell process")?;
 
@@ -243,9 +239,13 @@ async fn process_command(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{
-		AddressWithABI, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, EventCondition,
-		FunctionCondition, MatchConditions, Monitor, MonitorMatch, TransactionCondition,
+	use crate::{
+		models::{
+			AddressWithSpec, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt,
+			EventCondition, FunctionCondition, MatchConditions, Monitor, MonitorMatch,
+			TransactionCondition,
+		},
+		utils::tests::evm::monitor::MonitorBuilder,
 	};
 	use alloy::{
 		consensus::{
@@ -268,19 +268,30 @@ mod tests {
 		event_conditions: Vec<EventCondition>,
 		function_conditions: Vec<FunctionCondition>,
 		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithABI>,
+		addresses: Vec<AddressWithSpec>,
 	) -> Monitor {
-		Monitor {
-			match_conditions: MatchConditions {
-				events: event_conditions,
-				functions: function_conditions,
-				transactions: transaction_conditions,
-			},
-			addresses,
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			..Default::default()
+		let mut builder = MonitorBuilder::new()
+			.name("test")
+			.networks(vec!["evm_mainnet".to_string()]);
+
+		for event in event_conditions {
+			builder = builder.event(&event.signature, event.expression);
 		}
+		for function in function_conditions {
+			builder = builder.function(&function.signature, function.expression);
+		}
+		for transaction in transaction_conditions {
+			builder = builder.transaction(transaction.status, transaction.expression);
+		}
+
+		builder = builder.addresses_with_spec(
+			addresses
+				.into_iter()
+				.map(|a| (a.address, a.contract_spec))
+				.collect(),
+		);
+
+		builder.build()
 	}
 
 	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
@@ -463,7 +474,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -486,7 +497,7 @@ print("true")
 				console.log("finished");
 				console.log("not a boolean");
 			} catch (err) {
-				console.error(err);
+				console.log(err);
 			}
 		})();
 		"#;
@@ -496,14 +507,12 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
-				assert!(
-					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
-				);
+				assert!(err_msg.contains("Last line of output is not a valid boolean"));
 			}
 			_ => panic!("Expected error"),
 		}

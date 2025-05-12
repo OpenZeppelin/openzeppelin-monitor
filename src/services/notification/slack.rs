@@ -4,32 +4,16 @@
 //! via incoming webhooks, supporting message templates with variable substitution.
 
 use async_trait::async_trait;
-use reqwest::Client;
-use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::{
 	models::TriggerTypeConfig,
-	services::notification::{NotificationError, Notifier},
+	services::notification::{NotificationError, Notifier, WebhookConfig, WebhookNotifier},
 };
 
 /// Implementation of Slack notifications via webhooks
 pub struct SlackNotifier {
-	/// Slack webhook URL for message delivery
-	url: String,
-	/// Title to display in the message
-	title: String,
-	/// Message template with variable placeholders
-	body_template: String,
-	/// HTTP client for webhook requests
-	client: Client,
-}
-
-/// Represents a formatted Slack message
-#[derive(Serialize)]
-struct SlackMessage {
-	/// The formatted text to send to Slack
-	text: String,
+	inner: WebhookNotifier,
 }
 
 impl SlackNotifier {
@@ -45,10 +29,16 @@ impl SlackNotifier {
 		body_template: String,
 	) -> Result<Self, Box<NotificationError>> {
 		Ok(Self {
-			url,
-			title,
-			body_template,
-			client: Client::new(),
+			inner: WebhookNotifier::new(WebhookConfig {
+				url,
+				url_params: None,
+				title,
+				body_template,
+				method: Some("POST".to_string()),
+				secret: None,
+				headers: None,
+				payload_fields: None,
+			})?,
 		})
 	}
 
@@ -60,11 +50,8 @@ impl SlackNotifier {
 	/// # Returns
 	/// * `String` - Formatted message with variables replaced
 	pub fn format_message(&self, variables: &HashMap<String, String>) -> String {
-		let mut message = self.body_template.clone();
-		for (key, value) in variables {
-			message = message.replace(&format!("${{{}}}", key), value);
-		}
-		format!("*{}*\n\n{}", self.title, message)
+		let message = self.inner.format_message(variables);
+		format!("*{}*\n\n{}", self.inner.title, message)
 	}
 
 	/// Creates a Slack notifier from a trigger configuration
@@ -76,12 +63,23 @@ impl SlackNotifier {
 	/// * `Option<Self>` - Notifier instance if config is Slack type
 	pub fn from_config(config: &TriggerTypeConfig) -> Option<Self> {
 		match config {
-			TriggerTypeConfig::Slack { slack_url, message } => Some(Self {
-				url: slack_url.clone(),
-				title: message.title.clone(),
-				body_template: message.body.clone(),
-				client: Client::new(),
-			}),
+			TriggerTypeConfig::Slack { slack_url, message } => {
+				let mut headers = HashMap::new();
+				headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+				WebhookNotifier::new(WebhookConfig {
+					url: slack_url.as_ref().to_string(),
+					url_params: None,
+					title: message.title.clone(),
+					body_template: message.body.clone(),
+					method: Some("POST".to_string()),
+					secret: None,
+					headers: Some(headers),
+					payload_fields: None,
+				})
+				.ok()
+				.map(|inner| Self { inner })
+			}
 			_ => None,
 		}
 	}
@@ -97,32 +95,27 @@ impl Notifier for SlackNotifier {
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
-		let payload = SlackMessage {
-			text: message.to_string(),
-		};
+		let mut payload_fields = HashMap::new();
+		let blocks = serde_json::json!([
+			{
+				"type": "section",
+				"text": {
+					"type": "mrkdwn",
+					"text": message
+				}
+			}
+		]);
+		payload_fields.insert("blocks".to_string(), blocks);
 
-		let response = self
-			.client
-			.post(&self.url)
-			.json(&payload)
-			.send()
+		self.inner
+			.notify_with_payload(message, payload_fields)
 			.await
-			.map_err(|e| anyhow::anyhow!("Failed to send Slack notification: {}", e))?;
-
-		if !response.status().is_success() {
-			return Err(anyhow::anyhow!(
-				"Slack webhook returned error status: {}",
-				response.status()
-			));
-		}
-
-		Ok(())
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use crate::models::NotificationMessage;
+	use crate::models::{NotificationMessage, SecretString, SecretValue};
 
 	use super::*;
 
@@ -137,7 +130,9 @@ mod tests {
 
 	fn create_test_slack_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Slack {
-			slack_url: "https://slack.example.com".to_string(),
+			slack_url: SecretValue::Plain(SecretString::new(
+				"https://slack.example.com".to_string(),
+			)),
 			message: NotificationMessage {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
@@ -194,9 +189,9 @@ mod tests {
 		assert!(notifier.is_some());
 
 		let notifier = notifier.unwrap();
-		assert_eq!(notifier.url, "https://slack.example.com");
-		assert_eq!(notifier.title, "Test Alert");
-		assert_eq!(notifier.body_template, "Test message ${value}");
+		assert_eq!(notifier.inner.url, "https://slack.example.com");
+		assert_eq!(notifier.inner.title, "Test Alert");
+		assert_eq!(notifier.inner.body_template, "Test message ${value}");
 	}
 
 	////////////////////////////////////////////////////////////
@@ -207,6 +202,15 @@ mod tests {
 	async fn test_notify_failure() {
 		let notifier = create_test_notifier("Test message");
 		let result = notifier.notify("Test message").await;
+		assert!(result.is_err());
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_failure() {
+		let notifier = create_test_notifier("Test message");
+		let result = notifier
+			.notify_with_payload("Test message", HashMap::new())
+			.await;
 		assert!(result.is_err());
 	}
 }

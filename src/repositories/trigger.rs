@@ -8,6 +8,8 @@
 
 use std::{collections::HashMap, path::Path};
 
+use async_trait::async_trait;
+
 use crate::{
 	models::{ConfigLoader, Trigger},
 	repositories::error::RepositoryError,
@@ -25,8 +27,8 @@ impl TriggerRepository {
 	///
 	/// Loads all trigger configurations from JSON files in the specified directory
 	/// (or default config directory if None is provided).
-	pub fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		let triggers = Self::load_all(path)?;
+	pub async fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
+		let triggers = Self::load_all(path).await?;
 		Ok(TriggerRepository { triggers })
 	}
 }
@@ -35,9 +37,10 @@ impl TriggerRepository {
 ///
 /// This trait defines the standard operations that any trigger repository must support,
 /// allowing for different storage backends while maintaining a consistent interface.
+#[async_trait]
 pub trait TriggerRepositoryTrait: Clone {
 	/// Create a new trigger repository from the given path
-	fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
+	async fn new(path: Option<&Path>) -> Result<Self, RepositoryError>
 	where
 		Self: Sized;
 
@@ -45,7 +48,7 @@ pub trait TriggerRepositoryTrait: Clone {
 	///
 	/// If no path is provided, uses the default config directory.
 	/// This is a static method that doesn't require an instance.
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
+	async fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError>;
 
 	/// Get a specific trigger by ID
 	///
@@ -58,13 +61,14 @@ pub trait TriggerRepositoryTrait: Clone {
 	fn get_all(&self) -> HashMap<String, Trigger>;
 }
 
+#[async_trait]
 impl TriggerRepositoryTrait for TriggerRepository {
-	fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
-		TriggerRepository::new(path)
+	async fn new(path: Option<&Path>) -> Result<Self, RepositoryError> {
+		TriggerRepository::new(path).await
 	}
 
-	fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
-		Trigger::load_all(path).map_err(|e| {
+	async fn load_all(path: Option<&Path>) -> Result<HashMap<String, Trigger>, RepositoryError> {
+		Trigger::load_all(path).await.map_err(|e| {
 			RepositoryError::load_error(
 				"Failed to load triggers",
 				Some(Box::new(e)),
@@ -96,8 +100,10 @@ pub struct TriggerService<T: TriggerRepositoryTrait> {
 
 impl<T: TriggerRepositoryTrait> TriggerService<T> {
 	/// Create a new trigger service with the default repository implementation
-	pub fn new(path: Option<&Path>) -> Result<TriggerService<TriggerRepository>, RepositoryError> {
-		let repository = TriggerRepository::new(path)?;
+	pub async fn new(
+		path: Option<&Path>,
+	) -> Result<TriggerService<TriggerRepository>, RepositoryError> {
+		let repository = TriggerRepository::new(path).await?;
 		Ok(TriggerService { repository })
 	}
 
@@ -107,10 +113,10 @@ impl<T: TriggerRepositoryTrait> TriggerService<T> {
 	}
 
 	/// Create a new trigger service with a specific configuration path
-	pub fn new_with_path(
+	pub async fn new_with_path(
 		path: Option<&Path>,
 	) -> Result<TriggerService<TriggerRepository>, RepositoryError> {
-		let repository = TriggerRepository::new(path)?;
+		let repository = TriggerRepository::new(path).await?;
 		Ok(TriggerService { repository })
 	}
 
@@ -131,11 +137,11 @@ mod tests {
 	use crate::repositories::error::RepositoryError;
 	use std::path::PathBuf;
 
-	#[test]
-	fn test_load_error_messages() {
+	#[tokio::test]
+	async fn test_load_error_messages() {
 		// Test with invalid path to trigger load error
 		let invalid_path = PathBuf::from("/non/existent/path");
-		let result = TriggerRepository::load_all(Some(&invalid_path));
+		let result = TriggerRepository::load_all(Some(&invalid_path)).await;
 		assert!(result.is_err());
 		let err = result.unwrap_err();
 		match err {

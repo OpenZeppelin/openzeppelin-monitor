@@ -1,6 +1,5 @@
 ---
 name: RC for Major/Minor Releases
-
 on:
   workflow_dispatch:
     inputs:
@@ -8,27 +7,22 @@ on:
         description: Commit SHA to create release branch from
         required: true
         type: string
-
 permissions:
   contents: write
   pull-requests: write
-
-
 # run concurrency group for the workflow
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
   create-release-branch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@af35edadc00be37caa72ed9f3e6d5f7801bfdf09  # v1.11.7
+      - uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5  # v2.0.2
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
       - name: Validate Commit SHA
         run: |
           if [[ ! "$INPUT_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -40,14 +34,12 @@ jobs:
           echo "Valid commit SHA: $INPUT_COMMIT_SHA"
         env:
           INPUT_COMMIT_SHA: ${{ github.event.inputs.commit_sha }}
-
       - name: Checkout repository at commit SHA
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           ref: ${{ github.event.inputs.commit_sha }}
           fetch-depth: 0
           token: ${{ steps.gh-app-token.outputs.token }}
-
       - name: Get version from Cargo.toml
         id: get_version
         run: |
@@ -59,14 +51,12 @@ jobs:
           fi
           echo "Version is $version"
           echo "version=$version" >> $GITHUB_OUTPUT
-
       - name: Set release branch name
         id: set_branch
         run: |
           branch="release-v${{ steps.get_version.outputs.version }}"
           echo "release_branch=$branch" >> $GITHUB_ENV
           echo "Release branch will be: $branch"
-
       - name: Check if release branch exists
         id: check_branch
         run: |
@@ -76,7 +66,6 @@ jobs:
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
-
       - name: Create release branch
         id: update_branch
         shell: bash

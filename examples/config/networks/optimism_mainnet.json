@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://mainnet.optimism.io",
+      "url": {
+        "type": "plain",
+        "value": "https://mainnet.optimism.io"
+      },
       "weight": 100
     }
   ],

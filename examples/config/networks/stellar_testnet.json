@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://soroban-testnet.stellar.org",
+      "url": {
+        "type": "plain",
+        "value": "https://soroban-testnet.stellar.org"
+      },
       "weight": 100
     }
   ],

@@ -7,20 +7,19 @@
 //! - Event log processing and filtering
 //! - ABI-based decoding of function calls and events
 
-use alloy::primitives::U64;
+use alloy::primitives::{U256, U64};
 use anyhow::Context;
 use async_trait::async_trait;
 use ethabi::Contract;
-use serde_json::Value;
 use std::{marker::PhantomData, str::FromStr};
 use tracing::instrument;
 
 use crate::{
 	models::{
-		AddressWithABI, BlockType, EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap,
-		EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt, EventCondition,
-		FunctionCondition, MatchConditions, Monitor, MonitorMatch, Network, TransactionCondition,
-		TransactionStatus,
+		AddressWithSpec, BlockType, ContractSpec, EVMContractSpec, EVMMatchArguments,
+		EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EVMReceiptLog, EVMTransaction,
+		EVMTransactionReceipt, EventCondition, FunctionCondition, MatchConditions, Monitor,
+		MonitorMatch, Network, TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, EvmClientTrait},
@@ -46,12 +45,14 @@ impl<T> EVMBlockFilter<T> {
 	/// # Arguments
 	/// * `tx_status` - Status of the transaction (success/failure)
 	/// * `transaction` - The transaction to check
+	/// * `tx_receipt` - Transaction receipt
 	/// * `monitor` - Monitor containing match conditions
 	/// * `matched_transactions` - Vector to store matching transactions
 	pub fn find_matching_transaction(
 		&self,
 		tx_status: &TransactionStatus,
 		transaction: &EVMTransaction,
+		tx_receipt: &EVMTransactionReceipt,
 		monitor: &Monitor,
 		matched_transactions: &mut Vec<TransactionCondition>,
 	) {
@@ -97,6 +98,57 @@ impl<T> EVMBlockFilter<T> {
 								kind: "string".to_string(),
 								indexed: false,
 							},
+							EVMMatchParamEntry {
+								name: "gas_price".to_string(),
+								value: transaction.gas_price.unwrap_or_default().to_string(),
+								kind: "uint256".to_string(),
+								indexed: false,
+							},
+							EVMMatchParamEntry {
+								name: "max_fee_per_gas".to_string(),
+								value: transaction.max_fee_per_gas.unwrap_or_default().to_string(),
+								kind: "uint256".to_string(),
+								indexed: false,
+							},
+							EVMMatchParamEntry {
+								name: "max_priority_fee_per_gas".to_string(),
+								value: transaction
+									.max_priority_fee_per_gas
+									.unwrap_or_default()
+									.to_string(),
+								kind: "uint256".to_string(),
+								indexed: false,
+							},
+							EVMMatchParamEntry {
+								name: "gas_limit".to_string(),
+								value: transaction.gas.to_string(),
+								kind: "uint256".to_string(),
+								indexed: false,
+							},
+							EVMMatchParamEntry {
+								name: "nonce".to_string(),
+								value: transaction.nonce.to_string(),
+								kind: "uint256".to_string(),
+								indexed: false,
+							},
+							EVMMatchParamEntry {
+								name: "input".to_string(),
+								value: format!("0x{}", hex::encode(&transaction.input)),
+								kind: "string".to_string(),
+								indexed: false,
+							},
+							EVMMatchParamEntry {
+								name: "gas_used".to_string(),
+								value: tx_receipt.gas_used.unwrap_or_default().to_string(),
+								kind: "uint256".to_string(),
+								indexed: false,
+							},
+							EVMMatchParamEntry {
+								name: "transaction_index".to_string(),
+								value: tx_receipt.transaction_index.0.to_string(),
+								kind: "uint64".to_string(),
+								indexed: false,
+							},
 						];
 
 						if self.evaluate_expression(expr, &Some(tx_params)) {
@@ -131,6 +183,7 @@ impl<T> EVMBlockFilter<T> {
 	/// * `matched_on_args` - Arguments from matched function calls
 	pub fn find_matching_functions_for_transaction(
 		&self,
+		contract_specs: &[(String, EVMContractSpec)],
 		transaction: &EVMTransaction,
 		monitor: &Monitor,
 		matched_functions: &mut Vec<FunctionCondition>,
@@ -146,7 +199,10 @@ impl<T> EVMBlockFilter<T> {
 					.is_some_and(|to| are_same_address(&addr.address, &h160_to_string(to)))
 			}) {
 				// Process the matching address's ABI
-				if let Some(abi) = &monitored_addr.abi {
+				if let Some((_, abi)) = contract_specs
+					.iter()
+					.find(|(address, _)| are_same_address(address, &monitored_addr.address))
+				{
 					// Create contract object from ABI
 					let contract = match Contract::load(abi.to_string().as_bytes()) {
 						Ok(c) => c,
@@ -289,7 +345,7 @@ impl<T> EVMBlockFilter<T> {
 			involved_addresses.push(h160_to_string(log.address));
 
 			// Process the matching address's ABI
-			if let Some(abi) = &monitored_addr.abi {
+			if let Some(abi) = &monitored_addr.contract_spec {
 				let decoded_log = self.decode_events(abi, log).await;
 
 				if let Some(event_condition) = decoded_log {
@@ -396,12 +452,21 @@ impl<T> EVMBlockFilter<T> {
 
 				// Evaluate single condition
 				match param.kind.as_str() {
-					"uint256" | "uint" => {
-						let Ok(param_value) = u128::from_str(&param.value) else {
+					"uint64" | "uint256" | "uint" => {
+						// Check if value is empty - invalid for numeric comparison
+						if value.is_empty() {
+							tracing::warn!(
+								"Comparison value is empty for numeric comparison against parameter '{}'",
+								param_name
+							);
+							return false;
+						}
+
+						let Ok(param_value) = U256::from_str(&param.value) else {
 							tracing::warn!("Failed to parse parameter value: {}", param.value);
 							return false;
 						};
-						let Ok(compare_value) = u128::from_str(value) else {
+						let Ok(compare_value) = U256::from_str(value) else {
 							tracing::warn!("Failed to parse comparison value: {}", value);
 							return false;
 						};
@@ -427,6 +492,27 @@ impl<T> EVMBlockFilter<T> {
 							false
 						}
 					},
+					"string" => {
+						// Perform case-insensitive comparisons for all string operators
+						let param_lower = param.value.to_lowercase();
+						let value_lower = value.to_lowercase();
+
+						match operator {
+							// case insensitive comparison
+							"==" => param_lower == value_lower,
+							"!=" => param_lower != value_lower,
+							"starts_with" => param_lower.starts_with(&value_lower),
+							"ends_with" => param_lower.ends_with(&value_lower),
+							"contains" => param_lower.contains(&value_lower),
+							_ => {
+								tracing::warn!(
+									"Unsupported operator for string type: {}",
+									operator
+								);
+								false
+							}
+						}
+					}
 					_ => {
 						tracing::warn!("Unsupported parameter type: {}", param.kind);
 						false
@@ -454,13 +540,16 @@ impl<T> EVMBlockFilter<T> {
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
 	pub async fn decode_events(
 		&self,
-		abi: &Value,
+		abi: &ContractSpec,
 		log: &EVMReceiptLog,
 	) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
-		let contract = Contract::load(abi.to_string().as_bytes())
-			.with_context(|| "Failed to parse ABI")
-			.ok()?;
+		let contract = match abi {
+			ContractSpec::EVM(evm_spec) => Contract::load(evm_spec.to_string().as_bytes())
+				.with_context(|| "Failed to parse ABI")
+				.ok()?,
+			_ => return None,
+		};
 
 		let decoded_log = contract
 			.events()
@@ -536,6 +625,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
+		contract_specs: Option<&[(String, ContractSpec)]>,
 	) -> Result<Vec<MonitorMatch>, FilterError> {
 		let evm_block = match block {
 			BlockType::EVM(block) => block,
@@ -591,6 +681,16 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 		let mut matching_results = Vec::new();
 
+		// Cast contract specs to EVMContractSpec
+		let contract_specs = contract_specs
+			.unwrap_or(&[])
+			.iter()
+			.filter_map(|(address, spec)| match spec {
+				ContractSpec::EVM(spec) => Some((address.clone(), spec.clone())),
+				_ => None,
+			})
+			.collect::<Vec<(String, EVMContractSpec)>>();
+
 		tracing::debug!("Processing {} monitor(s)", monitors.len());
 
 		for monitor in monitors {
@@ -640,6 +740,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 					self.find_matching_transaction(
 						&tx_status,
 						transaction,
+						receipt,
 						monitor,
 						&mut matched_transactions,
 					);
@@ -656,6 +757,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 					// Check function match conditions
 					self.find_matching_functions_for_transaction(
+						&contract_specs,
 						transaction,
 						monitor,
 						&mut matched_functions,
@@ -710,8 +812,8 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 									addresses: monitor
 										.addresses
 										.iter()
-										.map(|addr| AddressWithABI {
-											abi: None,
+										.map(|addr| AddressWithSpec {
+											contract_spec: None,
 											..addr.clone()
 										})
 										.collect(),
@@ -762,13 +864,15 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::EVMBaseTransaction;
+	use crate::{
+		models::{ContractSpec, EVMContractSpec},
+		utils::tests::evm::{
+			monitor::MonitorBuilder, receipt::ReceiptBuilder, transaction::TransactionBuilder,
+		},
+	};
 
 	use super::*;
-	use alloy::{
-		consensus::{Eip658Value, Receipt, ReceiptEnvelope, ReceiptWithBloom},
-		primitives::{Address, Bytes, LogData, B256, U256},
-	};
+	use alloy::primitives::{Address, Bytes, B256, U256};
 	use ethabi::{Function, Param, ParamType};
 	use serde_json::json;
 
@@ -778,43 +882,32 @@ mod tests {
 		}
 	}
 
-	fn create_test_transaction(
-		value: U256,
-		from: Option<Address>,
-		to: Option<Address>,
-		input_data: Vec<u8>,
-	) -> EVMTransaction {
-		EVMTransaction(EVMBaseTransaction {
-			from,
-			to,
-			value,
-			input: Bytes(input_data.into()),
-			..Default::default()
-		})
-	}
-
 	/// Creates a test monitor with customizable parameters
 	fn create_test_monitor(
 		event_conditions: Vec<EventCondition>,
 		function_conditions: Vec<FunctionCondition>,
 		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithABI>,
+		addresses: Vec<AddressWithSpec>,
 	) -> Monitor {
-		Monitor {
-			match_conditions: MatchConditions {
+		MonitorBuilder::new()
+			.name("test")
+			.networks(vec!["evm_mainnet".to_string()])
+			.match_conditions(MatchConditions {
 				events: event_conditions,
 				functions: function_conditions,
 				transactions: transaction_conditions,
-			},
-			addresses,
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			..Default::default()
-		}
+			})
+			.addresses_with_spec(
+				addresses
+					.into_iter()
+					.map(|a| (a.address, a.contract_spec))
+					.collect(),
+			)
+			.build()
 	}
 
-	fn create_test_abi(abi_type: &str) -> Value {
-		match abi_type {
+	fn create_test_abi(abi_type: &str) -> ContractSpec {
+		let spec = match abi_type {
 			"function" => json!([{
 				"type": "function",
 				"name": "transfer",
@@ -822,13 +915,11 @@ mod tests {
 					{
 						"name": "recipient",
 						"type": "address",
-						"indexed": false,
 						"internalType": "address"
 					},
 					{
 						"name": "amount",
 						"type": "uint256",
-						"indexed": false,
 						"internalType": "uint256"
 					}
 				],
@@ -836,13 +927,10 @@ mod tests {
 					{
 						"name": "",
 						"type": "bool",
-						"indexed": false,
 						"internalType": "bool"
 					}
 				],
-				"stateMutability": "nonpayable",
-				"payable": false,
-				"constant": false
+				"stateMutability": "nonpayable"
 			}]),
 			"event" => json!([{
 				"type": "event",
@@ -867,14 +955,15 @@ mod tests {
 				"anonymous": false,
 			}]),
 			_ => json!([]),
-		}
+		};
+		ContractSpec::EVM(EVMContractSpec::from(spec))
 	}
 
 	/// Creates a test address with ABI
-	fn create_test_address(address: &str, abi: Option<Value>) -> AddressWithABI {
-		AddressWithABI {
+	fn create_test_address(address: &str, spec: Option<ContractSpec>) -> AddressWithSpec {
+		AddressWithSpec {
 			address: address.to_string(),
-			abi,
+			contract_spec: spec,
 		}
 	}
 
@@ -904,59 +993,6 @@ mod tests {
 		}
 	}
 
-	fn create_test_transfer_receipt(
-		contract_address: Address,
-		from_address: Address,
-		to_address: Address,
-		value: u64,
-	) -> EVMTransactionReceipt {
-		let event_signature = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-		let value_hex = format!("{:064x}", value);
-
-		EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
-			inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
-				receipt: Receipt {
-					status: Eip658Value::Eip658(true),
-					logs: vec![alloy::rpc::types::Log {
-						inner: alloy::primitives::Log {
-							address: contract_address,
-							data: LogData::new_unchecked(
-								vec![
-									B256::from_str(event_signature).unwrap(),
-									B256::from_slice(
-										&[&[0u8; 12], from_address.as_slice()].concat(),
-									),
-									B256::from_slice(&[&[0u8; 12], to_address.as_slice()].concat()),
-								],
-								Bytes(hex::decode(value_hex).unwrap().into()),
-							),
-						},
-						block_hash: None,
-						block_number: None,
-						block_timestamp: None,
-						transaction_hash: None,
-						transaction_index: None,
-						log_index: None,
-						removed: false,
-					}],
-					cumulative_gas_used: 0,
-				},
-				logs_bloom: Default::default(),
-			}),
-			transaction_hash: B256::ZERO,
-			transaction_index: Some(0),
-			block_hash: Some(B256::ZERO),
-			block_number: Some(0),
-			gas_used: 0,
-			effective_gas_price: 0,
-			blob_gas_used: None,
-			blob_gas_price: None,
-			from: from_address,
-			to: Some(to_address),
-			contract_address: Some(contract_address),
-		})
-	}
-
 	//////////////////////////////////////////////////////////////////////////////
 	// Test cases for find_matching_transaction method:
 	//////////////////////////////////////////////////////////////////////////////
@@ -965,10 +1001,12 @@ mod tests {
 		let filter = create_test_filter();
 		let mut matched = Vec::new();
 		let monitor = create_test_monitor(vec![], vec![], vec![], vec![]);
+		let receipt = ReceiptBuilder::new().build();
 
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::ZERO, None, None, vec![]),
+			&TransactionBuilder::new().build(),
+			&receipt,
 			&monitor,
 			&mut matched,
 		);
@@ -993,10 +1031,13 @@ mod tests {
 			vec![], // addresses
 		);
 
+		let receipt_success = ReceiptBuilder::new().build();
+
 		// Test successful transaction
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::ZERO, None, None, vec![]),
+			&TransactionBuilder::new().build(),
+			&receipt_success,
 			&monitor,
 			&mut matched,
 		);
@@ -1005,10 +1046,13 @@ mod tests {
 		assert_eq!(matched[0].status, TransactionStatus::Success);
 
 		// Test failed transaction
+		let receipt_failure = ReceiptBuilder::new().status(false).build();
+
 		matched.clear();
 		filter.find_matching_transaction(
 			&TransactionStatus::Failure,
-			&create_test_transaction(U256::ZERO, None, None, vec![]),
+			&TransactionBuilder::new().build(),
+			&receipt_failure,
 			&monitor,
 			&mut matched,
 		);
@@ -1030,10 +1074,17 @@ mod tests {
 			vec![], // addresses
 		);
 
+		let tx_1 = TransactionBuilder::new().value(U256::from(150)).build();
+		let tx_receipt_1 = ReceiptBuilder::new()
+			.status(true)
+			.transaction_hash(tx_1.hash)
+			.build();
+
 		// Test transaction with value > 100
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::from(150), None, None, vec![]),
+			&tx_1,
+			&tx_receipt_1,
 			&monitor,
 			&mut matched,
 		);
@@ -1042,10 +1093,17 @@ mod tests {
 		assert_eq!(matched[0].expression, Some("value > 100".to_string()));
 
 		// Test transaction with value < 100
+		let tx_2 = TransactionBuilder::new().value(U256::from(50)).build();
+		let tx_receipt_2 = ReceiptBuilder::new()
+			.status(true)
+			.transaction_hash(tx_2.hash)
+			.build();
+
 		matched.clear();
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::from(50), None, None, vec![]),
+			&tx_2,
+			&tx_receipt_2,
 			&monitor,
 			&mut matched,
 		);
@@ -1070,9 +1128,16 @@ mod tests {
 		);
 
 		// Test matching 'to' address
+		let tx_matching = TransactionBuilder::new().to(test_address).build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.to(test_address)
+			.transaction_hash(tx_matching.hash)
+			.build();
+
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::ZERO, None, Some(test_address), vec![]),
+			&tx_matching,
+			&tx_receipt_matching,
 			&monitor,
 			&mut matched,
 		);
@@ -1080,15 +1145,19 @@ mod tests {
 		assert_eq!(matched.len(), 1);
 
 		// Test non-matching 'to' address
+		let address_non_matching =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+		let tx_non_matching = TransactionBuilder::new().to(address_non_matching).build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.to(address_non_matching)
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
 		matched.clear();
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(
-				U256::ZERO,
-				None,
-				Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
-				vec![],
-			),
+			&tx_non_matching,
+			&tx_receipt_non_matching,
 			&monitor,
 			&mut matched,
 		);
@@ -1113,9 +1182,16 @@ mod tests {
 		);
 
 		// Test matching 'from' address
+		let tx_matching = TransactionBuilder::new().from(test_address).build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.from(test_address)
+			.transaction_hash(tx_matching.hash)
+			.build();
+
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(U256::ZERO, Some(test_address), None, vec![]),
+			&tx_matching,
+			&tx_receipt_matching,
 			&monitor,
 			&mut matched,
 		);
@@ -1123,19 +1199,411 @@ mod tests {
 		assert_eq!(matched.len(), 1);
 
 		// Test non-matching 'from' address
+		let address_non_matching =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+		let tx_non_matching = TransactionBuilder::new().from(address_non_matching).build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.from(address_non_matching)
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
 		matched.clear();
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
-			&create_test_transaction(
-				U256::ZERO,
-				Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
-				None,
-				vec![],
-			),
+			&tx_non_matching,
+			&tx_receipt_non_matching,
 			&monitor,
 			&mut matched,
 		);
 
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_gas_price_matching() {
+		let expression = "gas_price > 1000000000".to_string(); // more than 1 Gwei
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with gas price > 1 Gwei
+		let gas_price_matching = U256::from(1500000000); // 1.5 Gwei
+		let tx_matching = TransactionBuilder::new()
+			.gas_price(gas_price_matching)
+			.build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with gas price < 1 Gwei
+		let gas_price_non_matching = U256::from(500000000); // 0.5 Gwei
+		let tx_non_matching = TransactionBuilder::new()
+			.gas_price(gas_price_non_matching)
+			.build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
+
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_max_fee_per_gas_matching() {
+		let expression = "max_fee_per_gas > 1000000000".to_string(); // more than 1 Gwei
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with max_fee_per_gas > 1 Gwei
+		let max_fee_per_gas_matching = U256::from(1500000000); // 1.5 Gwei
+		let tx_matching = TransactionBuilder::new()
+			.max_fee_per_gas(max_fee_per_gas_matching)
+			.build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with max_fee_per_gas < 1 Gwei
+		let max_fee_per_gas_non_matching = U256::from(500000000); // 0.5 Gwei
+		let tx_non_matching = TransactionBuilder::new()
+			.max_fee_per_gas(max_fee_per_gas_non_matching)
+			.build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_max_priority_fee_per_gas_matching() {
+		let expression = "max_priority_fee_per_gas > 1000000000".to_string(); // more than 1 Gwei
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with max_priority_fee_per_gas > 1 Gwei
+		let max_priority_fee_per_gas_matching = U256::from(1500000000); // 1.5 Gwei
+		let tx_matching = TransactionBuilder::new()
+			.max_priority_fee_per_gas(max_priority_fee_per_gas_matching)
+			.build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with max_priority_fee_per_gas < 1 Gwei
+		let max_priority_fee_per_gas_non_matching = U256::from(500000000); // 0.5 Gwei
+		let tx_non_matching = TransactionBuilder::new()
+			.max_priority_fee_per_gas(max_priority_fee_per_gas_non_matching)
+			.build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_gas_limit_matching() {
+		let expression = "gas_limit > 20000".to_string(); // more than 20k
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with gas_limit > 20k
+		let gas_limit_matching = U256::from(30000); // 30k
+		let tx_matching = TransactionBuilder::new()
+			.gas_limit(gas_limit_matching)
+			.build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with gas_limit < 20k
+		let gas_limit_non_matching = U256::from(10000); // 10k
+		let tx_non_matching = TransactionBuilder::new()
+			.gas_limit(gas_limit_non_matching)
+			.build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_nonce_matching() {
+		let expression = "nonce == 5".to_string();
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with gas_limit > 20k
+		let nonce_matching = U256::from(5);
+		let tx_matching = TransactionBuilder::new().nonce(nonce_matching).build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with gas_limit < 20k
+		let nonce_not_matching = U256::from(55);
+		let tx_non_matching = TransactionBuilder::new().nonce(nonce_not_matching).build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_input_matching() {
+		let expression = "input == 0x1234".to_string();
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with matching input
+		let input_matching = Bytes(hex::decode("1234").unwrap().into());
+		let tx_matching = TransactionBuilder::new().input(input_matching).build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with non-matching input
+		let input_not_matching = Bytes(hex::decode("5678").unwrap().into());
+		let tx_non_matching = TransactionBuilder::new().input(input_not_matching).build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_gas_used_matching() {
+		let expression = "gas_used > 20000".to_string(); // more than 20k
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with gas_used > 20k
+		let gas_used_matching = U256::from(30000); // 30k
+		let tx_matching = TransactionBuilder::new().build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.gas_used(gas_used_matching)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with gas_used < 20k
+		let gas_used_non_matching = U256::from(10000); // 10k
+		let tx_non_matching = TransactionBuilder::new().build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.gas_used(gas_used_non_matching)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 0);
+	}
+
+	#[test]
+	fn test_transaction_index_matching() {
+		let expression = "transaction_index == 15".to_string();
+		let condition = TransactionCondition {
+			status: TransactionStatus::Any,
+			expression: Some(expression.clone()),
+		};
+		let filter = create_test_filter();
+		let mut matched = Vec::new();
+		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
+
+		// Test transaction with matching transaction index
+		let tx_matching = TransactionBuilder::new().build();
+		let tx_receipt_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_matching.hash)
+			.transaction_index(15)
+			.build();
+
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_matching,
+			&tx_receipt_matching,
+			&monitor,
+			&mut matched,
+		);
+		assert_eq!(matched.len(), 1);
+		assert_eq!(matched[0].expression, Some(expression));
+
+		// Test transaction with non-matching transaction index
+		let tx_non_matching = TransactionBuilder::new().build();
+		let tx_receipt_non_matching = ReceiptBuilder::new()
+			.transaction_hash(tx_non_matching.hash)
+			.transaction_index(1)
+			.build();
+
+		matched.clear();
+		filter.find_matching_transaction(
+			&TransactionStatus::Success,
+			&tx_non_matching,
+			&tx_receipt_non_matching,
+			&monitor,
+			&mut matched,
+		);
 		assert_eq!(matched.len(), 0);
 	}
 
@@ -1151,6 +1619,11 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
 		// Create a monitor with a simple function match condition
 		let monitor = create_test_monitor(
 			vec![], // events
@@ -1160,8 +1633,8 @@ mod tests {
 			}], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000004321",
-				Some(create_test_abi("function")),
+				&contract_with_spec.0,
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
 			)], // addresses
 		);
 
@@ -1198,15 +1671,14 @@ mod tests {
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
-		let transaction = create_test_transaction(
-			U256::ZERO,
-			Some(Address::from_str("0x0000000000000000000000000000000000001234").unwrap()), /* from address */
-			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()), /* to address matching monitor */
-			encoded,
-		);
+		let transaction = TransactionBuilder::new()
+			.from(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
+			.to(Address::from_str("0x0000000000000000000000000000000000004321").unwrap())
+			.input(Bytes(encoded.into()))
+			.build();
 
-		// Test function matching
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1231,6 +1703,11 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
 		// Create a monitor with a function match condition including an expression
 		let monitor = create_test_monitor(
 			vec![], // events
@@ -1240,8 +1717,8 @@ mod tests {
 			}], // functions
 			vec![], // transactions
 			vec![create_test_address(
-				"0x0000000000000000000000000000000000004321",
-				Some(create_test_abi("function")),
+				&contract_with_spec.0,
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
 			)], // addresses
 		);
 
@@ -1278,14 +1755,13 @@ mod tests {
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
-		let transaction = create_test_transaction(
-			U256::ZERO,
-			None,
-			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
-			encoded,
-		);
+		let transaction = TransactionBuilder::new()
+			.to(Address::from_str("0x0000000000000000000000000000000000004321").unwrap())
+			.input(Bytes(encoded.into()))
+			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec.clone()],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1312,14 +1788,13 @@ mod tests {
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
-		let transaction = create_test_transaction(
-			U256::ZERO,
-			None,
-			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
-			encoded,
-		);
+		let transaction = TransactionBuilder::new()
+			.to(Address::from_str("0x0000000000000000000000000000000000004321").unwrap())
+			.input(Bytes(encoded.into()))
+			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1338,6 +1813,11 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
 		let monitor = create_test_monitor(
 			vec![],
 			vec![FunctionCondition {
@@ -1345,10 +1825,10 @@ mod tests {
 				expression: None,
 			}],
 			vec![],
-			vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000004321".to_string(),
-				abi: Some(create_test_abi("function")),
-			}],
+			vec![create_test_address(
+				&contract_with_spec.0,
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
+			)],
 		);
 
 		// Create transaction with non-matching 'to' address
@@ -1384,14 +1864,13 @@ mod tests {
 		];
 
 		let encoded = function.encode_input(&params).unwrap();
-		let transaction = create_test_transaction(
-			U256::ZERO,
-			None,
-			Some(Address::from_str("0x0000000000000000000000000000000000001234").unwrap()), /* Different address in proper hex format */
-			encoded,
-		);
+		let transaction = TransactionBuilder::new()
+			.to(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
+			.input(Bytes(encoded.into()))
+			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1410,35 +1889,37 @@ mod tests {
 			functions: Some(Vec::new()),
 		};
 
-		let monitor = Monitor {
-			match_conditions: MatchConditions {
+		let contract_with_spec = (
+			"0x0000000000000000000000000000000000004321".to_string(),
+			EVMContractSpec::from(create_test_abi("function")),
+		);
+
+		let monitor = MonitorBuilder::new()
+			.match_conditions(MatchConditions {
 				functions: vec![FunctionCondition {
 					signature: "transfer(address,uint256)".to_string(),
 					expression: None,
 				}],
 				events: vec![],
 				transactions: vec![],
-			},
-			addresses: vec![AddressWithABI {
-				address: "0x0000000000000000000000000000000000004321".to_string(),
-				abi: Some(create_test_abi("function")),
-			}],
-			name: "test".to_string(),
-			networks: vec!["evm_mainnet".to_string()],
-			paused: false,
-			trigger_conditions: vec![],
-			triggers: vec![],
-		};
+			})
+			.addresses_with_spec(vec![(
+				contract_with_spec.0.clone(),
+				Some(ContractSpec::EVM(contract_with_spec.1.clone())),
+			)])
+			.name("test")
+			.networks(vec!["evm_mainnet".to_string()])
+			.paused(false)
+			.build();
 
 		// Test with invalid input data (less than 4 bytes)
-		let transaction = create_test_transaction(
-			U256::ZERO,
-			None,
-			Some(Address::from_str("0x0000000000000000000000000000000000004321").unwrap()),
-			vec![0x12, 0x34], // Invalid input data
-		);
+		let transaction = TransactionBuilder::new()
+			.to(Address::from_str("0x0000000000000000000000000000000000004321").unwrap())
+			.input(Bytes(vec![0x12, 0x34].into()))
+			.build();
 
 		filter.find_matching_functions_for_transaction(
+			&[contract_with_spec],
 			&transaction,
 			&monitor,
 			&mut matched_functions,
@@ -1479,12 +1960,12 @@ mod tests {
 		// Create a transaction receipt with a Transfer event
 		let contract_address =
 			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
-		let receipt = create_test_transfer_receipt(
-			contract_address,
-			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
-			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
-			100,
-		);
+		let receipt = ReceiptBuilder::new()
+			.contract_address(contract_address)
+			.from(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
+			.to(Address::from_str("0x0000000000000000000000000000000000005678").unwrap())
+			.value(U256::from(100))
+			.build();
 
 		filter
 			.find_matching_events_for_transaction(
@@ -1536,12 +2017,12 @@ mod tests {
 		// Create a receipt with value > 500 (should match)
 		let contract_address =
 			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
-		let receipt = create_test_transfer_receipt(
-			contract_address,
-			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
-			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
-			1000,
-		);
+		let receipt = ReceiptBuilder::new()
+			.contract_address(contract_address)
+			.from(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
+			.to(Address::from_str("0x0000000000000000000000000000000000005678").unwrap())
+			.value(U256::from(1000))
+			.build();
 
 		filter
 			.find_matching_events_for_transaction(
@@ -1566,12 +2047,12 @@ mod tests {
 		}
 		involved_addresses.clear();
 
-		let receipt_no_match = create_test_transfer_receipt(
-			contract_address,
-			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
-			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
-			50,
-		);
+		let receipt_no_match = ReceiptBuilder::new()
+			.contract_address(contract_address)
+			.from(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
+			.to(Address::from_str("0x0000000000000000000000000000000000005678").unwrap())
+			.value(U256::from(50))
+			.build();
 
 		filter
 			.find_matching_events_for_transaction(
@@ -1612,12 +2093,12 @@ mod tests {
 		// Create a receipt with non-matching contract address
 		let different_address =
 			Address::from_str("0x0000000000000000000000000000000000001234").unwrap();
-		let receipt = create_test_transfer_receipt(
-			different_address,
-			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
-			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
-			100,
-		);
+		let receipt = ReceiptBuilder::new()
+			.contract_address(different_address)
+			.from(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
+			.to(Address::from_str("0x0000000000000000000000000000000000005678").unwrap())
+			.value(U256::from(100))
+			.build();
 
 		filter
 			.find_matching_events_for_transaction(
@@ -1763,14 +2244,77 @@ mod tests {
 		assert!(!filter.evaluate_expression("amount > 1000", &args));
 
 		// Test with unsupported parameter type
-		let args = Some(vec![create_test_param("param", "value", "string")]);
+		let args = Some(vec![create_test_param(
+			"param",
+			"value",
+			"unsupported_type",
+		)]);
 		assert!(!filter.evaluate_expression("param == value", &args));
 
 		// Test with invalid expression format
-		let args = Some(vec![create_test_param("amount", "1000", "uint256")]);
+		let args = Some(vec![create_test_param("amount", "1000", "uint128")]);
 		assert!(!filter.evaluate_expression("amount > ", &args));
 		assert!(!filter.evaluate_expression("amount", &args));
 		assert!(!filter.evaluate_expression("> 1000", &args));
+	}
+
+	#[test]
+	fn test_evaluate_expression_string_starts_with() {
+		let filter = create_test_filter();
+
+		// Test data
+		let args = Some(vec![create_test_param(
+			"input",
+			"0x1234567890abcdef",
+			"string",
+		)]);
+
+		assert!(filter.evaluate_expression("input starts_with 0x1234", &args));
+		assert!(filter.evaluate_expression("input starts_with 0x1234567890abcdef", &args));
+		// case-insensitivity check
+		assert!(filter.evaluate_expression("input starts_with '0X1234'", &args));
+		// should evaluate false
+		assert!(!filter.evaluate_expression("input starts_with 0xabcd", &args));
+		assert!(!filter.evaluate_expression("input starts_with '1234'", &args)); // missing 0x
+	}
+
+	#[test]
+	fn test_evaluate_expression_string_ends_with() {
+		let filter = create_test_filter();
+
+		// Test data
+		let args = Some(vec![create_test_param(
+			"input",
+			"0x1234567890abcdef",
+			"string",
+		)]);
+
+		assert!(filter.evaluate_expression("input ends_with abcdef", &args));
+		assert!(filter.evaluate_expression("input ends_with 0x1234567890abcdef", &args));
+		// should evaluate false
+		assert!(!filter.evaluate_expression("input ends_with 0x1234567890", &args));
+		// case-insensitivity check
+		assert!(filter.evaluate_expression("input ends_with 'ABCDEF'", &args));
+	}
+
+	#[test]
+	fn test_evaluate_expression_string_contains() {
+		let filter = create_test_filter();
+
+		// Test data
+		let args = Some(vec![create_test_param(
+			"input",
+			"0x1234567890abcdef",
+			"string",
+		)]);
+
+		assert!(filter.evaluate_expression("input contains 567890", &args));
+		assert!(filter.evaluate_expression("input contains 0x1234", &args));
+		assert!(filter.evaluate_expression("input contains abcdef", &args));
+		assert!(!filter.evaluate_expression("input contains ffffff", &args));
+		// case-insensitivity checks
+		assert!(filter.evaluate_expression("input contains ABCDEF", &args));
+		assert!(filter.evaluate_expression("input contains 90aB", &args));
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
@@ -1847,7 +2391,9 @@ mod tests {
 			"anonymous": false,
 		}]);
 
-		let result = filter.decode_events(&invalid_abi, &log).await;
+		let result = filter
+			.decode_events(&ContractSpec::EVM(EVMContractSpec::from(invalid_abi)), &log)
+			.await;
 		assert!(result.is_none());
 	}
 

@@ -1,9 +1,10 @@
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch,
-		NotificationMessage, TransactionType, Trigger, TriggerType, TriggerTypeConfig,
+		BlockChainType, EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, TransactionType,
+		TriggerType,
 	},
-	services::notification::{NotificationService, Notifier, WebhookNotifier},
+	services::notification::{NotificationService, Notifier, WebhookConfig, WebhookNotifier},
+	utils::tests::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -11,13 +12,12 @@ use std::collections::HashMap;
 use crate::integration::mocks::{create_test_evm_transaction_receipt, create_test_transaction};
 
 fn create_test_monitor(name: &str) -> Monitor {
-	Monitor {
-		name: name.to_string(),
-		networks: vec!["ethereum_mainnet".to_string()],
-		paused: false,
-		triggers: vec!["test_trigger".to_string()],
-		..Default::default()
-	}
+	MonitorBuilder::new()
+		.name(name)
+		.networks(vec!["ethereum_mainnet".to_string()])
+		.paused(false)
+		.triggers(vec!["test_trigger".to_string()])
+		.build()
 }
 
 fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
@@ -50,14 +50,16 @@ async fn test_webhook_notification_success() {
 		.create_async()
 		.await;
 
-	let notifier = WebhookNotifier::new(
-		server.url(),
-		"Test Alert".to_string(),
-		"Test message with value ${value}".to_string(),
-		Some("GET".to_string()),
-		None,
-		None,
-	)
+	let notifier = WebhookNotifier::new(WebhookConfig {
+		url: server.url(),
+		url_params: None,
+		title: "Test Alert".to_string(),
+		body_template: "Test message with value ${value}".to_string(),
+		method: Some("GET".to_string()),
+		secret: None,
+		headers: None,
+		payload_fields: None,
+	})
 	.unwrap();
 
 	// Prepare and send test message
@@ -82,14 +84,16 @@ async fn test_webhook_notification_failure() {
 		.create_async()
 		.await;
 
-	let notifier = WebhookNotifier::new(
-		server.url(),
-		"Test Alert".to_string(),
-		"Test message".to_string(),
-		Some("GET".to_string()),
-		None,
-		None,
-	)
+	let notifier = WebhookNotifier::new(WebhookConfig {
+		url: server.url(),
+		url_params: None,
+		title: "Test Alert".to_string(),
+		body_template: "Test message".to_string(),
+		method: Some("GET".to_string()),
+		secret: None,
+		headers: None,
+		payload_fields: None,
+	})
 	.unwrap();
 
 	let result = notifier.notify("Test message").await;
@@ -112,20 +116,12 @@ async fn test_notification_service_webhook_execution() {
 		.await;
 
 	// Create a webhook trigger
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Webhook,
-		config: TriggerTypeConfig::Webhook {
-			url: server.url(),
-			method: Some("GET".to_string()),
-			headers: None,
-			secret: None,
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message ${value}".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.webhook(&server.url())
+		.webhook_method("GET")
+		.message("Test Alert", "Test message ${value}")
+		.build();
 
 	let mut variables = HashMap::new();
 	variables.insert("value".to_string(), "42".to_string());
@@ -152,20 +148,12 @@ async fn test_notification_service_webhook_execution_failure() {
 		.create_async()
 		.await;
 
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Webhook,
-		config: TriggerTypeConfig::Webhook {
-			url: server.url(),
-			method: Some("GET".to_string()),
-			headers: None,
-			secret: None,
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.webhook(&server.url())
+		.webhook_method("GET")
+		.message("Test Alert", "Test message")
+		.build();
 
 	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
 
@@ -181,17 +169,12 @@ async fn test_notification_service_webhook_execution_failure() {
 async fn test_notification_service_webhook_execution_invalid_config() {
 	let notification_service = NotificationService::new();
 
-	let trigger = Trigger {
-		name: "test_trigger".to_string(),
-		trigger_type: TriggerType::Webhook,
-		config: TriggerTypeConfig::Slack {
-			slack_url: "".to_string(),
-			message: NotificationMessage {
-				title: "Test Alert".to_string(),
-				body: "Test message".to_string(),
-			},
-		},
-	};
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.slack("")
+		.message("Test Alert", "Test message")
+		.trigger_type(TriggerType::Webhook)
+		.build();
 
 	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
 
@@ -205,4 +188,45 @@ async fn test_notification_service_webhook_execution_invalid_config() {
 		.unwrap_err()
 		.to_string()
 		.contains("Invalid webhook configuration"));
+}
+
+#[tokio::test]
+async fn test_notify_with_payload_merges_default_fields() {
+	let mut server = mockito::Server::new_async().await;
+	let expected_payload = json!({
+		"default_field": "default_value",
+		"custom_field": "custom_value"
+	});
+
+	let mock = server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::Json(expected_payload))
+		.with_status(200)
+		.create_async()
+		.await;
+
+	let notifier = WebhookNotifier::new(WebhookConfig {
+		url: server.url(),
+		url_params: None,
+		title: "Test".to_string(),
+		body_template: "Test message".to_string(),
+		method: None,
+		secret: None,
+		headers: None,
+		payload_fields: Some(HashMap::from([(
+			"default_field".to_string(),
+			serde_json::json!("default_value"),
+		)])),
+	})
+	.unwrap();
+
+	let mut payload = HashMap::new();
+	payload.insert(
+		"custom_field".to_string(),
+		serde_json::json!("custom_value"),
+	);
+
+	let result = notifier.notify_with_payload("Test message", payload).await;
+	assert!(result.is_ok());
+	mock.assert();
 }
