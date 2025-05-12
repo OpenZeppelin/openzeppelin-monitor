@@ -11,7 +11,6 @@ Note: Only stderr output is monitored. If the script returns a non-zero exit cod
 """
 import sys
 import json
-import logging
 
 def main():
     try:
