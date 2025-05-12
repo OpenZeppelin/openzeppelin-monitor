@@ -321,7 +321,7 @@ impl<T> EVMBlockFilter<T> {
 	/// * `matched_events` - Vector to store matching events
 	/// * `matched_on_args` - Arguments from matched events
 	/// * `involved_addresses` - Addresses involved in matched events
-	pub async fn find_matching_events_for_transaction(
+	pub fn find_matching_events_for_transaction(
 		&self,
 		receipt: &EVMTransactionReceipt,
 		monitor: &Monitor,
@@ -346,7 +346,7 @@ impl<T> EVMBlockFilter<T> {
 
 			// Process the matching address's ABI
 			if let Some(abi) = &monitored_addr.contract_spec {
-				let decoded_log = self.decode_events(abi, log).await;
+				let decoded_log = self.decode_events(abi, log);
 
 				if let Some(event_condition) = decoded_log {
 					if monitor.match_conditions.events.is_empty() {
@@ -538,7 +538,7 @@ impl<T> EVMBlockFilter<T> {
 	///
 	/// # Returns
 	/// Option containing EVMMatchParamsMap with decoded event data if successful
-	pub async fn decode_events(
+	pub fn decode_events(
 		&self,
 		abi: &ContractSpec,
 		log: &EVMReceiptLog,
@@ -755,8 +755,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 						&mut matched_events,
 						&mut matched_on_args,
 						&mut involved_addresses,
-					)
-					.await;
+					);
 
 					// Check function match conditions
 					self.find_matching_functions_for_transaction(
@@ -1970,15 +1969,13 @@ mod tests {
 			.value(U256::from(100))
 			.build();
 
-		filter
-			.find_matching_events_for_transaction(
-				&receipt,
-				&monitor,
-				&mut matched_events,
-				&mut matched_on_args,
-				&mut involved_addresses,
-			)
-			.await;
+		filter.find_matching_events_for_transaction(
+			&receipt,
+			&monitor,
+			&mut matched_events,
+			&mut matched_on_args,
+			&mut involved_addresses,
+		);
 
 		assert_eq!(matched_events.len(), 1);
 		assert_eq!(
@@ -2027,15 +2024,13 @@ mod tests {
 			.value(U256::from(1000))
 			.build();
 
-		filter
-			.find_matching_events_for_transaction(
-				&receipt,
-				&monitor,
-				&mut matched_events,
-				&mut matched_on_args,
-				&mut involved_addresses,
-			)
-			.await;
+		filter.find_matching_events_for_transaction(
+			&receipt,
+			&monitor,
+			&mut matched_events,
+			&mut matched_on_args,
+			&mut involved_addresses,
+		);
 
 		assert_eq!(matched_events.len(), 1);
 		assert_eq!(
@@ -2057,15 +2052,13 @@ mod tests {
 			.value(U256::from(50))
 			.build();
 
-		filter
-			.find_matching_events_for_transaction(
-				&receipt_no_match,
-				&monitor,
-				&mut matched_events,
-				&mut matched_on_args,
-				&mut involved_addresses,
-			)
-			.await;
+		filter.find_matching_events_for_transaction(
+			&receipt_no_match,
+			&monitor,
+			&mut matched_events,
+			&mut matched_on_args,
+			&mut involved_addresses,
+		);
 
 		assert_eq!(matched_events.len(), 0);
 	}
@@ -2103,15 +2096,13 @@ mod tests {
 			.value(U256::from(100))
 			.build();
 
-		filter
-			.find_matching_events_for_transaction(
-				&receipt,
-				&monitor,
-				&mut matched_events,
-				&mut matched_on_args,
-				&mut involved_addresses,
-			)
-			.await;
+		filter.find_matching_events_for_transaction(
+			&receipt,
+			&monitor,
+			&mut matched_events,
+			&mut matched_on_args,
+			&mut involved_addresses,
+		);
 
 		assert_eq!(matched_events.len(), 0);
 		assert_eq!(involved_addresses.len(), 0);
@@ -2346,7 +2337,7 @@ mod tests {
 		// Use the event ABI
 		let abi = create_test_abi("event");
 
-		let result = filter.decode_events(&abi, &log).await;
+		let result = filter.decode_events(&abi, &log);
 
 		assert!(result.is_some());
 		let decoded = result.unwrap();
@@ -2394,9 +2385,8 @@ mod tests {
 			"anonymous": false,
 		}]);
 
-		let result = filter
-			.decode_events(&ContractSpec::EVM(EVMContractSpec::from(invalid_abi)), &log)
-			.await;
+		let result =
+			filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(invalid_abi)), &log);
 		assert!(result.is_none());
 	}
 
@@ -2417,7 +2407,7 @@ mod tests {
 		);
 
 		let abi = create_test_abi("event");
-		let result = filter.decode_events(&abi, &log).await;
+		let result = filter.decode_events(&abi, &log);
 
 		assert!(result.is_none());
 	}
@@ -2447,7 +2437,7 @@ mod tests {
 		};
 
 		let abi = create_test_abi("event");
-		let result = filter.decode_events(&abi, &log).await;
+		let result = filter.decode_events(&abi, &log);
 
 		assert!(result.is_none());
 	}
