@@ -3,8 +3,7 @@ name: Update Technical Docs Link
 on:
   workflow_dispatch: {}
   push:
-    branches:
-      - docs-v*
+    branches: [docs-v*]
   workflow_call:
     inputs:
       branch:
@@ -20,7 +19,6 @@ permissions:
 jobs:
   update-docs-link:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5  # v2.0.2
         id: gh-app-token
@@ -58,4 +56,4 @@ jobs:
           body: Automatically generated PR to update technical docs version in the nav.adoc file.
           branch-suffix: short-commit-hash
           sign-commits: true
-          commit-message: 'docs: update technical docs version in the nav.adoc file'
+          commit-message: 'docs: Update technical docs version in the nav.adoc file'
