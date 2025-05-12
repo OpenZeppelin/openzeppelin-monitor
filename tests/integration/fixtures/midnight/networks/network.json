@@ -5,7 +5,10 @@
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://rpc.testnet-02.midnight.network",
+      "url": {
+        "type": "plain",
+        "value": "https://rpc.testnet-02.midnight.network"
+      },
       "weight": 100
     }
   ],

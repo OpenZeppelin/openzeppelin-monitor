@@ -3,8 +3,8 @@ use crate::integration::{
 		load_test_data, setup_monitor_service, setup_network_service, setup_trigger_service,
 	},
 	mocks::{
-		create_test_network, MockClientPool, MockEvmClientTrait, MockNetworkRepository,
-		MockStellarClientTrait, MockTriggerRepository,
+		create_test_network, MockClientPool, MockEvmClientTrait, MockMidnightClientTrait,
+		MockNetworkRepository, MockStellarClientTrait, MockTriggerRepository,
 	},
 };
 use mockall::predicate;
@@ -778,14 +778,20 @@ async fn test_execute_monitor_network_slug_not_defined() {
 
 #[tokio::test]
 async fn test_execute_monitor_midnight() {
-	let test_data = load_test_data("evm");
+	let test_data = load_test_data("midnight");
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
 
+	let mock_network_service =
+		setup_mocked_network_service("Midnight", "midnight_testnet", BlockChainType::Midnight);
+
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockMidnightClientTrait::new();
+
 	let mut mocked_triggers = HashMap::new();
 	mocked_triggers.insert(
-		"evm_large_transfer_usdc_slack".to_string(),
+		"midnight_large_transfer_usdc_slack".to_string(),
 		create_test_trigger("test"),
 	);
 	// Create actual TriggerExecutionService instance
@@ -794,16 +800,26 @@ async fn test_execute_monitor_midnight() {
 	let trigger_execution_service =
 		TriggerExecutionService::new(trigger_service, notification_service);
 
-	let mock_pool = MockClientPool::new();
-	let mock_network_service =
-		setup_mocked_network_service("Midnight", "midnight_mainnet", BlockChainType::Midnight);
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(172627u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_midnight_client()
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
 
 	let client_pool = Arc::new(mock_pool);
 
+	let block_number = 172627;
+
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
-		network_slug: Some("midnight_mainnet".to_string()),
-		block_number: None,
+		network_slug: Some("midnight_testnet".to_string()),
+		block_number: Some(block_number),
 		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
 		network_service: Arc::new(Mutex::new(mock_network_service)),
 		filter_service: Arc::new(FilterService::new()),
@@ -812,8 +828,15 @@ async fn test_execute_monitor_midnight() {
 		client_pool,
 	})
 	.await;
+	assert!(
+		result.is_ok(),
+		"Monitor execution failed: {:?}",
+		result.err()
+	);
 
-	assert!(result.is_err());
+	// Parse the JSON result and add more specific assertions based on expected matches
+	let matches: Vec<serde_json::Value> = serde_json::from_str(&result.unwrap()).unwrap();
+	assert!(matches.len() == 1);
 }
 
 #[tokio::test]

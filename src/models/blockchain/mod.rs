@@ -70,6 +70,8 @@ pub enum ContractSpec {
 	EVM(evm::EVMContractSpec),
 	/// Stellar contract spec
 	Stellar(stellar::StellarContractSpec),
+	/// Midnight contract spec
+	Midnight,
 }
 
 /// Monitor match results from different blockchain platforms

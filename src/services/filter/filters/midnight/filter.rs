@@ -7,7 +7,8 @@
 #![allow(clippy::result_large_err)]
 
 use async_trait::async_trait;
-use midnight_serialize::NetworkId;
+use midnight_ledger::structure::Proofish;
+use midnight_node_ledger_helpers::{DefaultDB, NetworkId, DB};
 use std::{collections::VecDeque, marker::PhantomData};
 use tracing::instrument;
 
@@ -20,7 +21,10 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
-		filter::{filters::midnight::helpers::map_chain_type, BlockFilter, FilterError},
+		filter::{
+			filters::midnight::helpers::{map_chain_type, parse_tx_index_item},
+			BlockFilter, FilterError,
+		},
 	},
 };
 
@@ -101,28 +105,27 @@ impl<T> MidnightBlockFilter<T> {
 		false
 	}
 
-	pub fn deserialize_transactions(
+	pub fn deserialize_transactions<P: Proofish<D>, D: DB>(
 		&self,
-		_block: &MidnightBlock,
-		_network_id: NetworkId,
+		block: &MidnightBlock,
+		network_id: NetworkId,
 	) -> Result<Vec<MidnightTransaction>, FilterError> {
-		let txs = Vec::<MidnightTransaction>::new();
-		// let tx_index = block.transactions_index.iter().rev();
-		// for (hash, body) in tx_index {
-		// 	let (_hash, tx) = match parse_tx_index_item::<Proof, DefaultDB>(hash, body, network_id)
-		// 	{
-		// 		Ok(res) => res,
-		// 		Err(e) => {
-		// 			tracing::error!("Error deserializing transaction: {:?}", e);
-		// 			return Err(FilterError::network_error(
-		// 				"Error deserializing transaction",
-		// 				Some(e.into()),
-		// 				None,
-		// 			));
-		// 		}
-		// 	};
-		// 	txs.push(MidnightTransaction::from(tx));
-		// }
+		let mut txs = Vec::<MidnightTransaction>::new();
+		let tx_index = block.transactions_index.iter().rev();
+		for (hash, body) in tx_index {
+			let (_hash, tx) = match parse_tx_index_item::<P, D>(hash, body, network_id) {
+				Ok(res) => res,
+				Err(e) => {
+					tracing::error!("Error deserializing transaction: {:?}", e);
+					return Err(FilterError::network_error(
+						"Error deserializing transaction",
+						Some(e.into()),
+						None,
+					));
+				}
+			};
+			txs.push(MidnightTransaction::from(tx));
+		}
 		Ok(txs)
 	}
 }
@@ -137,6 +140,7 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 	/// * `network` - Network of the blockchain
 	/// * `block` - The block to process
 	/// * `monitors` - Active monitors containing match conditions
+	/// * `contract_specs` - Optional contract specs for decoding events
 	///
 	/// # Returns
 	/// Vector of matches found in the block
@@ -165,7 +169,8 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		let chain_type = client.get_chain_type().await?;
 		let network_id = map_chain_type(&chain_type);
 
-		let transactions = self.deserialize_transactions(midnight_block, network_id)?;
+		let transactions =
+			self.deserialize_transactions::<(), DefaultDB>(midnight_block, network_id)?;
 		println!("transactions: {:#?}", transactions);
 
 		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));

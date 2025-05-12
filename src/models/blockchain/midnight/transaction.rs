@@ -4,10 +4,11 @@
 //! <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs>
 
 use alloy::hex::ToHexExt;
-use midnight_ledger::{
-	storage::db::DB,
-	structure::{ContractAction, Proofish, Transaction as MidnightTx, TransactionIdentifier},
+use midnight_ledger::structure::{
+	ContractAction, Proofish, Transaction as MidnightNodeTransaction, TransactionIdentifier,
 };
+use midnight_node_ledger_helpers::DB;
+
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
@@ -15,6 +16,7 @@ use std::ops::Deref;
 ///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L200-L211>
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum RpcTransaction {
 	MidnightTransaction {
 		#[serde(skip)]
@@ -31,6 +33,7 @@ pub enum RpcTransaction {
 ///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L185-L192>
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Operation {
 	Call {
 		address: String,
@@ -109,11 +112,12 @@ impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
 	}
 }
 
-impl<P: Proofish<D>, D: DB> From<MidnightTx<P, D>> for Transaction {
-	fn from(tx: MidnightTx<P, D>) -> Self {
+impl<P: Proofish<D>, D: DB> From<MidnightNodeTransaction<P, D>> for Transaction {
+	fn from(tx: MidnightNodeTransaction<P, D>) -> Self {
 		// Get hash and identifiers before moving tx
-		// TODO: Implement this correctly
-		let tx_hash = "0x0".to_string(); // &tx.transaction_hash().0 .0.encode_hex();
+		// let tx_hash = tx.transaction_hash().0 .0.encode_hex();
+		let tx_hash =
+			"0x0000000000000000000000000000000000000000000000000000000000000000".to_string(); // TODO: fix this
 
 		let identifiers = tx
 			.identifiers()
@@ -124,7 +128,7 @@ impl<P: Proofish<D>, D: DB> From<MidnightTx<P, D>> for Transaction {
 			.collect();
 
 		let operations = match tx {
-			MidnightTx::Standard(stx) => {
+			MidnightNodeTransaction::Standard(stx) => {
 				let mut ops = Vec::new();
 				// Add guaranteed coins operation
 				ops.push(Operation::GuaranteedCoins);
@@ -140,7 +144,7 @@ impl<P: Proofish<D>, D: DB> From<MidnightTx<P, D>> for Transaction {
 				}
 				ops
 			}
-			MidnightTx::ClaimMint(mtx) => {
+			MidnightNodeTransaction::ClaimMint(mtx) => {
 				vec![Operation::ClaimMint {
 					value: mtx.mint.coin.value,
 					coin_type: mtx.mint.coin.type_.0 .0.encode_hex(),
