@@ -7,6 +7,7 @@ mod properties {
 	mod filters {
 		mod evm {
 			mod filter;
+			mod helpers;
 		}
 		mod stellar {
 			mod filter;
