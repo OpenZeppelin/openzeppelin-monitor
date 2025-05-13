@@ -495,7 +495,7 @@ impl<T> StellarBlockFilter<T> {
 	///
 	/// # Returns
 	/// Vector of decoded events mapped to their transaction hashes
-	pub async fn decode_events(
+	pub fn decode_events(
 		&self,
 		events: &Vec<StellarEvent>,
 		monitored_addresses: &[String],
@@ -1222,9 +1222,7 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 				.map(|addr| normalize_address(&addr.address))
 				.collect::<Vec<String>>();
 
-			let decoded_events = self
-				.decode_events(&events, &monitored_addresses, &contract_specs)
-				.await;
+			let decoded_events = self.decode_events(&events, &monitored_addresses, &contract_specs);
 
 			// Then process transactions for this monitor
 			for transaction in &transactions {
@@ -2508,9 +2506,7 @@ mod tests {
 
 		let events = vec![event];
 		let contract_specs = vec![];
-		let decoded = filter
-			.decode_events(&events, &monitored_addresses, &contract_specs)
-			.await;
+		let decoded = filter.decode_events(&events, &monitored_addresses, &contract_specs);
 
 		assert_eq!(decoded.len(), 1);
 		assert_eq!(decoded[0].tx_hash, "tx_hash_123");
@@ -2530,9 +2526,7 @@ mod tests {
 
 		let events = vec![event];
 		let contract_specs = vec![];
-		let decoded = filter
-			.decode_events(&events, &monitored_addresses, &contract_specs)
-			.await;
+		let decoded = filter.decode_events(&events, &monitored_addresses, &contract_specs);
 
 		assert_eq!(decoded.len(), 0);
 	}
@@ -2553,9 +2547,7 @@ mod tests {
 
 		let events = vec![event];
 		let contract_specs = vec![];
-		let decoded = filter
-			.decode_events(&events, &monitored_addresses, &contract_specs)
-			.await;
+		let decoded = filter.decode_events(&events, &monitored_addresses, &contract_specs);
 
 		assert_eq!(decoded.len(), 0);
 	}
@@ -2587,9 +2579,7 @@ mod tests {
 
 		let events = vec![event];
 		let contract_specs = vec![];
-		let decoded = filter
-			.decode_events(&events, &monitored_addresses, &contract_specs)
-			.await;
+		let decoded = filter.decode_events(&events, &monitored_addresses, &contract_specs);
 
 		assert_eq!(decoded.len(), 1);
 

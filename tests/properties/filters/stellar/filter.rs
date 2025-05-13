@@ -1,11 +1,12 @@
 //! Property-based tests for Stellar transaction matching and filtering.
 //! Tests cover signature/address normalization, expression evaluation, and transaction matching.
 
+use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use openzeppelin_monitor::{
 	models::{
 		Monitor, StellarContractFunction, StellarContractInput, StellarDecodedTransaction,
-		StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
+		StellarEvent, StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
 		StellarMatchParamsMap, StellarTransaction, StellarTransactionInfo, TransactionStatus,
 	},
 	services::{
@@ -27,7 +28,7 @@ use stellar_xdr::curr::{
 	AccountId, Hash, HostFunction, Int128Parts, InvokeContractArgs, InvokeHostFunctionOp, Memo,
 	MuxedAccount, Operation, OperationBody, Preconditions, ScAddress, ScString, ScSymbol, ScVal,
 	StringM, Transaction as XdrTransaction, TransactionEnvelope, TransactionExt,
-	TransactionV1Envelope, UInt128Parts, Uint256, VecM,
+	TransactionV1Envelope, UInt128Parts, Uint256, VecM, WriteXdr,
 };
 
 prop_compose! {
@@ -1171,6 +1172,77 @@ proptest! {
 			if let Some(events) = &matched_args.events {
 				prop_assert!(events.is_empty());
 			}
+		}
+	}
+
+	// Tests property-based matching for decode_events
+	#[test]
+	fn test_decode_events_property(
+		// Generate a contract address
+		contract_address in valid_address(),
+		// Generate an event name
+		event_name in prop_oneof![
+			Just("Transfer"),
+			Just("Approval"),
+			Just("Mint"),
+			Just("Burn")
+		],
+		// Generate a transaction hash
+		tx_hash in "[a-zA-Z0-9]{64}",
+		// Generate a value for expression testing
+		value in 0u64..u64::MAX,
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create a buffer for event name encoding (8 byte prefix + name)
+		let mut event_name_buffer = vec![0u8; 8];
+		event_name_buffer.extend_from_slice(event_name.as_bytes());
+		let encoded_event_name = BASE64.encode(event_name_buffer);
+
+		// Create I128 value separately
+		let value_i128 = Int128Parts { hi: 0, lo: value };
+		let sc_val = ScVal::I128(value_i128);
+		let encoded_value = sc_val.to_xdr_base64(stellar_xdr::curr::Limits::none()).unwrap();
+
+		// Create test event
+		let stellar_event = StellarEvent {
+			contract_id: contract_address.clone(),
+			transaction_hash: tx_hash.clone(),
+			topic_xdr: Some(vec![encoded_event_name.clone()]),
+			value_xdr: Some(encoded_value.clone()),
+			event_type: "contract".to_string(),
+			ledger: 1234,
+			ledger_closed_at: "2023-01-01T00:00:00Z".to_string(),
+			id: "0".to_string(),
+			paging_token: "0".to_string(),
+			in_successful_contract_call: true,
+			topic_json: None,
+			value_json: None,
+		};
+
+		let monitored_addresses = vec![normalize_address(&contract_address)];
+		let events = vec![stellar_event];
+		let contract_specs = Vec::new();
+
+		// Run the function under test
+		let decoded_events = filter.decode_events(&events, &monitored_addresses, &contract_specs);
+		// Verify the results
+		prop_assert_eq!(decoded_events.len(), 1);
+		prop_assert_eq!(&decoded_events[0].tx_hash, &tx_hash);
+
+		let decoded_event = &decoded_events[0].event;
+		prop_assert!(decoded_event.signature.starts_with(event_name));
+		prop_assert!(decoded_event.signature.contains("I128"));
+
+		// Verify the args are properly decoded
+		if let Some(args) = &decoded_event.args {
+			prop_assert_eq!(args.len(), 1);
+			prop_assert_eq!(&args[0].kind, "I128");
+			prop_assert_eq!(&args[0].name, "0");
+			prop_assert!(!args[0].indexed);
+			prop_assert_eq!(&args[0].value, &value.to_string());
 		}
 	}
 }
