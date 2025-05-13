@@ -120,6 +120,23 @@ Custom filter scripts allow you to apply additional conditions to matches detect
         "transactionIndex": "0x1fc",
         "type": "0x2"
       },
+      "logs": [
+         {
+            "address": "0xd1f2586790a5bd6da1e443441df53af6ec213d83",
+            "topics": [
+                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                "0x00000000000000000000000060af8cf92e5aa9ead4a592d657cd6debecfbc616",
+                "0x000000000000000000000000d1f2586790a5bd6da1e443441df53af6ec213d83"
+            ],
+            "data": "0x00000000000000000000000000000000000000000000106015728793d21f77ac",
+            "blockNumber": "0x1451aca",
+            "transactionHash": "0xa39d1b9b3edda74414bd6ffaf6596f8ea12cf0012fd9a930f71ed69df6ff34d0",
+            "transactionIndex": "0x0",
+            "blockHash": "0x9432868b7fc57e85f0435ca3047f6a76add86f804b3c1af85647520061e30f80",
+            "logIndex": "0x2",
+            "removed": false
+          },
+      ],
       "transaction": {
         "accessList": [],
         "blockHash": "0x...",

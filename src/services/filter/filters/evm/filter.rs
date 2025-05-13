@@ -148,10 +148,9 @@ impl<T> EVMBlockFilter<T> {
 							},
 							EVMMatchParamEntry {
 								name: "transaction_index".to_string(),
-								value: tx_receipt
-									.as_ref()
-									.map(|r| r.transaction_index.0.to_string())
-									.unwrap_or_default(),
+								value: transaction
+									.transaction_index
+									.map_or("0".to_string(), |idx| idx.0.to_string()),
 								kind: "uint64".to_string(),
 								indexed: false,
 							},
@@ -1604,10 +1603,9 @@ mod tests {
 		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
 
 		// Test transaction with matching transaction index
-		let tx_matching = TransactionBuilder::new().build();
+		let tx_matching = TransactionBuilder::new().transaction_index(15).build();
 		let tx_receipt_matching = ReceiptBuilder::new()
 			.transaction_hash(tx_matching.hash)
-			.transaction_index(15)
 			.build();
 
 		filter.find_matching_transaction(
@@ -1621,10 +1619,9 @@ mod tests {
 		assert_eq!(matched[0].expression, Some(expression));
 
 		// Test transaction with non-matching transaction index
-		let tx_non_matching = TransactionBuilder::new().build();
+		let tx_non_matching = TransactionBuilder::new().transaction_index(1).build();
 		let tx_receipt_non_matching = ReceiptBuilder::new()
 			.transaction_hash(tx_non_matching.hash)
-			.transaction_index(1)
 			.build();
 
 		matched.clear();
