@@ -1,9 +1,13 @@
 //! Property-based tests for Stellar transaction matching and filtering helpers.
 
 use openzeppelin_monitor::services::filter::stellar_helpers::compare_json_values;
-use proptest::prelude::*;
+use proptest::{prelude::*, test_runner::Config};
 
 proptest! {
+	#![proptest_config(Config {
+		failure_persistence: None,
+		..Config::default()
+	})]
 	// Tests property-based validation of compare_json_values function
 	#[test]
 	fn test_compare_json_values_property(

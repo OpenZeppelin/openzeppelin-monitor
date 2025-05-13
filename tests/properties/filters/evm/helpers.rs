@@ -3,7 +3,7 @@
 
 use ethabi::Token;
 use openzeppelin_monitor::services::filter::evm_helpers::format_token_value;
-use proptest::prelude::*;
+use proptest::{prelude::*, test_runner::Config};
 
 // Generator for ethabi Token values
 prop_compose! {
@@ -42,6 +42,11 @@ prop_compose! {
 }
 
 proptest! {
+	#![proptest_config(Config {
+		failure_persistence: None,
+		..Config::default()
+	})]
+
 	#[test]
 	fn test_format_token_value(
 		token in generate_token()
