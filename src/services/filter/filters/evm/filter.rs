@@ -672,6 +672,10 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		let current_block_number = evm_block.number.unwrap_or(U64::from(0)).to::<u64>();
 
 		// Get logs for the block
+		// We use this to get all the logs for a single block.
+		// We could further optimize by getting logs for a range of blocks and calling this in the parent function
+		// However, due to limitations by certain RPC providers (e.g. Quicknode only allows a block range of 5),
+		// it's safer to just fetch the logs for a single block at a time as it's more reliable.
 		let all_block_logs = client
 			.get_logs_for_blocks(current_block_number, current_block_number, None)
 			.await?;
