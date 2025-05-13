@@ -6,7 +6,7 @@ use openzeppelin_monitor::{
 	models::{
 		Monitor, StellarContractFunction, StellarContractInput, StellarDecodedTransaction,
 		StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
-		StellarTransaction, StellarTransactionInfo, TransactionStatus,
+		StellarMatchParamsMap, StellarTransaction, StellarTransactionInfo, TransactionStatus,
 	},
 	services::{
 		blockchain::{StellarClient, StellarTransportClient},
@@ -14,7 +14,7 @@ use openzeppelin_monitor::{
 			stellar_helpers::{
 				are_same_address, are_same_signature, normalize_address, normalize_signature,
 			},
-			StellarBlockFilter,
+			EventMap, StellarBlockFilter,
 		},
 	},
 	utils::tests::stellar::monitor::MonitorBuilder,
@@ -1061,5 +1061,116 @@ proptest! {
 
 		// Verify empty input produces empty output
 		prop_assert!(params.is_empty());
+	}
+
+	// Tests property-based matching for event functions
+	#[test]
+	fn test_find_matching_events_for_transaction_property(
+		// Generate a transaction hash
+		tx_hash in "[a-zA-Z0-9]{64}",
+		// Generate an event name
+		event_name in prop_oneof![
+			Just("Transfer"),
+			Just("Approval"),
+			Just("Mint"),
+			Just("Burn"),
+			Just("AdminChanged")
+		],
+		// Generate parameter type (only use numeric types for simplicity)
+		param_type in prop_oneof![
+			Just("I128"),
+			Just("U128"),
+		],
+		// Generate a value for expression testing
+		value in 0u128..1000000u128,
+		// Generate a threshold for expression testing
+		threshold in 0u128..1000000u128,
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create the event signature
+		let event_signature = format!("{}({})", event_name, param_type);
+
+		// Create monitor with the event condition
+		let monitor = MonitorBuilder::new()
+			.event(&event_signature, Some(format!("param0 >= {}", threshold)))
+			.build();
+
+		// Create transaction
+		let transaction = StellarTransaction::from(StellarTransactionInfo {
+			status: "SUCCESS".to_string(),
+			transaction_hash: tx_hash.clone(),
+			application_order: 1,
+			fee_bump: false,
+			envelope_xdr: None,
+			envelope_json: None,
+			result_xdr: None,
+			result_json: None,
+			result_meta_xdr: None,
+			result_meta_json: None,
+			diagnostic_events_xdr: None,
+			diagnostic_events_json: None,
+			ledger: 1234,
+			ledger_close_time: 1234567890,
+			decoded: None,
+		});
+
+		// Create event with the matching transaction hash
+		let test_event = EventMap {
+			event: StellarMatchParamsMap {
+				signature: event_signature.clone(),
+				args: Some(vec![
+					StellarMatchParamEntry {
+						name: "param0".to_string(),
+						value: value.to_string(),
+						kind: param_type.to_string(),
+						indexed: false,
+					}
+				]),
+			},
+			tx_hash: tx_hash.clone(),
+		};
+
+		let events = vec![test_event];
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		// Call the function under test
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		// Determine if we should have a match based on the expression
+		let should_match = value >= threshold;
+
+		// Verify the results
+		if should_match {
+			// Should have exactly one match
+			prop_assert_eq!(matched_events.len(), 1);
+			prop_assert_eq!(&matched_events[0].signature, &event_signature);
+			prop_assert_eq!(&matched_events[0].expression, &Some(format!("param0 >= {}", threshold)));
+
+			// Verify matched arguments
+			if let Some(events) = &matched_args.events {
+				prop_assert_eq!(events.len(), 1);
+				prop_assert_eq!(&events[0].signature, &event_signature);
+				prop_assert!(events[0].args.is_some());
+			}
+		} else {
+			// Should have no matches
+			prop_assert!(matched_events.is_empty());
+			if let Some(events) = &matched_args.events {
+				prop_assert!(events.is_empty());
+			}
+		}
 	}
 }

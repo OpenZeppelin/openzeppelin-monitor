@@ -22,6 +22,7 @@ use crate::{
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
 pub use evm::filter::EVMBlockFilter;
+pub use stellar::filter::EventMap;
 pub use stellar::filter::StellarBlockFilter;
 
 /// Trait for filtering blockchain data

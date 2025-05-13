@@ -856,8 +856,6 @@ proptest! {
 
 		// Decode the event
 		let decoded = filter.decode_events(&contract_spec, &log);
-		println!("decoded: {:?}", decoded);
-		// The function should succeed in decoding the event
 		prop_assert!(decoded.is_some());
 
 		if let Some(result) = decoded {
