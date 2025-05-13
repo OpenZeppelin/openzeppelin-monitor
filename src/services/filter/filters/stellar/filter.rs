@@ -647,7 +647,7 @@ impl<T> StellarBlockFilter<T> {
 	///
 	/// # Returns
 	/// Boolean indicating if the comparison evaluates to true
-	fn compare_values(
+	pub fn compare_values(
 		&self,
 		param_type: &str,
 		param_value: &str,
@@ -869,7 +869,7 @@ impl<T> StellarBlockFilter<T> {
 		}
 	}
 
-	fn compare_vec(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
+	pub fn compare_vec(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
 		// Try to parse the param_value as JSON array
 		if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(param_value) {
 			match operator {

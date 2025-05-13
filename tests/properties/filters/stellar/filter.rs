@@ -1245,4 +1245,204 @@ proptest! {
 			prop_assert_eq!(&args[0].value, &value.to_string());
 		}
 	}
+
+	// Tests property-based validation of compare_values for different types
+	#[test]
+	fn test_compare_values_property(
+		// Generate random values of different types
+		bool_value in any::<bool>(),
+		i32_value in any::<i32>(),
+		u32_value in any::<u32>(),
+		i64_value in any::<i64>(),
+		u64_value in any::<u64>(),
+		string_value in "[a-zA-Z0-9]{3,10}",
+		// Generate comparison operators
+		operator in prop_oneof![
+			Just("=="), Just("!="), Just(">"),
+			Just(">="), Just("<"), Just("<=")
+		],
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Test boolean comparisons
+		let bool_result = filter.compare_values(
+			"bool",
+			&bool_value.to_string(),
+			"==",
+			&bool_value.to_string()
+		);
+		prop_assert!(bool_result);
+
+		// Test i32 comparisons
+		let i32_result = filter.compare_values(
+			"i32",
+			&i32_value.to_string(),
+			"==",
+			&i32_value.to_string()
+		);
+		prop_assert!(i32_result);
+
+		// Test u32 comparisons
+		let u32_result = filter.compare_values(
+			"u32",
+			&u32_value.to_string(),
+			"==",
+			&u32_value.to_string()
+		);
+		prop_assert!(u32_result);
+
+		// Test i64 comparisons
+		let i64_result = filter.compare_values(
+			"i64",
+			&i64_value.to_string(),
+			"==",
+			&i64_value.to_string()
+		);
+		prop_assert!(i64_result);
+
+		// Test u64 comparisons
+		let u64_result = filter.compare_values(
+			"u64",
+			&u64_value.to_string(),
+			"==",
+			&u64_value.to_string()
+		);
+		prop_assert!(u64_result);
+
+		// Test string comparisons
+		let string_result = filter.compare_values(
+			"string",
+			&string_value,
+			"==",
+			&string_value
+		);
+		prop_assert!(string_result);
+
+		// Test inequality of different values
+		if operator == "!=" {
+			let different_bool = filter.compare_values(
+				"bool",
+				&bool_value.to_string(),
+				"!=",
+				&(!bool_value).to_string()
+			);
+			prop_assert!(different_bool);
+
+			let different_number = filter.compare_values(
+				"i32",
+				&i32_value.to_string(),
+				"!=",
+				&(i32_value.wrapping_add(1)).to_string()
+			);
+			prop_assert!(different_number);
+		}
+
+		// Test invalid type
+		let invalid_type = filter.compare_values(
+			"non_existent_type",
+			&string_value,
+			"==",
+			&string_value
+		);
+		prop_assert!(!invalid_type);
+	}
+
+	// Tests property-based validation of compare_vec function
+	#[test]
+	fn test_compare_vec_property(
+		// Generate array elements and test values
+		elements in prop::collection::vec(any::<i32>(), 1..5),
+		extra_element in any::<i32>(),
+		operator in prop_oneof![
+			Just("contains"), Just("=="), Just("!=")
+		],
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create a comma-separated string
+		let vec_string = elements.iter()
+			.map(|e| e.to_string())
+			.collect::<Vec<_>>()
+			.join(",");
+
+		// Choose a random element to test with contains
+		let contained_element = elements.get(elements.len() / 2)
+			.cloned()
+			.unwrap_or(elements[0]);
+
+		// Test direct value that should be contained
+		if operator == "contains" {
+			let contains_result = filter.compare_vec(
+				&vec_string,
+				"contains",
+				&contained_element.to_string()
+			);
+			prop_assert!(contains_result);
+
+			// Test with element that shouldn't be in the array
+			// Find a value not in our vector
+			prop_assume!(!elements.contains(&extra_element));
+			let not_contains_result = filter.compare_vec(
+				&vec_string,
+				"contains",
+				&extra_element.to_string()
+			);
+			prop_assert!(!not_contains_result);
+		}
+
+		// Test equality comparisons
+		if operator == "==" {
+			// Same vec should be equal
+			let eq_result = filter.compare_vec(
+				&vec_string,
+				"==",
+				&vec_string
+			);
+			prop_assert!(eq_result);
+
+			// Test JSON array format
+			let json_vec = serde_json::to_string(&elements).unwrap();
+			let json_eq_result = filter.compare_vec(
+				&json_vec,
+				"==",
+				&json_vec
+			);
+			prop_assert!(json_eq_result);
+		}
+
+		// Test inequality
+		if operator == "!=" {
+			// Different vec should be unequal
+			let mut different_elements = elements.clone();
+			if !different_elements.is_empty() {
+				different_elements[0] = extra_element;
+			} else {
+				different_elements.push(extra_element);
+			}
+
+			let different_vec_string = different_elements.iter()
+				.map(|e| e.to_string())
+				.collect::<Vec<_>>()
+				.join(",");
+
+			let neq_result = filter.compare_vec(
+				&vec_string,
+				"!=",
+				&different_vec_string
+			);
+			prop_assert!(neq_result);
+		}
+
+		// Test unsupported operator
+		let unsupported_result = filter.compare_vec(
+			&vec_string,
+			">",
+			&vec_string
+		);
+		prop_assert!(!unsupported_result);
+	}
 }

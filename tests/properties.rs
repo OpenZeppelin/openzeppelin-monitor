@@ -11,6 +11,7 @@ mod properties {
 		}
 		mod stellar {
 			mod filter;
+			mod helpers;
 		}
 	}
 	mod notifications {
