@@ -150,6 +150,7 @@ fn create_test_monitor(
 #[tokio::test]
 async fn test_execute_monitor_evm() {
 	let test_data = load_test_data("evm");
+	let receipts = test_data.receipts.clone();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -164,7 +165,17 @@ async fn test_execute_monitor_evm() {
 		.with(predicate::eq(21305050u64), predicate::eq(None))
 		.return_once(move |_, _| Ok(test_data.blocks.clone()));
 
-	let receipts = test_data.receipts.clone();
+	mock_client
+		.expect_get_logs_for_blocks()
+		.return_once(move |_, _, _| {
+			Ok(test_data
+				.receipts
+				.clone()
+				.into_iter()
+				.flat_map(|r| r.logs.clone())
+				.collect())
+		});
+
 	let receipt_map: std::collections::HashMap<String, EVMTransactionReceipt> = receipts
 		.iter()
 		.map(|r| (format!("0x{:x}", r.transaction_hash), r.clone()))
@@ -704,6 +715,7 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 #[tokio::test]
 async fn test_execute_monitor_network_slug_not_defined() {
 	let test_data = load_test_data("evm");
+	let receipts = test_data.receipts.clone();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -729,7 +741,9 @@ async fn test_execute_monitor_network_slug_not_defined() {
 		.times(1)
 		.returning(|| Ok(100u64));
 
-	let receipts = test_data.receipts.clone();
+	mock_client
+		.expect_get_logs_for_blocks()
+		.return_once(move |_, _, _| Ok(vec![]));
 
 	let receipt_map: std::collections::HashMap<String, EVMTransactionReceipt> = receipts
 		.iter()
@@ -914,6 +928,7 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 #[tokio::test]
 async fn test_execute_monitor_evm_with_trigger_scripts() {
 	let mut test_data = load_test_data("evm");
+	let receipts = test_data.receipts.clone();
 	let mut mocked_monitors = HashMap::new();
 	test_data.monitor.trigger_conditions = vec![TriggerConditions {
 		script_path: "./examples/config/filters/evm_large_transfer_usdc.py".to_string(),
@@ -934,7 +949,16 @@ async fn test_execute_monitor_evm_with_trigger_scripts() {
 		.with(predicate::eq(21305050u64), predicate::eq(None))
 		.return_once(move |_, _| Ok(test_data.blocks.clone()));
 
-	let receipts = test_data.receipts.clone();
+	mock_client
+		.expect_get_logs_for_blocks()
+		.return_once(move |_, _, _| {
+			Ok(test_data
+				.receipts
+				.clone()
+				.into_iter()
+				.flat_map(|r| r.logs.clone())
+				.collect())
+		});
 	let receipt_map: std::collections::HashMap<String, EVMTransactionReceipt> = receipts
 		.iter()
 		.map(|r| (format!("0x{:x}", r.transaction_hash), r.clone()))

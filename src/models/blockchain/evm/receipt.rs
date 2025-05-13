@@ -130,6 +130,15 @@ impl From<BaseReceipt> for TransactionReceipt {
 	}
 }
 
+impl From<Vec<BaseLog>> for TransactionReceipt {
+	fn from(logs: Vec<BaseLog>) -> Self {
+		Self(BaseReceipt {
+			logs,
+			..Default::default()
+		})
+	}
+}
+
 impl From<AlloyTransactionReceipt> for TransactionReceipt {
 	fn from(receipt: AlloyTransactionReceipt) -> Self {
 		let inner_receipt = match &receipt.inner {

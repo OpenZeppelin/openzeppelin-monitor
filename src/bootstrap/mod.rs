@@ -521,16 +521,14 @@ mod tests {
 	use super::*;
 	use crate::{
 		models::{
-			EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor,
-			MonitorMatch, ScriptLanguage, StellarBlock, StellarMonitorMatch, StellarTransaction,
-			StellarTransactionInfo, TriggerConditions,
+			EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt, MatchConditions,
+			Monitor, MonitorMatch, ScriptLanguage, StellarBlock, StellarMonitorMatch,
+			StellarTransaction, StellarTransactionInfo, TriggerConditions,
 		},
-		utils::tests::builders::evm::monitor::MonitorBuilder,
+		utils::tests::{builders::evm::monitor::MonitorBuilder, evm::receipt::ReceiptBuilder},
 	};
 	use alloy::{
-		consensus::{
-			transaction::Recovered, Receipt, ReceiptEnvelope, ReceiptWithBloom, Signed, TxEnvelope,
-		},
+		consensus::{transaction::Recovered, Signed, TxEnvelope},
 		primitives::{Address, Bytes, TxKind, B256, U256},
 	};
 	use std::io::Write;
@@ -561,23 +559,11 @@ mod tests {
 	}
 
 	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
-		EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
-			inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
-				receipt: Receipt::default(),
-				logs_bloom: Default::default(),
-			}),
-			transaction_hash: B256::ZERO,
-			transaction_index: Some(0),
-			block_hash: Some(B256::ZERO),
-			block_number: Some(0),
-			gas_used: 0,
-			effective_gas_price: 0,
-			blob_gas_used: None,
-			blob_gas_price: None,
-			from: Address::ZERO,
-			to: Some(Address::ZERO),
-			contract_address: None,
-		})
+		ReceiptBuilder::new().build()
+	}
+
+	fn create_test_evm_logs() -> Vec<EVMReceiptLog> {
+		ReceiptBuilder::new().build().logs.clone()
 	}
 
 	fn create_test_evm_transaction() -> EVMTransaction {
@@ -628,7 +614,8 @@ mod tests {
 			BlockChainType::EVM => MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 				monitor: create_test_monitor("test", vec![], false, script_path),
 				transaction: create_test_evm_transaction(),
-				receipt: create_test_evm_transaction_receipt(),
+				receipt: Some(create_test_evm_transaction_receipt()),
+				logs: Some(create_test_evm_logs()),
 				network_slug: "ethereum_mainnet".to_string(),
 				matched_on: MatchConditions {
 					functions: vec![],
@@ -662,7 +649,8 @@ mod tests {
 			BlockChainType::EVM => MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 				monitor,
 				transaction: create_test_evm_transaction(),
-				receipt: create_test_evm_transaction_receipt(),
+				receipt: Some(create_test_evm_transaction_receipt()),
+				logs: Some(create_test_evm_logs()),
 				network_slug: "ethereum_mainnet".to_string(),
 				matched_on: MatchConditions {
 					functions: vec![],
