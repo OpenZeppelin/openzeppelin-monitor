@@ -174,6 +174,47 @@ prop_compose! {
 	}
 }
 
+// Generates monitor configured with function matching conditions and ABI
+prop_compose! {
+	fn generate_monitor_with_event()(
+		address in valid_address(),
+		min_value in 0u128..500000u128
+	) -> (Monitor, U256) {
+		let monitor = MonitorBuilder::new()
+			.name("Test Monitor")
+			.address_with_spec(address.as_str(), Some(ContractSpec::EVM(EVMContractSpec::from(json!([
+				{
+					"anonymous": false,
+					"name": "Transfer",
+					"type": "event",
+					"inputs": [
+						{
+							"indexed": true,
+							"internalType": "address",
+							"name": "from",
+							"type": "address"
+						},
+						{
+							"indexed": true,
+							"internalType": "address",
+							"name": "to",
+							"type": "address"
+						},
+						{
+							"indexed": false,
+							"internalType": "uint256",
+							"name": "value",
+							"type": "uint256"
+						},
+					],
+				}
+			])))))
+			.event("Transfer(address,address,uint256)", Some(format!("value >= {}", min_value)))
+			.build();
+		(monitor, U256::from(min_value))
+	}
+}
+
 proptest! {
 	#![proptest_config(Config {
 		failure_persistence: None,
@@ -626,4 +667,49 @@ proptest! {
 
 		prop_assert_eq!(!matched_functions.is_empty(), should_match);
 	}
+
+	// Tests event matching in transactions
+	// Verifies that event logs are correctly identified and matched based on:
+	// - Event signatures
+	// - Log data decoding
+	// - Parameter evaluation
+	#[test]
+	fn test_find_matching_event_for_transaction(
+		(monitor, min_value) in generate_monitor_with_event()
+	) {
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+		let mut matched_events = Vec::new();
+		let mut matched_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+
+		// Create transaction with specific function call data
+		let monitor_address = Address::from_slice(&hex::decode(&monitor.addresses[0].address[2..]).unwrap());
+
+		let tx_receipt = ReceiptBuilder::new()
+			.contract_address(monitor_address)
+			.from(Address::from_slice(&hex::decode("0000000000000000000000000000000000001234").unwrap()))
+			.to(Address::from_slice(&hex::decode("0000000000000000000000000000000000005678").unwrap()))
+			.value(U256::from(min_value))
+			.build();
+
+		filter.find_matching_events_for_transaction(
+			&tx_receipt,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+			&mut monitor.addresses.iter().map(|a| a.address.clone()).collect()
+		);
+
+
+		let should_match = monitor.match_conditions.events.iter().any(|e|
+			e.signature == "Transfer(address,address,uint256)"
+		);
+		prop_assert_eq!(matched_events.len(), 1);
+		prop_assert_eq!(!matched_events.is_empty(), should_match);
+	}
+
 }
