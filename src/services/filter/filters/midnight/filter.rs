@@ -62,12 +62,16 @@ impl<T> MidnightBlockFilter<T> {
 	/// * `matched_on_args` - Arguments from matched function calls
 	pub fn find_matching_functions_for_transaction(
 		&self,
-		_monitored_addresses: &[String],
-		_transaction: &MidnightTransaction,
+		monitored_addresses: &[String],
+		transaction: &MidnightTransaction,
 		_monitor: &Monitor,
-		_matched_functions: &mut [FunctionCondition],
-		_matched_on_args: &mut MidnightMatchArguments,
+		matched_functions: &mut [FunctionCondition],
+		matched_on_args: &mut MidnightMatchArguments,
 	) {
+		println!("monitored_addresses: {:#?}", monitored_addresses);
+		println!("transaction: {:#?}", transaction);
+		println!("matched_functions: {:#?}", matched_functions);
+		println!("matched_on_args: {:#?}", matched_on_args);
 	}
 
 	/// Finds events in a transaction that match the monitor's conditions.
@@ -198,7 +202,7 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 		for monitor in monitors {
 			tracing::debug!("Processing monitor: {:?}", monitor.name);
-			let _monitored_addresses: Vec<String> = monitor
+			let monitored_addresses: Vec<String> = monitor
 				.addresses
 				.iter()
 				.map(|a| a.address.clone())
@@ -206,9 +210,9 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 			for transaction in transactions.iter() {
 				let _matched_transactions = Vec::<TransactionCondition>::new();
-				let _matched_functions = Vec::<FunctionCondition>::new();
+				let mut matched_functions = Vec::<FunctionCondition>::new();
 				let _matched_events = Vec::<EventCondition>::new();
-				let _matched_on_args = MidnightMatchArguments {
+				let mut matched_on_args = MidnightMatchArguments {
 					events: Some(Vec::new()),
 					functions: Some(Vec::new()),
 				};
@@ -217,13 +221,13 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 				// self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
 
-				// self.find_matching_functions_for_transaction(
-				// 	&monitored_addresses,
-				// 	transaction,
-				// 	monitor,
-				// 	&mut matched_functions,
-				// 	&mut matched_on_args,
-				// );
+				self.find_matching_functions_for_transaction(
+					&monitored_addresses,
+					transaction,
+					monitor,
+					&mut matched_functions,
+					&mut matched_on_args,
+				);
 			}
 		}
 
