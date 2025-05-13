@@ -5,7 +5,7 @@
 
 use alloy::hex::ToHexExt;
 use midnight_ledger::structure::{
-	ContractAction, Proofish, Transaction as MidnightNodeTransaction, TransactionIdentifier,
+	ContractAction, Proof, Proofish, Transaction as MidnightNodeTransaction, TransactionIdentifier,
 };
 use midnight_node_ledger_helpers::DB;
 
@@ -88,7 +88,7 @@ impl From<MidnightRpcTransaction> for Transaction {
 	fn from(tx: MidnightRpcTransaction) -> Self {
 		Self {
 			inner: tx,
-			status: true,
+			status: true, // TODO: add status
 		}
 	}
 }
@@ -110,12 +110,9 @@ impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
 	}
 }
 
-impl<P: Proofish<D>, D: DB> From<MidnightNodeTransaction<P, D>> for Transaction {
-	fn from(tx: MidnightNodeTransaction<P, D>) -> Self {
-		// Get hash and identifiers before moving tx
-		// let tx_hash = tx.transaction_hash().0 .0.encode_hex();
-		let tx_hash =
-			"0x0000000000000000000000000000000000000000000000000000000000000000".to_string(); // TODO: fix this
+impl<D: DB> From<MidnightNodeTransaction<Proof, D>> for Transaction {
+	fn from(tx: MidnightNodeTransaction<Proof, D>) -> Self {
+		let tx_hash = tx.transaction_hash().0 .0.encode_hex();
 
 		let identifiers = tx
 			.identifiers()
@@ -156,7 +153,7 @@ impl<P: Proofish<D>, D: DB> From<MidnightNodeTransaction<P, D>> for Transaction 
 				operations,
 				identifiers,
 			},
-			status: true,
+			status: true, // TODO: add status
 		}
 	}
 }

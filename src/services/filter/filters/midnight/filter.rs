@@ -7,8 +7,8 @@
 #![allow(clippy::result_large_err)]
 
 use async_trait::async_trait;
-use midnight_ledger::structure::Proofish;
-use midnight_node_ledger_helpers::{DefaultDB, NetworkId, DB};
+use midnight_ledger::structure::Proof;
+use midnight_node_ledger_helpers::NetworkId;
 use std::{collections::VecDeque, marker::PhantomData};
 use tracing::instrument;
 
@@ -105,7 +105,7 @@ impl<T> MidnightBlockFilter<T> {
 		false
 	}
 
-	pub fn deserialize_transactions<P: Proofish<D>, D: DB>(
+	pub fn deserialize_transactions(
 		&self,
 		block: &MidnightBlock,
 		network_id: NetworkId,
@@ -113,10 +113,9 @@ impl<T> MidnightBlockFilter<T> {
 		let mut txs = Vec::<MidnightTransaction>::new();
 		let tx_index = block.transactions_index.iter().rev();
 		for (hash, body) in tx_index {
-			let (_hash, tx) = match parse_tx_index_item::<P, D>(hash, body, network_id) {
+			let (_hash, tx) = match parse_tx_index_item::<Proof>(hash, body, network_id) {
 				Ok(res) => res,
 				Err(e) => {
-					tracing::error!("Error deserializing transaction: {:?}", e);
 					return Err(FilterError::network_error(
 						"Error deserializing transaction",
 						Some(e.into()),
@@ -164,14 +163,9 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 			}
 		};
 
-		println!("midnight_block: {:#?}", midnight_block);
-
 		let chain_type = client.get_chain_type().await?;
 		let network_id = map_chain_type(&chain_type);
-
-		let transactions =
-			self.deserialize_transactions::<(), DefaultDB>(midnight_block, network_id)?;
-		println!("transactions: {:#?}", transactions);
+		let _decoded_transactions = self.deserialize_transactions(midnight_block, network_id)?;
 
 		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
 
@@ -204,13 +198,11 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 		for monitor in monitors {
 			tracing::debug!("Processing monitor: {:?}", monitor.name);
-			let monitored_addresses: Vec<String> = monitor
+			let _monitored_addresses: Vec<String> = monitor
 				.addresses
 				.iter()
 				.map(|a| a.address.clone())
 				.collect();
-
-			println!("monitored_addresses: {:?}", monitored_addresses);
 
 			for transaction in transactions.iter() {
 				let _matched_transactions = Vec::<TransactionCondition>::new();
