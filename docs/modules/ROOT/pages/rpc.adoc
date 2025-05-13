@@ -278,7 +278,7 @@ graph TD
 * Fetching block data (per block): `eth_getBlockByNumber`
 * Fetching block logs (per block): `eth_getLogs`
 * Fetching transaction receipt (only when needed):
-** When monitor condition requires receipt-specific fields (e.g., gas_used)
+** When monitor condition requires receipt-specific fields (e.g., `gas_used`)
 ** When monitoring transaction status and no logs are present to validate status
 
 *Stellar*
