@@ -133,16 +133,12 @@ jobs:
       - name: Prepare
         id: init
         uses: ./.github/actions/prepare
+        with:
+          components: llvm-tools-preview
 
       # Get the output of the prepare composite action
       - name: Get cache-hit output
         run: 'echo "Cache hit >>>>>: ${{ steps.init.outputs.cache-hit }}"'
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8  # v1.10.1
-        with:
-          toolchain: stable
-          components: llvm-tools-preview
-          rustflags: ''
       - name: Install cargo hack
         uses: taiki-e/install-action@cargo-hack
       - name: Install cargo-llvm-cov

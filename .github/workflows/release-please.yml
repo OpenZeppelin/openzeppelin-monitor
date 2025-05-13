@@ -13,8 +13,7 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    environment:
-      name: release
+    environment: release
     outputs:
       release_created: ${{ steps.release.outputs.releases_created }}
       pr_created: ${{ steps.release.outputs.prs_created }}

@@ -26,8 +26,6 @@ jobs:
       # Get the output of the prepare composite action
       - name: Get cache-hit output
         run: 'echo "Cache hit >>>>>: ${{ steps.init.outputs.cache-hit }}"'
-      - name: Update Cargo.lock
-        run: cargo update
       - name: Cargo Update
         id: lock-file-commit
         run: |-
@@ -46,6 +44,7 @@ jobs:
           title: 'chore: Updating lock file'
           sign-commits: true
           branch: update-cargo-lock
+          delete-branch: true
           commit-message: 'chore: Updating lock file'
           body: |-
             This PR is generated automatically by GitHub Actions.
