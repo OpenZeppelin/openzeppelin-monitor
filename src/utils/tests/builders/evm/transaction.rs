@@ -1,5 +1,8 @@
 use crate::models::{EVMBaseTransaction, EVMTransaction};
-use alloy::primitives::{Address, Bytes, B256, U256};
+use alloy::{
+	primitives::{Address, Bytes, B256, U256},
+	rpc::types::Index,
+};
 
 /// A builder for creating test EVM transactions with default values.
 #[derive(Debug, Default)]
@@ -14,6 +17,7 @@ pub struct TransactionBuilder {
 	max_priority_fee_per_gas: Option<U256>,
 	gas_limit: Option<U256>,
 	nonce: Option<U256>,
+	transaction_index: Option<Index>,
 }
 
 impl TransactionBuilder {
@@ -82,6 +86,12 @@ impl TransactionBuilder {
 		self
 	}
 
+	/// Sets the transaction index for the transaction.
+	pub fn transaction_index(mut self, transaction_index: usize) -> Self {
+		self.transaction_index = Some(Index(transaction_index));
+		self
+	}
+
 	/// Builds the Transaction instance.
 	pub fn build(self) -> EVMTransaction {
 		let default_gas_limit = U256::from(21000);
@@ -97,6 +107,7 @@ impl TransactionBuilder {
 			nonce: self.nonce.unwrap_or_default(),
 			value: self.value.unwrap_or_default(),
 			input: self.input.unwrap_or_default(),
+			transaction_index: self.transaction_index,
 			..Default::default()
 		};
 

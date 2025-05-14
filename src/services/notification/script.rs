@@ -140,7 +140,8 @@ mod tests {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor("test_monitor", vec!["ethereum_mainnet"], false, vec![]),
 			transaction: create_test_evm_transaction(),
-			receipt: EVMTransactionReceipt::default(),
+			receipt: Some(EVMTransactionReceipt::default()),
+			logs: Some(vec![]),
 			network_slug: "ethereum_mainnet".to_string(),
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,

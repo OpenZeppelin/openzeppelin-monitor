@@ -64,11 +64,17 @@ async fn test_get_logs_for_blocks() {
 	}];
 
 	mock.expect_get_logs_for_blocks()
-		.with(predicate::eq(1u64), predicate::eq(2u64))
+		.with(
+			predicate::eq(1u64),
+			predicate::eq(2u64),
+			predicate::eq(Some(vec!["0x123".to_string()])),
+		)
 		.times(1)
-		.returning(move |_, _| Ok(expected_logs.clone()));
+		.returning(move |_, _, _| Ok(expected_logs.clone()));
 
-	let result = mock.get_logs_for_blocks(1, 2).await;
+	let result = mock
+		.get_logs_for_blocks(1, 2, Some(vec!["0x123".to_string()]))
+		.await;
 	assert!(result.is_ok());
 	assert_eq!(result.unwrap().len(), 1);
 }

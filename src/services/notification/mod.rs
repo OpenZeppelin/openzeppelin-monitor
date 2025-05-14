@@ -332,7 +332,8 @@ mod tests {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
 			transaction: create_test_evm_transaction(),
-			receipt: EVMTransactionReceipt::default(),
+			receipt: Some(EVMTransactionReceipt::default()),
+			logs: Some(vec![]),
 			network_slug: "evm_mainnet".to_string(),
 			matched_on: MatchConditions {
 				functions: vec![],

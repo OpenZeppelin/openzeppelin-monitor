@@ -60,6 +60,7 @@ mock! {
 			&self,
 			from_block: u64,
 			to_block: u64,
+			addresses: Option<Vec<String>>,
 		) -> Result<Vec<EVMReceiptLog>,  anyhow::Error>;
 	}
 

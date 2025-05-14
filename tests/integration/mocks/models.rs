@@ -1,11 +1,11 @@
 use mockito::{Mock, Server};
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, BlockType, EVMBlock, EVMTransaction, EVMTransactionReceipt, Network,
-		StellarBlock, StellarLedgerInfo, StellarTransaction, StellarTransactionInfo,
+		BlockChainType, BlockType, EVMBlock, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt,
+		Network, StellarBlock, StellarLedgerInfo, StellarTransaction, StellarTransactionInfo,
 		TransactionType,
 	},
-	utils::tests::builders::network::NetworkBuilder,
+	utils::tests::{builders::network::NetworkBuilder, evm::receipt::ReceiptBuilder},
 };
 use serde_json::json;
 
@@ -179,21 +179,9 @@ pub fn create_test_transaction(chain: BlockChainType) -> TransactionType {
 }
 
 pub fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
-	EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
-		inner: alloy::consensus::ReceiptEnvelope::Legacy(alloy::consensus::ReceiptWithBloom {
-			receipt: alloy::consensus::Receipt::default(),
-			logs_bloom: alloy::primitives::Bloom::default(),
-		}),
-		transaction_hash: alloy::primitives::B256::ZERO,
-		transaction_index: Some(0),
-		block_hash: Some(alloy::primitives::B256::ZERO),
-		block_number: Some(0),
-		gas_used: 0,
-		effective_gas_price: 0,
-		blob_gas_used: None,
-		blob_gas_price: None,
-		from: alloy::primitives::Address::ZERO,
-		to: Some(alloy::primitives::Address::ZERO),
-		contract_address: None,
-	})
+	ReceiptBuilder::new().build()
+}
+
+pub fn create_test_evm_logs() -> Vec<EVMReceiptLog> {
+	ReceiptBuilder::new().build().logs.clone()
 }

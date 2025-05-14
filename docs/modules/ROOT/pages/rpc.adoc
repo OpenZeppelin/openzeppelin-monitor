@@ -251,7 +251,8 @@ graph TD
         B[Network Init] -->|net_version| D
         D -->|eth_blockNumber| E[For every block in range]
         E -->|eth_getBlockByNumber| G1[Process Block]
-        G1 -->|For every transaction| J[Get Transaction Receipt]
+        G1 -->|eth_getLogs| H[Get Block Logs]
+        H -->|Only when needed| J[Get Transaction Receipt]
         J -->|eth_getTransactionReceipt| I[Complete]
     end
 
@@ -276,7 +277,10 @@ graph TD
 * RPC Client initialization (per active network): `net_version`
 * Fetching the latest block number (per cron iteration): `eth_blockNumber`
 * Fetching block data (per block): `eth_getBlockByNumber`
-* Fetching transaction receipt (per transaction in block): `eth_getTransactionReceipt`
+* Fetching block logs (per block): `eth_getLogs`
+* Fetching transaction receipt (only when needed):
+** When monitor condition requires receipt-specific fields (e.g., `gas_used`)
+** When monitoring transaction status and no logs are present to validate status
 
 *Stellar*
 

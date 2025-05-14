@@ -42,7 +42,8 @@ async fn test_get_logs_for_blocks_implementation() {
 	// Expected request parameters
 	let expected_params = json!([{
 		"fromBlock": "0x1",
-		"toBlock": "0xa"
+		"toBlock": "0xa",
+		"address": vec!["0x1234567890123456789012345678901234567890"]
 	}]);
 
 	// Mock response with some test logs
@@ -70,7 +71,15 @@ async fn test_get_logs_for_blocks_implementation() {
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
 	let client = EvmClient::<MockEVMTransportClient>::new_with_transport(mock_evm);
-	let result = client.get_logs_for_blocks(1, 10).await;
+	let result = client
+		.get_logs_for_blocks(
+			1,
+			10,
+			Some(vec![
+				"0x1234567890123456789012345678901234567890".to_string()
+			]),
+		)
+		.await;
 
 	assert!(result.is_ok());
 	let logs = result.unwrap();
@@ -99,7 +108,7 @@ async fn test_get_logs_for_blocks_missing_result() {
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
 	let client = EvmClient::<MockEVMTransportClient>::new_with_transport(mock_evm);
-	let result = client.get_logs_for_blocks(1, 10).await;
+	let result = client.get_logs_for_blocks(1, 10, None).await;
 
 	assert!(result.is_err());
 	let err = result.unwrap_err();
@@ -122,7 +131,7 @@ async fn test_get_logs_for_blocks_invalid_format() {
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
 	let client = EvmClient::<MockEVMTransportClient>::new_with_transport(mock_evm);
-	let result = client.get_logs_for_blocks(1, 10).await;
+	let result = client.get_logs_for_blocks(1, 10, None).await;
 
 	assert!(result.is_err());
 	let err = result.unwrap_err();
@@ -138,7 +147,7 @@ async fn test_get_logs_for_blocks_alloy_error() {
 		.returning(|_: &str, _: Option<Vec<Value>>| Err(anyhow::anyhow!("Alloy error")));
 
 	let client = EvmClient::<MockEVMTransportClient>::new_with_transport(mock_evm);
-	let result = client.get_logs_for_blocks(1, 10).await;
+	let result = client.get_logs_for_blocks(1, 10, None).await;
 
 	assert!(result.is_err());
 }
