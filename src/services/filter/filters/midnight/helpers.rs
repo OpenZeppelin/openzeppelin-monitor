@@ -133,29 +133,6 @@ pub fn seed_to_secret_keys(seed: Seed) -> Result<SecretKeys, anyhow::Error> {
 	Ok(SecretKeys::from(seed))
 }
 
-/// Hex encode a recovery phrase
-///
-/// # Arguments
-/// * `phrase` - The phrase to hex encode
-///
-/// # Returns
-/// The Seed of the phrase
-pub fn recovery_phrase_to_seed(phrase: &str) -> Result<Seed, anyhow::Error> {
-	// Parse the mnemonic phrase
-	let mnemonic = bip32::Mnemonic::new(phrase, bip32::Language::English)
-		.map_err(|e| anyhow::anyhow!("Invalid mnemonic phrase: {}", e))?;
-
-	// Convert to seed (this uses PBKDF2 with 2048 iterations as per BIP39)
-	let seed = mnemonic.to_seed("");
-
-	// Convert to fixed size array for Midnight's Seed type
-	let seed_bytes: [u8; 32] = seed.as_bytes()[..32]
-		.try_into()
-		.map_err(|e| anyhow::anyhow!("Failed to convert seed bytes to array: {:?}", e))?;
-
-	Ok(Seed::from(seed_bytes))
-}
-
 /// Process the coins in a transaction
 ///
 /// # Arguments
@@ -164,11 +141,15 @@ pub fn recovery_phrase_to_seed(phrase: &str) -> Result<Seed, anyhow::Error> {
 /// # Returns
 /// The result of the operation
 pub fn process_coins<D: DB>(
-	phrase: &str,
+	seed: &str,
 	stx: &StandardTransaction<Proof, D>,
 ) -> Result<(), anyhow::Error> {
-	let seed = recovery_phrase_to_seed(phrase)
-		.map_err(|e| anyhow::anyhow!("Failed to convert phrase to seed: {}", e))?;
+	let seed_bytes: [u8; 32] = hex::decode(seed)
+		.map_err(|e| anyhow::anyhow!("Invalid hex string: {}", e))?
+		.try_into()
+		.map_err(|_| anyhow::anyhow!("Seed must be exactly 32 bytes"))?;
+	let seed = Seed::from(seed_bytes);
+
 	let keys = seed_to_secret_keys(seed)
 		.map_err(|e| anyhow::anyhow!("Failed to convert seed to secret keys: {}", e))?;
 

@@ -173,12 +173,12 @@ impl<D: DB> From<MidnightNodeTransaction<Proof, D>> for Transaction {
 		let operations = match tx {
 			MidnightNodeTransaction::Standard(stx) => {
 				// TODO: remove this and use viewing keys from config file
-				let mnemonic = env::var("MIDNIGHT_MNEMONIC")
-					.map_err(|e| anyhow::anyhow!("Failed to get MIDNIGHT_MNEMONIC: {}", e));
+				let seed = env::var("MIDNIGHT_SEED")
+					.map_err(|e| anyhow::anyhow!("Failed to get MIDNIGHT_SEED: {}", e));
 
-				if let Ok(mnemonic) = mnemonic {
+				if let Ok(seed) = seed {
 					// TODO: Just prints for now, we should do something with the decryptedcoins
-					let _ = process_coins::<D>(&mnemonic, &stx);
+					let _ = process_coins::<D>(&seed, &stx);
 				}
 
 				let mut ops = Vec::new();
