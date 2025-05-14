@@ -3,6 +3,47 @@
 ## [0.2.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v0.1.0...v0.2.0) (2025-05-14)
 
 
+## ⚠️ ⚠️ Breaking Changes in v0.2.0
+
+* Renamed abi to contract_spec in monitor configurations.
+* Stellar function expressions now use named parameters instead of positional indexes, for example;
+
+    ```
+    (Transfer(address,address,amount)):
+    2 > 1000  → amount > 1000
+    ```
+* Template variables now follow dot notation rather than underscores, for example:
+    * monitor_name → monitor.name
+    * transaction_hash → transaction.hash
+    * function_0_amount → functions.0.args.amount
+    * event_0_signature → events.0.signature
+* Sensitive configuration values (e.g., URLs, usernames, passwords, tokens) must now be defined using the SecretValue object structure, for example:
+
+    * RPC URLs:
+
+        ```
+        "rpc_urls": [
+            {
+                "type_": "rpc",
+                "url": {
+                "type": "plain",
+                "value": "https://eth.drpc.org"
+                },
+                "weight": 100
+            }
+        ]
+        ```
+    
+    * Webhook URLs:
+
+        ```
+        "discord_url": {
+            "type": "plain",
+            "value": "https://discord.com/api/webhooks/123-456-789"
+        }
+        ```
+
+
 ### 🚀 Features
 
 * Add environment vars and Hashicorp cloud vault support (breaking) ([#199](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/199)) ([558304f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/558304f335a645c1de2d348a041337ccba2c2a06))
