@@ -1,6 +1,12 @@
 ---
 name: Publish Docs
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        description: The tag to use for creating docs branch or merging to docs branch.
+        required: true
   workflow_call:
     inputs:
       tag:
