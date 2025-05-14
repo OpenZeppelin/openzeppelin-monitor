@@ -52,7 +52,7 @@ impl<T> EVMBlockFilter<T> {
 		&self,
 		tx_status: &TransactionStatus,
 		transaction: &EVMTransaction,
-		tx_receipt: &EVMTransactionReceipt,
+		tx_receipt: &Option<EVMTransactionReceipt>,
 		monitor: &Monitor,
 		matched_transactions: &mut Vec<TransactionCondition>,
 	) {
@@ -139,13 +139,18 @@ impl<T> EVMBlockFilter<T> {
 							},
 							EVMMatchParamEntry {
 								name: "gas_used".to_string(),
-								value: tx_receipt.gas_used.unwrap_or_default().to_string(),
+								value: tx_receipt
+									.as_ref()
+									.map(|r| r.gas_used.unwrap_or_default().to_string())
+									.unwrap_or_default(),
 								kind: "uint256".to_string(),
 								indexed: false,
 							},
 							EVMMatchParamEntry {
 								name: "transaction_index".to_string(),
-								value: tx_receipt.transaction_index.0.to_string(),
+								value: transaction
+									.transaction_index
+									.map_or("0".to_string(), |idx| idx.0.to_string()),
 								kind: "uint64".to_string(),
 								indexed: false,
 							},
@@ -177,6 +182,7 @@ impl<T> EVMBlockFilter<T> {
 	/// the monitor's function conditions.
 	///
 	/// # Arguments
+	/// * `contract_specs` - List of contract specifications
 	/// * `transaction` - The transaction containing the function call
 	/// * `monitor` - Monitor containing function match conditions
 	/// * `matched_functions` - Vector to store matching functions
@@ -316,20 +322,20 @@ impl<T> EVMBlockFilter<T> {
 	/// the monitor's event conditions.
 	///
 	/// # Arguments
-	/// * `receipt` - Transaction receipt containing event logs
+	/// * `logs` - Transaction receipt containing event logs
 	/// * `monitor` - Monitor containing event match conditions
 	/// * `matched_events` - Vector to store matching events
 	/// * `matched_on_args` - Arguments from matched events
 	/// * `involved_addresses` - Addresses involved in matched events
 	pub fn find_matching_events_for_transaction(
 		&self,
-		receipt: &EVMTransactionReceipt,
+		logs: &[EVMReceiptLog],
 		monitor: &Monitor,
 		matched_events: &mut Vec<EventCondition>,
 		matched_on_args: &mut EVMMatchArguments,
 		involved_addresses: &mut Vec<String>,
 	) {
-		for log in &receipt.logs {
+		for log in logs {
 			// Find the specific monitored address that matches the log address
 			let matching_monitored_addr = monitor
 				.addresses
@@ -603,6 +609,25 @@ impl<T> EVMBlockFilter<T> {
 
 		decoded_log
 	}
+
+	/// Checks if a monitor has any transaction conditions that require a receipt
+	fn needs_receipt(&self, monitor: &Monitor, logs: &[EVMReceiptLog]) -> bool {
+		monitor
+			.match_conditions
+			.transactions
+			.iter()
+			.any(|condition| {
+				// If the status is not Any, and there are no logs, we need a receipt to validate the transaction most likely failed
+				let status_needs_receipt =
+					condition.status != TransactionStatus::Any && logs.is_empty();
+				// If the expression contains gas_used, we need a receipt to get the gas used
+				let gas_used_in_expr = condition
+					.clone()
+					.expression
+					.is_some_and(|expr| expr.contains("gas_used"));
+				status_needs_receipt || gas_used_in_expr
+			})
+	}
 }
 
 #[async_trait]
@@ -643,44 +668,22 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			evm_block.number.unwrap_or(U64::from(0))
 		);
 
-		// Process all transaction receipts in parallel
-		let receipt_futures: Vec<_> = evm_block
-			.transactions
-			.iter()
-			.map(|transaction| {
-				let tx_hash = b256_to_string(transaction.hash);
-				// Capture transaction hash in the closure for better error context
-				async move { client.get_transaction_receipt(tx_hash.clone()).await }
-			})
-			.collect();
+		let current_block_number = evm_block.number.unwrap_or(U64::from(0)).to::<u64>();
 
-		let receipt_results = futures::future::join_all(receipt_futures).await;
+		// Get logs for the block
+		// We use this to get all the logs for a single block.
+		// We could further optimize by getting logs for a range of blocks and calling this in the parent function
+		// However, due to limitations by certain RPC providers (e.g. Quicknode only allows a block range of 5),
+		// it's safer to just fetch the logs for a single block at a time as it's more reliable.
+		let all_block_logs = client
+			.get_logs_for_blocks(current_block_number, current_block_number, None)
+			.await?;
 
-		// Partition receipts into successful and failed
-		let mut receipts = Vec::new();
-		for result in receipt_results.into_iter() {
-			match result {
-				Ok(receipt) => receipts.push(receipt),
-				Err(e) => {
-					FilterError::network_error(
-						format!(
-							"Failed to get a receipt for block {}",
-							evm_block.number.unwrap_or(U64::from(0))
-						),
-						Some(e.into()),
-						None,
-					);
-				}
-			}
-		}
-
-		if receipts.is_empty() {
-			tracing::debug!(
-				"No transactions found for block {}",
-				evm_block.number.unwrap_or(U64::from(0))
-			);
-			return Ok(vec![]);
-		}
+		tracing::debug!(
+			"Found {} logs for block {}",
+			all_block_logs.len(),
+			current_block_number
+		);
 
 		let mut matching_results = Vec::new();
 
@@ -694,7 +697,15 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			})
 			.collect::<Vec<(String, EVMContractSpec)>>();
 
-		tracing::debug!("Processing {} monitor(s)", monitors.len());
+		// Group logs by transaction hash
+		let mut logs_by_tx: std::collections::HashMap<String, Vec<EVMReceiptLog>> =
+			std::collections::HashMap::new();
+		for log in all_block_logs.clone() {
+			let tx_hash = b256_to_string(log.transaction_hash.unwrap_or_default());
+			logs_by_tx.entry(tx_hash).or_default().push(log);
+		}
+
+		tracing::debug!("Processing {} transactions with logs", logs_by_tx.len());
 
 		for monitor in monitors {
 			tracing::debug!("Processing monitor: {:?}", monitor.name);
@@ -703,158 +714,174 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 				.iter()
 				.map(|a| a.address.clone())
 				.collect();
-			// Check each receipt and transaction for matches
-			tracing::debug!("Processing {} receipt(s)", receipts.len());
-			for receipt in &receipts {
-				let matching_transaction = evm_block
-					.transactions
-					.iter()
-					.find(|tx| tx.hash == receipt.transaction_hash);
 
-				if let Some(transaction) = matching_transaction {
-					// Reset matched_on_args for each transaction
-					let mut matched_on_args = EVMMatchArguments {
-						events: Some(Vec::new()),
-						functions: Some(Vec::new()),
-					};
+			// Check if this monitor needs a receipt
+			let should_fetch_receipt = self.needs_receipt(monitor, &all_block_logs);
 
-					// Get transaction status from receipt
-					let tx_status = if receipt.status.map(|s| s.to::<u64>() == 1).unwrap_or(false) {
+			// Process all transactions in the block
+			for transaction in &evm_block.transactions {
+				let tx_hash = b256_to_string(transaction.hash);
+				let empty_logs = Vec::new();
+				let logs = logs_by_tx.get(&tx_hash).unwrap_or(&empty_logs);
+				let tx_hash_str = tx_hash.clone();
+
+				let receipt = if should_fetch_receipt {
+					Some(client.get_transaction_receipt(tx_hash_str).await?)
+				} else {
+					None
+				};
+
+				// Reset matched_on_args for each transaction
+				let mut matched_on_args = EVMMatchArguments {
+					events: Some(Vec::new()),
+					functions: Some(Vec::new()),
+				};
+
+				// Get transaction status from receipt
+				let tx_status = if let Some(receipt) = receipt.clone() {
+					if receipt.status.map(|s| s.to::<u64>() == 1).unwrap_or(false) {
 						TransactionStatus::Success
 					} else {
 						TransactionStatus::Failure
+					}
+				} else {
+					// Transaction receipt is only fetched when:
+					// 1. The monitor has conditions requiring receipt data (e.g., gas_used)
+					// 2. We need to verify transaction status and have no logs
+					// Otherwise, we can assume success since failed transactions don't emit logs
+					TransactionStatus::Success
+				};
+
+				// Collect all involved addresses from receipt logs, transaction.to, and transaction.from
+				let mut involved_addresses = Vec::new();
+				// Add transaction addresses
+				if let Some(from) = transaction.from {
+					involved_addresses.push(h160_to_string(from));
+				}
+				if let Some(to) = transaction.to {
+					involved_addresses.push(h160_to_string(to));
+				}
+
+				let mut matched_events = Vec::<EventCondition>::new();
+				let mut matched_transactions = Vec::<TransactionCondition>::new();
+				let mut matched_functions = Vec::<FunctionCondition>::new();
+
+				// Check transaction match conditions
+				self.find_matching_transaction(
+					&tx_status,
+					transaction,
+					&receipt.clone(),
+					monitor,
+					&mut matched_transactions,
+				);
+
+				// Check for event match conditions
+				self.find_matching_events_for_transaction(
+					logs,
+					monitor,
+					&mut matched_events,
+					&mut matched_on_args,
+					&mut involved_addresses,
+				);
+
+				// Check function match conditions
+				self.find_matching_functions_for_transaction(
+					&contract_specs,
+					transaction,
+					monitor,
+					&mut matched_functions,
+					&mut matched_on_args,
+				);
+
+				// Remove duplicates
+				involved_addresses.sort_unstable();
+				involved_addresses.dedup();
+
+				let has_address_match = monitored_addresses.iter().any(|addr| {
+					involved_addresses
+						.iter()
+						.map(|a| normalize_address(a))
+						.collect::<Vec<String>>()
+						.contains(&normalize_address(addr))
+				});
+
+				// Only proceed if we have a matching address
+				if has_address_match {
+					let monitor_conditions = &monitor.match_conditions;
+					let has_event_match =
+						!monitor_conditions.events.is_empty() && !matched_events.is_empty();
+					let has_function_match =
+						!monitor_conditions.functions.is_empty() && !matched_functions.is_empty();
+					let has_transaction_match = !monitor_conditions.transactions.is_empty()
+						&& !matched_transactions.is_empty();
+
+					let should_match: bool = match (
+						monitor_conditions.events.is_empty(),
+						monitor_conditions.functions.is_empty(),
+						monitor_conditions.transactions.is_empty(),
+					) {
+						// Case 1: No conditions defined, match everything
+						(true, true, true) => true,
+
+						// Case 2: Only transaction conditions defined
+						(true, true, false) => has_transaction_match,
+
+						// Case 3: No transaction conditions, match based on events/functions
+						(_, _, true) => has_event_match || has_function_match,
+
+						// Case 4: Transaction conditions exist, they must be satisfied along
+						// with events/functions
+						_ => (has_event_match || has_function_match) && has_transaction_match,
 					};
 
-					// Collect all involved addresses from receipt logs, transaction.to, and
-					// transaction.from
-					let mut involved_addresses = Vec::new();
-					// Add transaction addresses
-					if let Some(from) = transaction.from {
-						involved_addresses.push(h160_to_string(from));
-					}
-					if let Some(to) = transaction.to {
-						involved_addresses.push(h160_to_string(to));
-					}
-					let mut matched_events = Vec::<EventCondition>::new();
-					let mut matched_transactions = Vec::<TransactionCondition>::new();
-					let mut matched_functions = Vec::<FunctionCondition>::new();
-
-					// Check transaction match conditions
-					self.find_matching_transaction(
-						&tx_status,
-						transaction,
-						receipt,
-						monitor,
-						&mut matched_transactions,
-					);
-
-					// Check for event match conditions
-					self.find_matching_events_for_transaction(
-						receipt,
-						monitor,
-						&mut matched_events,
-						&mut matched_on_args,
-						&mut involved_addresses,
-					);
-
-					// Check function match conditions
-					self.find_matching_functions_for_transaction(
-						&contract_specs,
-						transaction,
-						monitor,
-						&mut matched_functions,
-						&mut matched_on_args,
-					);
-
-					// Remove duplicates
-					involved_addresses.sort_unstable();
-					involved_addresses.dedup();
-
-					let has_address_match = monitored_addresses.iter().any(|addr| {
-						involved_addresses
-							.iter()
-							.map(|a| normalize_address(a))
-							.collect::<Vec<String>>()
-							.contains(&normalize_address(addr))
-					});
-
-					// Only proceed if we have a matching address
-					if has_address_match {
-						let monitor_conditions = &monitor.match_conditions;
-						let has_event_match =
-							!monitor_conditions.events.is_empty() && !matched_events.is_empty();
-						let has_function_match = !monitor_conditions.functions.is_empty()
-							&& !matched_functions.is_empty();
-						let has_transaction_match = !monitor_conditions.transactions.is_empty()
-							&& !matched_transactions.is_empty();
-
-						let should_match = match (
-							monitor_conditions.events.is_empty(),
-							monitor_conditions.functions.is_empty(),
-							monitor_conditions.transactions.is_empty(),
-						) {
-							// Case 1: No conditions defined, match everything
-							(true, true, true) => true,
-
-							// Case 2: Only transaction conditions defined
-							(true, true, false) => has_transaction_match,
-
-							// Case 3: No transaction conditions, match based on events/functions
-							(_, _, true) => has_event_match || has_function_match,
-
-							// Case 4: Transaction conditions exist, they must be satisfied along
-							// with events/functions
-							_ => (has_event_match || has_function_match) && has_transaction_match,
-						};
-
-						if should_match {
-							matching_results.push(MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-								monitor: Monitor {
-									// Omit ABI from monitor since we do not need it here
-									addresses: monitor
-										.addresses
-										.iter()
-										.map(|addr| AddressWithSpec {
-											contract_spec: None,
-											..addr.clone()
-										})
-										.collect(),
-									..monitor.clone()
+					if should_match {
+						matching_results.push(MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+							monitor: Monitor {
+								// Omit ABI from monitor since we do not need it here
+								addresses: monitor
+									.addresses
+									.iter()
+									.map(|addr| AddressWithSpec {
+										contract_spec: None,
+										..addr.clone()
+									})
+									.collect(),
+								..monitor.clone()
+							},
+							transaction: transaction.clone(),
+							receipt,
+							logs: Some(logs.clone()),
+							network_slug: network.slug.clone(),
+							matched_on: MatchConditions {
+								events: matched_events
+									.clone()
+									.into_iter()
+									.filter(|_| has_event_match)
+									.collect(),
+								functions: matched_functions
+									.clone()
+									.into_iter()
+									.filter(|_| has_function_match)
+									.collect(),
+								transactions: matched_transactions
+									.clone()
+									.into_iter()
+									.filter(|_| has_transaction_match)
+									.collect(),
+							},
+							matched_on_args: Some(EVMMatchArguments {
+								events: if has_event_match {
+									matched_on_args.events.clone()
+								} else {
+									None
 								},
-								transaction: transaction.clone(),
-								receipt: receipt.clone(),
-								network_slug: network.slug.clone(),
-								matched_on: MatchConditions {
-									events: matched_events
-										.clone()
-										.into_iter()
-										.filter(|_| has_event_match)
-										.collect(),
-									functions: matched_functions
-										.clone()
-										.into_iter()
-										.filter(|_| has_function_match)
-										.collect(),
-									transactions: matched_transactions
-										.clone()
-										.into_iter()
-										.filter(|_| has_transaction_match)
-										.collect(),
+								functions: if has_function_match {
+									matched_on_args.functions.clone()
+								} else {
+									None
 								},
-								matched_on_args: Some(EVMMatchArguments {
-									events: if has_event_match {
-										matched_on_args.events.clone()
-									} else {
-										None
-									},
-									functions: if has_function_match {
-										matched_on_args.functions.clone()
-									} else {
-										None
-									},
-								}),
-							})));
-						}
+							}),
+						})));
 					}
 				}
 			}
@@ -1008,7 +1035,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&TransactionBuilder::new().build(),
-			&receipt,
+			&Some(receipt),
 			&monitor,
 			&mut matched,
 		);
@@ -1039,7 +1066,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&TransactionBuilder::new().build(),
-			&receipt_success,
+			&Some(receipt_success),
 			&monitor,
 			&mut matched,
 		);
@@ -1054,7 +1081,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Failure,
 			&TransactionBuilder::new().build(),
-			&receipt_failure,
+			&Some(receipt_failure),
 			&monitor,
 			&mut matched,
 		);
@@ -1086,7 +1113,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_1,
-			&tx_receipt_1,
+			&Some(tx_receipt_1),
 			&monitor,
 			&mut matched,
 		);
@@ -1105,7 +1132,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_2,
-			&tx_receipt_2,
+			&Some(tx_receipt_2),
 			&monitor,
 			&mut matched,
 		);
@@ -1139,7 +1166,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1159,7 +1186,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1193,7 +1220,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1213,7 +1240,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1244,7 +1271,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1265,7 +1292,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1296,7 +1323,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1316,7 +1343,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1346,7 +1373,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1366,7 +1393,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1396,7 +1423,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1416,7 +1443,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1444,7 +1471,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1462,7 +1489,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1490,7 +1517,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1508,7 +1535,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1537,7 +1564,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1556,7 +1583,7 @@ mod tests {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1575,16 +1602,15 @@ mod tests {
 		let monitor = create_test_monitor(vec![], vec![], vec![condition], vec![]);
 
 		// Test transaction with matching transaction index
-		let tx_matching = TransactionBuilder::new().build();
+		let tx_matching = TransactionBuilder::new().transaction_index(15).build();
 		let tx_receipt_matching = ReceiptBuilder::new()
 			.transaction_hash(tx_matching.hash)
-			.transaction_index(15)
 			.build();
 
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_matching,
-			&tx_receipt_matching,
+			&Some(tx_receipt_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1592,17 +1618,16 @@ mod tests {
 		assert_eq!(matched[0].expression, Some(expression));
 
 		// Test transaction with non-matching transaction index
-		let tx_non_matching = TransactionBuilder::new().build();
+		let tx_non_matching = TransactionBuilder::new().transaction_index(1).build();
 		let tx_receipt_non_matching = ReceiptBuilder::new()
 			.transaction_hash(tx_non_matching.hash)
-			.transaction_index(1)
 			.build();
 
 		matched.clear();
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx_non_matching,
-			&tx_receipt_non_matching,
+			&Some(tx_receipt_non_matching),
 			&monitor,
 			&mut matched,
 		);
@@ -1970,7 +1995,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_events_for_transaction(
-			&receipt,
+			&receipt.logs,
 			&monitor,
 			&mut matched_events,
 			&mut matched_on_args,
@@ -2025,7 +2050,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_events_for_transaction(
-			&receipt,
+			&receipt.logs,
 			&monitor,
 			&mut matched_events,
 			&mut matched_on_args,
@@ -2053,7 +2078,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_events_for_transaction(
-			&receipt_no_match,
+			&receipt_no_match.logs,
 			&monitor,
 			&mut matched_events,
 			&mut matched_on_args,
@@ -2097,7 +2122,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_events_for_transaction(
-			&receipt,
+			&receipt.logs,
 			&monitor,
 			&mut matched_events,
 			&mut matched_on_args,

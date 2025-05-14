@@ -1,4 +1,6 @@
-use crate::models::{EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor};
+use crate::models::{
+	EVMReceiptLog, EVMTransaction, EVMTransactionReceipt, MatchConditions, Monitor,
+};
 use serde::{Deserialize, Serialize};
 
 /// Result of a successful monitor match on an EVM chain
@@ -11,7 +13,10 @@ pub struct EVMMonitorMatch {
 	pub transaction: EVMTransaction,
 
 	/// Transaction receipt with execution results
-	pub receipt: EVMTransactionReceipt,
+	pub receipt: Option<EVMTransactionReceipt>,
+
+	/// Transaction logs
+	pub logs: Option<Vec<EVMReceiptLog>>,
 
 	/// Network slug that the transaction was sent from
 	pub network_slug: String,
@@ -180,7 +185,8 @@ mod tests {
 		let monitor_match = EVMMonitorMatch {
 			monitor: monitor.clone(),
 			transaction: transaction.clone(),
-			receipt: receipt.clone(),
+			receipt: Some(receipt.clone()),
+			logs: Some(receipt.logs.clone()),
 			network_slug: "ethereum_mainnet".to_string(),
 			matched_on: MatchConditions {
 				functions: vec![FunctionCondition {
@@ -198,7 +204,10 @@ mod tests {
 
 		assert_eq!(monitor_match.monitor.name, "TestMonitor");
 		assert_eq!(monitor_match.transaction.hash, B256::with_last_byte(1));
-		assert_eq!(monitor_match.receipt.status, Some(U64::from(1)));
+		assert_eq!(
+			monitor_match.receipt.as_ref().unwrap().status,
+			Some(U64::from(1))
+		);
 		assert_eq!(monitor_match.network_slug, "ethereum_mainnet");
 		assert_eq!(monitor_match.matched_on.functions.len(), 1);
 		assert_eq!(

@@ -9,7 +9,9 @@ use openzeppelin_monitor::{
 use serde_json::json;
 use std::collections::HashMap;
 
-use crate::integration::mocks::{create_test_evm_transaction_receipt, create_test_transaction};
+use crate::integration::mocks::{
+	create_test_evm_logs, create_test_evm_transaction_receipt, create_test_transaction,
+};
 
 fn create_test_monitor(name: &str) -> Monitor {
 	MonitorBuilder::new()
@@ -29,7 +31,8 @@ fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
 	MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 		monitor,
 		transaction,
-		receipt: create_test_evm_transaction_receipt(),
+		receipt: Some(create_test_evm_transaction_receipt()),
+		logs: Some(create_test_evm_logs()),
 		network_slug: "ethereum_mainnet".to_string(),
 		matched_on: MatchConditions::default(),
 		matched_on_args: None,

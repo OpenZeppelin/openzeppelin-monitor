@@ -4,23 +4,22 @@
 //! including event and transaction filtering.
 
 use alloy::{
-	consensus::{
-		transaction::Recovered, Receipt, ReceiptEnvelope, ReceiptWithBloom, Signed, TxEnvelope,
-	},
-	primitives::{Bytes, TxKind, U256},
+	consensus::{transaction::Recovered, Signed, TxEnvelope},
+	primitives::{Bytes, TxKind, Uint, U256},
 };
 use serde_json::json;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, ContractSpec, EventCondition, FunctionCondition, Monitor, MonitorMatch,
-		TransactionCondition, TransactionStatus,
+		BlockType, ContractSpec, EVMReceiptLog, EventCondition, FunctionCondition, Monitor,
+		MonitorMatch, TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::EvmClient,
 		filter::{handle_match, FilterError, FilterService},
 	},
+	utils::tests::evm::receipt::ReceiptBuilder,
 };
 
 use crate::integration::{
@@ -41,6 +40,9 @@ fn setup_mock_transport(test_data: TestData) -> MockEVMTransportClient {
 				("net_version", _) => Ok(json!({"result": "1"})),
 				("eth_getTransactionReceipt", i) => Ok(json!({
 					"result": &receipts[i]
+				})),
+				("eth_getLogs", i) => Ok(json!({
+					"result": &receipts[i].logs
 				})),
 				_ => Err(anyhow::anyhow!("Unexpected method call")),
 			}
@@ -717,23 +719,11 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 	}];
 
 	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
-		EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
-			inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
-				receipt: Receipt::default(),
-				logs_bloom: Default::default(),
-			}),
-			transaction_hash: B256::ZERO,
-			transaction_index: Some(0),
-			block_hash: Some(B256::ZERO),
-			block_number: Some(0),
-			gas_used: 0,
-			effective_gas_price: 0,
-			blob_gas_used: None,
-			blob_gas_price: None,
-			from: Address::ZERO,
-			to: Some(Address::ZERO),
-			contract_address: None,
-		})
+		ReceiptBuilder::new().build()
+	}
+
+	fn create_test_evm_logs() -> Vec<EVMReceiptLog> {
+		ReceiptBuilder::new().build().logs.clone()
 	}
 
 	fn create_test_evm_transaction() -> EVMTransaction {
@@ -768,7 +758,8 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 	let evm_match = EVMMonitorMatch {
 		monitor,
 		transaction: create_test_evm_transaction(),
-		receipt: create_test_evm_transaction_receipt(),
+		receipt: Some(create_test_evm_transaction_receipt()),
+		logs: Some(create_test_evm_logs()),
 		network_slug: "ethereum_mainnet".to_string(),
 		matched_on: MatchConditions {
 			functions: vec![FunctionCondition {
@@ -852,6 +843,299 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 		captured_data.contains_key("monitor.name"),
 		"Monitor name should be present"
 	);
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_block_with_receipt_and_logs() -> Result<(), Box<FilterError>> {
+	let test_data = load_test_data("evm");
+	let filter_service = FilterService::new();
+	let mock_transport = setup_mock_transport(test_data.clone());
+
+	let client = EvmClient::new_with_transport(mock_transport);
+
+	let mut monitor = test_data.monitor;
+	monitor.match_conditions.events = vec![EventCondition {
+		signature: "Transfer(address,address,uint256)".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "transfer(address,uint256)".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.transactions = vec![TransactionCondition {
+		status: TransactionStatus::Any,
+		expression: Some("gas_used > 0".to_string()), // This is a test to ensure that the receipt is required
+	}];
+
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+		contract_spec.clone(),
+	);
+
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches");
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(
+				evm_match.receipt.is_some(),
+				"Transaction receipt should be present"
+			);
+			let receipt = evm_match.receipt.as_ref().unwrap();
+			assert!(
+				receipt.status.is_some(),
+				"Transaction status should be present"
+			);
+			assert_eq!(
+				receipt.status.unwrap(),
+				Uint::from(1),
+				"Transaction should be successful"
+			);
+			assert!(receipt.gas_used.is_some(), "Gas used should be present");
+			assert!(
+				receipt.gas_used.unwrap() > Uint::from(0),
+				"Gas used should be greater than 0"
+			);
+
+			assert!(
+				evm_match.logs.is_some(),
+				"Transaction logs should be present"
+			);
+			let logs = evm_match.logs.as_ref().unwrap();
+			assert!(!logs.is_empty(), "Should have at least one log entry");
+
+			assert!(
+				!evm_match.matched_on.events.is_empty(),
+				"Should have matched events"
+			);
+			assert!(
+				!evm_match.matched_on.functions.is_empty(),
+				"Should have matched functions"
+			);
+
+			let matched_on_args = evm_match.matched_on_args.as_ref().unwrap();
+
+			let event_args = &matched_on_args.events.as_ref().unwrap()[0];
+			assert_eq!(event_args.signature, "Transfer(address,address,uint256)");
+			assert_eq!(
+				event_args.hex_signature.as_ref().unwrap(),
+				"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+			);
+
+			let function_args = &matched_on_args.functions.as_ref().unwrap()[0];
+			assert_eq!(function_args.signature, "transfer(address,uint256)");
+			assert_eq!(function_args.hex_signature.as_ref().unwrap(), "a9059cbb");
+		}
+		_ => {
+			panic!("Expected EVM match");
+		}
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_block_with_only_logs() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
+	let test_data = load_test_data("evm");
+	let filter_service = FilterService::new();
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+
+	let client = EvmClient::new_with_transport(mock_transport);
+
+	let mut monitor = test_data.monitor;
+	monitor.match_conditions.events = vec![EventCondition {
+		signature: "Transfer(address,address,uint256)".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "transfer(address,uint256)".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.transactions = vec![]; // This ensures we do not need a receipt
+
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+		contract_spec.clone(),
+	);
+
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches");
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(
+				evm_match.receipt.is_none(),
+				"Transaction receipt should not be present"
+			);
+
+			assert!(
+				evm_match.logs.is_some(),
+				"Transaction logs should be present"
+			);
+			let logs = evm_match.logs.as_ref().unwrap();
+			assert!(!logs.is_empty(), "Should have at least one log entry");
+
+			assert!(
+				!evm_match.matched_on.events.is_empty(),
+				"Should have matched events"
+			);
+			assert!(
+				!evm_match.matched_on.functions.is_empty(),
+				"Should have matched functions"
+			);
+
+			let matched_on_args = evm_match.matched_on_args.as_ref().unwrap();
+
+			let event_args = &matched_on_args.events.as_ref().unwrap()[0];
+			assert_eq!(event_args.signature, "Transfer(address,address,uint256)");
+			assert_eq!(
+				event_args.hex_signature.as_ref().unwrap(),
+				"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+			);
+
+			// Check function arguments
+			let function_args = &matched_on_args.functions.as_ref().unwrap()[0];
+			assert_eq!(function_args.signature, "transfer(address,uint256)");
+			assert_eq!(function_args.hex_signature.as_ref().unwrap(), "a9059cbb");
+		}
+		_ => {
+			panic!("Expected EVM match");
+		}
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_block_needs_receipt_for_status() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
+	let test_data = load_test_data("evm");
+	let filter_service = FilterService::new();
+
+	let mut mock_transport = MockEVMTransportClient::new();
+	let counter = std::sync::atomic::AtomicUsize::new(0);
+	let receipts = test_data.receipts;
+
+	mock_transport
+		.expect_send_raw_request()
+		.returning(move |method, _params| {
+			let current = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+			match (method, current) {
+				("net_version", _) => Ok(json!({"result": "1"})),
+				("eth_getTransactionReceipt", i) => Ok(json!({
+					"result": &receipts[i]
+				})),
+				("eth_getLogs", _) => Ok(json!({
+					"result": Vec::<EVMReceiptLog>::new()
+				})),
+				_ => Err(anyhow::anyhow!("Unexpected method call")),
+			}
+		});
+
+	let client = EvmClient::new_with_transport(mock_transport);
+
+	let mut monitor = test_data.monitor;
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature: "transfer(address,uint256)".to_string(),
+		expression: None,
+	}];
+	monitor.match_conditions.transactions = vec![TransactionCondition {
+		status: TransactionStatus::Success, // This is to ensure that the receipt is required
+		expression: None,
+	}];
+
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+		contract_spec.clone(),
+	);
+
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches");
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(
+				evm_match.receipt.is_some(),
+				"Transaction receipt should be present"
+			);
+			let receipt = evm_match.receipt.as_ref().unwrap();
+			assert!(
+				receipt.status.is_some(),
+				"Transaction status should be present"
+			);
+			assert_eq!(
+				receipt.status.unwrap(),
+				Uint::from(1),
+				"Transaction should be successful"
+			);
+			assert!(receipt.gas_used.is_some(), "Gas used should be present");
+			assert!(
+				receipt.gas_used.unwrap() > Uint::from(0),
+				"Gas used should be greater than 0"
+			);
+
+			assert!(
+				evm_match.logs.as_ref().unwrap().is_empty(),
+				"Transaction logs should be empty"
+			);
+
+			assert!(
+				evm_match.matched_on.events.is_empty(),
+				"Should not have matched events"
+			);
+			assert!(
+				!evm_match.matched_on.functions.is_empty(),
+				"Should have matched functions"
+			);
+
+			let matched_on_args = evm_match.matched_on_args.as_ref().unwrap();
+
+			let function_args = &matched_on_args.functions.as_ref().unwrap()[0];
+			assert_eq!(function_args.signature, "transfer(address,uint256)");
+			assert_eq!(function_args.hex_signature.as_ref().unwrap(), "a9059cbb");
+		}
+		_ => {
+			panic!("Expected EVM match");
+		}
+	}
 
 	Ok(())
 }

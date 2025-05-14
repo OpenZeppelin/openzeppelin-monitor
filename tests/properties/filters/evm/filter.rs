@@ -676,7 +676,7 @@ proptest! {
 			filter.find_matching_transaction(
 				&status,
 				&tx,
-				&ReceiptBuilder::new().build(),
+				&Some(ReceiptBuilder::new().build()),
 				&monitor,
 				&mut matched_transactions
 			);
@@ -723,7 +723,7 @@ proptest! {
 		filter.find_matching_transaction(
 			&TransactionStatus::Success,
 			&tx,
-			&ReceiptBuilder::new().build(),
+			&Some(ReceiptBuilder::new().build()),
 			&monitor,
 			&mut matched_transactions
 		);
@@ -829,7 +829,7 @@ proptest! {
 			.build();
 
 		filter.find_matching_events_for_transaction(
-			&tx_receipt,
+			&tx_receipt.logs,
 			&monitor,
 			&mut matched_events,
 			&mut matched_args,

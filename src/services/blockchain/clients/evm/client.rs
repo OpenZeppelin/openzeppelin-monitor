@@ -83,13 +83,14 @@ pub trait EvmClientTrait {
 	/// # Arguments
 	/// * `from_block` - Starting block number
 	/// * `to_block` - Ending block number
-	///
+	/// * `addresses` - Optional list of addresses to filter logs by
 	/// # Returns
 	/// * `Result<Vec<Log>, anyhow::Error>` - Collection of matching logs or error
 	async fn get_logs_for_blocks(
 		&self,
 		from_block: u64,
 		to_block: u64,
+		addresses: Option<Vec<String>>,
 	) -> Result<Vec<EVMReceiptLog>, anyhow::Error>;
 }
 
@@ -137,7 +138,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 	/// # Arguments
 	/// * `from_block` - Starting block number
 	/// * `to_block` - Ending block number
-	///
+	/// * `addresses` - Optional list of addresses to filter logs by
 	/// # Returns
 	/// * `Result<Vec<EVMReceiptLog>, anyhow::Error>` - Collection of matching logs or error
 	#[instrument(skip(self), fields(from_block, to_block))]
@@ -145,11 +146,13 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 		&self,
 		from_block: u64,
 		to_block: u64,
+		addresses: Option<Vec<String>>,
 	) -> Result<Vec<EVMReceiptLog>, anyhow::Error> {
 		// Convert parameters to JSON-RPC format
 		let params = json!([{
 			"fromBlock": format!("0x{:x}", from_block),
-			"toBlock": format!("0x{:x}", to_block)
+			"toBlock": format!("0x{:x}", to_block),
+			"address": addresses
 		}])
 		.as_array()
 		.with_context(|| "Failed to create JSON-RPC params array")?

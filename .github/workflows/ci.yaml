@@ -49,7 +49,7 @@ jobs:
     permissions:
       contents: none
     name: CI
-    needs: [test, msrv, lockfile, rustfmt, clippy]
+    needs: [test, msrv, rustfmt, clippy]
     runs-on: ubuntu-latest
     steps:
       - name: Failed
@@ -77,26 +77,6 @@ jobs:
       # Check the minimum supported Rust version
       - name: Default features
         run: cargo hack check --feature-powerset --locked --rust-version --all-targets
-  lockfile:
-    if: |
-      ${{ github.event.pull_request.draft == false && github.event_name != 'push' && needs.changed_files.outputs.changed-lockfile-files == 'true' }}
-    needs: changed_files
-    runs-on: ubuntu-latest
-    steps:
-      # Checkout the repository
-      - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - name: Prepare
-        id: init
-        uses: ./.github/actions/prepare
-
-      # Get the output of the prepare composite action
-      - name: Get cache-hit output
-        run: 'echo "Cache hit >>>>>: ${{ steps.init.outputs.cache-hit }}"'
-
-      # Check the lockfile
-      - name: Validate lockfile updates
-        run: cargo update --locked
   rustfmt:
     if: |
       ${{ github.event.pull_request.draft == false && github.event_name != 'push' && needs.changed_files.outputs.changed-rust-files == 'true' }}
@@ -153,16 +133,12 @@ jobs:
       - name: Prepare
         id: init
         uses: ./.github/actions/prepare
+        with:
+          components: llvm-tools-preview
 
       # Get the output of the prepare composite action
       - name: Get cache-hit output
         run: 'echo "Cache hit >>>>>: ${{ steps.init.outputs.cache-hit }}"'
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8  # v1.10.1
-        with:
-          toolchain: stable
-          components: llvm-tools-preview
-          rustflags: ''
       - name: Install cargo hack
         uses: taiki-e/install-action@cargo-hack
       - name: Install cargo-llvm-cov
