@@ -257,6 +257,29 @@ prop_compose! {
 	}
 }
 
+// Generates valid JSON objects of different complexity
+prop_compose! {
+	fn valid_json_objects()(
+		num_fields in 1..5usize
+	) -> String {
+		let mut obj = serde_json::Map::new();
+		for i in 0..num_fields {
+			let key = format!("key{}", i);
+			let value = match i % 3 {
+				0 => serde_json::Value::String(format!("value{}", i)),
+				1 => serde_json::Value::Number(serde_json::Number::from(i)),
+				_ => {
+					let mut nested = serde_json::Map::new();
+					nested.insert("nested_key".into(), serde_json::Value::String(format!("nested_value{}", i)));
+					serde_json::Value::Object(nested)
+				}
+			};
+			obj.insert(key, value);
+		}
+		serde_json::Value::Object(obj).to_string()
+	}
+}
+
 proptest! {
 	#![proptest_config(Config {
 		failure_persistence: None,
@@ -1444,5 +1467,143 @@ proptest! {
 			&vec_string
 		);
 		prop_assert!(!unsupported_result);
+	}
+
+	// Tests JSON vs JSON equality comparisons
+	#[test]
+	fn test_prop_compare_map_json_equality(
+		json1 in valid_json_objects(),
+		modifier in 0..2u8
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Clone json1 for equality test
+		let json2 = json1.clone();
+
+		// Create a modified version for inequality test
+		let json3 = if modifier == 0 {
+			// Completely different object
+			r#"{"different": "object"}"#.to_string()
+		} else {
+			// Modify the first object slightly
+			let mut obj = serde_json::from_str::<serde_json::Value>(&json1).unwrap();
+			if let Some(obj_map) = obj.as_object_mut() {
+				if let Some(first_key) = obj_map.keys().next().cloned() {
+					obj_map.insert(first_key, "modified_value".into());
+				}
+			}
+			obj.to_string()
+		};
+
+		// Equality tests
+		prop_assert!(filter.compare_map(&json1, "==", &json2));
+		prop_assert!(!filter.compare_map(&json1, "==", &json3));
+		prop_assert!(filter.compare_map(&json1, "!=", &json3));
+		prop_assert!(!filter.compare_map(&json1, "!=", &json2));
+	}
+
+	// Tests numeric comparisons (JSON numbers)
+	#[test]
+	fn test_prop_compare_map_numeric(
+		num1 in 0i32..1000i32,
+		num2 in 0i32..1000i32
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		let str_num1 = num1.to_string();
+		let str_num2 = num2.to_string();
+
+		prop_assert_eq!(filter.compare_map(&str_num1, ">", &str_num2), num1 > num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, ">=", &str_num2), num1 >= num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "<", &str_num2), num1 < num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "<=", &str_num2), num1 <= num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "==", &str_num2), num1 == num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "!=", &str_num2), num1 != num2);
+	}
+
+	// Tests JSON vs string with value comparisons
+	#[test]
+	fn test_prop_compare_map_json_vs_string(
+		json_obj in valid_json_objects(),
+		key_index in 0..4usize
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Parse the JSON object
+		let parsed_json = serde_json::from_str::<serde_json::Value>(&json_obj).unwrap();
+		if let Some(obj) = parsed_json.as_object() {
+			// Only test if we have keys
+			if !obj.is_empty() {
+				// Get an existing key
+				let key = format!("key{}", key_index % obj.len());
+
+				// Get the actual value at that key
+				if let Some(value) = obj.get(&key) {
+					// Create a modified JSON where the key's value matches the key itself
+					let mut modified_obj = obj.clone();
+					modified_obj.insert(key.clone(), serde_json::Value::String(key.clone()));
+					let modified_json = serde_json::Value::Object(modified_obj).to_string();
+
+					// Now this should pass - we're checking if key's value equals the key
+					prop_assert!(filter.compare_map(&modified_json, "==", &key));
+
+					// Test with original value - should only be true if the value happens to equal the key
+					let value_str = match value {
+						serde_json::Value::String(s) => s.clone(),
+						_ => value.to_string().trim_matches('"').to_string(),
+					};
+
+					prop_assert_eq!(
+						filter.compare_map(&json_obj, "==", &key),
+						value_str == key
+					);
+				}
+
+				// Test with a non-existent key (should always be false)
+				let non_existent_key = "nonexistent_key";
+				prop_assert!(!filter.compare_map(&json_obj, "==", non_existent_key));
+			}
+		}
+	}
+
+	// Tests JSON vs JSON with direct value comparisons
+	#[test]
+	fn test_prop_compare_map_json_direct(
+		num1 in 0..100i32,
+		num2 in 0..100i32,
+		str1 in "[a-zA-Z0-9]{1,10}",
+		str2 in "[a-zA-Z0-9]{1,10}"
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Test numeric JSON comparisons
+		let json_num1 = num1.to_string();
+		let json_num2 = num2.to_string();
+
+		prop_assert_eq!(filter.compare_map(&json_num1, ">", &json_num2), num1 > num2);
+		prop_assert_eq!(filter.compare_map(&json_num1, "<", &json_num2), num1 < num2);
+		prop_assert_eq!(filter.compare_map(&json_num1, "==", &json_num2), num1 == num2);
+
+		// Test string JSON comparisons
+		let json_str1 = format!(r#""{}""#, str1);
+		let json_str2 = format!(r#""{}""#, str2);
+
+		prop_assert_eq!(filter.compare_map(&json_str1, "==", &json_str2), str1 == str2);
+
+		// Test comparing a JSON object with specific values
+		let obj1 = format!(r#"{{"value": {}, "text": "{}"}}"#, num1, str1);
+		let obj2 = format!(r#"{{"value": {}, "text": "{}"}}"#, num1, str1);  // Same values
+		let obj3 = format!(r#"{{"value": {}, "text": "{}"}}"#, num2, str2);  // Different values
+
+		prop_assert!(filter.compare_map(&obj1, "==", &obj2));
+		prop_assert_eq!(filter.compare_map(&obj1, "==", &obj3), num1 == num2 && str1 == str2);
 	}
 }
