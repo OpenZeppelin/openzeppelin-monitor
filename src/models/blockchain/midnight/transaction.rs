@@ -79,8 +79,54 @@ impl Transaction {
 		&self.inner.tx_hash
 	}
 
+	/// Get the status of the transaction
 	pub fn status(&self) -> bool {
 		self.status
+	}
+
+	/// Get the contract addresses of the transaction
+	pub fn contract_addresses(&self) -> Vec<String> {
+		self.inner
+			.operations
+			.iter()
+			.filter_map(|op| match op {
+				Operation::Call { address, .. } => Some(address.clone()),
+				Operation::Deploy { address, .. } => Some(address.clone()),
+				Operation::Maintain { address, .. } => Some(address.clone()),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// Get the contract entry points of the transaction
+	pub fn entry_points(&self) -> Vec<String> {
+		self.inner
+			.operations
+			.iter()
+			.filter_map(|op| match op {
+				Operation::Call { entry_point, .. } => Some(entry_point.clone()),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// Get the contract addresses and entry points of the transaction
+	pub fn contract_addresses_and_entry_points(&self) -> Vec<(String, String)> {
+		self.inner
+			.operations
+			.iter()
+			.map(|op| match op {
+				Operation::Call {
+					address,
+					entry_point,
+					..
+				} => (address.clone(), entry_point.clone()),
+				Operation::Deploy { address, .. } => (address.clone(), "".to_string()),
+				Operation::Maintain { address, .. } => (address.clone(), "".to_string()),
+				_ => ("".to_string(), "".to_string()),
+			})
+			.filter(|(addr, entry)| !addr.is_empty() && !entry.is_empty())
+			.collect()
 	}
 }
 
