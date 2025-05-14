@@ -13,6 +13,7 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    environment: release
     outputs:
       release_created: ${{ steps.release.outputs.releases_created }}
       pr_created: ${{ steps.release.outputs.prs_created }}
@@ -155,20 +156,20 @@ jobs:
           files: |-
             Cargo.lock
 
+  # Update rust docs link in nav.adoc
+  update-rust-docs-link:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'false' }}
+    uses: ./.github/workflows/rust-docs-url.yml
+    with:
+      branch: ${{ needs.release-please.outputs.release_branch }}
+    secrets: inherit
+
   # Trigger workflow to generate sbom
   release-sbom:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     uses: ./.github/workflows/release-sbom.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag }}
-    secrets: inherit
-
-  # Trigger workflow to publish binaries
-  release-binaries:
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    needs: release-please
-    uses: ./.github/workflows/release-bins.yml
     with:
       tag: ${{ needs.release-please.outputs.tag }}
     secrets: inherit
@@ -185,7 +186,7 @@ jobs:
   # Trigger workflow to publish docs
   release-docs:
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    needs: [release-please, release-binaries, release-docker]
+    needs: [release-please, release-docker]
     uses: ./.github/workflows/release-docs.yml
     with:
       tag: ${{ needs.release-please.outputs.tag }}

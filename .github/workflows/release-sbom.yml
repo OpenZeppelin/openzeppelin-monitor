@@ -11,12 +11,13 @@ jobs:
   sbom:
     name: Generate SBOM
     runs-on: ubuntu-latest
+    environment: release
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       SLACK_CHANNEL: '#oss-releases'
     steps:
       - name: Get github app token
-        uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5  # v2.0.2
+        uses: actions/create-github-app-token@af35edadc00be37caa72ed9f3e6d5f7801bfdf09  # v1.11.7
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
@@ -35,7 +36,7 @@ jobs:
           message: Starting generating sbom for ${{ github.repository }} with tag ${{ inputs.tag }}......
         if: always()
       - name: Run SBOM
-        uses: anchore/sbom-action@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0  # v0.18.0
+        uses: anchore/sbom-action@9f7302141466aa6482940f15371237e9d9f4c34a  # v0.19.0
         with:
           upload-artifact-retention: 7
           upload-release-assets: false
@@ -47,7 +48,7 @@ jobs:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
         run: gh release upload ${{ inputs.tag }} }}-spdx.json
       - name: SBOM attestation
-        uses: actions/attest-build-provenance@d3b713ade6128010830a9be91a036ed11e065550  # main
+        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd  # main
         with:
           subject-path: ./openzeppelin-monitor-${{ inputs.tag }}-spdx.json
           github-token: ${{ steps.gh-app-token.outputs.token }}

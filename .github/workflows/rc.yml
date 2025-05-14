@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: Commit SHA to create release branch from
+        description: Long form commit SHA to create release branch from
         required: true
         type: string
 permissions:
@@ -43,14 +43,19 @@ jobs:
       - name: Get version from Cargo.toml
         id: get_version
         run: |
-          # Extract the version from Cargo.toml
-          version=$(grep -A 5 "\[package\]" Cargo.toml | grep "^version" | cut -d'"' -f2)
+          # Extract the version from manifest.json
+          version=$(jq -r '.[ "."]' .github/release-please/manifest.json)
           if [ -z "$version" ]; then
-            echo "Version not found in Cargo.toml" >&2
+            echo "Error: Version not found in manifest.json"
             exit 1
           fi
-          echo "Version is $version"
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Version found: $version"
+          # Get current version
+          IFS='.' read -r major minor patch <<< "$version"
+          new_minor=$((minor + 1))
+          new_version="${major}.${new_minor}.0"
+          echo "New version: $new_version"
+          echo "version=$new_version" >> $GITHUB_OUTPUT
       - name: Set release branch name
         id: set_branch
         run: |
@@ -72,6 +77,7 @@ jobs:
         run: |-
           branch="release-v${{ steps.get_version.outputs.version }}"
           commit_sha="${{ github.event.inputs.commit_sha }}"
+          echo "branch=$branch" >> $GITHUB_OUTPUT
           if [ "${{ steps.check_branch.outputs.exists }}" == "true" ]; then
             echo "Branch '$branch' already exists. Exiting with error."
             exit 1
