@@ -10,7 +10,9 @@ use midnight_ledger::structure::{
 use midnight_node_ledger_helpers::DB;
 
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
+use std::{env, ops::Deref};
+
+use crate::services::filter::midnight_helpers::process_coins;
 
 /// Represents a Midnight RPC transaction Enum
 ///
@@ -170,6 +172,15 @@ impl<D: DB> From<MidnightNodeTransaction<Proof, D>> for Transaction {
 
 		let operations = match tx {
 			MidnightNodeTransaction::Standard(stx) => {
+				// TODO: remove this and use viewing keys from config file
+				let mnemonic = env::var("MIDNIGHT_MNEMONIC")
+					.map_err(|e| anyhow::anyhow!("Failed to get MIDNIGHT_MNEMONIC: {}", e));
+
+				if let Ok(mnemonic) = mnemonic {
+					// TODO: Just prints for now, we should do something with the decryptedcoins
+					let _ = process_coins::<D>(&mnemonic, &stx);
+				}
+
 				let mut ops = Vec::new();
 				// Add guaranteed coins operation
 				ops.push(Operation::GuaranteedCoins);
@@ -199,7 +210,7 @@ impl<D: DB> From<MidnightNodeTransaction<Proof, D>> for Transaction {
 				operations,
 				identifiers,
 			},
-			status: true, // TODO: add status
+			status: true, // TODO: add status by looking at extrinsic events
 		}
 	}
 }

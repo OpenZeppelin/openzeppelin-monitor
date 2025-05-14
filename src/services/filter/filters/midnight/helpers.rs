@@ -10,9 +10,16 @@ use midnight_ledger::{
 	base_crypto::hash::{HashOutput, PERSISTENT_HASH_BYTES},
 	serialize::deserialize,
 	storage::DefaultDB,
-	structure::{Proofish, Transaction as MidnightNodeTransaction, TransactionHash},
+	structure::{
+		Proof, Proofish, StandardTransaction, Transaction as MidnightNodeTransaction,
+		TransactionHash,
+	},
+	zswap::{
+		keys::{SecretKeys, Seed},
+		CoinCiphertext,
+	},
 };
-use midnight_node_ledger_helpers::NetworkId;
+use midnight_node_ledger_helpers::{CoinInfo, NetworkId, DB};
 
 /// Parse a transaction index item
 pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
@@ -113,6 +120,86 @@ pub fn normalize_signature(signature: &str) -> String {
 /// The string with parentheses removed
 pub fn remove_parentheses(value: &str) -> String {
 	value.split('(').next().unwrap_or(value).trim().to_string()
+}
+
+/// Convert a seed to a viewing key
+///
+/// # Arguments
+/// * `seed` - The seed to convert
+///
+/// # Returns
+/// The SecretKeys
+pub fn seed_to_secret_keys(seed: Seed) -> Result<SecretKeys, anyhow::Error> {
+	Ok(SecretKeys::from(seed))
+}
+
+/// Hex encode a recovery phrase
+///
+/// # Arguments
+/// * `phrase` - The phrase to hex encode
+///
+/// # Returns
+/// The Seed of the phrase
+pub fn recovery_phrase_to_seed(phrase: &str) -> Result<Seed, anyhow::Error> {
+	// Parse the mnemonic phrase
+	let mnemonic = bip32::Mnemonic::new(phrase, bip32::Language::English)
+		.map_err(|e| anyhow::anyhow!("Invalid mnemonic phrase: {}", e))?;
+
+	// Convert to seed (this uses PBKDF2 with 2048 iterations as per BIP39)
+	let seed = mnemonic.to_seed("");
+
+	// Convert to fixed size array for Midnight's Seed type
+	let seed_bytes: [u8; 32] = seed.as_bytes()[..32]
+		.try_into()
+		.map_err(|e| anyhow::anyhow!("Failed to convert seed bytes to array: {:?}", e))?;
+
+	Ok(Seed::from(seed_bytes))
+}
+
+/// Process the coins in a transaction
+///
+/// # Arguments
+/// * `stx` - The transaction to process
+///
+/// # Returns
+/// The result of the operation
+pub fn process_coins<D: DB>(
+	phrase: &str,
+	stx: &StandardTransaction<Proof, D>,
+) -> Result<(), anyhow::Error> {
+	let seed = recovery_phrase_to_seed(phrase)
+		.map_err(|e| anyhow::anyhow!("Failed to convert phrase to seed: {}", e))?;
+	let keys = seed_to_secret_keys(seed)
+		.map_err(|e| anyhow::anyhow!("Failed to convert seed to secret keys: {}", e))?;
+
+	for output in stx.guaranteed_coins.outputs.iter() {
+		if let Some(coin) = try_decrypt_coin(&output.ciphertext, &keys)? {
+			println!("coin: {:#?}", coin);
+		} else {
+			println!("unable to decrypt coin");
+		}
+	}
+	Ok(())
+}
+
+/// Try to decrypt a coin ciphertext using a secret key
+///
+/// # Arguments
+/// * `ciphertext` - The ciphertext to decrypt
+/// * `secret_keys` - The secret keys to use for decryption
+///
+/// # Returns
+/// The decrypted coin info
+pub fn try_decrypt_coin(
+	ciphertext: &Option<CoinCiphertext>,
+	secret_keys: &SecretKeys,
+) -> Result<Option<CoinInfo>, anyhow::Error> {
+	if let Some(ciphertext) = ciphertext {
+		let plaintext = secret_keys.try_decrypt(ciphertext);
+		Ok(plaintext)
+	} else {
+		Ok(None)
+	}
 }
 
 #[cfg(test)]

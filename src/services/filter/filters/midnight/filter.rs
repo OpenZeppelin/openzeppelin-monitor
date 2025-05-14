@@ -15,16 +15,16 @@ use tracing::instrument;
 
 use crate::{
 	models::{
-		BlockType, ContractSpec, EventCondition, FunctionCondition, MidnightBlock,
+		BlockType, ContractSpec, EventCondition, FunctionCondition, MatchConditions, MidnightBlock,
 		MidnightMatchArguments, MidnightMatchParamEntry, MidnightMatchParamsMap,
-		MidnightRpcTransactionEnum, MidnightTransaction, Monitor, MonitorMatch, Network,
-		TransactionCondition, TransactionStatus,
+		MidnightMonitorMatch, MidnightRpcTransactionEnum, MidnightTransaction, Monitor,
+		MonitorMatch, Network, TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
 		filter::{
 			filters::midnight::helpers::{map_chain_type, parse_tx_index_item},
-			midnight_helpers::{are_same_address, are_same_signature},
+			midnight_helpers::{are_same_address, are_same_signature, remove_parentheses},
 			BlockFilter, FilterError,
 		},
 	},
@@ -80,16 +80,18 @@ impl<T> MidnightBlockFilter<T> {
 					// Check if the entry point matches the function signature
 					are_same_signature(&String::from_utf8_lossy(&hex::decode(entry).unwrap_or_default()), &condition.signature)
 				}) {
+
+					let normalized_signature = remove_parentheses(&condition.signature);
 					// If we found a match, add it to the matched functions
 					matched_functions.push(FunctionCondition {
-						signature: condition.signature.clone(),
+						signature: normalized_signature.clone(),
 						expression: condition.expression.clone(),
 					});
 
 					// Add the matched arguments if we have any
 					if let Some(functions) = &mut matched_on_args.functions {
 						functions.push(MidnightMatchParamsMap {
-							signature: condition.signature.clone(),
+							signature: normalized_signature.clone(),
 							args: None, // Arguments are private in Midnight
 							hex_signature: Some(entry_point.clone()), // entry_point isalready in hex format
 						});
@@ -198,6 +200,8 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
 
+		// println!("midnight_block: {:#?}", midnight_block);
+
 		// 1. Get transactions from the block
 		// 2. Decode transactions using Transactions::deserialize from midnight-node
 		// 3. Find matching transactions for each monitor (transactions and functions). Excluding events since they are not supported yet.
@@ -222,7 +226,7 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 			return Ok(vec![]);
 		}
 
-		let _matching_results = Vec::<MonitorMatch>::new();
+		let mut matching_results = Vec::<MonitorMatch>::new();
 		tracing::debug!("Processing {} monitor(s)", monitors.len());
 
 		for monitor in monitors {
@@ -234,9 +238,9 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 				.collect();
 
 			for transaction in transactions.iter() {
-				let _matched_transactions = Vec::<TransactionCondition>::new();
+				let matched_transactions = Vec::<TransactionCondition>::new();
 				let mut matched_functions = Vec::<FunctionCondition>::new();
-				let _matched_events = Vec::<EventCondition>::new();
+				let matched_events = Vec::<EventCondition>::new();
 				let mut matched_on_args = MidnightMatchArguments {
 					events: Some(Vec::new()),
 					functions: Some(Vec::new()),
@@ -246,6 +250,8 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 				// self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
 
+				// println!("transaction: {:#?}", transaction);
+
 				self.find_matching_functions_for_transaction(
 					&monitored_addresses,
 					transaction,
@@ -254,11 +260,71 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 					&mut matched_on_args,
 				);
 
-				println!("Matched functions: {:?}", matched_functions);
-				println!("Matched on args: {:?}", matched_on_args);
+				let monitor_conditions = &monitor.match_conditions;
+				let has_event_match =
+					!monitor_conditions.events.is_empty() && !matched_events.is_empty();
+				let has_function_match =
+					!monitor_conditions.functions.is_empty() && !matched_functions.is_empty();
+				let has_transaction_match =
+					!monitor_conditions.transactions.is_empty() && !matched_transactions.is_empty();
+
+				let should_match = match (
+					monitor_conditions.events.is_empty(),
+					monitor_conditions.functions.is_empty(),
+					monitor_conditions.transactions.is_empty(),
+				) {
+					// Case 1: No conditions defined, match everything
+					(true, true, true) => true,
+
+					// Case 2: Only transaction conditions defined
+					(true, true, false) => has_transaction_match,
+
+					// Case 3: No transaction conditions, match based on events/functions
+					(_, _, true) => has_event_match || has_function_match,
+
+					// Case 4: Transaction conditions exist, they must be satisfied along with
+					// events/functions
+					_ => (has_event_match || has_function_match) && has_transaction_match,
+				};
+
+				if should_match {
+					matching_results.push(MonitorMatch::Midnight(Box::new(MidnightMonitorMatch {
+						monitor: monitor.clone(),
+						transaction: transaction.clone(),
+						network_slug: network.slug.clone(),
+						matched_on: MatchConditions {
+							events: matched_events
+								.clone()
+								.into_iter()
+								.filter(|_| has_event_match)
+								.collect(),
+							functions: matched_functions
+								.clone()
+								.into_iter()
+								.filter(|_| has_function_match)
+								.collect(),
+							transactions: matched_transactions
+								.clone()
+								.into_iter()
+								.filter(|_| has_transaction_match)
+								.collect(),
+						},
+						matched_on_args: Some(MidnightMatchArguments {
+							events: if has_event_match {
+								matched_on_args.events.clone()
+							} else {
+								None
+							},
+							functions: if has_function_match {
+								matched_on_args.functions.clone()
+							} else {
+								None
+							},
+						}),
+					})));
+				}
 			}
 		}
-
-		Ok(vec![])
+		Ok(matching_results)
 	}
 }
