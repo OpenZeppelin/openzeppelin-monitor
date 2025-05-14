@@ -11,6 +11,7 @@ pub mod stellar;
 
 /// Supported blockchain platform types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(deny_unknown_fields)]
 pub enum BlockChainType {
 	/// Ethereum Virtual Machine based chains
 	EVM,
