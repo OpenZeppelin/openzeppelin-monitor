@@ -197,7 +197,6 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 							}
 						}
 						BlockChainType::Midnight => None,
-						BlockChainType::Solana => None,
 					};
 
 					processed_block.processing_results = matches.unwrap_or_default();
@@ -484,12 +483,14 @@ async fn run_trigger_filters(
 		let trigger_conditions = match monitor_match {
 			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
 			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
+			MonitorMatch::Midnight(midnight_match) => &midnight_match.monitor.trigger_conditions,
 		};
 
 		for trigger_condition in trigger_conditions {
 			let monitor_name = match monitor_match {
 				MonitorMatch::EVM(evm_match) => evm_match.monitor.name.clone(),
 				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
+				MonitorMatch::Midnight(midnight_match) => midnight_match.monitor.name.clone(),
 			};
 
 			let script_content = trigger_scripts
@@ -637,7 +638,6 @@ mod tests {
 				matched_on_args: None,
 			})),
 			BlockChainType::Midnight => unimplemented!(),
-			BlockChainType::Solana => unimplemented!(),
 		}
 	}
 
@@ -672,7 +672,6 @@ mod tests {
 				matched_on_args: None,
 			})),
 			BlockChainType::Midnight => unimplemented!(),
-			BlockChainType::Solana => unimplemented!(),
 		}
 	}
 
@@ -710,7 +709,7 @@ mod tests {
 		));
 		assert!(!has_active_monitors(
 			&monitors,
-			&"solana_mainnet".to_string()
+			&"midnight_mainnet".to_string()
 		));
 		assert!(!has_active_monitors(
 			&monitors,
@@ -764,8 +763,8 @@ mod tests {
 			.iter()
 			.all(|m| m.networks.contains(&"stellar_mainnet".to_string())));
 
-		let sol_monitors = filter_network_monitors(&monitors, &"solana_mainnet".to_string());
-		assert!(sol_monitors.is_empty());
+		let midnight_monitors = filter_network_monitors(&monitors, &"midnight_mainnet".to_string());
+		assert!(midnight_monitors.is_empty());
 	}
 
 	#[tokio::test]

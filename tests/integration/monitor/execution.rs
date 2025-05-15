@@ -831,46 +831,6 @@ async fn test_execute_monitor_midnight() {
 }
 
 #[tokio::test]
-async fn test_execute_monitor_solana() {
-	let test_data = load_test_data("evm");
-	let mut mocked_monitors = HashMap::new();
-	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
-	let mock_monitor_service = setup_monitor_service(mocked_monitors);
-
-	let mut mocked_triggers = HashMap::new();
-	mocked_triggers.insert(
-		"evm_large_transfer_usdc_slack".to_string(),
-		create_test_trigger("test"),
-	);
-	// Create actual TriggerExecutionService instance
-	let trigger_service = setup_trigger_service(mocked_triggers);
-	let notification_service = NotificationService::new();
-	let trigger_execution_service =
-		TriggerExecutionService::new(trigger_service, notification_service);
-
-	let mock_pool = MockClientPool::new();
-	let mock_network_service =
-		setup_mocked_network_service("Solana", "solana_mainnet", BlockChainType::Solana);
-
-	let client_pool = Arc::new(mock_pool);
-
-	let result = execute_monitor(MonitorExecutionConfig {
-		path: test_data.monitor.name.clone(),
-		network_slug: Some("solana_mainnet".to_string()),
-		block_number: None,
-		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
-		network_service: Arc::new(Mutex::new(mock_network_service)),
-		filter_service: Arc::new(FilterService::new()),
-		trigger_execution_service: Arc::new(trigger_execution_service),
-		active_monitors_trigger_scripts: HashMap::new(),
-		client_pool,
-	})
-	.await;
-
-	assert!(result.is_err());
-}
-
-#[tokio::test]
 async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 	let test_data = load_test_data("stellar");
 	let mut mocked_monitors = HashMap::new();

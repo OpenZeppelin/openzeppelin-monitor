@@ -262,13 +262,6 @@ pub async fn execute_monitor<
 					None,
 				))
 			}
-			BlockChainType::Solana => {
-				return Err(MonitorExecutionError::execution_error(
-					"Solana network not supported",
-					None,
-					None,
-				))
-			}
 		};
 
 		tracing::debug!(matches_count = matches.len(), "Found matches for network");

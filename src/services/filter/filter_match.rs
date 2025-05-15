@@ -234,6 +234,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				)
 				.await;
 		}
+		MonitorMatch::Midnight(_) => {
+			todo!("Midnight monitor match not implemented");
+		}
 	}
 	Ok(())
 }

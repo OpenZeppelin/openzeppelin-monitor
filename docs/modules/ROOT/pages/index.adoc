@@ -580,7 +580,7 @@ Additionally, the monitor will always store:
 
 === Network Configuration
 
-A Network configuration defines connection details and operational parameters for a specific blockchain network, supporting both EVM and Stellar-based chains.
+A Network configuration defines connection details and operational parameters for a specific blockchain network.
 
 .Example Network Configuration
 [source,json]
