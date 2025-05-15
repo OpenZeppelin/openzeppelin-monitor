@@ -39,6 +39,7 @@ pub fn load_test_data(chain: &str) -> TestData {
 	let base_path = format!("{}/{}", TEST_FIXTURES_BASE, chain);
 
 	let blocks: Vec<BlockType> = read_and_parse_json(&format!("{}/blocks.json", base_path));
+
 	let monitor: Monitor = read_and_parse_json(&format!("{}/monitors/monitor.json", base_path));
 	let network: Network = read_and_parse_json(&format!("{}/networks/network.json", base_path));
 

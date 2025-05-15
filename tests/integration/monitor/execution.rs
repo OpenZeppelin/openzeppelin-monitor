@@ -10,7 +10,8 @@ use crate::integration::{
 use mockall::predicate;
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, EVMTransactionReceipt, Monitor, ScriptLanguage, Trigger, TriggerConditions,
+		BlockChainType, EVMTransactionReceipt, MidnightChainType, Monitor, ScriptLanguage, Trigger,
+		TriggerConditions,
 	},
 	repositories::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkService,
@@ -793,6 +794,7 @@ async fn test_execute_monitor_network_slug_not_defined() {
 #[tokio::test]
 async fn test_execute_monitor_midnight() {
 	let test_data = load_test_data("midnight");
+
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -802,6 +804,10 @@ async fn test_execute_monitor_midnight() {
 
 	let mut mock_pool = MockClientPool::new();
 	let mut mock_client = MockMidnightClientTrait::new();
+
+	mock_client
+		.expect_get_chain_type()
+		.returning(move || Ok(MidnightChainType::Development));
 
 	let mut mocked_triggers = HashMap::new();
 	mocked_triggers.insert(
@@ -814,9 +820,11 @@ async fn test_execute_monitor_midnight() {
 	let trigger_execution_service =
 		TriggerExecutionService::new(trigger_service, notification_service);
 
+	let block_number = 11243;
+
 	mock_client
 		.expect_get_blocks()
-		.with(predicate::eq(172627u64), predicate::eq(None))
+		.with(predicate::eq(block_number), predicate::eq(None))
 		.return_once(move |_, _| Ok(test_data.blocks.clone()));
 
 	let mock_client = Arc::new(mock_client);
@@ -827,8 +835,6 @@ async fn test_execute_monitor_midnight() {
 		.returning(move |_| Ok(mock_client.clone()));
 
 	let client_pool = Arc::new(mock_pool);
-
-	let block_number = 172627;
 
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
