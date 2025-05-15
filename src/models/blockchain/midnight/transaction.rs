@@ -237,6 +237,7 @@ impl Deref for Transaction {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
 	#[test]
 	fn test_transaction_from_rpc_transaction() {
 		let tx_info = MidnightRpcTransaction {
@@ -291,5 +292,107 @@ mod tests {
 			transaction.identifiers,
 			vec!["0x1234567890abcdef".to_string()]
 		);
+	}
+
+	#[test]
+	fn test_transaction_status() {
+		let tx_info = MidnightRpcTransaction {
+			tx_hash: "test_hash".to_string(),
+			operations: vec![],
+			identifiers: vec![],
+		};
+
+		let transaction = Transaction {
+			inner: tx_info,
+			status: true, // TODO: Currently hardcoded to true
+		};
+
+		assert!(transaction.status());
+	}
+
+	#[test]
+	fn test_contract_addresses() {
+		let tx_info = MidnightRpcTransaction {
+			tx_hash: "test_hash".to_string(),
+			operations: vec![
+				Operation::Call {
+					address: "0x123".to_string(),
+					entry_point: "entry1".to_string(),
+				},
+				Operation::Deploy {
+					address: "0x456".to_string(),
+				},
+				Operation::Maintain {
+					address: "0x789".to_string(),
+				},
+				Operation::GuaranteedCoins,
+			],
+			identifiers: vec![],
+		};
+
+		let transaction = Transaction::from(tx_info);
+		let addresses = transaction.contract_addresses();
+
+		assert_eq!(addresses.len(), 3);
+		assert!(addresses.contains(&"0x123".to_string()));
+		assert!(addresses.contains(&"0x456".to_string()));
+		assert!(addresses.contains(&"0x789".to_string()));
+	}
+
+	#[test]
+	fn test_entry_points() {
+		let tx_info = MidnightRpcTransaction {
+			tx_hash: "test_hash".to_string(),
+			operations: vec![
+				Operation::Call {
+					address: "0x123".to_string(),
+					entry_point: "entry1".to_string(),
+				},
+				Operation::Call {
+					address: "0x456".to_string(),
+					entry_point: "entry2".to_string(),
+				},
+				Operation::Deploy {
+					address: "0x789".to_string(),
+				},
+			],
+			identifiers: vec![],
+		};
+
+		let transaction = Transaction::from(tx_info);
+		let entry_points = transaction.entry_points();
+
+		assert_eq!(entry_points.len(), 2);
+		assert!(entry_points.contains(&"entry1".to_string()));
+		assert!(entry_points.contains(&"entry2".to_string()));
+	}
+
+	#[test]
+	fn test_contract_addresses_and_entry_points() {
+		let tx_info = MidnightRpcTransaction {
+			tx_hash: "test_hash".to_string(),
+			operations: vec![
+				Operation::Call {
+					address: "0x123".to_string(),
+					entry_point: "entry1".to_string(),
+				},
+				Operation::Call {
+					address: "0x456".to_string(),
+					entry_point: "entry2".to_string(),
+				},
+				Operation::Deploy {
+					address: "0x789".to_string(),
+				},
+				Operation::GuaranteedCoins,
+			],
+			identifiers: vec![],
+		};
+
+		let transaction = Transaction::from(tx_info);
+		let pairs = transaction.contract_addresses_and_entry_points();
+
+		assert_eq!(pairs.len(), 2);
+		assert!(pairs.contains(&("0x123".to_string(), "entry1".to_string())));
+		assert!(pairs.contains(&("0x456".to_string(), "entry2".to_string())));
 	}
 }
