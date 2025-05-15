@@ -77,7 +77,7 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 		BlockChainType::Stellar => MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
 			monitor: create_test_monitor("test", vec!["stellar_mainnet"], false, vec![]),
 			transaction: match create_test_transaction(chain) {
-				TransactionType::Stellar(tx) => tx,
+				TransactionType::Stellar(tx) => *tx,
 				_ => panic!("Expected Stellar transaction"),
 			},
 			network_slug: "stellar_mainnet".to_string(),

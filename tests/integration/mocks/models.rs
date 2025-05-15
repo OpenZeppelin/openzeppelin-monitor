@@ -123,9 +123,9 @@ pub fn create_test_transaction(chain: BlockChainType) -> TransactionType {
 	match chain {
 		BlockChainType::EVM => TransactionType::EVM(TransactionBuilder::new().build()),
 		BlockChainType::Stellar => {
-			TransactionType::Stellar(StellarTransaction::from(StellarTransactionInfo {
+			TransactionType::Stellar(Box::new(StellarTransaction::from(StellarTransactionInfo {
 				..Default::default()
-			}))
+			})))
 		}
 		_ => panic!("Unsupported chain"),
 	}

@@ -53,7 +53,7 @@ pub enum TransactionType {
 	/// EVM transaction
 	EVM(evm::EVMTransaction),
 	/// Stellar transaction
-	Stellar(stellar::StellarTransaction),
+	Stellar(Box<stellar::StellarTransaction>),
 }
 
 /// Contract spec from different blockchain platforms
