@@ -10,9 +10,12 @@ use midnight_ledger::structure::{
 use midnight_node_ledger_helpers::DB;
 
 use serde::{Deserialize, Serialize};
-use std::{env, ops::Deref};
+use std::ops::Deref;
 
-use crate::services::filter::midnight_helpers::process_coins;
+use crate::{
+	models::{ChainConfiguration, SecretValue},
+	services::filter::midnight_helpers::process_transaction_for_coins,
+};
 
 /// Represents a Midnight RPC transaction Enum
 ///
@@ -158,8 +161,12 @@ impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
 	}
 }
 
-impl<D: DB> From<MidnightNodeTransaction<Proof, D>> for Transaction {
-	fn from(tx: MidnightNodeTransaction<Proof, D>) -> Self {
+impl<D: DB> TryFrom<(MidnightNodeTransaction<Proof, D>, &Vec<ChainConfiguration>)> for Transaction {
+	type Error = anyhow::Error;
+
+	fn try_from(
+		(tx, chain_configurations): (MidnightNodeTransaction<Proof, D>, &Vec<ChainConfiguration>),
+	) -> Result<Self, Self::Error> {
 		let tx_hash = tx.transaction_hash().0 .0.encode_hex();
 
 		let identifiers = tx
@@ -170,17 +177,21 @@ impl<D: DB> From<MidnightNodeTransaction<Proof, D>> for Transaction {
 			})
 			.collect();
 
+		// Check if chain_configuration has viewing keys and decrypt the transaction's coins
+		for chain_configuration in chain_configurations {
+			if let Some(midnight) = &chain_configuration.midnight {
+				for viewing_key in &midnight.viewing_keys {
+					if let SecretValue::Plain(secret) = viewing_key {
+						let viewing_key_str = secret.as_str();
+						let coins = process_transaction_for_coins::<D>(viewing_key_str, &tx);
+						println!("Coins: {:?}", coins);
+					}
+				}
+			}
+		}
+
 		let operations = match tx {
 			MidnightNodeTransaction::Standard(stx) => {
-				// TODO: remove this and use viewing keys from config file
-				let seed = env::var("MIDNIGHT_SEED")
-					.map_err(|e| anyhow::anyhow!("Failed to get MIDNIGHT_SEED: {}", e));
-
-				if let Ok(seed) = seed {
-					// TODO: Just prints for now, we should do something with the decryptedcoins
-					let _ = process_coins::<D>(&seed, &stx);
-				}
-
 				let mut ops = Vec::new();
 				// Add guaranteed coins operation
 				ops.push(Operation::GuaranteedCoins);
@@ -204,14 +215,14 @@ impl<D: DB> From<MidnightNodeTransaction<Proof, D>> for Transaction {
 			}
 		};
 
-		Self {
+		Ok(Self {
 			inner: MidnightRpcTransaction {
 				tx_hash,
 				operations,
 				identifiers,
 			},
 			status: true, // TODO: add status by looking at extrinsic events
-		}
+		})
 	}
 }
 

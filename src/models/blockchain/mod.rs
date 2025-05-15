@@ -94,6 +94,22 @@ pub enum MonitorMatch {
 	Midnight(Box<midnight::MidnightMonitorMatch>),
 }
 
+/// Chain-specific configuration
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct ChainConfiguration {
+	/// Midnight-specific configuration
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub midnight: Option<midnight::MidnightMonitorConfig>,
+
+	/// EVM-specific configuration
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub evm: Option<evm::EVMMonitorConfig>,
+
+	/// Stellar-specific configuration
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub stellar: Option<stellar::StellarMonitorConfig>,
+}
+
 /// Structure to hold block processing results
 ///
 /// This is used to pass the results of block processing to the trigger handler

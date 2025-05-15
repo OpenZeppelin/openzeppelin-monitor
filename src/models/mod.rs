@@ -14,27 +14,29 @@ mod security;
 
 // Re-export blockchain types
 pub use blockchain::{
-	BlockChainType, BlockType, ContractSpec, MonitorMatch, ProcessedBlock, TransactionType,
+	BlockChainType, BlockType, ChainConfiguration, ContractSpec, MonitorMatch, ProcessedBlock,
+	TransactionType,
 };
 
 pub use blockchain::evm::{
 	EVMBaseReceipt, EVMBaseTransaction, EVMBlock, EVMContractSpec, EVMMatchArguments,
-	EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EVMReceiptLog, EVMTransaction,
-	EVMTransactionReceipt,
+	EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorConfig, EVMMonitorMatch, EVMReceiptLog,
+	EVMTransaction, EVMTransactionReceipt,
 };
 
 pub use blockchain::stellar::{
 	StellarBlock, StellarContractFunction, StellarContractInput, StellarContractSpec,
 	StellarDecodedParamEntry, StellarDecodedTransaction, StellarEvent,
 	StellarFormattedContractSpec, StellarLedgerInfo, StellarMatchArguments, StellarMatchParamEntry,
-	StellarMatchParamsMap, StellarMonitorMatch, StellarParsedOperationResult, StellarTransaction,
-	StellarTransactionInfo,
+	StellarMatchParamsMap, StellarMonitorConfig, StellarMonitorMatch, StellarParsedOperationResult,
+	StellarTransaction, StellarTransactionInfo,
 };
 
 pub use blockchain::midnight::{
 	MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightChainType, MidnightEvent,
-	MidnightMatchArguments, MidnightMatchParamEntry, MidnightMatchParamsMap, MidnightMonitorMatch,
-	MidnightOperation, MidnightRpcBlock, MidnightRpcTransactionEnum, MidnightTransaction,
+	MidnightMatchArguments, MidnightMatchParamEntry, MidnightMatchParamsMap, MidnightMonitorConfig,
+	MidnightMonitorMatch, MidnightOperation, MidnightRpcBlock, MidnightRpcTransactionEnum,
+	MidnightTransaction,
 };
 
 // Re-export core types

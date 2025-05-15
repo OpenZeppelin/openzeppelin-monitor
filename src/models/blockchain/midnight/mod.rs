@@ -16,7 +16,8 @@ pub use block::{
 pub use event::Event as MidnightEvent;
 pub use monitor::{
 	MatchArguments as MidnightMatchArguments, MatchParamEntry as MidnightMatchParamEntry,
-	MatchParamsMap as MidnightMatchParamsMap, MonitorMatch as MidnightMonitorMatch,
+	MatchParamsMap as MidnightMatchParamsMap, MonitorConfig as MidnightMonitorConfig,
+	MonitorMatch as MidnightMonitorMatch,
 };
 pub use transaction::{
 	Operation as MidnightOperation, RpcTransaction as MidnightRpcTransactionEnum,

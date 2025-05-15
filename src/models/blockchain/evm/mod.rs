@@ -12,7 +12,7 @@ pub use block::Block as EVMBlock;
 pub use monitor::{
 	ContractSpec as EVMContractSpec, MatchArguments as EVMMatchArguments,
 	MatchParamEntry as EVMMatchParamEntry, MatchParamsMap as EVMMatchParamsMap,
-	MonitorMatch as EVMMonitorMatch,
+	MonitorConfig as EVMMonitorConfig, MonitorMatch as EVMMonitorMatch,
 };
 pub use receipt::{
 	BaseLog as EVMReceiptLog, BaseReceipt as EVMBaseReceipt,

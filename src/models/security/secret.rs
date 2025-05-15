@@ -155,7 +155,7 @@ impl PartialEq for SecretValue {
 /// - The value is dropped
 /// - `zeroize()` is called explicitly
 /// - The value is moved
-#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SecretString(String);
 
 impl PartialEq for SecretString {
@@ -299,6 +299,12 @@ impl fmt::Display for SecretValue {
 			SecretValue::Environment(env_var) => write!(f, "{}", env_var),
 			SecretValue::HashicorpCloudVault(name) => write!(f, "{}", name),
 		}
+	}
+}
+
+impl fmt::Debug for SecretString {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "<secret string>")
 	}
 }
 
@@ -820,6 +826,21 @@ mod tests {
 				.contains("Failed to get secret from Hashicorp Cloud Vault"));
 		})
 		.await;
+	}
+
+	#[test]
+	fn test_secret_string_debug() {
+		let secret = SecretString::new("test".to_string());
+		assert_eq!(format!("{:?}", secret), "<secret string>");
+
+		let secret = SecretValue::Plain(SecretString::new("test".to_string()));
+		assert_eq!(format!("{:?}", secret), "Plain(<secret string>)");
+
+		let secret = SecretValue::Environment("test".to_string());
+		assert_eq!(format!("{:?}", secret), "Environment(\"test\")");
+
+		let secret = SecretValue::HashicorpCloudVault("test".to_string());
+		assert_eq!(format!("{:?}", secret), "HashicorpCloudVault(\"test\")");
 	}
 
 	#[test]

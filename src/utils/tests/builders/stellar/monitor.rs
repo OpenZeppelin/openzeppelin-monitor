@@ -3,8 +3,9 @@
 //! - `MonitorBuilder`: Builder for creating test Monitor instances
 
 use crate::models::{
-	AddressWithSpec, ContractSpec, EventCondition, FunctionCondition, MatchConditions, Monitor,
-	ScriptLanguage, TransactionCondition, TransactionStatus, TriggerConditions,
+	AddressWithSpec, ChainConfiguration, ContractSpec, EventCondition, FunctionCondition,
+	MatchConditions, Monitor, ScriptLanguage, StellarMonitorConfig, TransactionCondition,
+	TransactionStatus, TriggerConditions,
 };
 
 /// Builder for creating test Monitor instances
@@ -16,6 +17,7 @@ pub struct MonitorBuilder {
 	match_conditions: MatchConditions,
 	trigger_conditions: Vec<TriggerConditions>,
 	triggers: Vec<String>,
+	chain_configurations: Vec<ChainConfiguration>,
 }
 
 impl Default for MonitorBuilder {
@@ -35,6 +37,10 @@ impl Default for MonitorBuilder {
 			},
 			trigger_conditions: vec![],
 			triggers: vec![],
+			chain_configurations: vec![ChainConfiguration {
+				stellar: Some(StellarMonitorConfig::default()),
+				..Default::default()
+			}],
 		}
 	}
 }
@@ -163,6 +169,7 @@ impl MonitorBuilder {
 			match_conditions: self.match_conditions,
 			trigger_conditions: self.trigger_conditions,
 			triggers: self.triggers,
+			chain_configurations: self.chain_configurations,
 		}
 	}
 }

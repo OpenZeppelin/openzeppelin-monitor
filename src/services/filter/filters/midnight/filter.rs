@@ -10,15 +10,15 @@ use async_trait::async_trait;
 use hex;
 use midnight_ledger::structure::Proof;
 use midnight_node_ledger_helpers::NetworkId;
-use std::{collections::VecDeque, marker::PhantomData};
+use std::marker::PhantomData;
 use tracing::instrument;
 
 use crate::{
 	models::{
-		BlockType, ContractSpec, EventCondition, FunctionCondition, MatchConditions, MidnightBlock,
-		MidnightMatchArguments, MidnightMatchParamEntry, MidnightMatchParamsMap,
-		MidnightMonitorMatch, MidnightRpcTransactionEnum, MidnightTransaction, Monitor,
-		MonitorMatch, Network, TransactionCondition, TransactionStatus,
+		BlockType, ChainConfiguration, ContractSpec, EventCondition, FunctionCondition,
+		MatchConditions, MidnightBlock, MidnightMatchArguments, MidnightMatchParamEntry,
+		MidnightMatchParamsMap, MidnightMonitorMatch, MidnightTransaction, Monitor, MonitorMatch,
+		Network, TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
@@ -140,6 +140,7 @@ impl<T> MidnightBlockFilter<T> {
 		&self,
 		block: &MidnightBlock,
 		network_id: NetworkId,
+		chain_configurations: &Vec<ChainConfiguration>,
 	) -> Result<Vec<MidnightTransaction>, FilterError> {
 		let mut txs = Vec::<MidnightTransaction>::new();
 		let tx_index = block.transactions_index.iter().rev();
@@ -154,7 +155,7 @@ impl<T> MidnightBlockFilter<T> {
 					));
 				}
 			};
-			txs.push(MidnightTransaction::from(tx));
+			txs.push(MidnightTransaction::try_from((tx, chain_configurations))?);
 		}
 		Ok(txs)
 	}
@@ -196,7 +197,15 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 		let chain_type = client.get_chain_type().await?;
 		let network_id = map_chain_type(&chain_type);
-		let _decoded_transactions = self.deserialize_transactions(midnight_block, network_id)?;
+
+		// Get all chain configurations from monitors
+		let chain_configurations = monitors
+			.iter()
+			.flat_map(|m| m.chain_configurations.clone())
+			.collect();
+
+		let transactions =
+			self.deserialize_transactions(midnight_block, network_id, &chain_configurations)?;
 
 		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
 
@@ -207,16 +216,16 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		// 3. Find matching transactions for each monitor (transactions and functions). Excluding events since they are not supported yet.
 		// 4. Return matches
 
-		let transactions: VecDeque<_> = midnight_block
-			.body
-			.iter()
-			.filter_map(|entry| match entry {
-				MidnightRpcTransactionEnum::MidnightTransaction { tx, .. } => {
-					Some(MidnightTransaction::from(tx.clone()))
-				}
-				_ => None,
-			})
-			.collect();
+		// let transactions: VecDeque<_> = midnight_block
+		// 	.body
+		// 	.iter()
+		// 	.filter_map(|entry| match entry {
+		// 		MidnightRpcTransactionEnum::MidnightTransaction { tx, .. } => {
+		// 			Some(MidnightTransaction::from(tx.clone()))
+		// 		}
+		// 		_ => None,
+		// 	})
+		// 	.collect();
 
 		if transactions.is_empty() {
 			tracing::debug!(

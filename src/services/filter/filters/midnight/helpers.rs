@@ -10,10 +10,8 @@ use midnight_ledger::{
 	base_crypto::hash::{HashOutput, PERSISTENT_HASH_BYTES},
 	serialize::deserialize,
 	storage::DefaultDB,
-	structure::{
-		Proof, Proofish, StandardTransaction, Transaction as MidnightNodeTransaction,
-		TransactionHash,
-	},
+	structure::{Proof, Proofish, Transaction as MidnightNodeTransaction, TransactionHash},
+	transient_crypto::encryption,
 	zswap::{
 		keys::{SecretKeys, Seed},
 		CoinCiphertext,
@@ -136,47 +134,54 @@ pub fn seed_to_secret_keys(seed: Seed) -> Result<SecretKeys, anyhow::Error> {
 /// Process the coins in a transaction
 ///
 /// # Arguments
-/// * `stx` - The transaction to process
+/// * `viewing_key_hex` - The hex encoded viewing key to use for decryption (hex::encode(viewing_key.repr()))
+/// * `tx` - The transaction to process
 ///
 /// # Returns
 /// The result of the operation
-pub fn process_coins<D: DB>(
-	seed: &str,
-	stx: &StandardTransaction<Proof, D>,
-) -> Result<(), anyhow::Error> {
-	let seed_bytes: [u8; 32] = hex::decode(seed)
-		.map_err(|e| anyhow::anyhow!("Invalid hex string: {}", e))?
-		.try_into()
-		.map_err(|_| anyhow::anyhow!("Seed must be exactly 32 bytes"))?;
-	let seed = Seed::from(seed_bytes);
+pub fn process_transaction_for_coins<D: DB>(
+	viewing_key_hex: &str,
+	tx: &MidnightNodeTransaction<Proof, D>,
+) -> Result<Vec<CoinInfo>, anyhow::Error> {
+	let reconstructed_viewing_key = encryption::SecretKey::from_repr(
+		&hex::decode(viewing_key_hex)
+			.map_err(|e| anyhow::anyhow!("Failed to decode hex: {}", e))?
+			.try_into()
+			.map_err(|_| anyhow::anyhow!("Invalid key length"))?,
+	);
 
-	let keys = seed_to_secret_keys(seed)
-		.map_err(|e| anyhow::anyhow!("Failed to convert seed to secret keys: {}", e))?;
+	if !bool::from(reconstructed_viewing_key.is_some()) {
+		return Err(anyhow::anyhow!("Failed to reconstruct viewing key"));
+	}
+	// Safe to unwrap here as we've verified the key exists
+	let viewing_key = reconstructed_viewing_key.unwrap();
 
-	for output in stx.guaranteed_coins.outputs.iter() {
-		if let Some(coin) = try_decrypt_coin(&output.ciphertext, &keys)? {
-			println!("coin: {:#?}", coin);
-		} else {
-			println!("unable to decrypt coin");
+	let mut coins: Vec<CoinInfo> = vec![];
+
+	if let MidnightNodeTransaction::Standard(tx) = tx {
+		for output in tx.guaranteed_coins.outputs.iter() {
+			if let Some(coin) = try_decrypt_coin(&output.ciphertext, &viewing_key)? {
+				coins.push(coin);
+			}
 		}
 	}
-	Ok(())
+	Ok(coins)
 }
 
-/// Try to decrypt a coin ciphertext using a secret key
+/// Try to decrypt a coin ciphertext using a viewing key
 ///
 /// # Arguments
 /// * `ciphertext` - The ciphertext to decrypt
-/// * `secret_keys` - The secret keys to use for decryption
+/// * `viewing_key` - The viewing key to use for decryption
 ///
 /// # Returns
 /// The decrypted coin info
 pub fn try_decrypt_coin(
 	ciphertext: &Option<CoinCiphertext>,
-	secret_keys: &SecretKeys,
+	viewing_key: &encryption::SecretKey,
 ) -> Result<Option<CoinInfo>, anyhow::Error> {
 	if let Some(ciphertext) = ciphertext {
-		let plaintext = secret_keys.try_decrypt(ciphertext);
+		let plaintext = viewing_key.decrypt(&ciphertext.clone().into());
 		Ok(plaintext)
 	} else {
 		Ok(None)
