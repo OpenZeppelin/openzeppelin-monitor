@@ -183,8 +183,8 @@ impl<D: DB> TryFrom<(MidnightNodeTransaction<Proof, D>, &Vec<ChainConfiguration>
 				for viewing_key in &midnight.viewing_keys {
 					if let SecretValue::Plain(secret) = viewing_key {
 						let viewing_key_str = secret.as_str();
-						let coins = process_transaction_for_coins::<D>(viewing_key_str, &tx);
-						println!("Coins: {:?}", coins);
+						// TODO: Do something with the coins...
+						let _ = process_transaction_for_coins::<D>(viewing_key_str, &tx);
 					}
 				}
 			}

@@ -37,6 +37,13 @@ pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
 	}
 	let hash = TransactionHash(HashOutput(hash.try_into().unwrap()));
 
+	// NOTE: Alternative way to decode the transaction if we want the 35 byte addresses as opposed to the 32 byte addresses
+	// 		 This method uses api.serialize() to serialize the addresses
+	// let tx = midnight_node_ledger::host_api::ledger_bridge::get_decoded_transaction(
+	// 	&[network_id as u8],
+	// 	body_str.as_bytes(),
+	// );
+
 	let body =
 		hex::decode(body_str).map_err(|e| anyhow::anyhow!("TransactionBodyDecodeError: {}", e))?;
 
@@ -76,11 +83,14 @@ pub fn are_same_address(address1: &str, address2: &str) -> bool {
 /// # Returns
 /// The normalized address string
 pub fn normalize_address(address: &str) -> String {
-	address
-		.strip_prefix("0x")
-		.unwrap_or(address)
-		.replace(char::is_whitespace, "")
-		.to_lowercase()
+	normalize_address_size(
+		address
+			.strip_prefix("0x")
+			.unwrap_or(address)
+			.replace(char::is_whitespace, "")
+			.to_lowercase()
+			.as_str(),
+	)
 }
 
 /// Compares two function signatures for equality, ignoring case and whitespace.
@@ -185,6 +195,29 @@ pub fn try_decrypt_coin(
 		Ok(plaintext)
 	} else {
 		Ok(None)
+	}
+}
+
+/// Normalize the size of an address
+///
+/// Midnight uses 35 byte addresses which includes 3 byte network id (e.g. 020200) followed by the 32 byte address.
+/// This function normalizes the size of an address to 32 bytes in case the address is 35 bytes.
+///
+/// # Arguments
+/// * `address` - The address to normalize
+///
+/// # Returns
+/// The normalized address
+pub fn normalize_address_size(address: &str) -> String {
+	let address_bytes = match hex::decode(address) {
+		Ok(bytes) => bytes,
+		Err(_) => return address.to_string(),
+	};
+
+	if address_bytes.len() == 35 {
+		hex::encode(&address_bytes[3..])
+	} else {
+		hex::encode(&address_bytes)
 	}
 }
 
@@ -297,5 +330,26 @@ mod tests {
 		let chain_type = MidnightChainType::Custom(String::from("custom"));
 		let network_id = map_chain_type(&chain_type);
 		assert_eq!(network_id, NetworkId::Undeployed);
+	}
+
+	#[test]
+	fn test_normalize_address_size() {
+		let address = "0x1234567890123456789012345678901234567890";
+		let normalized = normalize_address_size(address);
+		assert_eq!(normalized, "0x1234567890123456789012345678901234567890");
+
+		let address = "020200bf19b4b8a1cb232880d26999f01c0aca5c57635365019456109be2ee809f5919";
+		let normalized = normalize_address_size(address);
+		assert_eq!(
+			normalized,
+			"bf19b4b8a1cb232880d26999f01c0aca5c57635365019456109be2ee809f5919"
+		);
+
+		let address = "bf19b4b8a1cb232880d26999f01c0aca5c57635365019456109be2ee809f5919";
+		let normalized = normalize_address_size(address);
+		assert_eq!(
+			normalized,
+			"bf19b4b8a1cb232880d26999f01c0aca5c57635365019456109be2ee809f5919"
+		);
 	}
 }

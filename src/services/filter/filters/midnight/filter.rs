@@ -7,7 +7,6 @@
 #![allow(clippy::result_large_err)]
 
 use async_trait::async_trait;
-use hex;
 use midnight_ledger::structure::Proof;
 use midnight_node_ledger_helpers::NetworkId;
 use std::marker::PhantomData;
@@ -74,13 +73,13 @@ impl<T> MidnightBlockFilter<T> {
 			// Iterate over each function condition in the monitor
 			for condition in &monitor.match_conditions.functions {
 				// For each function condition, check if there's a matching address and entry point
-				if let Some((_, entry_point)) = addresses_with_entry_points.iter().find(|(addr, entry)| {
-					// Check if the address matches any monitored address
-					monitored_addresses.iter().any(|monitored_addr| are_same_address(addr, monitored_addr)) &&
+				if let Some((_, entry_point)) =
+					addresses_with_entry_points.iter().find(|(addr, entry)| {
+						// Check if the address matches any monitored address
+						monitored_addresses.iter().any(|monitored_addr| are_same_address(addr, monitored_addr)) &&
 					// Check if the entry point matches the function signature
-					are_same_signature(&String::from_utf8_lossy(&hex::decode(entry).unwrap_or_default()), &condition.signature)
-				}) {
-
+					are_same_signature(entry, &condition.signature)
+					}) {
 					let normalized_signature = remove_parentheses(&condition.signature);
 					// If we found a match, add it to the matched functions
 					matched_functions.push(FunctionCondition {
@@ -92,7 +91,7 @@ impl<T> MidnightBlockFilter<T> {
 					if let Some(functions) = &mut matched_on_args.functions {
 						functions.push(MidnightMatchParamsMap {
 							signature: normalized_signature.clone(),
-							args: None, // Arguments are private in Midnight
+							args: None,                               // Arguments are private in Midnight
 							hex_signature: Some(entry_point.clone()), // entry_point isalready in hex format
 						});
 					}
@@ -207,26 +206,6 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		let transactions =
 			self.deserialize_transactions(midnight_block, network_id, &chain_configurations)?;
 
-		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
-
-		// println!("midnight_block: {:#?}", midnight_block);
-
-		// 1. Get transactions from the block
-		// 2. Decode transactions using Transactions::deserialize from midnight-node
-		// 3. Find matching transactions for each monitor (transactions and functions). Excluding events since they are not supported yet.
-		// 4. Return matches
-
-		// let transactions: VecDeque<_> = midnight_block
-		// 	.body
-		// 	.iter()
-		// 	.filter_map(|entry| match entry {
-		// 		MidnightRpcTransactionEnum::MidnightTransaction { tx, .. } => {
-		// 			Some(MidnightTransaction::from(tx.clone()))
-		// 		}
-		// 		_ => None,
-		// 	})
-		// 	.collect();
-
 		if transactions.is_empty() {
 			tracing::debug!(
 				"No transactions found for block {}",
@@ -235,8 +214,10 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 			return Ok(vec![]);
 		}
 
-		let mut matching_results = Vec::<MonitorMatch>::new();
+		tracing::debug!("Processing block {}", midnight_block.number().unwrap_or(0));
 		tracing::debug!("Processing {} monitor(s)", monitors.len());
+
+		let mut matching_results = Vec::<MonitorMatch>::new();
 
 		for monitor in monitors {
 			tracing::debug!("Processing monitor: {:?}", monitor.name);
@@ -258,8 +239,6 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 				tracing::debug!("Processing transaction: {:?}", transaction.hash());
 
 				// self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
-
-				// println!("transaction: {:#?}", transaction);
 
 				self.find_matching_functions_for_transaction(
 					&monitored_addresses,
