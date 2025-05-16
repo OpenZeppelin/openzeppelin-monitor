@@ -156,11 +156,11 @@ impl<T> MidnightBlockFilter<T> {
 		let mut txs = Vec::<MidnightTransaction>::new();
 
 		// There are two ways to deserialize transactions from a Midnight block:
-		//
+
 		// 1. Using block.body: Contains pre-deserialized transactions as `MidnightRpcTransaction`
 		//    - Simpler structure with basic transaction info (hash, operations, identifiers)
 		//    - Easier to work with for basic monitoring
-		//
+
 		// 2. Using block.transactions_index: Contains raw transaction data that can be deserialized into
 		//    ledger-specific transactions `MidnightNodeTransaction` (Standard or ClaimMint)
 		//    - Provides access to additional fields like guaranteed_transcript and fallible_transcript

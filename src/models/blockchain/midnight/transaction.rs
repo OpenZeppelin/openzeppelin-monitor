@@ -126,7 +126,12 @@ impl Transaction {
 					address,
 					entry_point,
 					..
-				} => (address.clone(), entry_point.clone()),
+				} => (
+					address.clone(),
+					// Decode the entry point from hex to utf8
+					String::from_utf8(hex::decode(entry_point.clone()).unwrap_or_default())
+						.unwrap_or_default(),
+				),
 				Operation::Deploy { address, .. } => (address.clone(), "".to_string()),
 				Operation::Maintain { address, .. } => (address.clone(), "".to_string()),
 				_ => ("".to_string(), "".to_string()),

@@ -34,6 +34,20 @@ pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
 	let hash = hex::decode(hash_without_prefix)
 		.map_err(|e| anyhow::anyhow!("TransactionHashDecodeError: {}", e))?;
 
+	// TODO: For now we always return early because there is an issue with deserialising tx data from raw_tx_data while the Midnight node team investigates
+	// Remove this once the issue is fixed
+	// TransactionDeserializeError: Invalid input data for core::option::Option<midnight_ledger::structure::Transaction<midnight_ledger::structure::Proof, midnight_storage::db::InMemoryDB>>,
+	//                              received version: None, maximum supported version is None. Invalid discriminant: 4
+	if !raw_tx_data.is_empty() {
+		return Ok((
+			TransactionHash(HashOutput(
+				hash.try_into()
+					.map_err(|_| anyhow::anyhow!("Invalid hash length"))?,
+			)),
+			None,
+		));
+	}
+
 	// When testing, we don't have the raw tx data, so we just return the hash
 	if raw_tx_data.is_empty() {
 		return Ok((
