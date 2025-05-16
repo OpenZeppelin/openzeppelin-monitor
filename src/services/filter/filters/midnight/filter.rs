@@ -24,7 +24,9 @@ use crate::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
 		filter::{
 			filters::midnight::helpers::{map_chain_type, parse_tx_index_item},
-			midnight_helpers::{are_same_address, are_same_signature, remove_parentheses},
+			midnight_helpers::{
+				are_same_address, are_same_signature, normalize_hash, remove_parentheses,
+			},
 			BlockFilter, FilterError,
 		},
 	},
@@ -172,11 +174,11 @@ impl<T> MidnightBlockFilter<T> {
 		// This will allow us to populate the transaction with the additional data from the transactions_index later.
 		for transaction in block.body.iter() {
 			if let MidnightRpcTransactionEnum::MidnightTransaction { tx, .. } = transaction {
-				let hash = tx.tx_hash.clone();
+				let hash = normalize_hash(&tx.tx_hash);
 				let raw_tx_data = block
 					.transactions_index
 					.iter()
-					.find(|(h, _)| h == &hash)
+					.find(|(h, _)| normalize_hash(h) == hash)
 					.map(|(_, raw_tx_data)| raw_tx_data.clone())
 					.unwrap_or_default();
 

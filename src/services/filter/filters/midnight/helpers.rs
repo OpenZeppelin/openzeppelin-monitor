@@ -21,7 +21,7 @@ use midnight_node_ledger_helpers::{CoinInfo, NetworkId, DB};
 
 /// Parse a transaction index item
 pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
-	hash: &str,
+	hash_without_prefix: &str,
 	raw_tx_data: &str,
 	network_id: NetworkId,
 ) -> Result<
@@ -31,17 +31,13 @@ pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
 	),
 	anyhow::Error,
 > {
-	let (_hex_prefix, hash_str) = hash.split_at(2);
-	let hash =
-		hex::decode(hash_str).map_err(|e| anyhow::anyhow!("TransactionHashDecodeError: {}", e))?;
+	let hash = hex::decode(hash_without_prefix)
+		.map_err(|e| anyhow::anyhow!("TransactionHashDecodeError: {}", e))?;
 
 	if raw_tx_data.is_empty() {
-		let hash_bytes = hex::decode(hash_str)
-			.map_err(|e| anyhow::anyhow!("TransactionHashDecodeError: {}", e))?;
 		return Ok((
 			TransactionHash(HashOutput(
-				hash_bytes
-					.try_into()
+				hash.try_into()
 					.map_err(|_| anyhow::anyhow!("Invalid hash length"))?,
 			)),
 			None,
@@ -114,6 +110,20 @@ pub fn normalize_address(address: &str) -> String {
 			.to_lowercase()
 			.as_str(),
 	)
+}
+
+/// Normalizes a hash by removing "0x" prefix, spaces, and converting to lowercase.
+///
+/// # Arguments
+/// * `hash` - The hash string to normalize
+///
+/// # Returns
+/// The normalized hash string
+pub fn normalize_hash(hash: &str) -> String {
+	hash.strip_prefix("0x")
+		.unwrap_or(hash)
+		.replace(char::is_whitespace, "")
+		.to_lowercase()
 }
 
 /// Compares two function signatures for equality, ignoring case and whitespace.
@@ -247,6 +257,21 @@ pub fn normalize_address_size(address: &str) -> String {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn test_normalize_hash() {
+		let hash = "0x1234567890123456789012345678901234567890";
+		let normalized = normalize_hash(hash);
+		assert_eq!(normalized, "1234567890123456789012345678901234567890");
+
+		let hash = "1234567890123456789012345678901234567890";
+		let normalized = normalize_hash(hash);
+		assert_eq!(normalized, "1234567890123456789012345678901234567890");
+
+		let hash = "0x123456 7890123456 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		let normalized = normalize_hash(hash);
+		assert_eq!(normalized, "1234567890123456abcdefghijklmnopqrstuvwxyz");
+	}
 
 	#[test]
 	fn test_are_same_signature() {

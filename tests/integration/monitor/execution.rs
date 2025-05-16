@@ -848,6 +848,7 @@ async fn test_execute_monitor_midnight() {
 		client_pool,
 	})
 	.await;
+
 	assert!(
 		result.is_ok(),
 		"Monitor execution failed: {:?}",
