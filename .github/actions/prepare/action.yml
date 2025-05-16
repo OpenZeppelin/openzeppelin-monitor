@@ -14,9 +14,8 @@ runs:
   using: composite
   steps:
     - name: setup rust tool chain
-      uses: dtolnay/rust-toolchain@fcf085fcb4b4b8f63f96906cd713eb52181b5ea4  # stable
+      uses: dtolnay/rust-toolchain@1.86.0  # v1.86.0
       with:
-        toolchain: stable
         components: ${{ (inputs.components != '') && format('{0}, rustfmt, clippy', inputs.components) || 'rustfmt, clippy' }}
     - name: Restore cargo dependencies from cache
       uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
