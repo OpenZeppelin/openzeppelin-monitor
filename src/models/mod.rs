@@ -33,10 +33,10 @@ pub use blockchain::stellar::{
 };
 
 pub use blockchain::midnight::{
-	MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightChainType, MidnightEvent,
-	MidnightMatchArguments, MidnightMatchParamEntry, MidnightMatchParamsMap, MidnightMonitorConfig,
-	MidnightMonitorMatch, MidnightOperation, MidnightRpcBlock, MidnightRpcTransactionEnum,
-	MidnightTransaction,
+	MidnightBaseTransaction, MidnightBlock, MidnightBlockDigest, MidnightBlockHeader,
+	MidnightChainType, MidnightEvent, MidnightMatchArguments, MidnightMatchParamEntry,
+	MidnightMatchParamsMap, MidnightMonitorConfig, MidnightMonitorMatch, MidnightOperation,
+	MidnightRpcBlock, MidnightRpcTransactionEnum, MidnightTransaction,
 };
 
 // Re-export core types

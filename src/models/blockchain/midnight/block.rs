@@ -26,7 +26,7 @@ pub struct RpcBlock<Header = BlockHeader> {
 ///
 /// Based on the response from the Midnight RPC endpoint
 /// <https://docs.midnight.network/files/Insomnia_2024-11-21.json>
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct BlockHeader {
 	#[serde(rename = "parentHash")]
 	/// Hash of the parent block
@@ -45,7 +45,7 @@ pub struct BlockHeader {
 }
 
 /// Block digest containing logs
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct BlockDigest {
 	#[serde(rename = "logs")]
 	/// Vector of log entries

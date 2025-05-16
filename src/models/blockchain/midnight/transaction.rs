@@ -144,6 +144,12 @@ impl From<MidnightRpcTransaction> for Transaction {
 	}
 }
 
+impl From<Transaction> for MidnightRpcTransaction {
+	fn from(tx: Transaction) -> Self {
+		tx.inner
+	}
+}
+
 impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
 	fn from(action: ContractAction<P, D>) -> Self {
 		match action {

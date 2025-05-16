@@ -20,8 +20,8 @@ pub use monitor::{
 	MonitorMatch as MidnightMonitorMatch,
 };
 pub use transaction::{
-	Operation as MidnightOperation, RpcTransaction as MidnightRpcTransactionEnum,
-	Transaction as MidnightTransaction,
+	MidnightRpcTransaction as MidnightBaseTransaction, Operation as MidnightOperation,
+	RpcTransaction as MidnightRpcTransactionEnum, Transaction as MidnightTransaction,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
