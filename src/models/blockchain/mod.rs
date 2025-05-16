@@ -70,6 +70,8 @@ pub enum ContractSpec {
 	EVM(evm::EVMContractSpec),
 	/// Stellar contract spec
 	Stellar(stellar::StellarContractSpec),
+	/// Midnight contract spec
+	Midnight,
 }
 
 /// Monitor match results from different blockchain platforms
@@ -90,6 +92,22 @@ pub enum MonitorMatch {
 	/// # Note
 	/// Box is used here to equalize the enum variants
 	Midnight(Box<midnight::MidnightMonitorMatch>),
+}
+
+/// Chain-specific configuration
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct ChainConfiguration {
+	/// Midnight-specific configuration
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub midnight: Option<midnight::MidnightMonitorConfig>,
+
+	/// EVM-specific configuration
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub evm: Option<evm::EVMMonitorConfig>,
+
+	/// Stellar-specific configuration
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub stellar: Option<stellar::StellarMonitorConfig>,
 }
 
 /// Structure to hold block processing results

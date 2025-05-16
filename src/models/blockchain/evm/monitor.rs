@@ -125,6 +125,13 @@ impl std::ops::Deref for ContractSpec {
 	}
 }
 
+/// EVM-specific configuration
+///
+/// This configuration is used to for additional fields in the monitor configuration
+/// that are specific to EVM.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct MonitorConfig {}
+
 #[cfg(test)]
 mod tests {
 	use crate::{

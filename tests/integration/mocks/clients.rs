@@ -4,6 +4,7 @@
 //! used for testing. It includes:
 //! - [`MockEvmClientTrait`] - Mock implementation of EVM blockchain client
 //! - [`MockStellarClientTrait`] - Mock implementation of Stellar blockchain client
+//! - [`MockMidnightClientTrait`] - Mock implementation of Midnight blockchain client
 //! - [`MockClientPool`] - Mock implementation of the client pool
 //!
 //! These mocks allow testing blockchain-related functionality without actual
@@ -13,8 +14,8 @@ use std::{marker::PhantomData, sync::Arc};
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, ContractSpec, EVMReceiptLog, EVMTransactionReceipt, Network, StellarEvent,
-		StellarTransaction,
+		BlockType, ContractSpec, EVMReceiptLog, EVMTransactionReceipt, MidnightChainType,
+		MidnightEvent, Network, StellarEvent, StellarTransaction,
 	},
 	services::{
 		blockchain::{
@@ -139,16 +140,13 @@ mock! {
 
 	#[async_trait]
 	impl<T: Send + Sync + Clone + 'static> MidnightClientTrait for MidnightClientTrait<T> {
-		async fn get_transaction_receipt(
+		async fn get_events(
 			&self,
-			transaction_hash: String,
-		) -> Result<EVMTransactionReceipt,  anyhow::Error>;
+			start_block: u32,
+			end_block: Option<u32>,
+		) -> Result<Vec<MidnightEvent>, anyhow::Error>;
 
-		async fn get_logs_for_blocks(
-			&self,
-			from_block: u64,
-			to_block: u64,
-		) -> Result<Vec<EVMReceiptLog>,  anyhow::Error>;
+		async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error>;
 	}
 
 	impl<T: Send + Sync + Clone + 'static> Clone for MidnightClientTrait<T> {

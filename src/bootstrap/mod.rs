@@ -196,7 +196,23 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 								Err(_) => None,
 							}
 						}
-						BlockChainType::Midnight => None,
+						BlockChainType::Midnight => {
+							match client_pools.get_midnight_client(&network).await {
+								Ok(client) => {
+									process_block(
+										client.as_ref(),
+										&network,
+										&block,
+										&applicable_monitors,
+										Some(&contract_specs),
+										&filter_service,
+										&mut shutdown_rx,
+									)
+									.await
+								}
+								Err(_) => None,
+							}
+						}
 					};
 
 					processed_block.processing_results = matches.unwrap_or_default();

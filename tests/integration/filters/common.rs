@@ -39,6 +39,7 @@ pub fn load_test_data(chain: &str) -> TestData {
 	let base_path = format!("{}/{}", TEST_FIXTURES_BASE, chain);
 
 	let blocks: Vec<BlockType> = read_and_parse_json(&format!("{}/blocks.json", base_path));
+
 	let monitor: Monitor = read_and_parse_json(&format!("{}/monitors/monitor.json", base_path));
 	let network: Network = read_and_parse_json(&format!("{}/networks/network.json", base_path));
 
@@ -63,10 +64,14 @@ pub fn load_test_data(chain: &str) -> TestData {
 		Some(ContractSpec::Stellar(StellarContractSpec::from(
 			read_and_parse_json::<Vec<ScSpecEntry>>(&format!("{}/contract_spec.json", base_path)),
 		)))
-	} else {
+	} else if chain == "evm" {
 		Some(ContractSpec::EVM(EVMContractSpec::from(
 			read_and_parse_json::<JsonAbi>(&format!("{}/contract_spec.json", base_path)),
 		)))
+	} else if chain == "midnight" {
+		Some(ContractSpec::Midnight)
+	} else {
+		None
 	};
 
 	TestData {

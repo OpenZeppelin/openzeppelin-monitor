@@ -1,11 +1,11 @@
-//! Test helper utilities for the EVM Monitor
+//! Test helper utilities for the Midnight Monitor
 //!
 //! - `MonitorBuilder`: Builder for creating test Monitor instances
 
 use crate::models::{
-	AddressWithSpec, ChainConfiguration, ContractSpec, EVMMonitorConfig, EventCondition,
-	FunctionCondition, MatchConditions, Monitor, ScriptLanguage, TransactionCondition,
-	TransactionStatus, TriggerConditions,
+	AddressWithSpec, ChainConfiguration, EventCondition, FunctionCondition, MatchConditions,
+	MidnightMonitorConfig, Monitor, ScriptLanguage, TransactionCondition, TransactionStatus,
+	TriggerConditions,
 };
 
 /// Builder for creating test Monitor instances
@@ -21,13 +21,15 @@ pub struct MonitorBuilder {
 }
 
 impl Default for MonitorBuilder {
+	/// Default monitor builder with a testnet network
 	fn default() -> Self {
 		Self {
 			name: "TestMonitor".to_string(),
-			networks: vec!["ethereum_mainnet".to_string()],
+			networks: vec!["midnight_testnet".to_string()],
 			paused: false,
 			addresses: vec![AddressWithSpec {
-				address: "0x0000000000000000000000000000000000000000".to_string(),
+				address: "0202000000000000000000000000000000000000000000000000000000000000000000"
+					.to_string(),
 				contract_spec: None,
 			}],
 			match_conditions: MatchConditions {
@@ -38,7 +40,7 @@ impl Default for MonitorBuilder {
 			trigger_conditions: vec![],
 			triggers: vec![],
 			chain_configurations: vec![ChainConfiguration {
-				evm: Some(EVMMonitorConfig::default()),
+				midnight: Some(MidnightMonitorConfig::default()),
 				..Default::default()
 			}],
 		}
@@ -46,25 +48,30 @@ impl Default for MonitorBuilder {
 }
 
 impl MonitorBuilder {
+	/// Create a new monitor builder
 	pub fn new() -> Self {
 		Self::default()
 	}
 
+	/// Set the name of the monitor
 	pub fn name(mut self, name: &str) -> Self {
 		self.name = name.to_string();
 		self
 	}
 
+	/// Set the networks of the monitor
 	pub fn networks(mut self, networks: Vec<String>) -> Self {
 		self.networks = networks;
 		self
 	}
 
+	/// Set the paused state of the monitor
 	pub fn paused(mut self, paused: bool) -> Self {
 		self.paused = paused;
 		self
 	}
 
+	/// Add an address to the monitor
 	pub fn address(mut self, address: &str) -> Self {
 		self.addresses = vec![AddressWithSpec {
 			address: address.to_string(),
@@ -73,6 +80,7 @@ impl MonitorBuilder {
 		self
 	}
 
+	/// Set the addresses of the monitor
 	pub fn addresses(mut self, addresses: Vec<String>) -> Self {
 		self.addresses = addresses
 			.into_iter()
@@ -84,6 +92,7 @@ impl MonitorBuilder {
 		self
 	}
 
+	/// Add an address to the monitor
 	pub fn add_address(mut self, address: &str) -> Self {
 		self.addresses.push(AddressWithSpec {
 			address: address.to_string(),
@@ -92,25 +101,7 @@ impl MonitorBuilder {
 		self
 	}
 
-	pub fn address_with_spec(mut self, address: &str, spec: Option<ContractSpec>) -> Self {
-		self.addresses = vec![AddressWithSpec {
-			address: address.to_string(),
-			contract_spec: spec,
-		}];
-		self
-	}
-
-	pub fn addresses_with_spec(mut self, addresses: Vec<(String, Option<ContractSpec>)>) -> Self {
-		self.addresses = addresses
-			.into_iter()
-			.map(|(addr, spec)| AddressWithSpec {
-				address: addr.to_string(),
-				contract_spec: spec,
-			})
-			.collect();
-		self
-	}
-
+	/// Add a function to the monitor
 	pub fn function(mut self, signature: &str, expression: Option<String>) -> Self {
 		self.match_conditions.functions.push(FunctionCondition {
 			signature: signature.to_string(),
@@ -119,6 +110,7 @@ impl MonitorBuilder {
 		self
 	}
 
+	/// Add an event to the monitor
 	pub fn event(mut self, signature: &str, expression: Option<String>) -> Self {
 		self.match_conditions.events.push(EventCondition {
 			signature: signature.to_string(),
@@ -127,6 +119,7 @@ impl MonitorBuilder {
 		self
 	}
 
+	/// Add a transaction to the monitor
 	pub fn transaction(mut self, status: TransactionStatus, expression: Option<String>) -> Self {
 		self.match_conditions
 			.transactions
@@ -134,6 +127,7 @@ impl MonitorBuilder {
 		self
 	}
 
+	/// Add a trigger condition to the monitor
 	pub fn trigger_condition(
 		mut self,
 		script_path: &str,
@@ -150,16 +144,19 @@ impl MonitorBuilder {
 		self
 	}
 
+	/// Add a trigger to the monitor
 	pub fn triggers(mut self, triggers: Vec<String>) -> Self {
 		self.triggers = triggers;
 		self
 	}
 
+	/// Set the match conditions of the monitor
 	pub fn match_conditions(mut self, match_conditions: MatchConditions) -> Self {
 		self.match_conditions = match_conditions;
 		self
 	}
 
+	/// Build the monitor
 	pub fn build(self) -> Monitor {
 		Monitor {
 			name: self.name,
@@ -176,22 +173,19 @@ impl MonitorBuilder {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::EVMContractSpec;
-
 	use super::*;
-	use serde_json::json;
 
 	#[test]
 	fn test_default_monitor() {
 		let monitor = MonitorBuilder::new().build();
 
 		assert_eq!(monitor.name, "TestMonitor");
-		assert_eq!(monitor.networks, vec!["ethereum_mainnet"]);
+		assert_eq!(monitor.networks, vec!["midnight_testnet"]);
 		assert!(!monitor.paused);
 		assert_eq!(monitor.addresses.len(), 1);
 		assert_eq!(
 			monitor.addresses[0].address,
-			"0x0000000000000000000000000000000000000000"
+			"0202000000000000000000000000000000000000000000000000000000000000000000"
 		);
 		assert!(monitor.addresses[0].contract_spec.is_none());
 		assert!(monitor.match_conditions.functions.is_empty());
@@ -205,16 +199,19 @@ mod tests {
 	fn test_basic_builder_methods() {
 		let monitor = MonitorBuilder::new()
 			.name("MyMonitor")
-			.networks(vec!["polygon".to_string()])
+			.networks(vec!["midnight_testnet".to_string()])
 			.paused(true)
-			.address("0x123")
+			.address("0202000000000000000000000000000000000000000000000000000000000000000000")
 			.build();
 
 		assert_eq!(monitor.name, "MyMonitor");
-		assert_eq!(monitor.networks, vec!["polygon"]);
+		assert_eq!(monitor.networks, vec!["midnight_testnet"]);
 		assert!(monitor.paused);
 		assert_eq!(monitor.addresses.len(), 1);
-		assert_eq!(monitor.addresses[0].address, "0x123");
+		assert_eq!(
+			monitor.addresses[0].address,
+			"0202000000000000000000000000000000000000000000000000000000000000000000"
+		);
 	}
 
 	#[test]
@@ -228,57 +225,6 @@ mod tests {
 		assert_eq!(monitor.addresses[0].address, "0x123");
 		assert_eq!(monitor.addresses[1].address, "0x456");
 		assert_eq!(monitor.addresses[2].address, "0x789");
-	}
-
-	#[test]
-	fn test_address_with_abi() {
-		let abi = json!({"some": "abi"});
-		let monitor = MonitorBuilder::new()
-			.address_with_spec(
-				"0x123",
-				Some(ContractSpec::EVM(EVMContractSpec::from(abi.clone()))),
-			)
-			.build();
-
-		assert_eq!(monitor.addresses.len(), 1);
-		assert_eq!(monitor.addresses[0].address, "0x123");
-		assert_eq!(
-			monitor.addresses[0].contract_spec,
-			Some(ContractSpec::EVM(EVMContractSpec::from(abi)))
-		);
-	}
-
-	#[test]
-	fn test_addresses_with_abi() {
-		let abi1 = json!({"contract_spec": "1"});
-		let abi2 = json!({"contract_spec": "2"});
-		let monitor = MonitorBuilder::new()
-			.addresses_with_spec(vec![
-				(
-					"0x123".to_string(),
-					Some(ContractSpec::EVM(EVMContractSpec::from(abi1.clone()))),
-				),
-				("0x456".to_string(), None),
-				(
-					"0x789".to_string(),
-					Some(ContractSpec::EVM(EVMContractSpec::from(abi2.clone()))),
-				),
-			])
-			.build();
-
-		assert_eq!(monitor.addresses.len(), 3);
-		assert_eq!(monitor.addresses[0].address, "0x123");
-		assert_eq!(
-			monitor.addresses[0].contract_spec,
-			Some(ContractSpec::EVM(EVMContractSpec::from(abi1)))
-		);
-		assert_eq!(monitor.addresses[1].address, "0x456");
-		assert_eq!(monitor.addresses[1].contract_spec, None);
-		assert_eq!(monitor.addresses[2].address, "0x789");
-		assert_eq!(
-			monitor.addresses[2].contract_spec,
-			Some(ContractSpec::EVM(EVMContractSpec::from(abi2)))
-		);
 	}
 
 	#[test]
@@ -375,17 +321,16 @@ mod tests {
 
 	#[test]
 	fn test_complex_monitor_build() {
-		let abi = json!({"some": "abi"});
 		let monitor = MonitorBuilder::new()
 			.name("ComplexMonitor")
-			.networks(vec!["ethereum".to_string(), "polygon".to_string()])
+			.networks(vec!["ethereum".to_string(), "midnight_testnet".to_string()])
 			.paused(true)
-			.addresses(vec!["0x123".to_string(), "0x456".to_string()])
+			.addresses(vec![
+				"0x123".to_string(),
+				"0202000000000000000000000000000000000000000000000000000000000000000000"
+					.to_string(),
+			])
 			.add_address("0x789")
-			.address_with_spec(
-				"0xabc",
-				Some(ContractSpec::EVM(EVMContractSpec::from(abi.clone()))),
-			)
 			.function("transfer(address,uint256)", Some("value >= 0".to_string()))
 			.event("Transfer(address,address,uint256)", None)
 			.transaction(TransactionStatus::Success, None)
@@ -395,14 +340,15 @@ mod tests {
 
 		// Verify final state
 		assert_eq!(monitor.name, "ComplexMonitor");
-		assert_eq!(monitor.networks, vec!["ethereum", "polygon"]);
+		assert_eq!(monitor.networks, vec!["ethereum", "midnight_testnet"]);
 		assert!(monitor.paused);
-		assert_eq!(monitor.addresses.len(), 1); // address_with_abi overwrites previous addresses
-		assert_eq!(monitor.addresses[0].address, "0xabc");
+		assert_eq!(monitor.addresses.len(), 3);
+		assert_eq!(monitor.addresses[0].address, "0x123");
 		assert_eq!(
-			monitor.addresses[0].contract_spec,
-			Some(ContractSpec::EVM(EVMContractSpec::from(abi)))
+			monitor.addresses[1].address,
+			"0202000000000000000000000000000000000000000000000000000000000000000000"
 		);
+		assert_eq!(monitor.addresses[2].address, "0x789");
 		assert_eq!(monitor.match_conditions.functions.len(), 1);
 		assert_eq!(
 			monitor.match_conditions.functions[0].expression,

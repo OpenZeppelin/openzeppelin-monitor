@@ -2,75 +2,102 @@ use crate::integration::mocks::{
 	create_midnight_test_network_with_urls, create_midnight_valid_server_mock_network_response,
 	MockMidnightClientTrait, MockMidnightTransportClient,
 };
-use alloy::{
-	consensus::{Receipt, ReceiptEnvelope, ReceiptWithBloom},
-	primitives::{Address, B256, U64},
-	rpc::types::{BlockTransactions, Header},
-};
 use mockall::predicate;
 use mockito::Server;
 use openzeppelin_monitor::{
-	models::{BlockType, EVMBlock, EVMReceiptLog, EVMTransactionReceipt},
+	models::{BlockType, MidnightChainType},
 	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
+	utils::tests::midnight::block::BlockBuilder,
 };
 
 #[tokio::test]
-async fn test_get_transaction_receipt() {
+async fn test_get_events() {
 	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 
-	let expected_receipt = EVMTransactionReceipt::from(alloy::rpc::types::TransactionReceipt {
-		inner: ReceiptEnvelope::Legacy(ReceiptWithBloom {
-			receipt: Receipt::default(),
-			logs_bloom: Default::default(),
-		}),
-		transaction_hash: B256::ZERO,
-		transaction_index: Some(0),
-		block_hash: Some(B256::ZERO),
-		block_number: Some(0),
-		gas_used: 0,
-		effective_gas_price: 0,
-		blob_gas_used: None,
-		blob_gas_price: None,
-		from: Address::ZERO,
-		to: Some(Address::ZERO),
-		contract_address: None,
-	});
-
-	mock.expect_get_transaction_receipt()
-		.with(predicate::eq("0x123".to_string()))
+	mock.expect_get_events()
+		.with(predicate::eq(1u32), predicate::eq(Some(2u32)))
 		.times(1)
-		.returning(move |_| Ok(expected_receipt.clone()));
+		.returning(move |_, _| Ok(vec![]));
 
-	let result = mock.get_transaction_receipt("0x123".to_string()).await;
+	let result = mock.get_events(1, Some(2)).await;
 	assert!(result.is_ok());
-	assert_eq!(result.unwrap().transaction_hash, B256::ZERO);
+	assert_eq!(result.unwrap().len(), 0);
 }
 
 #[tokio::test]
-async fn test_get_logs_for_blocks() {
-	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
-	let expected_logs = vec![EVMReceiptLog {
-		address: Default::default(),
-		topics: vec![],
-		data: vec![].into(),
-		block_number: Some(U64::from(1)),
-		block_hash: None,
-		transaction_hash: None,
-		transaction_index: None,
-		log_index: None,
-		transaction_log_index: None,
-		log_type: None,
-		removed: None,
-	}];
+async fn test_get_chain_type() {
+	let mut server = Server::new_async().await;
 
-	mock.expect_get_logs_for_blocks()
-		.with(predicate::eq(1u64), predicate::eq(2u64))
-		.times(1)
-		.returning(move |_, _| Ok(expected_logs.clone()));
+	// Mock system_chain when initializing client
+	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
 
-	let result = mock.get_logs_for_blocks(1, 2).await;
+	// Test Development chain type
+	let mock_dev = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":"Development","id":1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
+
+	let client = MidnightClient::new(&network).await.unwrap();
+	mock_init.assert_async().await;
+
+	let result = client.get_chain_type().await;
 	assert!(result.is_ok());
-	assert_eq!(result.unwrap().len(), 1);
+	assert_eq!(result.unwrap(), MidnightChainType::Development);
+	mock_dev.assert_async().await;
+
+	// Test Live chain type
+	let mock_prod = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":"Live","id":1}"#)
+		.create_async()
+		.await;
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), MidnightChainType::Live);
+	mock_prod.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_get_chain_type_error_cases() {
+	let mut server = Server::new_async().await;
+
+	// Mock system_chain when initializing client
+	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
+
+	// Test invalid JSON response
+	let mock_invalid_json = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":null,"id":1}"#)
+		.create_async()
+		.await;
+
+	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
+	let client = MidnightClient::new(&network).await.unwrap();
+	mock_init.assert_async().await;
+	let result = client.get_chain_type().await;
+
+	assert!(result.is_err());
+	mock_invalid_json.assert_async().await;
+
+	// Test invalid chain type string
+	let mock_invalid_type = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":"InvalidType","id":1}"#)
+		.create_async()
+		.await;
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_err());
+	assert_eq!(
+		result.unwrap_err().to_string(),
+		"Invalid chain type: InvalidType"
+	);
+	mock_invalid_type.assert_async().await;
 }
 
 #[tokio::test]
@@ -89,22 +116,12 @@ async fn test_get_latest_block_number() {
 async fn test_get_blocks() {
 	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 
-	let block = BlockType::EVM(Box::new(EVMBlock::from(alloy::rpc::types::Block {
-		header: Header {
-			inner: alloy::consensus::Header {
-				number: 1,
-				..Default::default()
-			},
-			hash: B256::ZERO,
-			total_difficulty: None,
-			size: None,
-		},
-		uncles: vec![],
-		transactions: BlockTransactions::default(),
-		withdrawals: None,
-	})));
+	let block = BlockBuilder::new()
+		.parent_hash("0xabc123".to_string())
+		.number(74565)
+		.build();
 
-	let blocks = vec![block];
+	let blocks = vec![BlockType::Midnight(Box::new(block))];
 
 	mock.expect_get_blocks()
 		.with(predicate::eq(1u64), predicate::eq(Some(2u64)))
@@ -116,8 +133,8 @@ async fn test_get_blocks() {
 	let blocks = result.unwrap();
 	assert_eq!(blocks.len(), 1);
 	match &blocks[0] {
-		BlockType::EVM(block) => assert_eq!(block.number, Some(U64::from(1))),
-		_ => panic!("Expected EVM block"),
+		BlockType::Midnight(block) => assert_eq!(block.number(), Some(74565)),
+		_ => panic!("Expected Midnight block"),
 	}
 }
 

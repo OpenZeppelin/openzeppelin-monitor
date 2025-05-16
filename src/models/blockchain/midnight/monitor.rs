@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::{MatchConditions, MidnightTransaction, Monitor};
+use crate::models::{MatchConditions, MidnightTransaction, Monitor, SecretValue};
 
 /// Result of a successful monitor match on an Midnight chain
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -58,4 +58,15 @@ pub struct MatchArguments {
 
 	/// Matched event arguments
 	pub events: Option<Vec<MatchParamsMap>>,
+}
+
+/// Midnight-specific configuration
+///
+/// This configuration is used to for additional fields in the monitor configuration
+/// that are specific to Midnight.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct MonitorConfig {
+	/// List of hex encoded viewing keys
+	#[serde(default)]
+	pub viewing_keys: Vec<SecretValue>,
 }

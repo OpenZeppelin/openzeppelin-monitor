@@ -256,11 +256,59 @@ pub async fn execute_monitor<
 					})?
 			}
 			BlockChainType::Midnight => {
-				return Err(MonitorExecutionError::execution_error(
-					"Midnight network not supported",
-					None,
-					None,
-				))
+				let client = config
+					.client_pool
+					.get_midnight_client(&network)
+					.await
+					.map_err(|e| {
+						MonitorExecutionError::execution_error(
+							format!("Failed to get Midnight client: {}", e),
+							None,
+							None,
+						)
+					})?;
+
+				// If block number is not provided, get the latest block number
+				let block_number = match config.block_number {
+					Some(block_number) => block_number,
+					None => client.get_latest_block_number().await.map_err(|e| {
+						MonitorExecutionError::execution_error(e.to_string(), None, None)
+					})?,
+				};
+
+				let blocks = client.get_blocks(block_number, None).await.map_err(|e| {
+					MonitorExecutionError::execution_error(
+						format!("Failed to get block {}: {}", block_number, e),
+						None,
+						None,
+					)
+				})?;
+
+				let block = blocks.first().ok_or_else(|| {
+					MonitorExecutionError::not_found(
+						format!("Block {} not found", block_number),
+						None,
+						None,
+					)
+				})?;
+
+				config
+					.filter_service
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
+					.await
+					.map_err(|e| {
+						MonitorExecutionError::execution_error(
+							format!("Failed to filter block: {}", e),
+							None,
+							None,
+						)
+					})?
 			}
 		};
 
