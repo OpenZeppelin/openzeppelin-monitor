@@ -12,9 +12,7 @@ use std::str::FromStr;
 use tracing::instrument;
 
 use crate::{
-	models::{
-		BlockType, MidnightBlock, MidnightChainType, MidnightEvent, MidnightTransaction, Network,
-	},
+	models::{BlockType, MidnightBlock, MidnightChainType, MidnightEvent, Network},
 	services::{
 		blockchain::{
 			client::BlockChainClient,
@@ -67,20 +65,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for 
 /// Extended functionality specific to Midnight blockchain
 #[async_trait]
 pub trait MidnightClientTrait {
-	/// Retrieves transactions within a block range
-	///
-	/// # Arguments
-	/// * `start_block` - Starting block number
-	/// * `end_block` - Optional ending block number. If None, only fetches start_block
-	///
-	/// # Returns
-	/// * `Result<Vec<MidnightTransaction>, anyhow::Error>` - Collection of transactions or error
-	async fn get_transactions(
-		&self,
-		start_block: u32,
-		end_block: Option<u32>,
-	) -> Result<Vec<MidnightTransaction>, anyhow::Error>;
-
 	/// Retrieves events within a block range
 	///
 	/// # Arguments
@@ -106,17 +90,8 @@ pub trait MidnightClientTrait {
 
 #[async_trait]
 impl<T: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for MidnightClient<T> {
-	/// Retrieves transactions within a block range
-	#[instrument(skip(self), fields(start_block, end_block))]
-	async fn get_transactions(
-		&self,
-		_start_block: u32,
-		_end_block: Option<u32>,
-	) -> Result<Vec<MidnightTransaction>, anyhow::Error> {
-		Ok(Vec::<MidnightTransaction>::new())
-	}
-
 	/// Retrieves events within a block range
+	/// Compactc does not support events yet
 	#[instrument(skip(self), fields(start_block, end_block))]
 	async fn get_events(
 		&self,

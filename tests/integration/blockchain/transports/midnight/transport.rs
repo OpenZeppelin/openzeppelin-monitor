@@ -47,39 +47,52 @@ async fn test_get_events_implementation() {
 
 #[tokio::test]
 #[ignore]
-async fn test_get_events_missing_result() {}
+// TODO: Remove ignore once we have an actual implementation for this
+async fn test_get_events_missing_result() {
+	let mut mock_midnight = MockMidnightTransportClient::new();
 
-#[tokio::test]
-#[ignore]
-async fn test_events_invalid_format() {}
+	// Mock response without result field
+	let mock_response = json!({
+		"id": 1,
+		"jsonrpc": "2.0"
+	});
 
-#[tokio::test]
-async fn test_get_transactions_implementation() {
-	let mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
 	let client = MidnightClient::<MockMidnightTransportClient>::new_with_transport(mock_midnight);
-	let result = client.get_transactions(1, Some(10)).await;
+	let result = client.get_events(1, Some(10)).await;
 
-	assert!(result.is_ok());
-	let txs = result.unwrap();
-	assert_eq!(txs.len(), 0);
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Missing 'result' field"));
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_get_transactions_not_found() {}
+// TODO: Remove ignore once we have an actual implementation for this
+async fn test_events_invalid_format() {
+	let mut mock_midnight = MockMidnightTransportClient::new();
 
-#[tokio::test]
-#[ignore]
-async fn test_get_transactions_invalid_hash() {}
+	// Mock response with invalid event format
+	let mock_response = json!({
+		"result": [{
+			"invalid_field": "this should fail parsing"
+		}]
+	});
 
-#[tokio::test]
-#[ignore]
-async fn test_get_transactions_missing_result() {}
+	mock_midnight
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
 
-#[tokio::test]
-#[ignore]
-async fn test_get_transactions_parse_failure() {}
+	let client = MidnightClient::<MockMidnightTransportClient>::new_with_transport(mock_midnight);
+	let result = client.get_events(1, Some(10)).await;
+
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Failed to parse events"));
+}
 
 #[tokio::test]
 async fn test_get_latest_block_number_success() {

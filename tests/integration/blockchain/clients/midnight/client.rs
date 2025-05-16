@@ -13,20 +13,6 @@ use openzeppelin_monitor::{
 };
 
 #[tokio::test]
-async fn test_get_transactions() {
-	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
-
-	mock.expect_get_transactions()
-		.with(predicate::eq(1u32), predicate::eq(Some(2u32)))
-		.times(1)
-		.returning(move |_, _| Ok(vec![]));
-
-	let result = mock.get_transactions(1, Some(2)).await;
-	assert!(result.is_ok());
-	assert_eq!(result.unwrap().len(), 0);
-}
-
-#[tokio::test]
 async fn test_get_events() {
 	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 
