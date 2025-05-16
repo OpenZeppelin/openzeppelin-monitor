@@ -42,7 +42,7 @@ impl BlockBuilder {
 
 	/// Sets the number of the block.
 	pub fn number(mut self, number: u64) -> Self {
-		self.header.number = number.to_string();
+		self.header.number = format!("0x{:x}", number);
 		self
 	}
 
@@ -132,7 +132,7 @@ mod tests {
 	fn test_builder_with_number() {
 		let number = 123u64;
 		let block = BlockBuilder::new().number(number).build();
-		assert_eq!(block.header.number, number.to_string());
+		assert_eq!(block.header.number, format!("0x{:x}", number));
 	}
 
 	#[test]
@@ -237,7 +237,7 @@ mod tests {
 			.build();
 
 		// Verify block contents
-		assert_eq!(block.header.number, "123");
+		assert_eq!(block.header.number, "0x7b");
 		assert_eq!(block.header.parent_hash, "0xparent");
 		assert_eq!(block.body.len(), 2);
 		assert_eq!(block.transactions_index, transactions_index);

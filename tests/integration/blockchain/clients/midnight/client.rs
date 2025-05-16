@@ -5,11 +5,9 @@ use crate::integration::mocks::{
 use mockall::predicate;
 use mockito::Server;
 use openzeppelin_monitor::{
-	models::{
-		BlockType, MidnightBlock, MidnightBlockDigest, MidnightBlockHeader, MidnightChainType,
-		MidnightRpcBlock,
-	},
+	models::{BlockType, MidnightChainType},
 	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
+	utils::tests::midnight::block::BlockBuilder,
 };
 
 #[tokio::test]
@@ -118,21 +116,12 @@ async fn test_get_latest_block_number() {
 async fn test_get_blocks() {
 	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 
-	let rpc_block = MidnightRpcBlock::<MidnightBlockHeader> {
-		header: MidnightBlockHeader {
-			parent_hash: "0xabc123".to_string(),
-			number: "0x12345".to_string(),
-			state_root: "0x1234567890abcdef".to_string(),
-			extrinsics_root: "0xabcdef1234567890".to_string(),
-			digest: MidnightBlockDigest { logs: vec![] },
-		},
-		body: vec![],
-		transactions_index: vec![],
-	};
+	let block = BlockBuilder::new()
+		.parent_hash("0xabc123".to_string())
+		.number(74565)
+		.build();
 
-	let block = BlockType::Midnight(Box::new(MidnightBlock::from(rpc_block)));
-
-	let blocks = vec![block];
+	let blocks = vec![BlockType::Midnight(Box::new(block))];
 
 	mock.expect_get_blocks()
 		.with(predicate::eq(1u64), predicate::eq(Some(2u64)))
