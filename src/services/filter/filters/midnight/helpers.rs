@@ -22,20 +22,43 @@ use midnight_node_ledger_helpers::{CoinInfo, NetworkId, DB};
 /// Parse a transaction index item
 pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
 	hash: &str,
-	body: &str,
+	raw_tx_data: &str,
 	network_id: NetworkId,
-) -> Result<(TransactionHash, MidnightNodeTransaction<P, DefaultDB>), anyhow::Error> {
+) -> Result<
+	(
+		TransactionHash,
+		Option<MidnightNodeTransaction<P, DefaultDB>>,
+	),
+	anyhow::Error,
+> {
 	let (_hex_prefix, hash_str) = hash.split_at(2);
-	let (_hex_prefix, body_str) = body.split_at(2);
 	let hash =
 		hex::decode(hash_str).map_err(|e| anyhow::anyhow!("TransactionHashDecodeError: {}", e))?;
+
+	if raw_tx_data.is_empty() {
+		let hash_bytes = hex::decode(hash_str)
+			.map_err(|e| anyhow::anyhow!("TransactionHashDecodeError: {}", e))?;
+		return Ok((
+			TransactionHash(HashOutput(
+				hash_bytes
+					.try_into()
+					.map_err(|_| anyhow::anyhow!("Invalid hash length"))?,
+			)),
+			None,
+		));
+	}
+
+	let (_hex_prefix, body_str) = raw_tx_data.split_at(2);
 	if hash.len() != PERSISTENT_HASH_BYTES {
 		return Err(anyhow::anyhow!(
 			"hash length ({}) != {PERSISTENT_HASH_BYTES}",
 			hash.len()
 		));
 	}
-	let hash = TransactionHash(HashOutput(hash.try_into().unwrap()));
+	let hash = TransactionHash(HashOutput(
+		hash.try_into()
+			.map_err(|_| anyhow::anyhow!("Invalid hash length"))?,
+	));
 
 	// NOTE: Alternative way to decode the transaction if we want the 35 byte addresses as opposed to the 32 byte addresses
 	// 		 This method uses api.serialize() to serialize the addresses

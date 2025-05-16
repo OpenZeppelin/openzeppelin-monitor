@@ -16,10 +16,13 @@ impl Default for BlockBuilder {
 	fn default() -> Self {
 		Self {
 			header: MidnightBlockHeader {
-				parent_hash: "0x0000000000000000000000000000000000000000".to_string(),
+				parent_hash: "0x0000000000000000000000000000000000000000000000000000000000000000"
+					.to_string(),
 				number: "0".to_string(),
-				state_root: "0x0000000000000000000000000000000000000000".to_string(),
-				extrinsics_root: "0x0000000000000000000000000000000000000000".to_string(),
+				state_root: "0x0000000000000000000000000000000000000000000000000000000000000000"
+					.to_string(),
+				extrinsics_root:
+					"0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
 				digest: MidnightBlockDigest { logs: vec![] },
 			},
 			body: vec![],
@@ -66,11 +69,17 @@ impl BlockBuilder {
 
 	/// Adds a Midnight transaction to the block.
 	pub fn add_rpc_transaction(mut self, transaction: MidnightBaseTransaction) -> Self {
-		self.body
-			.push(MidnightRpcTransactionEnum::MidnightTransaction {
-				tx_raw: "".to_string(),
-				tx: transaction,
-			});
+		let tx_hash = transaction.clone().tx_hash;
+		let tx_operation = MidnightRpcTransactionEnum::MidnightTransaction {
+			tx_raw: "".to_string(),
+			tx: transaction,
+		};
+
+		self.body.push(tx_operation.clone());
+
+		// TODO: Add the transaction index to the block with the serialized transaction
+		// should be of type `MidnightNodeTransaction`
+		self.transactions_index.push((tx_hash, "".to_string()));
 		self
 	}
 
@@ -103,15 +112,15 @@ mod tests {
 		assert_eq!(block.header.number, "0");
 		assert_eq!(
 			block.header.parent_hash,
-			"0x0000000000000000000000000000000000000000"
+			"0x0000000000000000000000000000000000000000000000000000000000000000"
 		);
 		assert_eq!(
 			block.header.state_root,
-			"0x0000000000000000000000000000000000000000"
+			"0x0000000000000000000000000000000000000000000000000000000000000000"
 		);
 		assert_eq!(
 			block.header.extrinsics_root,
-			"0x0000000000000000000000000000000000000000"
+			"0x0000000000000000000000000000000000000000000000000000000000000000"
 		);
 		assert!(block.body.is_empty());
 		assert!(block.transactions_index.is_empty());

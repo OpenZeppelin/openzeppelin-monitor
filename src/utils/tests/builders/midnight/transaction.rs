@@ -12,7 +12,7 @@ impl Default for TransactionBuilder {
 	/// Default transaction builder with a testnet transaction hash
 	fn default() -> Self {
 		Self {
-			tx_hash: "0202000000000000000000000000000000000000000000000000000000000000000000"
+			tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000"
 				.to_string(),
 			operations: vec![],
 			identifiers: vec![],
@@ -112,7 +112,7 @@ mod tests {
 		let tx = TransactionBuilder::new().build();
 		assert_eq!(
 			tx.tx_hash,
-			"0202000000000000000000000000000000000000000000000000000000000000000000"
+			"0x0000000000000000000000000000000000000000000000000000000000000000"
 		);
 		assert!(tx.operations.is_empty());
 		assert!(tx.identifiers.is_empty());

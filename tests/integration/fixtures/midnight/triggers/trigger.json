@@ -3,7 +3,10 @@
     "name": "Example Trigger Slack Notification",
     "trigger_type": "slack",
     "config": {
-      "slack_url": "https://hooks.slack.com/services/AAA/BBB/CCC",
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/AAA/BBB/CCC"
+      },
       "message": {
         "title": "example_trigger_slack triggered",
         "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
@@ -14,9 +17,15 @@
     "name": "Example Trigger Webhook Notification",
     "trigger_type": "webhook",
     "config": {
-      "url": "https://webhook.site/123",
+      "url": {
+        "type": "plain",
+        "value": "https://webhook.site/123"
+      },
       "method": "POST",
-      "secret": "some-secret",
+      "secret": {
+        "type": "plain",
+        "value": "some-secret"
+      },
       "headers": {
         "Content-Type": "application/json"
       },
@@ -30,7 +39,10 @@
     "name": "Example Trigger Discord Notification",
     "trigger_type": "discord",
     "config": {
-      "discord_url": "https://discord.com/api/webhooks/123/123",
+      "discord_url": {
+        "type": "plain",
+        "value": "https://discord.com/api/webhooks/123/123"
+      },
       "message": {
         "title": "example_trigger_discord triggered",
         "body": "${monitor.name} triggered because someone called the ${functions.0.signature} function with value ${functions.0.args.value} | https://etherscan.io/tx/${transaction.hash}"
@@ -41,7 +53,10 @@
     "name": "Example Trigger Telegram Notification",
     "trigger_type": "telegram",
     "config": {
-      "token": "123",
+      "token": {
+        "type": "plain",
+        "value": "123"
+      },
       "chat_id": "123",
       "disable_web_preview": true,
       "message": {

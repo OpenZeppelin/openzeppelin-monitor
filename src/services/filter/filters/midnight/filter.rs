@@ -16,8 +16,9 @@ use crate::{
 	models::{
 		BlockType, ChainConfiguration, ContractSpec, EventCondition, FunctionCondition,
 		MatchConditions, MidnightBlock, MidnightMatchArguments, MidnightMatchParamEntry,
-		MidnightMatchParamsMap, MidnightMonitorMatch, MidnightTransaction, Monitor, MonitorMatch,
-		Network, TransactionCondition, TransactionStatus,
+		MidnightMatchParamsMap, MidnightMonitorMatch, MidnightRpcTransactionEnum,
+		MidnightTransaction, Monitor, MonitorMatch, Network, TransactionCondition,
+		TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
@@ -135,6 +136,15 @@ impl<T> MidnightBlockFilter<T> {
 		false
 	}
 
+	/// Deserializes transactions from a block.
+	///
+	/// # Arguments
+	/// * `block` - The block to deserialize transactions from
+	/// * `network_id` - The network ID
+	/// * `chain_configurations` - The chain configurations
+	///
+	/// # Returns
+	/// A vector of deserialized transactions
 	pub fn deserialize_transactions(
 		&self,
 		block: &MidnightBlock,
@@ -142,19 +152,52 @@ impl<T> MidnightBlockFilter<T> {
 		chain_configurations: &Vec<ChainConfiguration>,
 	) -> Result<Vec<MidnightTransaction>, FilterError> {
 		let mut txs = Vec::<MidnightTransaction>::new();
-		let tx_index = block.transactions_index.iter().rev();
-		for (hash, body) in tx_index {
-			let (_hash, tx) = match parse_tx_index_item::<Proof>(hash, body, network_id) {
-				Ok(res) => res,
-				Err(e) => {
-					return Err(FilterError::network_error(
-						"Error deserializing transaction",
-						Some(e.into()),
-						None,
-					));
-				}
-			};
-			txs.push(MidnightTransaction::try_from((tx, chain_configurations))?);
+
+		// There are two ways to deserialize transactions from a Midnight block:
+		//
+		// 1. Using block.body: Contains pre-deserialized transactions as `MidnightRpcTransaction`
+		//    - Simpler structure with basic transaction info (hash, operations, identifiers)
+		//    - Easier to work with for basic monitoring
+		//
+		// 2. Using block.transactions_index: Contains raw transaction data that can be deserialized into
+		//    ledger-specific transactions `MidnightNodeTransaction` (Standard or ClaimMint)
+		//    - Provides access to additional fields like guaranteed_transcript and fallible_transcript
+		//    - Enables decryption of ZswapOffers and other private data
+		//    - More complex but offers richer transaction data
+		//
+		// Current implementation uses approach #1 since we don't need the additional data yet.
+		// This may change in the future if we need to monitor private transaction details.
+		// We are parsing the raw data with `parse_tx_index_item` for each transaction in the block body
+		// and then converting it to a MidnightTransaction with `try_from`
+		// This will allow us to populate the transaction with the additional data from the transactions_index later.
+		for transaction in block.body.iter() {
+			if let MidnightRpcTransactionEnum::MidnightTransaction { tx, .. } = transaction {
+				let hash = tx.tx_hash.clone();
+				let raw_tx_data = block
+					.transactions_index
+					.iter()
+					.find(|(h, _)| h == &hash)
+					.map(|(_, raw_tx_data)| raw_tx_data.clone())
+					.unwrap_or_default();
+
+				let transaction = MidnightTransaction::from(tx.clone());
+				let (_hash, deserialized_ledger_transaction) =
+					match parse_tx_index_item::<Proof>(&hash, &raw_tx_data, network_id) {
+						Ok(res) => res,
+						Err(e) => {
+							return Err(FilterError::network_error(
+								"Error deserializing transaction",
+								Some(e.into()),
+								None,
+							));
+						}
+					};
+				txs.push(MidnightTransaction::try_from((
+					transaction,
+					deserialized_ledger_transaction,
+					chain_configurations,
+				))?);
+			}
 		}
 		Ok(txs)
 	}
