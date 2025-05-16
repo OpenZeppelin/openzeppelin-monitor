@@ -34,6 +34,7 @@ pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
 	let hash = hex::decode(hash_without_prefix)
 		.map_err(|e| anyhow::anyhow!("TransactionHashDecodeError: {}", e))?;
 
+	// When testing, we don't have the raw tx data, so we just return the hash
 	if raw_tx_data.is_empty() {
 		return Ok((
 			TransactionHash(HashOutput(
