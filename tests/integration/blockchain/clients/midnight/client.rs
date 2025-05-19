@@ -15,7 +15,7 @@ async fn test_get_events() {
 	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 
 	mock.expect_get_events()
-		.with(predicate::eq(1u32), predicate::eq(Some(2u32)))
+		.with(predicate::eq(1u64), predicate::eq(Some(2u64)))
 		.times(1)
 		.returning(move |_, _| Ok(vec![]));
 

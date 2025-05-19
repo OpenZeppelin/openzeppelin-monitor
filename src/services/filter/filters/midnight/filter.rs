@@ -15,17 +15,18 @@ use tracing::instrument;
 use crate::{
 	models::{
 		BlockType, ChainConfiguration, ContractSpec, EventCondition, FunctionCondition,
-		MatchConditions, MidnightBlock, MidnightMatchArguments, MidnightMatchParamEntry,
-		MidnightMatchParamsMap, MidnightMonitorMatch, MidnightRpcTransactionEnum,
-		MidnightTransaction, Monitor, MonitorMatch, Network, TransactionCondition,
-		TransactionStatus,
+		MatchConditions, MidnightBlock, MidnightEvent, MidnightMatchArguments,
+		MidnightMatchParamEntry, MidnightMatchParamsMap, MidnightMonitorMatch,
+		MidnightRpcTransactionEnum, MidnightTransaction, Monitor, MonitorMatch, Network,
+		TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, MidnightClientTrait},
 		filter::{
 			filters::midnight::helpers::{map_chain_type, parse_tx_index_item},
 			midnight_helpers::{
-				are_same_address, are_same_signature, normalize_hash, remove_parentheses,
+				are_same_address, are_same_hash, are_same_signature, normalize_hash,
+				remove_parentheses,
 			},
 			BlockFilter, FilterError,
 		},
@@ -41,17 +42,53 @@ impl<T> MidnightBlockFilter<T> {
 	/// Finds transactions that match the monitor's conditions.
 	///
 	/// # Arguments
-	/// * `tx_status` - Status of the transaction (success/failure)
+	/// * `events` - Events from the block
 	/// * `transaction` - The transaction to check
 	/// * `monitor` - Monitor containing match conditions
 	/// * `matched_transactions` - Vector to store matching transactions
 	pub fn find_matching_transaction(
 		&self,
-		_tx_status: &TransactionStatus,
-		_transaction: &MidnightTransaction,
-		_monitor: &Monitor,
-		_matched_transactions: &mut [TransactionCondition],
+		events: &[MidnightEvent],
+		transaction: &MidnightTransaction,
+		monitor: &Monitor,
+		matched_transactions: &mut Vec<TransactionCondition>,
 	) {
+		if monitor.match_conditions.transactions.is_empty() {
+			// Match all transactions
+			matched_transactions.push(TransactionCondition {
+				expression: None,
+				status: TransactionStatus::Any,
+			});
+		} else {
+			let tx_status = events
+				.iter()
+				.find(|event| {
+					event.is_success()
+						&& are_same_hash(
+							event.get_tx_hash().as_deref().unwrap_or_default(),
+							transaction.hash(),
+						)
+				})
+				.map(|_| TransactionStatus::Success)
+				.unwrap_or(TransactionStatus::Failure);
+
+			// Check each transaction condition
+			for condition in &monitor.match_conditions.transactions {
+				// First check if status matches (if specified)
+				let status_matches = match &condition.status {
+					TransactionStatus::Any => true,
+					required_status => *required_status == tx_status,
+				};
+
+				if status_matches {
+					matched_transactions.push(TransactionCondition {
+						expression: None,
+						status: tx_status,
+					});
+					break;
+				}
+			}
+		}
 	}
 
 	/// Finds function calls in a transaction that match the monitor's conditions.
@@ -242,6 +279,10 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		let chain_type = client.get_chain_type().await?;
 		let network_id = map_chain_type(&chain_type);
 
+		let events = client
+			.get_events(midnight_block.number().unwrap_or(0), None)
+			.await?;
+
 		// Get all chain configurations from monitors
 		let chain_configurations = monitors
 			.iter()
@@ -273,7 +314,7 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 				.collect();
 
 			for transaction in transactions.iter() {
-				let matched_transactions = Vec::<TransactionCondition>::new();
+				let mut matched_transactions = Vec::<TransactionCondition>::new();
 				let mut matched_functions = Vec::<FunctionCondition>::new();
 				let matched_events = Vec::<EventCondition>::new();
 				let mut matched_on_args = MidnightMatchArguments {
@@ -283,7 +324,12 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 				tracing::debug!("Processing transaction: {:?}", transaction.hash());
 
-				// self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
+				self.find_matching_transaction(
+					&events,
+					transaction,
+					monitor,
+					&mut matched_transactions,
+				);
 
 				self.find_matching_functions_for_transaction(
 					&monitored_addresses,

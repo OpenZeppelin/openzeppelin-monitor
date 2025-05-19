@@ -15,7 +15,7 @@ use crate::{
 	services::blockchain::{
 		BlockChainClient, BlockFilterFactory, EVMTransportClient, EvmClient, EvmClientTrait,
 		MidnightClient, MidnightClientTrait, MidnightTransportClient, StellarClient,
-		StellarClientTrait, StellarTransportClient,
+		StellarClientTrait, StellarTransportClient, WsTransportClient,
 	},
 };
 use anyhow::Context;
@@ -87,7 +87,7 @@ impl ClientPool {
 		// Register client types
 		pool.register_client_type::<EvmClient<EVMTransportClient>>(BlockChainType::EVM);
 		pool.register_client_type::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar);
-		pool.register_client_type::<MidnightClient<MidnightTransportClient>>(
+		pool.register_client_type::<MidnightClient<MidnightTransportClient, WsTransportClient>>(
 			BlockChainType::Midnight,
 		);
 
@@ -148,7 +148,7 @@ impl ClientPool {
 impl ClientPoolTrait for ClientPool {
 	type EvmClient = EvmClient<EVMTransportClient>;
 	type StellarClient = StellarClient<StellarTransportClient>;
-	type MidnightClient = MidnightClient<MidnightTransportClient>;
+	type MidnightClient = MidnightClient<MidnightTransportClient, WsTransportClient>;
 
 	/// Gets or creates an EVM client for the given network.
 	///

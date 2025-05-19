@@ -127,6 +127,18 @@ pub fn normalize_address(address: &str) -> String {
 	)
 }
 
+/// Compares two hashes for equality, ignoring case and "0x" prefixes.
+///
+/// # Arguments
+/// * `hash1` - First hash to compare
+/// * `hash2` - Second hash to compare
+///
+/// # Returns
+/// `true` if the hashes are equivalent, `false` otherwise
+pub fn are_same_hash(hash1: &str, hash2: &str) -> bool {
+	normalize_hash(hash1) == normalize_hash(hash2)
+}
+
 /// Normalizes a hash by removing "0x" prefix, spaces, and converting to lowercase.
 ///
 /// # Arguments
@@ -286,6 +298,21 @@ mod tests {
 		let hash = "0x123456 7890123456 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 		let normalized = normalize_hash(hash);
 		assert_eq!(normalized, "1234567890123456abcdefghijklmnopqrstuvwxyz");
+	}
+
+	#[test]
+	fn test_are_same_hash() {
+		let hash1 = "0x1234567890123456789012345678901234567890";
+		let hash2 = "0x1234567890123456789012345678901234567890";
+		assert!(are_same_hash(hash1, hash2));
+
+		let hash1 = "0x1234567890123456789012345678901234567890";
+		let hash2 = "0x1234567890123456789012345678901234567891";
+		assert!(!are_same_hash(hash1, hash2));
+
+		let hash1 = "0x123456 7890123456 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		let hash2 = "0x1234567890123456abcdefghijklmnopqrstuvwxyz";
+		assert!(are_same_hash(hash1, hash2));
 	}
 
 	#[test]
