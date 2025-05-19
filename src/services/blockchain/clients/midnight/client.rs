@@ -106,6 +106,8 @@ impl<T: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for Midni
 	async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error> {
 		let response = self
 			.http_client
+			// TODO: Consider using system_chain instead of system_chainType and filtering on "testnet" or "mainnet"
+			// Since Midnight's current testnet-02 returns "Live" instead of "Development" for `system_chainType`
 			.send_raw_request::<serde_json::Value>("system_chainType", None)
 			.await
 			.with_context(|| "Failed to get chain type")?;
