@@ -308,6 +308,12 @@ impl fmt::Debug for SecretString {
 	}
 }
 
+impl fmt::Display for SecretString {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "<secret string>")
+	}
+}
+
 impl AsRef<str> for SecretValue {
 	fn as_ref(&self) -> &str {
 		match self {
@@ -841,6 +847,21 @@ mod tests {
 
 		let secret = SecretValue::HashicorpCloudVault("test".to_string());
 		assert_eq!(format!("{:?}", secret), "HashicorpCloudVault(\"test\")");
+	}
+
+	#[test]
+	fn test_secret_string_display() {
+		let secret = SecretString::new("test".to_string());
+		assert_eq!(format!("{}", secret), "<secret string>");
+
+		let secret = SecretValue::Plain(SecretString::new("test".to_string()));
+		assert_eq!(format!("{}", secret), "<secret string>");
+
+		let secret = SecretValue::Environment("test".to_string());
+		assert_eq!(format!("{}", secret), "test");
+
+		let secret = SecretValue::HashicorpCloudVault("test".to_string());
+		assert_eq!(format!("{}", secret), "test");
 	}
 
 	#[test]
