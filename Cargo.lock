@@ -5115,9 +5115,9 @@ dependencies = [
 
 [[package]]
 name = "soroban-spec"
-version = "22.0.7"
+version = "22.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b54326e9516b33be99c701b37242b27efb8e66cc1f1eff994b9d9a013a4be136"
+checksum = "a4ad0867aec99770ed614fedbec7ac4591791df162ff9e548ab7ebd07cd23a9c"
 dependencies = [
  "base64 0.13.1",
  "stellar-xdr",
