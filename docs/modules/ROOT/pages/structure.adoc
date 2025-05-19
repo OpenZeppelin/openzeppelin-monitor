@@ -15,6 +15,7 @@ The main source code directory contains the core implementation files organized 
 ** `blockchain/`: Platform-specific implementations
 *** `evm/`: Ethereum Virtual Machine specific types
 *** `stellar/`: Stellar blockchain specific types
+*** `midnight/`: Midnight blockchain specific types
 ** `config/`: Configuration loading and validation
 ** `core/`: Core domain models
 ** `security/`: Security and secret management
@@ -29,14 +30,17 @@ The main source code directory contains the core implementation files organized 
 *** `transports/`: Transport clients
 **** `evm/`: Ethereum Virtual Machine transport client
 **** `stellar/`: Stellar transport client
+**** `midnight/`: Midnight transport client
 *** `clients/`: Client implementations
 **** `evm/`: Ethereum Virtual Machine client
 **** `stellar/`: Stellar client
+**** `midnight/`: Midnight client
 ** `blockwatcher/`: Block monitoring and processing
 ** `filter/`: Transaction and event filtering
 *** `filters/`: Filter implementations
 **** `evm/`: Ethereum Virtual Machine filter
 **** `stellar/`: Stellar filter
+**** `midnight/`: Midnight filter
 ** `notification/`: Alert handling
 ** `trigger/`: Trigger evaluation and execution
 **** `script/`: Script execution utilities
@@ -53,6 +57,7 @@ The main source code directory contains the core implementation files organized 
 *** `builders/`: Test builder patterns implementing fluent interfaces for creating test fixtures
 **** `evm/`: Builder implementations specific to Ethereum Virtual Machine (EVM) testing
 **** `stellar/`: Builder implementations specific to Stellar blockchain testing
+**** `midnight/`: Builder implementations specific to Midnight blockchain testing
 
 == Configuration and Data
 

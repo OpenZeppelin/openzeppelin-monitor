@@ -243,13 +243,9 @@ As the number of blocks being processed increases, the number of RPC calls grows
 [mermaid,width=100%]
 ....
 graph TD
-    subgraph Common Operations
-        A[Main] --> D[Process New Blocks]
-    end
-
     subgraph EVM Network Calls
-        B[Network Init] -->|net_version| D
-        D -->|eth_blockNumber| E[For every block in range]
+        B[Network Init] -->|net_version| D1[Process New Blocks]
+        D1 -->|eth_blockNumber| E[For every block in range]
         E -->|eth_getBlockByNumber| G1[Process Block]
         G1 -->|eth_getLogs| H[Get Block Logs]
         H -->|Only when needed| J[Get Transaction Receipt]
@@ -257,8 +253,8 @@ graph TD
     end
 
     subgraph Stellar Network Calls
-        C[Network Init] -->|getNetwork| D
-        D -->|getLatestLedger| F[In batches of 200 blocks]
+        C[Network Init] -->|getNetwork| D2[Process New Blocks]
+        D2 -->|getLatestLedger| F[In batches of 200 blocks]
         F -->|getLedgers| G2[Process Block]
         G2 -->|For each monitored contract without ABI| M[Fetch Contract Spec]
         M -->|getLedgerEntries| N[Get WASM Hash]
@@ -269,6 +265,15 @@ graph TD
         P -->|getEvents| L2[Get Events]
         L1 --> Q[Complete]
         L2 --> Q
+    end
+
+    subgraph Midnight Network Calls
+        D3[Network Init] -->|system_chainType| D4[Process New Blocks]
+        D4 -->|chain_getHeader| E1[Get Latest Block]
+        E1 -->|For each block| F1[Get Block Data]
+        F1 -->|chain_getBlockHash| G3[Get Block Hash]
+        G3 -->|midnight_jsonBlock| H1[Get Full Block]
+        H1 --> I1[Complete]
     end
 ....
 
@@ -295,10 +300,11 @@ graph TD
 
 *Midnight*
 
-* RPC Client initialization (per active network): `system_chain`
+* RPC Client initialization (per active network): `system_chainType`
 * Fetching the latest block number (per cron iteration): `chain_getHeader`
-* Fetching block data (per block): `chain_getBlockHash` and `midnight_jsonBlock`
-* Fetching transaction receipt (per transaction in block): ``
+* Fetching block data (per block):
+  ** `chain_getBlockHash` - Gets the block hash for a specific block number
+  ** `midnight_jsonBlock` - Gets the full block data using the block hash
 
 
 == Best Practices

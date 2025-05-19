@@ -295,7 +295,7 @@ impl AsRef<str> for SecretString {
 impl fmt::Display for SecretValue {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			SecretValue::Plain(secret) => write!(f, "{}", secret.as_str()),
+			SecretValue::Plain(_) => write!(f, "<secret string>"),
 			SecretValue::Environment(env_var) => write!(f, "{}", env_var),
 			SecretValue::HashicorpCloudVault(name) => write!(f, "{}", name),
 		}
