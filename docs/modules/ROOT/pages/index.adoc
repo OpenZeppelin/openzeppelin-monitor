@@ -1353,7 +1353,7 @@ Match transaction properties. The available fields and expression syntax depend 
 
 | transaction_index
 | uint64
-| Position in block (from receipt)
+| Position in block
 |===
 
 ==== Available Transaction Fields (Stellar)
