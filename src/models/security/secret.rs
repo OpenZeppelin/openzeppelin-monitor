@@ -925,7 +925,7 @@ mod tests {
 		let plain = SecretValue::Plain(SecretString::new("plainval".to_string()));
 		let env = SecretValue::Environment("envval".to_string());
 		let vault = SecretValue::HashicorpCloudVault("vaultval".to_string());
-		assert_eq!(format!("{}", plain), "plainval");
+		assert_eq!(format!("{}", plain), "<secret string>");
 		assert_eq!(format!("{}", env), "envval");
 		assert_eq!(format!("{}", vault), "vaultval");
 	}

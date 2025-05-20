@@ -538,6 +538,7 @@ async fn test_monitor_transaction_status_success() -> Result<(), Box<FilterError
 
 	let network = NetworkBuilder::new()
 		.network_type(BlockChainType::Midnight)
+		.add_rpc_url("wss://any-websocket-url", "ws_rpc", 100)
 		.build();
 
 	// Create a monitor that watches for successful transactions
@@ -614,6 +615,7 @@ async fn test_monitor_transaction_status_failure() -> Result<(), Box<FilterError
 
 	let network = NetworkBuilder::new()
 		.network_type(BlockChainType::Midnight)
+		.add_rpc_url("wss://any-websocket-url", "ws_rpc", 100)
 		.build();
 
 	// Create a monitor that watches for failed transactions
@@ -683,6 +685,7 @@ async fn test_monitor_transaction_status_any() -> Result<(), Box<FilterError>> {
 
 	let network = NetworkBuilder::new()
 		.network_type(BlockChainType::Midnight)
+		.add_rpc_url("wss://any-websocket-url", "ws_rpc", 100)
 		.build();
 
 	// Create a monitor that watches for any transaction status
