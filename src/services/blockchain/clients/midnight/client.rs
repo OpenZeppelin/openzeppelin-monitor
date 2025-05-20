@@ -54,8 +54,17 @@ impl MidnightClient<MidnightTransportClient, WsTransportClient> {
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let http_client = MidnightTransportClient::new(network).await?;
-		let ws_client = WsTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(http_client, Some(ws_client)))
+		let ws_client = WsTransportClient::new(network).await.map_or_else(
+			|e| {
+				// We fail to create a WebSocket client if there are no working URLs
+				// This limits the functionality of the service, by not allowing monitoring of transaction status or event-related data
+				// but it is not a critical issue
+				tracing::error!("Failed to create WebSocket client: {}", e);
+				None
+			},
+			Some,
+		);
+		Ok(Self::new_with_transport(http_client, ws_client))
 	}
 }
 

@@ -1,11 +1,14 @@
 use mockall::predicate;
 use serde_json::{json, Value};
 
-use openzeppelin_monitor::services::blockchain::{
-	BlockChainClient, MidnightClient, MidnightClientTrait,
+use openzeppelin_monitor::{
+	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
+	utils::tests::midnight::event::EventBuilder,
 };
 
-use crate::integration::mocks::{MockMidnightTransportClient, MockWsTransportClient};
+use crate::integration::mocks::{
+	MockMidnightTransportClient, MockWsTransportClient, WsTransportClientWrapper,
+};
 
 fn create_mock_block(number: u64) -> Value {
 	json!({
@@ -33,21 +36,74 @@ fn create_mock_block(number: u64) -> Value {
 	})
 }
 
+fn create_recursive_mock_midnight_transport_client(
+	_depth: u32,
+	block_hash: Option<String>,
+	events: Option<Vec<Value>>,
+) -> MockMidnightTransportClient {
+	let mut new_mock: MockMidnightTransportClient = MockMidnightTransportClient::new();
+	let block_hash = block_hash.clone();
+	let events = events.clone();
+
+	// Mock chain_getBlockHash response
+	let block_hash_clone = block_hash.clone();
+	new_mock
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getBlockHash"), predicate::always())
+		.returning(move |_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": block_hash_clone.clone()
+			}))
+		});
+
+	// Mock midnight_decodeEvents response
+	let events_clone = events.clone();
+	new_mock
+		.expect_send_raw_request()
+		.with(predicate::eq("midnight_decodeEvents"), predicate::always())
+		.returning(move |_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": events_clone.clone()
+			}))
+		});
+
+	new_mock.expect_clone().returning(move || {
+		create_recursive_mock_midnight_transport_client(
+			_depth - 1,
+			block_hash.clone(),
+			events.clone(),
+		)
+	});
+
+	new_mock
+}
+
 #[tokio::test]
 async fn test_get_events_implementation() {
-	let mock_midnight = MockMidnightTransportClient::new();
-	let mock_ws = MockWsTransportClient::new();
+	let mock_midnight = create_recursive_mock_midnight_transport_client(
+		1,
+		Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string()),
+		Some(vec![
+			serde_json::to_value(EventBuilder::new().build()).unwrap()
+		]),
+	);
+	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
 
 	let client =
 		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
 			mock_midnight,
-			Some(mock_ws),
+			Some(mock_ws.client),
 		);
+
 	let result = client.get_events(1, Some(10)).await;
 
 	assert!(result.is_ok());
-	let logs = result.unwrap();
-	assert_eq!(logs.len(), 0);
+	let events = result.unwrap();
+	assert_eq!(events.len(), 10);
 }
 
 #[tokio::test]

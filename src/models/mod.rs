@@ -34,9 +34,11 @@ pub use blockchain::stellar::{
 
 pub use blockchain::midnight::{
 	MidnightBaseTransaction, MidnightBlock, MidnightBlockDigest, MidnightBlockHeader,
-	MidnightChainType, MidnightEvent, MidnightMatchArguments, MidnightMatchParamEntry,
-	MidnightMatchParamsMap, MidnightMonitorConfig, MidnightMonitorMatch, MidnightOperation,
-	MidnightRpcBlock, MidnightRpcTransactionEnum, MidnightTransaction,
+	MidnightCallDetails, MidnightChainType, MidnightClaimMintDetails, MidnightDeploymentDetails,
+	MidnightEvent, MidnightEventType, MidnightMaintainDetails, MidnightMatchArguments,
+	MidnightMatchParamEntry, MidnightMatchParamsMap, MidnightMonitorConfig, MidnightMonitorMatch,
+	MidnightOperation, MidnightPayoutDetails, MidnightPhase, MidnightRpcBlock,
+	MidnightRpcTransactionEnum, MidnightTopics, MidnightTransaction, MidnightTxAppliedDetails,
 };
 
 // Re-export core types

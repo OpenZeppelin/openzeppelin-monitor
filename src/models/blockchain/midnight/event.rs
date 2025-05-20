@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 /// Represents the phase of a blockchain event.
 ///
@@ -42,7 +42,7 @@ impl Default for Phase {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 pub struct Topics {
 	/// List of topic strings associated with the event.
-	topics: Vec<String>,
+	pub topics: Vec<String>,
 }
 
 /// Details of a transaction that has been applied to the blockchain.
@@ -52,11 +52,11 @@ pub struct Topics {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct TxAppliedDetails {
 	/// The phase during which the transaction was applied.
-	phase: Phase,
+	pub phase: Phase,
 	/// Topics associated with the transaction application.
-	topics: Topics,
+	pub topics: Topics,
 	/// The hash of the applied transaction.
-	tx_hash: String,
+	pub tx_hash: String,
 }
 
 /// Details of a contract maintenance operation.
@@ -66,13 +66,13 @@ pub struct TxAppliedDetails {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct MaintainDetails {
 	/// The phase during which the maintenance operation occurred.
-	phase: Phase,
+	pub phase: Phase,
 	/// Topics associated with the maintenance operation.
-	topics: Topics,
+	pub topics: Topics,
 	/// The address of the contract being maintained.
-	address: String,
+	pub address: String,
 	/// The hash of the transaction that performed the maintenance.
-	tx_hash: String,
+	pub tx_hash: String,
 }
 
 /// Details of a contract deployment.
@@ -82,13 +82,13 @@ pub struct MaintainDetails {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct DeploymentDetails {
 	/// The phase during which the contract was deployed.
-	phase: Phase,
+	pub phase: Phase,
 	/// Topics associated with the contract deployment.
-	topics: Topics,
+	pub topics: Topics,
 	/// The address of the newly deployed contract.
-	address: String,
+	pub address: String,
 	/// The hash of the transaction that deployed the contract.
-	tx_hash: String,
+	pub tx_hash: String,
 }
 
 /// Details of a contract call.
@@ -98,13 +98,13 @@ pub struct DeploymentDetails {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct CallDetails {
 	/// The phase during which the contract call occurred.
-	phase: Phase,
+	pub phase: Phase,
 	/// Topics associated with the contract call.
-	topics: Topics,
+	pub topics: Topics,
 	/// The address of the contract being called.
-	address: String,
+	pub address: String,
 	/// The hash of the transaction that made the call.
-	tx_hash: String,
+	pub tx_hash: String,
 }
 
 /// Details of a mint claim operation.
@@ -114,15 +114,15 @@ pub struct CallDetails {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ClaimMintDetails {
 	/// The phase during which the mint claim occurred.
-	phase: Phase,
+	pub phase: Phase,
 	/// Topics associated with the mint claim.
-	topics: Topics,
+	pub topics: Topics,
 	/// The type of coin being claimed.
-	coin_type: String,
+	pub coin_type: String,
 	/// The amount of tokens being claimed.
-	value: u128,
+	pub value: u128,
 	/// The hash of the transaction that made the claim.
-	tx_hash: String,
+	pub tx_hash: String,
 }
 
 /// Details of a payout operation.
@@ -132,13 +132,13 @@ pub struct ClaimMintDetails {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct PayoutDetails {
 	/// The phase during which the payout occurred.
-	phase: Phase,
+	pub phase: Phase,
 	/// Topics associated with the payout.
-	topics: Topics,
+	pub topics: Topics,
 	/// The amount of tokens being paid out.
-	amount: u128,
+	pub amount: u128,
 	/// The address of the recipient.
-	receiver: String,
+	pub receiver: String,
 }
 
 /// Enum representing different types of events that can occur in the Midnight blockchain.
@@ -190,7 +190,7 @@ impl Default for EventType {
 /// while maintaining compatibility with the RPC response format. It serves as the
 /// primary interface for handling events in the Midnight blockchain.
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Event(EventType);
+pub struct Event(pub EventType);
 
 /// Additional methods for Event
 impl Event {
@@ -227,6 +227,40 @@ impl Event {
 			EventType::Unknown(_) => None,
 		}
 	}
+
+	/// Get the topics from the event.
+	///
+	/// This method returns the topics from the event.
+	pub fn get_topics(&self) -> Option<Vec<String>> {
+		match &self.0 {
+			EventType::MidnightTxApplied(details) => Some(details.topics.topics.clone()),
+			EventType::MidnightOnlyGuaranteedTxApplied(details) => {
+				Some(details.topics.topics.clone())
+			}
+			EventType::MidnightCallContract(details) => Some(details.topics.topics.clone()),
+			EventType::MidnightDeployContract(details) => Some(details.topics.topics.clone()),
+			EventType::MidnightMaintainContract(details) => Some(details.topics.topics.clone()),
+			EventType::MidnightPayoutMinted(details) => Some(details.topics.topics.clone()),
+			EventType::MidnightClaimMint(details) => Some(details.topics.topics.clone()),
+			EventType::Unknown(_) => None,
+		}
+	}
+
+	/// Get the phase from the event.
+	///
+	/// This method returns the phase from the event.
+	pub fn get_phase(&self) -> Option<Phase> {
+		match &self.0 {
+			EventType::MidnightTxApplied(details) => Some(details.phase.clone()),
+			EventType::MidnightOnlyGuaranteedTxApplied(details) => Some(details.phase.clone()),
+			EventType::MidnightCallContract(details) => Some(details.phase.clone()),
+			EventType::MidnightDeployContract(details) => Some(details.phase.clone()),
+			EventType::MidnightMaintainContract(details) => Some(details.phase.clone()),
+			EventType::MidnightPayoutMinted(details) => Some(details.phase.clone()),
+			EventType::MidnightClaimMint(details) => Some(details.phase.clone()),
+			EventType::Unknown(_) => None,
+		}
+	}
 }
 
 /// Dereference the EventType
@@ -235,6 +269,12 @@ impl Deref for Event {
 
 	fn deref(&self) -> &Self::Target {
 		&self.0
+	}
+}
+
+impl DerefMut for Event {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
 	}
 }
 
@@ -743,5 +783,164 @@ mod tests {
 		assert!(!event.is_tx_applied());
 		assert!(!event.is_only_guaranteed_tx_applied());
 		assert!(!event.is_success());
+	}
+
+	#[test]
+	fn test_event_get_topics() {
+		let topics = vec!["topic1".to_string(), "topic2".to_string()];
+		let topics_struct = Topics {
+			topics: topics.clone(),
+		};
+
+		// Test TxApplied
+		let tx_details = TxAppliedDetails {
+			phase: Phase::default(),
+			topics: topics_struct.clone(),
+			tx_hash: "0x123".to_string(),
+		};
+		let event = Event(EventType::MidnightTxApplied(tx_details));
+		assert_eq!(event.get_topics(), Some(topics.clone()));
+
+		// Test OnlyGuaranteedTxApplied
+		let tx_details = TxAppliedDetails {
+			phase: Phase::default(),
+			topics: topics_struct.clone(),
+			tx_hash: "0x123".to_string(),
+		};
+		let event = Event(EventType::MidnightOnlyGuaranteedTxApplied(tx_details));
+		assert_eq!(event.get_topics(), Some(topics.clone()));
+
+		// Test CallContract
+		let call_details = CallDetails {
+			phase: Phase::default(),
+			topics: topics_struct.clone(),
+			address: "0x123".to_string(),
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightCallContract(call_details));
+		assert_eq!(event.get_topics(), Some(topics.clone()));
+
+		// Test DeployContract
+		let deploy_details = DeploymentDetails {
+			phase: Phase::default(),
+			topics: topics_struct.clone(),
+			address: "0x123".to_string(),
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightDeployContract(deploy_details));
+		assert_eq!(event.get_topics(), Some(topics.clone()));
+
+		// Test MaintainContract
+		let maintain_details = MaintainDetails {
+			phase: Phase::default(),
+			topics: topics_struct.clone(),
+			address: "0x123".to_string(),
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightMaintainContract(maintain_details));
+		assert_eq!(event.get_topics(), Some(topics.clone()));
+
+		// Test PayoutMinted
+		let payout_details = PayoutDetails {
+			phase: Phase::default(),
+			topics: topics_struct.clone(),
+			amount: 100u128,
+			receiver: "0x123".to_string(),
+		};
+		let event = Event(EventType::MidnightPayoutMinted(payout_details));
+		assert_eq!(event.get_topics(), Some(topics.clone()));
+
+		// Test ClaimMint
+		let claim_mint_details = ClaimMintDetails {
+			phase: Phase::default(),
+			topics: topics_struct,
+			coin_type: "ETH".to_string(),
+			value: 100u128,
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightClaimMint(claim_mint_details));
+		assert_eq!(event.get_topics(), Some(topics));
+
+		// Test Unknown
+		let event = Event(EventType::Unknown("unknown".to_string()));
+		assert_eq!(event.get_topics(), None);
+	}
+
+	#[test]
+	fn test_event_get_phase() {
+		let phase = Phase::ApplyExtrinsic(1);
+
+		// Test TxApplied
+		let tx_details = TxAppliedDetails {
+			phase: phase.clone(),
+			topics: Topics::default(),
+			tx_hash: "0x123".to_string(),
+		};
+		let event = Event(EventType::MidnightTxApplied(tx_details));
+		assert_eq!(event.get_phase(), Some(phase.clone()));
+
+		// Test OnlyGuaranteedTxApplied
+		let tx_details = TxAppliedDetails {
+			phase: phase.clone(),
+			topics: Topics::default(),
+			tx_hash: "0x123".to_string(),
+		};
+		let event = Event(EventType::MidnightOnlyGuaranteedTxApplied(tx_details));
+		assert_eq!(event.get_phase(), Some(phase.clone()));
+
+		// Test CallContract
+		let call_details = CallDetails {
+			phase: phase.clone(),
+			topics: Topics::default(),
+			address: "0x123".to_string(),
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightCallContract(call_details));
+		assert_eq!(event.get_phase(), Some(phase.clone()));
+
+		// Test DeployContract
+		let deploy_details = DeploymentDetails {
+			phase: phase.clone(),
+			topics: Topics::default(),
+			address: "0x123".to_string(),
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightDeployContract(deploy_details));
+		assert_eq!(event.get_phase(), Some(phase.clone()));
+
+		// Test MaintainContract
+		let maintain_details = MaintainDetails {
+			phase: phase.clone(),
+			topics: Topics::default(),
+			address: "0x123".to_string(),
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightMaintainContract(maintain_details));
+		assert_eq!(event.get_phase(), Some(phase.clone()));
+
+		// Test PayoutMinted
+		let payout_details = PayoutDetails {
+			phase: phase.clone(),
+			topics: Topics::default(),
+			amount: 100u128,
+			receiver: "0x123".to_string(),
+		};
+		let event = Event(EventType::MidnightPayoutMinted(payout_details));
+		assert_eq!(event.get_phase(), Some(phase.clone()));
+
+		// Test ClaimMint
+		let claim_mint_details = ClaimMintDetails {
+			phase: phase.clone(),
+			topics: Topics::default(),
+			coin_type: "ETH".to_string(),
+			value: 100u128,
+			tx_hash: "0x456".to_string(),
+		};
+		let event = Event(EventType::MidnightClaimMint(claim_mint_details));
+		assert_eq!(event.get_phase(), Some(phase));
+
+		// Test Unknown
+		let event = Event(EventType::Unknown("unknown".to_string()));
+		assert_eq!(event.get_phase(), None);
 	}
 }
