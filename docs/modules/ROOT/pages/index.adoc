@@ -617,7 +617,7 @@ A Network configuration defines connection details and operational parameters fo
 
 |network_type
 |String
-|Type of blockchain ("EVM" or "Stellar")
+|Type of blockchain
 
 |slug
 |String
@@ -663,6 +663,7 @@ A Network configuration defines connection details and operational parameters fo
 ==== Important Considerations
 
 * We strongly recommend using private RPC providers for improved reliability.
+* For Midnight networks, transaction status monitoring requires a websocket RPC URL (`"type_": "ws_rpc"`) in the network configuration. Without it, transaction status monitoring will be disabled.
 
 === Trigger Configuration
 
@@ -1105,7 +1106,7 @@ The monitor uses a structured JSON format with nested objects for template varia
 [NOTE]
 ====
 * Transaction-related variables (`transaction.from`, `transaction.to`, `transaction.value`) are not available for Stellar networks.
-* Due to the privacy-focused design of the Midnight network, monitoring specific transaction details or function/event arguments is not supported.
+* Due to the privacy-focused design of the Midnight network, monitoring specific transaction details and function/event arguments is not supported.
 ====
 
 ==== Message Formatting

@@ -238,7 +238,7 @@ mod tests {
 		assert_eq!(monitor.match_conditions.functions.len(), 1);
 		assert_eq!(
 			monitor.match_conditions.functions[0].signature,
-			"transfer(address,uint256)"
+			"transfer(address,uint256)".to_string()
 		);
 		assert_eq!(
 			monitor.match_conditions.functions[0].expression,
@@ -247,7 +247,7 @@ mod tests {
 		assert_eq!(monitor.match_conditions.events.len(), 1);
 		assert_eq!(
 			monitor.match_conditions.events[0].signature,
-			"Transfer(address,address,uint256)"
+			"Transfer(address,address,uint256)".to_string()
 		);
 		assert_eq!(monitor.match_conditions.transactions.len(), 1);
 		assert_eq!(

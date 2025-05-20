@@ -596,6 +596,14 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
         "value": "YOUR_RPC_URL_HERE"
       },
       "weight": 100
+    },
+    {
+      "type_": "ws_rpc",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_WSS_RPC_URL_HERE"
+      },
+      "weight": 100
     }
   ],
   "chain_id": 0,
@@ -606,6 +614,11 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
   "store_blocks": false
 }
 ----
+
+[NOTE]
+====
+A websocket RPC URL (wss://) is required in the network configuration to monitor transaction status. This is because transaction status information is retrieved through Substrate events, which are only available via websocket connections.
+====
 
 ==== 2. Monitor Configuration:
 
@@ -639,7 +652,12 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
       }
     ],
     "events": [],
-    "transactions": []
+    "transactions": [
+      {
+        "status": "Any",
+        "expression": null
+      }
+    ]
   },
   "trigger_conditions": [],
   "triggers": [
@@ -650,9 +668,9 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
 
 [NOTE]
 ====
-* Event and transaction monitoring is currently not supported
+* Event monitoring is currently not supported
 * Due to the privacy-focused design of the network:
-  ** Transaction details cannot be monitored
+  ** Transaction details cannot be monitored (except for transaction status)
   ** Function and event arguments cannot be monitored
 * Function signatures are simplified:
   ** All argument variations are treated identically. For example `post`, `post()`, and `post(x, y, z)` are equivalent

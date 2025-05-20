@@ -10,6 +10,14 @@
         "value": "https://rpc.testnet-02.midnight.network"
       },
       "weight": 100
+    },
+    {
+      "type_": "ws_rpc",
+      "url": {
+        "type": "plain",
+        "value": "wss://rpc.testnet-02.midnight.network"
+      },
+      "weight": 100
     }
   ],
   "chain_id": 0,

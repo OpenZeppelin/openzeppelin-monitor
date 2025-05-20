@@ -48,7 +48,7 @@ impl TransactionBuilder {
 	pub fn add_call_operation(mut self, address: String, entry_point: String) -> Self {
 		self.operations.push(MidnightOperation::Call {
 			address,
-			entry_point,
+			entry_point: hex::encode(entry_point.as_bytes()),
 		});
 		self
 	}
@@ -174,7 +174,7 @@ mod tests {
 			tx.operations,
 			vec![MidnightOperation::Call {
 				address,
-				entry_point
+				entry_point: hex::encode(entry_point.as_bytes()),
 			}]
 		);
 	}

@@ -17,6 +17,7 @@ pub mod builders {
 
 	pub mod midnight {
 		pub mod block;
+		pub mod event;
 		pub mod monitor;
 		pub mod transaction;
 	}

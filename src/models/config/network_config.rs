@@ -192,8 +192,13 @@ impl ConfigLoader for Network {
 			));
 		}
 
-		// Validate RPC URL types
-		let supported_types = ["rpc"];
+		// Validate RPC URL types based on network
+		let supported_types = match self.network_type {
+			// We support both rpc and ws_rpc for Midnight
+			BlockChainType::Midnight => vec!["rpc", "ws_rpc"],
+			_ => vec!["rpc"],
+		};
+
 		if !self
 			.rpc_urls
 			.iter()
@@ -201,8 +206,9 @@ impl ConfigLoader for Network {
 		{
 			return Err(ConfigError::validation_error(
 				format!(
-					"RPC URL type must be one of: {}",
-					supported_types.join(", ")
+					"RPC URL type must be one of: {} for {:?} network",
+					supported_types.join(", "),
+					self.network_type
 				),
 				None,
 				None,
@@ -211,10 +217,13 @@ impl ConfigLoader for Network {
 
 		// Validate RPC URLs format
 		if !self.rpc_urls.iter().all(|rpc_url| {
-			rpc_url.url.starts_with("http://") || rpc_url.url.starts_with("https://")
+			rpc_url.url.starts_with("http://")
+				|| rpc_url.url.starts_with("https://")
+				|| rpc_url.url.starts_with("wss://")
+				|| rpc_url.url.starts_with("ws://")
 		}) {
 			return Err(ConfigError::validation_error(
-				"All RPC URLs must start with http:// or https://",
+				"All RPC URLs must start with http:// or https:// or wss:// or ws://",
 				None,
 				None,
 			));

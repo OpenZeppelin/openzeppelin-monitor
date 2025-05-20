@@ -9,6 +9,7 @@ use futures;
 use serde_json::json;
 use std::marker::PhantomData;
 use std::str::FromStr;
+use subxt::client::OnlineClient;
 use tracing::instrument;
 
 use crate::{
@@ -17,7 +18,7 @@ use crate::{
 		blockchain::{
 			client::BlockChainClient,
 			transports::{BlockchainTransport, MidnightTransportClient},
-			BlockFilterFactory,
+			BlockFilterFactory, WsTransportClient,
 		},
 		filter::MidnightBlockFilter,
 	},
@@ -25,21 +26,25 @@ use crate::{
 
 /// Client implementation for Midnight blockchain
 ///
-/// Provides high-level access to Midnight blockchain data and operations through HTTP transport.
+/// Provides high-level access to Midnight blockchain data and operations through HTTP and WebSocket transport.
 #[derive(Clone)]
-pub struct MidnightClient<T: Send + Sync + Clone> {
+pub struct MidnightClient<H: Send + Sync + Clone, W: Send + Sync + Clone> {
 	/// The underlying Midnight transport client for RPC communication
-	http_client: T,
+	http_client: H,
+	ws_client: Option<W>,
 }
 
-impl<T: Send + Sync + Clone> MidnightClient<T> {
-	/// Creates a new Midnight client instance with a specific transport client
-	pub fn new_with_transport(http_client: T) -> Self {
-		Self { http_client }
+impl<H: Send + Sync + Clone, W: Send + Sync + Clone> MidnightClient<H, W> {
+	/// Creates a new Midnight client instance with specific transport clients
+	pub fn new_with_transport(http_client: H, ws_client: Option<W>) -> Self {
+		Self {
+			http_client,
+			ws_client,
+		}
 	}
 }
 
-impl MidnightClient<MidnightTransportClient> {
+impl MidnightClient<MidnightTransportClient, WsTransportClient> {
 	/// Creates a new Midnight client instance
 	///
 	/// # Arguments
@@ -49,11 +54,26 @@ impl MidnightClient<MidnightTransportClient> {
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let http_client = MidnightTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(http_client))
+		let ws_client = WsTransportClient::new(network).await.map_or_else(
+			|e| {
+				// We fail to create a WebSocket client if there are no working URLs
+				// This limits the functionality of the service, by not allowing monitoring of transaction status or event-related data
+				// but it is not a critical issue
+				tracing::warn!("Failed to create WebSocket client: {}", e);
+				None
+			},
+			Some,
+		);
+		Ok(Self::new_with_transport(http_client, ws_client))
 	}
 }
 
-impl<T: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for MidnightClient<T> {
+#[async_trait]
+impl<
+		H: Send + Sync + Clone + BlockchainTransport,
+		W: Send + Sync + Clone + BlockchainTransport,
+	> BlockFilterFactory<Self> for MidnightClient<H, W>
+{
 	type Filter = MidnightBlockFilter<Self>;
 	fn filter() -> Self::Filter {
 		MidnightBlockFilter {
@@ -75,8 +95,8 @@ pub trait MidnightClientTrait {
 	/// * `Result<Vec<MidnightEvent>, anyhow::Error>` - Collection of events or error
 	async fn get_events(
 		&self,
-		start_block: u32,
-		end_block: Option<u32>,
+		start_block: u64,
+		end_block: Option<u64>,
 	) -> Result<Vec<MidnightEvent>, anyhow::Error>;
 
 	/// Retrieves the chain type
@@ -89,16 +109,103 @@ pub trait MidnightClientTrait {
 }
 
 #[async_trait]
-impl<T: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for MidnightClient<T> {
+impl<
+		H: Send + Sync + Clone + BlockchainTransport,
+		W: Send + Sync + Clone + BlockchainTransport,
+	> MidnightClientTrait for MidnightClient<H, W>
+{
 	/// Retrieves events within a block range
 	/// Compactc does not support events yet
 	#[instrument(skip(self), fields(start_block, end_block))]
 	async fn get_events(
 		&self,
-		_start_block: u32,
-		_end_block: Option<u32>,
+		start_block: u64,
+		end_block: Option<u64>,
 	) -> Result<Vec<MidnightEvent>, anyhow::Error> {
-		Ok(Vec::<MidnightEvent>::new())
+		let websocket_client = self
+			.ws_client
+			.as_ref()
+			.ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?;
+
+		let substrate_client = OnlineClient::<subxt::SubstrateConfig>::from_insecure_url(
+			websocket_client.get_current_url().await,
+		)
+		.await
+		.map_err(|e| anyhow::anyhow!("Failed to create subxt client: {}", e))?;
+
+		let end_block = end_block.unwrap_or(start_block);
+		let block_range = start_block..=end_block;
+
+		// Fetch block hashes in parallel
+		let block_hashes = futures::future::join_all(block_range.clone().map(|block_number| {
+			let client = self.http_client.clone();
+			async move {
+				let params = json!([format!("0x{:x}", block_number)]);
+				let response = client
+					.send_raw_request("chain_getBlockHash", Some(params))
+					.await
+					.with_context(|| format!("Failed to get block hash for: {}", block_number))?;
+
+				let hash_str = response
+					.get("result")
+					.and_then(|v| v.as_str())
+					.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
+
+				subxt::utils::H256::from_str(hash_str)
+					.map_err(|e| anyhow::anyhow!("Failed to parse block hash: {}", e))
+			}
+		}))
+		.await
+		.into_iter()
+		.collect::<Result<Vec<_>, _>>()?;
+
+		// Fetch events for each block in parallel
+		let raw_events = futures::future::join_all(block_hashes.into_iter().map(|block_hash| {
+			let client = substrate_client.clone();
+			async move {
+				client
+					.events()
+					.at(block_hash)
+					.await
+					.map_err(|e| anyhow::anyhow!("Failed to get events: {}", e))
+			}
+		}))
+		.await
+		.into_iter()
+		.collect::<Result<Vec<_>, _>>()?;
+
+		// Decode events in parallel
+		let decoded_events =
+			futures::future::join_all(raw_events.into_iter().map(|block_events| {
+				let client = self.http_client.clone();
+				async move {
+					let event_bytes = block_events.bytes();
+					let params = json!([hex::encode(event_bytes)]);
+					let response = client
+						.send_raw_request("midnight_decodeEvents", Some(params))
+						.await?;
+
+					let response_result = response
+						.get("result")
+						.and_then(|v| v.as_array())
+						.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
+
+					Ok::<Vec<MidnightEvent>, anyhow::Error>(
+						response_result
+							.iter()
+							.map(|v| MidnightEvent::from(v.clone()))
+							.collect(),
+					)
+				}
+			}))
+			.await
+			.into_iter()
+			.collect::<Result<Vec<_>, _>>()?
+			.into_iter()
+			.flatten()
+			.collect();
+
+		Ok(decoded_events)
 	}
 
 	/// Retrieves the chain type
@@ -122,7 +229,11 @@ impl<T: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for Midni
 }
 
 #[async_trait]
-impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for MidnightClient<T> {
+impl<
+		H: Send + Sync + Clone + BlockchainTransport,
+		W: Send + Sync + Clone + BlockchainTransport,
+	> BlockChainClient for MidnightClient<H, W>
+{
 	/// Retrieves the latest block number with retry functionality
 	#[instrument(skip(self))]
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {

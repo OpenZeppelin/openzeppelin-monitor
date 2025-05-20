@@ -49,7 +49,7 @@ For high-availability setups, configure at least 3 (private) RPC endpoints with 
 
 |type_
 |String
-|Type of endpoint (currently only "rpc" is supported)
+|Type of endpoint ("rpc" or "ws_rpc")
 
 |url
 |String
@@ -273,7 +273,8 @@ graph TD
         E1 -->|For each block| F1[Get Block Data]
         F1 -->|chain_getBlockHash| G3[Get Block Hash]
         G3 -->|midnight_jsonBlock| H1[Get Full Block]
-        H1 --> I1[Complete]
+        H1 -->|If websocket RPC provided| I1[Get Events]
+        I1 --> J1[Complete]
     end
 ....
 
@@ -305,6 +306,8 @@ graph TD
 * Fetching block data (per block):
   ** `chain_getBlockHash` - Gets the block hash for a specific block number
   ** `midnight_jsonBlock` - Gets the full block data using the block hash
+* When websocket RPC is provided:
+  ** `get_events` - Gets transaction events for determining transaction status
 
 
 == Best Practices

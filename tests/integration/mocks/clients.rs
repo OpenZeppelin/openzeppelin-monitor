@@ -142,8 +142,8 @@ mock! {
 	impl<T: Send + Sync + Clone + 'static> MidnightClientTrait for MidnightClientTrait<T> {
 		async fn get_events(
 			&self,
-			start_block: u32,
-			end_block: Option<u32>,
+			start_block: u64,
+			end_block: Option<u64>,
 		) -> Result<Vec<MidnightEvent>, anyhow::Error>;
 
 		async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error>;

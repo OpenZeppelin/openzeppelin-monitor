@@ -72,27 +72,17 @@ pub struct MidnightRpcTransaction {
 /// This type implements convenience methods for working with Midnight transactions
 /// while maintaining compatibility with the RPC response format.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Transaction {
-	#[serde(flatten)]
-	pub inner: MidnightRpcTransaction,
-	// Status of the transaction (checks for existence of fallible_transcript, guaranteed_transcript, etc)
-	pub status: bool,
-}
+pub struct Transaction(pub MidnightRpcTransaction);
 
 impl Transaction {
 	/// Get the transaction hash
 	pub fn hash(&self) -> &String {
-		&self.inner.tx_hash
-	}
-
-	/// Get the status of the transaction
-	pub fn status(&self) -> bool {
-		self.status
+		&self.0.tx_hash
 	}
 
 	/// Get the contract addresses of the transaction
 	pub fn contract_addresses(&self) -> Vec<String> {
-		self.inner
+		self.0
 			.operations
 			.iter()
 			.filter_map(|op| match op {
@@ -106,11 +96,15 @@ impl Transaction {
 
 	/// Get the contract entry points of the transaction
 	pub fn entry_points(&self) -> Vec<String> {
-		self.inner
+		self.0
 			.operations
 			.iter()
 			.filter_map(|op| match op {
-				Operation::Call { entry_point, .. } => Some(entry_point.clone()),
+				Operation::Call { entry_point, .. } => Some(
+					// Decode the entry point from hex to utf8
+					String::from_utf8(hex::decode(entry_point.clone()).unwrap_or_default())
+						.unwrap_or_default(),
+				),
 				_ => None,
 			})
 			.collect()
@@ -118,7 +112,7 @@ impl Transaction {
 
 	/// Get the contract addresses and entry points of the transaction
 	pub fn contract_addresses_and_entry_points(&self) -> Vec<(String, String)> {
-		self.inner
+		self.0
 			.operations
 			.iter()
 			.map(|op| match op {
@@ -143,16 +137,13 @@ impl Transaction {
 
 impl From<MidnightRpcTransaction> for Transaction {
 	fn from(tx: MidnightRpcTransaction) -> Self {
-		Self {
-			inner: tx,
-			status: true, // TODO: add status
-		}
+		Self(tx)
 	}
 }
 
 impl From<Transaction> for MidnightRpcTransaction {
 	fn from(tx: Transaction) -> Self {
-		tx.inner
+		tx.0
 	}
 }
 
@@ -212,7 +203,7 @@ impl Deref for Transaction {
 	type Target = MidnightRpcTransaction;
 
 	fn deref(&self) -> &Self::Target {
-		&self.inner
+		&self.0
 	}
 }
 
@@ -277,29 +268,13 @@ mod tests {
 	}
 
 	#[test]
-	fn test_transaction_status() {
-		let tx_info = MidnightRpcTransaction {
-			tx_hash: "test_hash".to_string(),
-			operations: vec![],
-			identifiers: vec![],
-		};
-
-		let transaction = Transaction {
-			inner: tx_info,
-			status: true, // TODO: Currently hardcoded to true
-		};
-
-		assert!(transaction.status());
-	}
-
-	#[test]
 	fn test_contract_addresses() {
 		let tx_info = MidnightRpcTransaction {
 			tx_hash: "test_hash".to_string(),
 			operations: vec![
 				Operation::Call {
 					address: "0x123".to_string(),
-					entry_point: "entry1".to_string(),
+					entry_point: "656E74727931".to_string(),
 				},
 				Operation::Deploy {
 					address: "0x456".to_string(),
@@ -328,11 +303,11 @@ mod tests {
 			operations: vec![
 				Operation::Call {
 					address: "0x123".to_string(),
-					entry_point: "entry1".to_string(),
+					entry_point: "656E74727931".to_string(),
 				},
 				Operation::Call {
 					address: "0x456".to_string(),
-					entry_point: "entry2".to_string(),
+					entry_point: "656E74727932".to_string(),
 				},
 				Operation::Deploy {
 					address: "0x789".to_string(),
@@ -356,11 +331,11 @@ mod tests {
 			operations: vec![
 				Operation::Call {
 					address: "0x123".to_string(),
-					entry_point: "entry1".to_string(),
+					entry_point: "656E74727931".to_string(),
 				},
 				Operation::Call {
 					address: "0x456".to_string(),
-					entry_point: "entry2".to_string(),
+					entry_point: "656E74727932".to_string(),
 				},
 				Operation::Deploy {
 					address: "0x789".to_string(),
@@ -371,6 +346,7 @@ mod tests {
 		};
 
 		let transaction = Transaction::from(tx_info);
+
 		let pairs = transaction.contract_addresses_and_entry_points();
 
 		assert_eq!(pairs.len(), 2);
