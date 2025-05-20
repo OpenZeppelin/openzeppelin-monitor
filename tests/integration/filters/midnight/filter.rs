@@ -6,10 +6,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use openzeppelin_monitor::{
-	models::{BlockChainType, BlockType, MidnightChainType, MonitorMatch},
+	models::{BlockChainType, BlockType, MidnightChainType, MonitorMatch, TransactionStatus},
 	services::filter::{handle_match, FilterError, FilterService},
 	utils::tests::{
-		midnight::{block::BlockBuilder, monitor::MonitorBuilder, transaction::TransactionBuilder},
+		midnight::{
+			block::BlockBuilder, event::EventBuilder, monitor::MonitorBuilder,
+			transaction::TransactionBuilder,
+		},
 		network::NetworkBuilder,
 	},
 };
@@ -526,5 +529,249 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 		"riskyFunction",
 		"Function signature value should be preserved"
 	);
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_monitor_transaction_status_success() -> Result<(), Box<FilterError>> {
+	let filter_service = FilterService::new();
+
+	let network = NetworkBuilder::new()
+		.network_type(BlockChainType::Midnight)
+		.build();
+
+	// Create a monitor that watches for successful transactions
+	let monitor = MonitorBuilder::new()
+		.name("Test Success Transaction Monitor")
+		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
+		.transaction(TransactionStatus::Success, None)
+		.build();
+
+	// Create a test transaction
+	let transaction = TransactionBuilder::new()
+		.add_call_operation(
+			"0202000000000000000000000000000000000000000000000000000000000000000000".to_string(),
+			"main".to_string(),
+		)
+		.build();
+
+	// Create a block containing our transaction
+	let block = BlockBuilder::new()
+		.number(7)
+		.add_rpc_transaction(transaction.clone().into())
+		.build();
+
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	mock_client
+		.expect_get_chain_type()
+		.returning(|| Ok(MidnightChainType::Development));
+
+	// Create a success event for the transaction
+	let success_event = EventBuilder::new()
+		.tx_applied(transaction.hash().to_string())
+		.build();
+
+	// Mock successful event for the transaction
+	mock_client
+		.expect_get_events()
+		.returning(move |_, _| Ok(vec![success_event.clone()]));
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&network,
+			&BlockType::Midnight(Box::new(block)),
+			&[monitor.clone()],
+			None,
+		)
+		.await?;
+
+	assert!(
+		!matches.is_empty(),
+		"Should have found matching transactions"
+	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::Midnight(midnight_match) => {
+			assert!(midnight_match.matched_on.transactions.len() == 1);
+			assert!(midnight_match.matched_on.events.is_empty());
+			assert!(midnight_match.matched_on.functions.is_empty());
+			assert!(midnight_match.matched_on.transactions[0].status == TransactionStatus::Success);
+		}
+		_ => {
+			panic!("Expected Midnight match");
+		}
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_monitor_transaction_status_failure() -> Result<(), Box<FilterError>> {
+	let filter_service = FilterService::new();
+
+	let network = NetworkBuilder::new()
+		.network_type(BlockChainType::Midnight)
+		.build();
+
+	// Create a monitor that watches for failed transactions
+	let monitor = MonitorBuilder::new()
+		.name("Test Failure Transaction Monitor")
+		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
+		.transaction(TransactionStatus::Failure, None)
+		.build();
+
+	// Create a test transaction
+	let transaction = TransactionBuilder::new()
+		.add_call_operation(
+			"0202000000000000000000000000000000000000000000000000000000000000000000".to_string(),
+			"main".to_string(),
+		)
+		.build();
+
+	// Create a block containing our transaction
+	let block = BlockBuilder::new()
+		.number(8)
+		.add_rpc_transaction(transaction.into())
+		.build();
+
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	mock_client
+		.expect_get_chain_type()
+		.returning(|| Ok(MidnightChainType::Development));
+
+	// Mock no events (which means failure)
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
+
+	// Run filter_block with the test data
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&network,
+			&BlockType::Midnight(Box::new(block)),
+			&[monitor.clone()],
+			None,
+		)
+		.await?;
+
+	assert!(
+		!matches.is_empty(),
+		"Should have found matching transactions"
+	);
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::Midnight(midnight_match) => {
+			assert!(midnight_match.matched_on.transactions.len() == 1);
+			assert!(midnight_match.matched_on.events.is_empty());
+			assert!(midnight_match.matched_on.functions.is_empty());
+			assert!(midnight_match.matched_on.transactions[0].status == TransactionStatus::Failure);
+		}
+		_ => {
+			panic!("Expected Midnight match");
+		}
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_monitor_transaction_status_any() -> Result<(), Box<FilterError>> {
+	let filter_service = FilterService::new();
+
+	let network = NetworkBuilder::new()
+		.network_type(BlockChainType::Midnight)
+		.build();
+
+	// Create a monitor that watches for any transaction status
+	let monitor = MonitorBuilder::new()
+		.name("Test Any Transaction Monitor")
+		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
+		.transaction(TransactionStatus::Any, None)
+		.build();
+
+	// Create two test transactions
+	let success_tx = TransactionBuilder::new()
+		.add_call_operation(
+			"0202000000000000000000000000000000000000000000000000000000000000000000".to_string(),
+			"main".to_string(),
+		)
+		.hash("0x1000000000000000000000000000000000000000000000000000000000000000".to_string())
+		.build();
+
+	let failure_tx = TransactionBuilder::new()
+		.add_call_operation(
+			"0202000000000000000000000000000000000000000000000000000000000000000000".to_string(),
+			"main".to_string(),
+		)
+		.hash("0x2000000000000000000000000000000000000000000000000000000000000000".to_string())
+		.build();
+
+	// Create a block containing both transactions
+	let block = BlockBuilder::new()
+		.number(9)
+		.add_rpc_transaction(success_tx.clone().into())
+		.add_rpc_transaction(failure_tx.clone().into())
+		.build();
+
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	mock_client
+		.expect_get_chain_type()
+		.returning(|| Ok(MidnightChainType::Development));
+
+	// Create a success event for the first transaction
+	let success_event = EventBuilder::new()
+		.tx_applied(success_tx.hash().to_string())
+		.build();
+
+	// Mock events to return success for first tx, nothing for second tx
+	mock_client
+		.expect_get_events()
+		.returning(move |_, _| Ok(vec![success_event.clone()]));
+
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&network,
+			&BlockType::Midnight(Box::new(block)),
+			&[monitor.clone()],
+			None,
+		)
+		.await?;
+
+	assert!(
+		!matches.is_empty(),
+		"Should have found matching transactions"
+	);
+	assert_eq!(matches.len(), 2, "Expected exactly two matches");
+
+	// First match should be the success transaction
+	match &matches[0] {
+		MonitorMatch::Midnight(midnight_match) => {
+			assert!(midnight_match.matched_on.transactions.len() == 1);
+			assert!(midnight_match.matched_on.events.is_empty());
+			assert!(midnight_match.matched_on.functions.is_empty());
+			assert!(midnight_match.matched_on.transactions[0].status == TransactionStatus::Success);
+		}
+		_ => {
+			panic!("Expected Midnight match");
+		}
+	}
+
+	// Second match should be the failure transaction
+	match &matches[1] {
+		MonitorMatch::Midnight(midnight_match) => {
+			assert!(midnight_match.matched_on.transactions.len() == 1);
+			assert!(midnight_match.matched_on.events.is_empty());
+			assert!(midnight_match.matched_on.functions.is_empty());
+			assert!(midnight_match.matched_on.transactions[0].status == TransactionStatus::Failure);
+		}
+		_ => {
+			panic!("Expected Midnight match");
+		}
+	}
+
 	Ok(())
 }
