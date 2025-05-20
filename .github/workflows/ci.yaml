@@ -4,9 +4,13 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: [docs/**, '**.md', .github/**]
   push:
-    branches:
-      - main
+    branches: [main]
+    paths-ignore:
+      - docs/**
+      - '**.md'
+      - .github/**
 # run concurrency group for the workflow
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,11 +43,13 @@ jobs:
               - 'Cargo.toml'
             docker:
               - 'Dockerfile.development'
+              - 'Dockerfile.production'
+              - 'docker-compose.yml'
               - 'Cargo.lock'
               - 'Cargo.toml'
             tests:
               - '**/*.rs'
-              - tests/**/*.json
+              - 'tests/**/*.json'
   ci:
     if: ${{ github.event.pull_request.draft == false && always() }}
     permissions:
