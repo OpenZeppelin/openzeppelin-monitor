@@ -5799,6 +5799,7 @@ dependencies = [
  "email_address",
  "ethabi",
  "futures",
+ "futures-util",
  "glob",
  "hex",
  "hmac 0.12.1",

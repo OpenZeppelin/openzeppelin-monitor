@@ -110,7 +110,11 @@ impl Transaction {
 			.operations
 			.iter()
 			.filter_map(|op| match op {
-				Operation::Call { entry_point, .. } => Some(entry_point.clone()),
+				Operation::Call { entry_point, .. } => Some(
+					// Decode the entry point from hex to utf8
+					String::from_utf8(hex::decode(entry_point.clone()).unwrap_or_default())
+						.unwrap_or_default(),
+				),
 				_ => None,
 			})
 			.collect()
@@ -299,7 +303,7 @@ mod tests {
 			operations: vec![
 				Operation::Call {
 					address: "0x123".to_string(),
-					entry_point: "entry1".to_string(),
+					entry_point: "656E74727931".to_string(),
 				},
 				Operation::Deploy {
 					address: "0x456".to_string(),
@@ -328,11 +332,11 @@ mod tests {
 			operations: vec![
 				Operation::Call {
 					address: "0x123".to_string(),
-					entry_point: "entry1".to_string(),
+					entry_point: "656E74727931".to_string(),
 				},
 				Operation::Call {
 					address: "0x456".to_string(),
-					entry_point: "entry2".to_string(),
+					entry_point: "656E74727932".to_string(),
 				},
 				Operation::Deploy {
 					address: "0x789".to_string(),
@@ -356,11 +360,11 @@ mod tests {
 			operations: vec![
 				Operation::Call {
 					address: "0x123".to_string(),
-					entry_point: "entry1".to_string(),
+					entry_point: "656E74727931".to_string(),
 				},
 				Operation::Call {
 					address: "0x456".to_string(),
-					entry_point: "entry2".to_string(),
+					entry_point: "656E74727932".to_string(),
 				},
 				Operation::Deploy {
 					address: "0x789".to_string(),
@@ -371,6 +375,7 @@ mod tests {
 		};
 
 		let transaction = Transaction::from(tx_info);
+
 		let pairs = transaction.contract_addresses_and_entry_points();
 
 		assert_eq!(pairs.len(), 2);

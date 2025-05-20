@@ -22,7 +22,7 @@ pub struct WsTransportClient {
 	/// Current active URL
 	pub active_url: Arc<Mutex<String>>,
 	/// List of fallback URLs
-	fallback_urls: Vec<String>,
+	pub fallback_urls: Arc<Mutex<Vec<String>>>,
 }
 
 impl WsTransportClient {
@@ -60,7 +60,7 @@ impl WsTransportClient {
 			let url = rpc_url.url.as_ref().to_string();
 			let temp_client = Self {
 				active_url: Arc::new(Mutex::new(url.clone())),
-				fallback_urls: Vec::new(),
+				fallback_urls: Arc::new(Mutex::new(Vec::new())),
 			};
 
 			if temp_client.check_connection().await.is_ok() {
@@ -77,7 +77,7 @@ impl WsTransportClient {
 
 		Ok(Self {
 			active_url: Arc::new(Mutex::new(active_url)),
-			fallback_urls,
+			fallback_urls: Arc::new(Mutex::new(fallback_urls)),
 		})
 	}
 
@@ -94,15 +94,28 @@ impl WsTransportClient {
 
 	/// Tries to connect to a fallback URL if the current one fails
 	pub async fn try_fallback(&self) -> Result<(), anyhow::Error> {
-		for url in &self.fallback_urls {
-			if connect_async(url).await.is_ok() {
-				// Update active URL if connection successful
-				let mut active = self.active_url.lock().await;
-				*active = url.clone();
-				return Ok(());
-			}
+		let mut fallback_urls = self.fallback_urls.lock().await;
+		if fallback_urls.is_empty() {
+			return Err(anyhow::anyhow!("No fallback URLs available"));
 		}
-		Err(anyhow::anyhow!("No fallback URLs available"))
+
+		// Get the first fallback URL
+		let url = fallback_urls[0].clone();
+
+		if connect_async(&url).await.is_ok() {
+			// Update active URL if connection successful
+			let mut active = self.active_url.lock().await;
+			*active = url.clone();
+
+			// Remove the used URL from fallback_urls
+			fallback_urls.remove(0);
+
+			Ok(())
+		} else {
+			// Remove the failed URL from fallback_urls
+			fallback_urls.remove(0);
+			Err(anyhow::anyhow!("Failed to connect to fallback URL"))
+		}
 	}
 }
 
@@ -125,7 +138,7 @@ impl BlockchainTransport for WsTransportClient {
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		Ok(Value::Null)
+		Err(anyhow::anyhow!("`send_raw_request` not implemented"))
 	}
 
 	/// Updates the retry policy configuration
@@ -136,7 +149,7 @@ impl BlockchainTransport for WsTransportClient {
 		_retry_policy: ExponentialBackoff,
 		_retry_strategy: Option<TransientErrorRetryStrategy>,
 	) -> Result<(), anyhow::Error> {
-		Ok(())
+		Err(anyhow::anyhow!("`set_retry_policy` not implemented"))
 	}
 
 	/// Update endpoint manager with a new client
@@ -146,6 +159,8 @@ impl BlockchainTransport for WsTransportClient {
 		&mut self,
 		_client: ClientWithMiddleware,
 	) -> Result<(), anyhow::Error> {
-		Ok(())
+		Err(anyhow::anyhow!(
+			"`update_endpoint_manager_client` not implemented"
+		))
 	}
 }

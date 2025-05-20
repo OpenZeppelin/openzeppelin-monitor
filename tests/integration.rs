@@ -32,6 +32,7 @@ mod integration {
 			}
 			mod endpoint_manager;
 			mod http;
+			mod ws;
 		}
 	}
 	mod bootstrap {
