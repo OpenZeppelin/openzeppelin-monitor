@@ -72,27 +72,17 @@ pub struct MidnightRpcTransaction {
 /// This type implements convenience methods for working with Midnight transactions
 /// while maintaining compatibility with the RPC response format.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Transaction {
-	#[serde(flatten)]
-	pub inner: MidnightRpcTransaction,
-	// Status of the transaction (checks for existence of fallible_transcript, guaranteed_transcript, etc)
-	pub status: bool,
-}
+pub struct Transaction(pub MidnightRpcTransaction);
 
 impl Transaction {
 	/// Get the transaction hash
 	pub fn hash(&self) -> &String {
-		&self.inner.tx_hash
-	}
-
-	/// Get the status of the transaction
-	pub fn status(&self) -> bool {
-		self.status
+		&self.0.tx_hash
 	}
 
 	/// Get the contract addresses of the transaction
 	pub fn contract_addresses(&self) -> Vec<String> {
-		self.inner
+		self.0
 			.operations
 			.iter()
 			.filter_map(|op| match op {
@@ -106,7 +96,7 @@ impl Transaction {
 
 	/// Get the contract entry points of the transaction
 	pub fn entry_points(&self) -> Vec<String> {
-		self.inner
+		self.0
 			.operations
 			.iter()
 			.filter_map(|op| match op {
@@ -122,7 +112,7 @@ impl Transaction {
 
 	/// Get the contract addresses and entry points of the transaction
 	pub fn contract_addresses_and_entry_points(&self) -> Vec<(String, String)> {
-		self.inner
+		self.0
 			.operations
 			.iter()
 			.map(|op| match op {
@@ -147,16 +137,13 @@ impl Transaction {
 
 impl From<MidnightRpcTransaction> for Transaction {
 	fn from(tx: MidnightRpcTransaction) -> Self {
-		Self {
-			inner: tx,
-			status: true, // TODO: add status
-		}
+		Self(tx)
 	}
 }
 
 impl From<Transaction> for MidnightRpcTransaction {
 	fn from(tx: Transaction) -> Self {
-		tx.inner
+		tx.0
 	}
 }
 
@@ -216,7 +203,7 @@ impl Deref for Transaction {
 	type Target = MidnightRpcTransaction;
 
 	fn deref(&self) -> &Self::Target {
-		&self.inner
+		&self.0
 	}
 }
 
@@ -278,22 +265,6 @@ mod tests {
 			transaction.identifiers,
 			vec!["0x1234567890abcdef".to_string()]
 		);
-	}
-
-	#[test]
-	fn test_transaction_status() {
-		let tx_info = MidnightRpcTransaction {
-			tx_hash: "test_hash".to_string(),
-			operations: vec![],
-			identifiers: vec![],
-		};
-
-		let transaction = Transaction {
-			inner: tx_info,
-			status: true, // TODO: Currently hardcoded to true
-		};
-
-		assert!(transaction.status());
 	}
 
 	#[test]
