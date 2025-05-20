@@ -5,13 +5,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use openzeppelin_monitor::models::BlockChainType;
-use openzeppelin_monitor::utils::tests::network::NetworkBuilder;
 use openzeppelin_monitor::{
-	models::{BlockType, MidnightChainType, MonitorMatch},
+	models::{BlockChainType, BlockType, MidnightChainType, MonitorMatch},
 	services::filter::{handle_match, FilterError, FilterService},
-	utils::tests::midnight::{
-		block::BlockBuilder, monitor::MonitorBuilder, transaction::TransactionBuilder,
+	utils::tests::{
+		midnight::{block::BlockBuilder, monitor::MonitorBuilder, transaction::TransactionBuilder},
+		network::NetworkBuilder,
 	},
 };
 
@@ -73,6 +72,8 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 		.expect_get_chain_type()
 		.returning(|| Ok(MidnightChainType::Development));
 
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
+
 	// Run filter_block with the test data
 	let matches = filter_service
 		.filter_block(
@@ -120,7 +121,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 	let monitor = MonitorBuilder::new()
 		.name("Test Function Monitor With Expression")
 		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
-		.function("main(uint64 amount)", Some("amount >= 1000".to_string()))
+		.function("main(amount)", Some("amount >= 1000".to_string()))
 		.build();
 
 	// Create a test transaction with a function call and argument that matches the expression
@@ -141,6 +142,8 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok(MidnightChainType::Development));
+
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -195,8 +198,8 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 	let monitor = MonitorBuilder::new()
 		.name("Test Multi-Function Monitor")
 		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
-		.function("main(uint64 amount)", Some("amount >= 1000".to_string()))
-		.function("secondary(string note)", None)
+		.function("main(amount)", Some("amount >= 1000".to_string()))
+		.function("secondary(note)", None)
 		.build();
 
 	// Create two transactions, one for each function
@@ -226,6 +229,8 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok(MidnightChainType::Development));
+
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -302,7 +307,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	let monitor = MonitorBuilder::new()
 		.name("Test Handle Match Monitor")
 		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
-		.function("main(uint64 amount)", Some("amount >= 1000".to_string()))
+		.function("main(amount)", Some("amount >= 1000".to_string()))
 		.build();
 
 	let transaction = TransactionBuilder::new()
@@ -322,6 +327,8 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok(MidnightChainType::Development));
+
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
 	// Run filter_block with the test data
 	let matches = filter_service
@@ -392,6 +399,8 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 		.expect_get_chain_type()
 		.returning(|| Ok(MidnightChainType::Development));
 
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
+
 	// Run filter_block to get a match
 	let matches = filter_service
 		.filter_block(
@@ -441,13 +450,13 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 	let monitor = MonitorBuilder::new()
 		.name("Test Key Collision Monitor")
 		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
-		.function("riskyFunction(String signature, u64 amount)", None)
+		.function("riskyFunction(signature, amount)", None)
 		.build();
 
 	let transaction = TransactionBuilder::new()
 		.add_call_operation(
 			"0202000000000000000000000000000000000000000000000000000000000000000000".to_string(),
-			"riskyFunction(siangure, amount)".to_string(),
+			"riskyFunction(signature, amount)".to_string(),
 		)
 		.build();
 
@@ -460,6 +469,8 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok(MidnightChainType::Development));
+
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
 	// Run filter_block to get a match
 	let matches = filter_service

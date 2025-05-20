@@ -808,6 +808,7 @@ async fn test_execute_monitor_midnight() {
 	mock_client
 		.expect_get_chain_type()
 		.returning(move || Ok(MidnightChainType::Development));
+	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
 	let mut mocked_triggers = HashMap::new();
 	mocked_triggers.insert(

@@ -943,4 +943,31 @@ mod tests {
 		let event = Event(EventType::Unknown("unknown".to_string()));
 		assert_eq!(event.get_phase(), None);
 	}
+
+	#[test]
+	fn test_event_type_default() {
+		let default_event_type = EventType::default();
+		match default_event_type {
+			EventType::Unknown(message) => {
+				assert!(message.starts_with("Unknown event type: "));
+				assert!(message.contains("EventType"));
+			}
+			_ => panic!("Expected Unknown event type"),
+		}
+	}
+
+	#[test]
+	fn test_event_deref_mut() {
+		let mut event = Event(EventType::Unknown("original".to_string()));
+
+		// Test that we can modify the inner EventType through deref_mut
+		*event = EventType::Unknown("modified".to_string());
+
+		match &*event {
+			EventType::Unknown(message) => {
+				assert_eq!(message, "modified");
+			}
+			_ => panic!("Expected Unknown event type"),
+		}
+	}
 }
