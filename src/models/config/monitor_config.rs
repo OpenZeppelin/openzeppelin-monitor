@@ -251,7 +251,6 @@ mod tests {
 					"contract_spec": null
 				}
 			],
-            "description": "Test monitor configuration",
             "match_conditions": {
                 "functions": [
                     {"signature": "transfer(address,uint256)"}
@@ -261,8 +260,8 @@ mod tests {
                 ],
                 "transactions": [
 					{
-						"signature": "Transfer(address,address,uint256)",
-						"status": "Success"
+						"status": "Success",
+						"expression": null
 					}
                 ]
             },
@@ -315,7 +314,6 @@ mod tests {
 					"contract_spec": null
 				}
 			],
-            "description": "Test monitor configuration",
             "match_conditions": {
                 "functions": [
                     {"signature": "transfer(address,uint256)"}
@@ -325,8 +323,8 @@ mod tests {
                 ],
                 "transactions": [
 					{
-						"signature": "Transfer(address,address,uint256)",
-						"status": "Success"
+						"status": "Success",
+						"expression": null
 					}
                 ]
             },
@@ -344,7 +342,6 @@ mod tests {
 					"contract_spec": null
 				}
 			],
-            "description": "Test monitor configuration",
             "match_conditions": {
                 "functions": [
                     {"signature": "transfer(address,uint256)"}
@@ -354,8 +351,8 @@ mod tests {
                 ],
                 "transactions": [
 					{
-						"signature": "Transfer(address,address,uint256)",
-						"status": "Success"
+						"status": "Success",
+						"expression": null
 					}
                 ]
             },

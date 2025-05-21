@@ -117,6 +117,7 @@ pub async fn get_vault_client() -> SecurityResult<&'static VaultType> {
 /// All variants implement `ZeroizeOnDrop` to ensure secure memory cleanup.
 #[derive(Debug, Clone, Serialize, ZeroizeOnDrop)]
 #[serde(tag = "type", content = "value")]
+#[serde(deny_unknown_fields)]
 pub enum SecretValue {
 	/// A plain text secret value
 	Plain(SecretString),

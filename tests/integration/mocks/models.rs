@@ -1,11 +1,14 @@
 use mockito::{Mock, Server};
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, BlockType, EVMBlock, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt,
-		Network, StellarBlock, StellarLedgerInfo, StellarTransaction, StellarTransactionInfo,
+		BlockChainType, BlockType, EVMBlock, EVMReceiptLog, EVMTransactionReceipt, Network,
+		StellarBlock, StellarLedgerInfo, StellarTransaction, StellarTransactionInfo,
 		TransactionType,
 	},
-	utils::tests::{builders::network::NetworkBuilder, evm::receipt::ReceiptBuilder},
+	utils::tests::{
+		builders::network::NetworkBuilder,
+		evm::{receipt::ReceiptBuilder, transaction::TransactionBuilder},
+	},
 };
 use serde_json::json;
 
@@ -137,42 +140,11 @@ pub fn create_test_block(chain: BlockChainType, block_number: u64) -> BlockType 
 
 pub fn create_test_transaction(chain: BlockChainType) -> TransactionType {
 	match chain {
-		BlockChainType::EVM => {
-			let tx = alloy::consensus::TxLegacy {
-				chain_id: None,
-				nonce: 0,
-				gas_price: 0,
-				gas_limit: 0,
-				to: alloy::primitives::TxKind::Call(alloy::primitives::Address::ZERO),
-				value: alloy::primitives::U256::ZERO,
-				input: alloy::primitives::Bytes::default(),
-			};
-
-			let signature = alloy::signers::Signature::from_scalars_and_parity(
-				alloy::primitives::B256::ZERO,
-				alloy::primitives::B256::ZERO,
-				false,
-			);
-
-			let hash = alloy::primitives::B256::ZERO;
-
-			TransactionType::EVM(EVMTransaction::from(alloy::rpc::types::Transaction {
-				inner: alloy::consensus::transaction::Recovered::new_unchecked(
-					alloy::consensus::transaction::TxEnvelope::Legacy(
-						alloy::consensus::Signed::new_unchecked(tx, signature, hash),
-					),
-					alloy::primitives::Address::ZERO,
-				),
-				block_hash: None,
-				block_number: None,
-				transaction_index: None,
-				effective_gas_price: None,
-			}))
-		}
+		BlockChainType::EVM => TransactionType::EVM(TransactionBuilder::new().build()),
 		BlockChainType::Stellar => {
-			TransactionType::Stellar(StellarTransaction::from(StellarTransactionInfo {
+			TransactionType::Stellar(Box::new(StellarTransaction::from(StellarTransactionInfo {
 				..Default::default()
-			}))
+			})))
 		}
 		_ => panic!("Unsupported chain"),
 	}

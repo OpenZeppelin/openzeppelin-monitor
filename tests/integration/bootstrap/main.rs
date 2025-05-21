@@ -27,7 +27,10 @@ use openzeppelin_monitor::{
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
-	utils::tests::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
+	utils::tests::{
+		evm::{monitor::MonitorBuilder, transaction::TransactionBuilder},
+		trigger::TriggerBuilder,
+	},
 };
 use std::str::FromStr;
 use stellar_xdr::curr::{
@@ -64,10 +67,7 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 	match chain {
 		BlockChainType::EVM => MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor("test", vec!["ethereum_mainnet"], false, vec![]),
-			transaction: match create_test_transaction(chain) {
-				TransactionType::EVM(tx) => tx,
-				_ => panic!("Expected EVM transaction"),
-			},
+			transaction: TransactionBuilder::new().build(),
 			network_slug: "ethereum_mainnet".to_string(),
 			receipt: Some(EVMTransactionReceipt::default()),
 			logs: Some(vec![]),
@@ -77,7 +77,7 @@ fn create_test_monitor_match(chain: BlockChainType) -> MonitorMatch {
 		BlockChainType::Stellar => MonitorMatch::Stellar(Box::new(StellarMonitorMatch {
 			monitor: create_test_monitor("test", vec!["stellar_mainnet"], false, vec![]),
 			transaction: match create_test_transaction(chain) {
-				TransactionType::Stellar(tx) => tx,
+				TransactionType::Stellar(tx) => *tx,
 				_ => panic!("Expected Stellar transaction"),
 			},
 			network_slug: "stellar_mainnet".to_string(),
@@ -496,10 +496,7 @@ print(True)  # Always return true for test
 		network_slug: "ethereum_mainnet".to_string(),
 		processing_results: vec![MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor,
-			transaction: match create_test_transaction(BlockChainType::EVM) {
-				TransactionType::EVM(tx) => tx,
-				_ => panic!("Expected EVM transaction"),
-			},
+			transaction: TransactionBuilder::new().build(),
 			receipt: Some(EVMTransactionReceipt::default()),
 			logs: Some(vec![]),
 			network_slug: "ethereum_mainnet".to_string(),

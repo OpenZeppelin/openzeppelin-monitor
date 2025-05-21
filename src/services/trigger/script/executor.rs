@@ -241,15 +241,12 @@ mod tests {
 	use super::*;
 	use crate::{
 		models::{
-			AddressWithSpec, EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt,
-			EventCondition, FunctionCondition, MatchConditions, Monitor, MonitorMatch,
-			TransactionCondition,
+			AddressWithSpec, EVMMonitorMatch, EVMReceiptLog, EventCondition, FunctionCondition,
+			MatchConditions, Monitor, MonitorMatch, TransactionCondition,
 		},
-		utils::tests::evm::{monitor::MonitorBuilder, receipt::ReceiptBuilder},
-	};
-	use alloy::{
-		consensus::{transaction::Recovered, Signed, TxEnvelope},
-		primitives::{Address, Bytes, TxKind, B256, U256},
+		utils::tests::evm::{
+			monitor::MonitorBuilder, receipt::ReceiptBuilder, transaction::TransactionBuilder,
+		},
 	};
 	use std::{fs, path::Path, time::Instant};
 
@@ -292,47 +289,15 @@ mod tests {
 		builder.build()
 	}
 
-	fn create_test_evm_transaction_receipt() -> EVMTransactionReceipt {
-		ReceiptBuilder::new().build()
-	}
-
 	fn create_test_evm_logs() -> Vec<EVMReceiptLog> {
 		ReceiptBuilder::new().build().logs.clone()
-	}
-
-	fn create_test_evm_transaction() -> EVMTransaction {
-		let tx = alloy::consensus::TxLegacy {
-			chain_id: None,
-			nonce: 0,
-			gas_price: 0,
-			gas_limit: 0,
-			to: TxKind::Call(Address::ZERO),
-			value: U256::ZERO,
-			input: Bytes::default(),
-		};
-
-		let signature =
-			alloy::signers::Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
-
-		let hash = B256::ZERO;
-
-		EVMTransaction::from(alloy::rpc::types::Transaction {
-			inner: Recovered::new_unchecked(
-				TxEnvelope::Legacy(Signed::new_unchecked(tx, signature, hash)),
-				Address::ZERO,
-			),
-			block_hash: None,
-			block_number: None,
-			transaction_index: None,
-			effective_gas_price: None,
-		})
 	}
 
 	fn create_mock_monitor_match() -> MonitorMatch {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
-			transaction: create_test_evm_transaction(),
-			receipt: Some(create_test_evm_transaction_receipt()),
+			transaction: TransactionBuilder::new().build(),
+			receipt: Some(ReceiptBuilder::new().build()),
 			logs: Some(create_test_evm_logs()),
 			network_slug: "evm_mainnet".to_string(),
 			matched_on: MatchConditions {

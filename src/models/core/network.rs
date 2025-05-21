@@ -6,6 +6,7 @@ use crate::models::{BlockChainType, SecretValue};
 ///
 /// Defines connection details and operational parameters for a specific blockchain network.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Network {
 	/// Type of blockchain (EVM, Stellar, etc)
 	pub network_type: BlockChainType,
@@ -43,6 +44,7 @@ pub struct Network {
 
 /// RPC endpoint configuration with load balancing weight
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct RpcUrl {
 	/// Type of RPC endpoint (e.g. "rpc")
 	pub type_: String,

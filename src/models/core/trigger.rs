@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for actions to take when monitored conditions are met.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Trigger {
 	/// Unique name identifying this trigger
 	pub name: String,
@@ -18,6 +19,7 @@ pub struct Trigger {
 /// Supported trigger action types
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[serde(deny_unknown_fields)]
 pub enum TriggerType {
 	/// Send notification to Slack
 	Slack,
@@ -35,6 +37,7 @@ pub enum TriggerType {
 
 /// Notification message fields
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct NotificationMessage {
 	/// Notification title or subject
 	pub title: String,
@@ -44,6 +47,7 @@ pub struct NotificationMessage {
 
 /// Type-specific configuration for triggers
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 #[serde(untagged)]
 pub enum TriggerTypeConfig {
 	/// Slack notification configuration

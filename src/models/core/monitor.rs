@@ -12,6 +12,7 @@ use crate::models::{blockchain::ContractSpec, ChainConfiguration};
 ///   to the matched transactions before triggering the notifications
 /// - Triggers to execute when conditions are met
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Monitor {
 	/// Unique name identifying this monitor
 	pub name: String,
@@ -41,6 +42,7 @@ pub struct Monitor {
 
 /// Contract address with optional ABI for decoding transactions and events
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AddressWithSpec {
 	/// Contract address in the network's native format
 	pub address: String,
@@ -51,6 +53,7 @@ pub struct AddressWithSpec {
 
 /// Collection of conditions that can trigger a monitor
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct MatchConditions {
 	/// Function calls to match
 	pub functions: Vec<FunctionCondition>,
@@ -64,6 +67,7 @@ pub struct MatchConditions {
 
 /// Condition for matching contract function calls
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct FunctionCondition {
 	/// Function signature (e.g., "transfer(address,uint256)")
 	pub signature: String,
@@ -74,6 +78,7 @@ pub struct FunctionCondition {
 
 /// Condition for matching contract events
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct EventCondition {
 	/// Event signature (e.g., "Transfer(address,address,uint256)")
 	pub signature: String,
@@ -84,6 +89,7 @@ pub struct EventCondition {
 
 /// Condition for matching transaction states
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct TransactionCondition {
 	/// Required transaction status
 	pub status: TransactionStatus,
@@ -94,6 +100,7 @@ pub struct TransactionCondition {
 
 /// Possible transaction execution states
 #[derive(Debug, Copy, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub enum TransactionStatus {
 	/// Match any transaction status
 	Any,
@@ -105,6 +112,7 @@ pub enum TransactionStatus {
 
 /// Conditions that should be met prior to triggering notifications
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct TriggerConditions {
 	/// The path to the script
 	pub script_path: String,
