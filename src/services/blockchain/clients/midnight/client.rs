@@ -13,7 +13,7 @@ use subxt::client::OnlineClient;
 use tracing::instrument;
 
 use crate::{
-	models::{BlockType, MidnightBlock, MidnightChainType, MidnightEvent, Network},
+	models::{BlockType, MidnightBlock, MidnightEvent, Network},
 	services::{
 		blockchain::{
 			client::BlockChainClient,
@@ -104,8 +104,8 @@ pub trait MidnightClientTrait {
 	/// This is specific for Polkadot-based chains
 	///
 	/// # Returns
-	/// * `Result<MidnightChainType, anyhow::Error>` - Chain type
-	async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error>;
+	/// * `Result<String, anyhow::Error>` - Chain type
+	async fn get_chain_type(&self) -> Result<String, anyhow::Error>;
 }
 
 #[async_trait]
@@ -210,21 +210,18 @@ impl<
 
 	/// Retrieves the chain type
 	#[instrument(skip(self))]
-	async fn get_chain_type(&self) -> Result<MidnightChainType, anyhow::Error> {
+	async fn get_chain_type(&self) -> Result<String, anyhow::Error> {
 		let response = self
 			.http_client
-			// TODO: Consider using system_chain instead of system_chainType and filtering on "testnet" or "mainnet"
-			// Since Midnight's current testnet-02 returns "Live" instead of "Development" for `system_chainType`
-			.send_raw_request::<serde_json::Value>("system_chainType", None)
+			.send_raw_request::<serde_json::Value>("system_chain", None)
 			.await
 			.with_context(|| "Failed to get chain type")?;
 
-		Ok(MidnightChainType::from_str(
-			response
-				.get("result")
-				.and_then(|v| v.as_str())
-				.unwrap_or_default(),
-		)?)
+		Ok(response
+			.get("result")
+			.and_then(|v| v.as_str())
+			.unwrap_or_default()
+			.to_string())
 	}
 }
 

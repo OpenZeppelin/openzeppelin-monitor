@@ -10,8 +10,7 @@ use crate::integration::{
 use mockall::predicate;
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, EVMTransactionReceipt, MidnightChainType, Monitor, ScriptLanguage, Trigger,
-		TriggerConditions,
+		BlockChainType, EVMTransactionReceipt, Monitor, ScriptLanguage, Trigger, TriggerConditions,
 	},
 	repositories::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkService,
@@ -981,7 +980,7 @@ async fn test_execute_monitor_midnight() {
 
 	mock_client
 		.expect_get_chain_type()
-		.returning(move || Ok(MidnightChainType::Development));
+		.returning(move || Ok("testnet-02-1".to_string()));
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
 	let mut mocked_triggers = HashMap::new();
@@ -1058,7 +1057,7 @@ async fn test_execute_monitor_midnight_failed_to_get_block() {
 
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client
 		.expect_get_blocks()
@@ -1165,7 +1164,7 @@ async fn test_execute_monitor_midnight_failed_to_get_blocks() {
 
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client
 		.expect_get_blocks()
@@ -1226,7 +1225,7 @@ async fn test_execute_monitor_midnight_failed_to_get_latest_block_number() {
 
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client
 		.expect_get_latest_block_number()

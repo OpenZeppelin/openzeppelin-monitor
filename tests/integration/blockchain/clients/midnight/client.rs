@@ -5,7 +5,7 @@ use crate::integration::mocks::{
 use mockall::predicate;
 use mockito::Server;
 use openzeppelin_monitor::{
-	models::{BlockType, MidnightChainType},
+	models::BlockType,
 	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
 	utils::tests::midnight::block::BlockBuilder,
 };
@@ -31,10 +31,10 @@ async fn test_get_chain_type() {
 	// Mock system_chain when initializing client
 	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
 
-	// Test Development chain type
+	// Test testnet chain type
 	let mock_dev = server
 		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":"Development","id":1}"#)
+		.with_body(r#"{"jsonrpc":"2.0","result":"testnet-02-1","id":1}"#)
 		.expect(1)
 		.create_async()
 		.await;
@@ -46,19 +46,19 @@ async fn test_get_chain_type() {
 
 	let result = client.get_chain_type().await;
 	assert!(result.is_ok());
-	assert_eq!(result.unwrap(), MidnightChainType::Development);
+	assert_eq!(result.unwrap(), "testnet-02-1");
 	mock_dev.assert_async().await;
 
-	// Test Live chain type
+	// Test mainnet chain type
 	let mock_prod = server
 		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":"Live","id":1}"#)
+		.with_body(r#"{"jsonrpc":"2.0","result":"mainnet-01-1","id":1}"#)
 		.create_async()
 		.await;
 
 	let result = client.get_chain_type().await;
 	assert!(result.is_ok());
-	assert_eq!(result.unwrap(), MidnightChainType::Live);
+	assert_eq!(result.unwrap(), "mainnet-01-1");
 	mock_prod.assert_async().await;
 }
 
@@ -69,10 +69,10 @@ async fn test_get_chain_type_error_cases() {
 	// Mock system_chain when initializing client
 	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
 
-	// Test invalid JSON response
-	let mock_invalid_json = server
+	// Test missing result field
+	let mock_missing_result = server
 		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":null,"id":1}"#)
+		.with_body(r#"{"jsonrpc":"2.0","id":1}"#)
 		.create_async()
 		.await;
 
@@ -81,23 +81,33 @@ async fn test_get_chain_type_error_cases() {
 	mock_init.assert_async().await;
 	let result = client.get_chain_type().await;
 
-	assert!(result.is_err());
-	mock_invalid_json.assert_async().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), "");
+	mock_missing_result.assert_async().await;
 
-	// Test invalid chain type string
-	let mock_invalid_type = server
+	// Test null result field
+	let mock_null_result = server
 		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":"InvalidType","id":1}"#)
+		.with_body(r#"{"jsonrpc":"2.0","result":null,"id":1}"#)
 		.create_async()
 		.await;
 
 	let result = client.get_chain_type().await;
-	assert!(result.is_err());
-	assert_eq!(
-		result.unwrap_err().to_string(),
-		"Invalid chain type: InvalidType"
-	);
-	mock_invalid_type.assert_async().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), "");
+	mock_null_result.assert_async().await;
+
+	// Test invalid JSON response
+	let mock_invalid_json = server
+		.mock("POST", "/")
+		.with_body(r#"{"jsonrpc":"2.0","result":123,"id":1}"#)
+		.create_async()
+		.await;
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), "");
+	mock_invalid_json.assert_async().await;
 }
 
 #[tokio::test]

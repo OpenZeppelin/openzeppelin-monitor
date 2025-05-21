@@ -4,8 +4,6 @@
 //! and formatting, including address normalization, value parsing, and
 //! operation processing.
 
-use crate::models::MidnightChainType;
-
 use midnight_ledger::{
 	base_crypto::hash::{HashOutput, PERSISTENT_HASH_BYTES},
 	serialize::deserialize,
@@ -87,13 +85,16 @@ pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
 	Ok((hash, tx))
 }
 
-/// Map a MidnightChainType to a NetworkId
-pub fn map_chain_type(chain_type: &MidnightChainType) -> NetworkId {
-	match chain_type {
-		MidnightChainType::Development => NetworkId::TestNet,
-		MidnightChainType::Live => NetworkId::TestNet, // TODO: Change to MainNet once testnet-02 `system_chainType` returns `Development`
-		MidnightChainType::Local => NetworkId::Undeployed,
-		MidnightChainType::Custom(_) => NetworkId::Undeployed,
+/// Map a chain type to a NetworkId
+pub fn map_chain_type(chain_type: &str) -> NetworkId {
+	if chain_type.contains("testnet") {
+		NetworkId::TestNet
+	} else if chain_type.contains("mainnet") {
+		NetworkId::MainNet
+	} else if chain_type.contains("devnet") {
+		NetworkId::DevNet
+	} else {
+		NetworkId::Undeployed
 	}
 }
 
@@ -404,21 +405,20 @@ mod tests {
 
 	#[test]
 	fn test_map_chain_type() {
-		let chain_type = MidnightChainType::Development;
-		let network_id = map_chain_type(&chain_type);
+		let chain_type = "testnet-02-1";
+		let network_id = map_chain_type(chain_type);
 		assert_eq!(network_id, NetworkId::TestNet);
 
-		// TODO: Change to MainNet once testnet-02 `system_chainType` returns `Development`
-		let chain_type = MidnightChainType::Live;
-		let network_id = map_chain_type(&chain_type);
-		assert_eq!(network_id, NetworkId::TestNet);
+		let chain_type = "mainnet-02-1";
+		let network_id = map_chain_type(chain_type);
+		assert_eq!(network_id, NetworkId::MainNet);
 
-		let chain_type = MidnightChainType::Local;
-		let network_id = map_chain_type(&chain_type);
-		assert_eq!(network_id, NetworkId::Undeployed);
+		let chain_type = "devnet-02-1";
+		let network_id = map_chain_type(chain_type);
+		assert_eq!(network_id, NetworkId::DevNet);
 
-		let chain_type = MidnightChainType::Custom(String::from("custom"));
-		let network_id = map_chain_type(&chain_type);
+		let chain_type = "custom-02-1";
+		let network_id = map_chain_type(chain_type);
 		assert_eq!(network_id, NetworkId::Undeployed);
 	}
 

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use openzeppelin_monitor::{
-	models::{BlockChainType, BlockType, MidnightChainType, MonitorMatch, TransactionStatus},
+	models::{BlockChainType, BlockType, MonitorMatch, TransactionStatus},
 	services::filter::{handle_match, FilterError, FilterService},
 	utils::tests::{
 		midnight::{
@@ -73,7 +73,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 	// Set up expectations for the mock client
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
@@ -144,7 +144,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
@@ -231,7 +231,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
@@ -329,7 +329,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
@@ -400,7 +400,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
@@ -471,7 +471,7 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
 
@@ -564,7 +564,7 @@ async fn test_monitor_transaction_status_success() -> Result<(), Box<FilterError
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	// Create a success event for the transaction
 	let success_event = EventBuilder::new()
@@ -640,7 +640,7 @@ async fn test_monitor_transaction_status_failure() -> Result<(), Box<FilterError
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	// Mock no events (which means failure)
 	mock_client.expect_get_events().returning(|_, _| Ok(vec![]));
@@ -719,7 +719,7 @@ async fn test_monitor_transaction_status_any() -> Result<(), Box<FilterError>> {
 	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
-		.returning(|| Ok(MidnightChainType::Development));
+		.returning(|| Ok("testnet-02-1".to_string()));
 
 	// Create a success event for the first transaction
 	let success_event = EventBuilder::new()
