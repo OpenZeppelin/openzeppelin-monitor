@@ -13,9 +13,7 @@ use crate::models::MidnightRpcTransactionEnum;
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L214-L218>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RpcBlock<Header = BlockHeader> {
-	#[serde(rename = "header")]
 	pub header: Header,
-	#[serde(rename = "body")]
 	pub body: Vec<MidnightRpcTransactionEnum>,
 	// NOTE: This should be `transactionsIndex` in the RPC response but it's not
 	// so we're using `transactions_index` here but expect this may change in the future
@@ -27,17 +25,14 @@ pub struct RpcBlock<Header = BlockHeader> {
 /// Based on the response from the Midnight RPC endpoint
 /// <https://docs.midnight.network/files/Insomnia_2024-11-21.json>
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct BlockHeader {
-	#[serde(rename = "parentHash")]
 	/// Hash of the parent block
 	pub parent_hash: String, // Hash
-	#[serde(rename = "number")]
 	/// Block number
 	pub number: String, // Hex string
-	#[serde(rename = "stateRoot")]
 	/// State root hash
 	pub state_root: String, // Hash
-	#[serde(rename = "extrinsicsRoot")]
 	/// Extrinsics root hash
 	pub extrinsics_root: String, // Hash
 	/// Block digest information
@@ -47,7 +42,6 @@ pub struct BlockHeader {
 /// Block digest containing logs
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct BlockDigest {
-	#[serde(rename = "logs")]
 	/// Vector of log entries
 	pub logs: Vec<String>, // Hex strings
 }

@@ -11,7 +11,7 @@ use std::{collections::HashMap, marker::PhantomData, path::Path};
 use async_trait::async_trait;
 
 use crate::{
-	models::{ConfigLoader, Monitor, Network, Trigger, LANGUAGE_EXTENSIONS},
+	models::{ConfigLoader, Monitor, Network, Trigger, SCRIPT_LANGUAGE_EXTENSIONS},
 	repositories::{
 		error::RepositoryError,
 		network::{NetworkRepository, NetworkRepositoryTrait, NetworkService},
@@ -111,7 +111,7 @@ impl<
 				}
 
 				// Validate file extension matches the specified language
-				let expected_extension = match LANGUAGE_EXTENSIONS
+				let expected_extension = match SCRIPT_LANGUAGE_EXTENSIONS
 					.iter()
 					.find(|(lang, _)| *lang == &condition.language)
 					.map(|(_, ext)| *ext)
