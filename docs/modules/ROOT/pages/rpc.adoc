@@ -269,8 +269,9 @@ graph TD
 
     subgraph Midnight Network Calls
         D3[Network Init] -->|system_chainType| D4[Process New Blocks]
-        D4 -->|chain_getHeader| E1[Get Latest Block]
-        E1 -->|For each block| F1[Get Block Data]
+        D4 -->|chain_getFinalisedHead| E1[Get Finalized Block Hash]
+        E1 -->|chain_getHeader| E2[Get Latest Block Number]
+        E2 -->|For each block| F1[Get Block Data]
         F1 -->|chain_getBlockHash| G3[Get Block Hash]
         G3 -->|midnight_jsonBlock| H1[Get Full Block]
         H1 -->|If websocket RPC provided| I1[Get Events]
@@ -302,13 +303,20 @@ graph TD
 *Midnight*
 
 * RPC Client initialization (per active network): `system_chainType`
-* Fetching the latest block number (per cron iteration): `chain_getHeader`
+* Fetching the latest block number (per cron iteration):
+  ** `chain_getFinalisedHead` - Gets the latest finalized block hash
+  ** `chain_getHeader` - Gets the block number using the finalized block hash
 * Fetching block data (per block):
   ** `chain_getBlockHash` - Gets the block hash for a specific block number
   ** `midnight_jsonBlock` - Gets the full block data using the block hash
 * When websocket RPC is provided:
   ** `get_events` - Gets transaction events for determining transaction status
 
+[NOTE]
+====
+The Midnight client uses `chain_getFinalisedHead` to ensure we get the latest finalized block number, even when different nodes in the network are at different stages of finalization. This prevents race conditions where multiple blocks could have the same number (height) due to load-balancing across nodes.
+Therefore, there may be a small delay in processing the latest blocks since we wait for finalization.
+====
 
 == Best Practices
 
