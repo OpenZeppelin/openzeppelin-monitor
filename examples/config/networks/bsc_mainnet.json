@@ -7,7 +7,7 @@
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://bsc-dataseed.binance.org/"
+        "value": "https://bsc-dataseed.bnbchain.org"
       },
       "weight": 100
     }
