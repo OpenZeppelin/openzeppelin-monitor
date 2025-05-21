@@ -176,7 +176,7 @@ impl TelegramNotifier {
 				url_params.insert("parse_mode".to_string(), "MarkdownV2".to_string());
 
 				WebhookNotifier::new(WebhookConfig {
-					url: format!("https://api.telegram.org/bot{}/sendMessage", token),
+					url: format!("https://api.telegram.org/bot{}/sendMessage", token.as_str()),
 					url_params: Some(url_params),
 					title: message.title.clone(),
 					body_template: message.body.clone(),

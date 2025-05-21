@@ -59,7 +59,7 @@ impl MidnightClient<MidnightTransportClient, WsTransportClient> {
 				// We fail to create a WebSocket client if there are no working URLs
 				// This limits the functionality of the service, by not allowing monitoring of transaction status or event-related data
 				// but it is not a critical issue
-				tracing::error!("Failed to create WebSocket client: {}", e);
+				tracing::warn!("Failed to create WebSocket client: {}", e);
 				None
 			},
 			Some,

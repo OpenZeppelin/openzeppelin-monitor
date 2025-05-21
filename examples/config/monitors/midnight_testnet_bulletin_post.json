@@ -1,0 +1,38 @@
+{
+  "name": "Bulletin post",
+  "paused": false,
+  "networks": [
+    "midnight_testnet"
+  ],
+  "addresses": [
+    {
+      "address": "020200048fe17c5b2ae77e7154ff983dc37f18736a61aaef774c7a997935e84abe8361"
+    }
+  ],
+  "chain_configurations": [
+    {
+      "midnight": {
+        "viewing_keys": [
+          {
+            "type": "environment",
+            "value": "MIDNIGHT_VIEWING_KEY"
+          }
+        ]
+      }
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "post()",
+        "expression": null
+      }
+    ],
+    "events": [],
+    "transactions": []
+  },
+  "trigger_conditions": [],
+  "triggers": [
+    "midnight_bulletin_post_slack"
+  ]
+}

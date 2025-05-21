@@ -18,6 +18,7 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 - EVM
 - Stellar
+- Midnight
 
 **Supported Triggers (OOTB):**
 
@@ -62,6 +63,7 @@ graph TD
         BC[BlockchainClient]
         EVM[EVMClient]
         STL[StellarClient]
+        MDN[MidnightClient]
     end
 
     subgraph Processing Pipeline
@@ -88,6 +90,7 @@ graph TD
     %% Client Connections
     BC --> EVM
     BC --> STL
+    BC --> MDN
     EVM -->|RPC Calls| ETH
     EVM -->|RPC Calls| POL
     EVM -->|RPC Calls| BSC
@@ -102,8 +105,6 @@ graph TD
     NS --> Telegram
     NS --> Webhook
     NS --> Script
-
-    style STL fill:#f0f0f0
 
     classDef rpc fill:#e1f5fe,stroke:#01579b
     classDef storage fill:#fff3e0,stroke:#ef6c00
@@ -616,7 +617,7 @@ A Network configuration defines connection details and operational parameters fo
 
 |network_type
 |String
-|Type of blockchain ("EVM" or "Stellar")
+|Type of blockchain
 
 |slug
 |String
@@ -662,6 +663,7 @@ A Network configuration defines connection details and operational parameters fo
 ==== Important Considerations
 
 * We strongly recommend using private RPC providers for improved reliability.
+* For Midnight networks, transaction status monitoring requires a websocket RPC URL (`"type_": "ws_rpc"`) in the network configuration. Without it, transaction status monitoring will be disabled.
 
 === Trigger Configuration
 
@@ -1103,7 +1105,8 @@ The monitor uses a structured JSON format with nested objects for template varia
 
 [NOTE]
 ====
-Transaction-related variables (`transaction.from`, `transaction.to`, `transaction.value`) are not available for Stellar networks.
+* Transaction-related variables (`transaction.from`, `transaction.to`, `transaction.value`) are not available for Stellar networks.
+* Due to the privacy-focused design of the Midnight network, monitoring specific transaction details and function/event arguments is not supported.
 ====
 
 ==== Message Formatting
@@ -1221,6 +1224,7 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
       "contract_spec": [ ... ]
     }
   ],
+  "chain_configurations": [...],
   "match_conditions": {
     "functions": [
       {
@@ -1288,7 +1292,7 @@ Match events emitted by monitored contracts:
 ----
 
 ===== Transaction Conditions
-Match transaction properties. The available fields and expression syntax depend on the network type (EVM/Stellar)
+Match transaction properties. The available fields and expression syntax depend on the network type:
 
 [source,json]
 ----
@@ -1452,6 +1456,48 @@ Match transaction properties. The available fields and expression syntax depend 
 |triggers
 |Array[String]
 |IDs of triggers to execute when conditions match
+
+|chain_configurations
+|Array[Object]
+|Chain-specific configuration settings for the monitor
+|===
+
+==== Chain-Specific Configurations
+
+The monitor supports optional chain-specific configuration settings through the `chain_configurations` field. This allows you to provide additional settings that are specific to certain blockchain networks without modifying the core monitor structure.
+
+[source,json]
+----
+{
+  "chain_configurations": [
+    {
+      "midnight": {
+        "viewing_keys": [
+          {
+            "type": "environment",
+            "value": "MIDNIGHT_VIEWING_KEY"
+          }
+        ]
+      }
+    }
+  ]
+}
+----
+
+===== Available Chain Configurations
+
+[cols="1,2"]
+|===
+|Chain Type |Configuration
+
+|EVM
+|Currently no specific configuration required
+
+|Stellar
+|Currently no specific configuration required
+
+|Midnight
+|Requires viewing keys for decrypting private CoinInfo
 |===
 
 ==== Matching Rules
