@@ -235,11 +235,34 @@ impl<
 	> BlockChainClient for MidnightClient<H, W>
 {
 	/// Retrieves the latest block number with retry functionality
+	///
+	/// Blocks may only be finalised on a particular node, and not on others due to load-balancing.
+	/// This means it's possible for there to be multiple blocks with the same number (height).
+	/// To handle this race condition, we first get the finalized head block hash and number,
+	/// This ensures we get the correct finalized blocks even if different nodes are at different
+	/// stages of finalization.
+	///
+	/// # Returns
+	/// * `Result<u64, anyhow::Error>` - Latest block number
 	#[instrument(skip(self))]
 	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
+		// Get latest finalized head hash
 		let response = self
 			.http_client
-			.send_raw_request::<serde_json::Value>("chain_getHeader", None)
+			.send_raw_request::<serde_json::Value>("chain_getFinalisedHead", None)
+			.await
+			.with_context(|| "Failed to get latest block number")?;
+
+		let finalised_block_hash = response
+			.get("result")
+			.and_then(|v| v.as_str())
+			.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
+
+		let params = json!([finalised_block_hash]);
+
+		let response = self
+			.http_client
+			.send_raw_request::<serde_json::Value>("chain_getHeader", Some(params))
 			.await
 			.with_context(|| "Failed to get latest block number")?;
 

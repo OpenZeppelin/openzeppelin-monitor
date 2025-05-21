@@ -157,8 +157,13 @@ async fn test_get_events_missing_result() {
 async fn test_get_latest_block_number_success() {
 	let mut mock_midnight = MockMidnightTransportClient::new();
 
+	// Mock response with a finalized block hash
+	let mock_get_finalised_head_response = json!({
+		"result": "0xfinalised_block_hash"
+	});
+
 	// Mock response with a block number
-	let mock_response = json!({
+	let mock_get_header_response = json!({
 		"result": {
 			"number": "0x12345"
 		}
@@ -166,8 +171,19 @@ async fn test_get_latest_block_number_success() {
 
 	mock_midnight
 		.expect_send_raw_request()
-		.with(predicate::eq("chain_getHeader"), predicate::always())
-		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(move |_, _| Ok(mock_get_finalised_head_response.clone()));
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(
+			predicate::eq("chain_getHeader"),
+			predicate::function(|params: &Option<Vec<Value>>| match params {
+				Some(p) => p == &vec![json!("0xfinalised_block_hash")],
+				None => false,
+			}),
+		)
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
 	let client =
 		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
@@ -182,10 +198,37 @@ async fn test_get_latest_block_number_success() {
 
 #[tokio::test]
 async fn test_get_latest_block_number_invalid_response() {
+	// Test case 1: Invalid finalized block hash response
 	let mut mock_midnight = MockMidnightTransportClient::new();
 
-	// Mock response with invalid format
-	let mock_response = json!({
+	let mock_get_finalised_head_response = json!({
+		"some": "invalid_response"
+	});
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(move |_, _| Ok(mock_get_finalised_head_response.clone()));
+
+	let client =
+		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+			mock_midnight,
+			None,
+		);
+	let result = client.get_latest_block_number().await;
+
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Missing 'result' field"));
+
+	// Test case 2: Invalid get header response
+	let mut mock_midnight = MockMidnightTransportClient::new();
+
+	let mock_get_finalised_head_response = json!({
+		"result": "0xfinalised_block_hash"
+	});
+
+	let mock_get_header_response = json!({
 		"result": {
 			"number": "invalid_hex"
 		}
@@ -193,7 +236,12 @@ async fn test_get_latest_block_number_invalid_response() {
 
 	mock_midnight
 		.expect_send_raw_request()
-		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(move |_, _| Ok(mock_get_finalised_head_response.clone()));
+
+	mock_midnight
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
 	let client =
 		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
@@ -205,22 +253,26 @@ async fn test_get_latest_block_number_invalid_response() {
 	assert!(result.is_err());
 	let err = result.unwrap_err();
 	assert!(err.to_string().contains("Failed to parse block number"));
-}
 
-#[tokio::test]
-async fn test_get_latest_block_number_missing_result() {
+	// Test case 3: Missing result field for get header response
 	let mut mock_midnight = MockMidnightTransportClient::new();
 
-	// Mock response without result field
-	let mock_response = json!({
-		"id": 1,
-		"jsonrpc": "2.0"
+	let mock_get_finalised_head_response = json!({
+		"result": "0xfinalised_block_hash"
+	});
+
+	let mock_get_header_response = json!({
+		"some": "invalid_response"
 	});
 
 	mock_midnight
 		.expect_send_raw_request()
-		.with(predicate::eq("chain_getHeader"), predicate::always())
-		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(move |_, _| Ok(mock_get_finalised_head_response.clone()));
+
+	mock_midnight
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
 	let client =
 		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
