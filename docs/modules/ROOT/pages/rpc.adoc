@@ -268,7 +268,7 @@ graph TD
     end
 
     subgraph Midnight Network Calls
-        D3[Network Init] -->|system_chainType| D4[Process New Blocks]
+        D3[Network Init] -->|system_chain| D4[Process New Blocks]
         D4 -->|chain_getFinalisedHead| E1[Get Finalized Block Hash]
         E1 -->|chain_getHeader| E2[Get Latest Block Number]
         E2 -->|For each block| F1[Get Block Data]
@@ -302,7 +302,7 @@ graph TD
 
 *Midnight*
 
-* RPC Client initialization (per active network): `system_chainType`
+* RPC Client initialization (per active network): `system_chain`
 * Fetching the latest block number (per cron iteration):
   ** `chain_getFinalisedHead` - Gets the latest finalized block hash
   ** `chain_getHeader` - Gets the block number using the finalized block hash
