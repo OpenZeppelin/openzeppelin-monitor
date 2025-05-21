@@ -257,12 +257,6 @@ impl<
 
 	/// Retrieves blocks within the specified range with retry functionality
 	///
-	/// Blocks may only be finalised on a particular node, and not on others due to load-balancing.
-	/// This means it's possible for there to be multiple blocks with the same number (height).
-	/// To handle this race condition, we first get the finalized head block hash and number,
-	/// then fetch blocks using their hashes rather than block numbers. This ensures we get
-	/// the correct finalized blocks even if different nodes are at different stages of finalization.
-	///
 	/// # Note
 	/// If end_block is None, only the start_block will be retrieved
 	#[instrument(skip(self), fields(start_block, end_block))]
@@ -271,48 +265,11 @@ impl<
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
-		// Get the finalised head block hash and number
-		let response = self
-			.http_client
-			.send_raw_request::<serde_json::Value>("chain_getFinalisedHead", None)
-			.await
-			.with_context(|| "Failed to get finalised head")?;
-
-		let finalized_head_hash = response
-			.get("result")
-			.and_then(|v| v.as_str())
-			.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
-
-		// Get the finalized head block number based on the hash
-		let params = json!([finalized_head_hash]);
-		let response = self
-			.http_client
-			.send_raw_request::<serde_json::Value>("chain_getHeader", Some(params))
-			.await
-			.with_context(|| "Failed to get finalized head header")?;
-
-		let finalized_head_number = response
-			.get("result")
-			.and_then(|v| v.get("number"))
-			.and_then(|v| v.as_str())
-			.ok_or_else(|| anyhow::anyhow!("Missing block number in response"))?;
-
-		// Convert the hex string to a u64
-		let finalized_head_number =
-			u64::from_str_radix(finalized_head_number.trim_start_matches("0x"), 16)
-				.map_err(|e| anyhow::anyhow!("Failed to parse finalized head number: {}", e))?;
-
-		// Adjust end_block to not exceed finalized head
-		let end_block = end_block.unwrap_or(start_block).min(finalized_head_number);
-		if start_block > end_block {
-			return Ok(Vec::new());
-		}
-
-		// Get block hashes for the range
-		let block_hashes =
-			futures::future::join_all((start_block..=end_block).map(|block_number| {
+		let block_futures: Vec<_> = (start_block..=end_block.unwrap_or(start_block))
+			.map(|block_number| {
 				let params = json!([format!("0x{:x}", block_number)]);
 				let client = self.http_client.clone();
+
 				async move {
 					let response = client
 						.send_raw_request("chain_getBlockHash", Some(params))
@@ -326,30 +283,18 @@ impl<
 						.and_then(|v| v.as_str())
 						.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
 
-					Ok::<_, anyhow::Error>(block_hash.to_string())
-				}
-			}))
-			.await
-			.into_iter()
-			.collect::<Result<Vec<_>, _>>()?;
+					let params = json!([block_hash]);
 
-		// Fetch blocks using their hashes to ensure we get the finalized versions
-		let block_futures: Vec<_> = block_hashes
-			.into_iter()
-			.map(|block_hash| {
-				let params = json!([block_hash]);
-				let client = self.http_client.clone();
-
-				async move {
 					let response = client
 						.send_raw_request("midnight_jsonBlock", Some(params))
 						.await
-						.with_context(|| format!("Failed to get block for hash: {}", block_hash))?;
+						.with_context(|| format!("Failed to get block: {}", block_number))?;
 
 					let block_data = response
 						.get("result")
 						.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
 
+					// Parse the JSON string into a Value
 					let block_value: serde_json::Value = serde_json::from_str(
 						block_data
 							.as_str()
