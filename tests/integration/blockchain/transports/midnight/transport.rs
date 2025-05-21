@@ -238,11 +238,43 @@ async fn test_get_latest_block_number_missing_result() {
 async fn test_get_single_block() {
 	let mut mock_midnight = MockMidnightTransportClient::new();
 
+	// Set up expectations on the original mock
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	// Mock chain_getHeader for finalized head
+	mock_midnight
+		.expect_send_raw_request()
+		.with(
+			predicate::eq("chain_getHeader"),
+			predicate::function(|params: &Option<Vec<Value>>| match params {
+				Some(p) => p == &vec![json!("0xmocked_finalized_head_hash")],
+				None => false,
+			}),
+		)
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x1"
+				}
+			}))
+		});
+
 	// Mock response without result field
-	mock_midnight.expect_clone().times(1).returning(|| {
+	mock_midnight.expect_clone().times(2).returning(|| {
 		let mut new_mock = MockMidnightTransportClient::new();
 
-		// First call: Mock chain_getBlockHash response
+		// Mock chain_getBlockHash response
 		new_mock
 			.expect_send_raw_request()
 			.with(
@@ -260,7 +292,7 @@ async fn test_get_single_block() {
 				}))
 			});
 
-		// Second call: Mock midnight_jsonBlock response
+		// Mock midnight_jsonBlock response
 		new_mock
 			.expect_send_raw_request()
 			.with(
@@ -300,8 +332,40 @@ async fn test_get_single_block() {
 async fn test_get_multiple_blocks() {
 	let mut mock_midnight = MockMidnightTransportClient::new();
 
-	// Mock response for 3 blocks
-	mock_midnight.expect_clone().times(3).returning(|| {
+	// Set up expectations on the original mock
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	// Mock chain_getHeader for finalized head
+	mock_midnight
+		.expect_send_raw_request()
+		.with(
+			predicate::eq("chain_getHeader"),
+			predicate::function(|params: &Option<Vec<Value>>| match params {
+				Some(p) => p == &vec![json!("0xmocked_finalized_head_hash")],
+				None => false,
+			}),
+		)
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x3"
+				}
+			}))
+		});
+
+	// Mock response for 3 blocks (clones twice for each block)
+	mock_midnight.expect_clone().times(6).returning(|| {
 		let mut new_mock = MockMidnightTransportClient::new();
 
 		// First call: Mock chain_getBlockHash response
@@ -360,21 +424,82 @@ async fn test_get_multiple_blocks() {
 }
 
 #[tokio::test]
-async fn test_get_blocks_missing_result() {
+async fn test_get_blocks_up_to_finalized_head() {
 	let mut mock_midnight = MockMidnightTransportClient::new();
 
-	// Mock response without result field
-	mock_midnight.expect_clone().returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
-		let mock_response = json!({
-			"jsonrpc": "2.0",
-			"id": 1
+	// Set up expectations on the original mock
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
 		});
 
+	// Mock chain_getHeader for finalized head
+	mock_midnight
+		.expect_send_raw_request()
+		.with(
+			predicate::eq("chain_getHeader"),
+			predicate::function(|params: &Option<Vec<Value>>| match params {
+				Some(p) => p == &vec![json!("0xmocked_finalized_head_hash")],
+				None => false,
+			}),
+		)
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x3" // block number of the finalized head
+				}
+			}))
+		});
+
+	// Mock response for 3 blocks (clones twice for each block)
+	mock_midnight.expect_clone().times(6).returning(|| {
+		let mut new_mock = MockMidnightTransportClient::new();
+
+		// First call: Mock chain_getBlockHash response
 		new_mock
 			.expect_send_raw_request()
-			.times(1)
-			.returning(move |_, _| Ok(mock_response.clone()));
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(|_, params: Option<Vec<Value>>| {
+				let block_num = u64::from_str_radix(
+					params.unwrap()[0]
+						.as_str()
+						.unwrap()
+						.trim_start_matches("0x"),
+					16,
+				)
+				.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": format!("0xmocked_block_hash_{}", block_num)
+				}))
+			});
+
+		// Second call: Mock midnight_jsonBlock response
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("midnight_jsonBlock"), predicate::always())
+			.returning(|_, params: Option<Vec<Value>>| {
+				let block_hash = params.unwrap()[0].as_str().unwrap().to_string();
+				let block_num = block_hash
+					.trim_start_matches("0xmocked_block_hash_")
+					.parse::<u64>()
+					.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": create_mock_block(block_num).to_string()
+				}))
+			});
+
 		new_mock
 			.expect_clone()
 			.returning(MockMidnightTransportClient::new);
@@ -387,20 +512,196 @@ async fn test_get_blocks_missing_result() {
 			None,
 		);
 
-	let result = client.get_blocks(1, None).await;
-	assert!(result.is_err());
-	let err = result.unwrap_err();
-	assert!(err.to_string().contains("Missing 'result' field"));
+	// Get blocks 1 to 5, but only 1 to 3 are finalised
+	let result = client.get_blocks(1, Some(5)).await;
+	assert!(result.is_ok());
+	let blocks = result.unwrap();
+	assert_eq!(blocks.len(), 3);
 }
 
 #[tokio::test]
-async fn test_get_blocks_null_result() {
+async fn test_get_blocks_error_handling() {
+	// Test 1: Missing result from chain_getFinalisedHead
 	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1
+			}))
+		});
 
-	mock_midnight.expect_clone().times(1).returning(|| {
+	let client =
+		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+			mock_midnight,
+			None,
+		);
+
+	let result = client.get_blocks(1, None).await;
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Missing 'result' field"));
+
+	// Test 2: Missing result from chain_getHeader
+	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getHeader"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1
+			}))
+		});
+
+	let client =
+		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+			mock_midnight,
+			None,
+		);
+
+	let result = client.get_blocks(1, None).await;
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Missing block number in response"));
+
+	// Test 3: Invalid block number format in chain_getHeader response
+	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getHeader"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "invalid_hex"
+				}
+			}))
+		});
+
+	let client =
+		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+			mock_midnight,
+			None,
+		);
+
+	let result = client.get_blocks(1, None).await;
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to parse finalized head number"));
+
+	// Test 4: Missing result from chain_getBlockHash
+	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getHeader"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x1"
+				}
+			}))
+		});
+
+	mock_midnight.expect_clone().returning(|| {
 		let mut new_mock = MockMidnightTransportClient::new();
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(|_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1
+				}))
+			});
+		new_mock
+	});
 
-		// First call: Mock chain_getBlockHash to return a hash
+	let client =
+		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+			mock_midnight,
+			None,
+		);
+
+	let result = client.get_blocks(1, None).await;
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Missing 'result' field"));
+
+	// Test 5: Missing result from midnight_jsonBlock
+	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getHeader"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x1"
+				}
+			}))
+		});
+
+	mock_midnight.expect_clone().returning(|| {
+		let mut new_mock = MockMidnightTransportClient::new();
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("chain_getBlockHash"), predicate::always())
@@ -412,7 +713,70 @@ async fn test_get_blocks_null_result() {
 				}))
 			});
 
-		// Second call: Mock midnight_jsonBlock to return null result
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("midnight_jsonBlock"), predicate::always())
+			.returning(|_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1
+				}))
+			});
+		new_mock
+	});
+
+	let client =
+		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+			mock_midnight,
+			None,
+		);
+
+	let result = client.get_blocks(1, None).await;
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Missing 'result' field"));
+
+	// Test 6: Invalid JSON in midnight_jsonBlock response
+	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getHeader"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x1"
+				}
+			}))
+		});
+
+	mock_midnight.expect_clone().returning(|| {
+		let mut new_mock = MockMidnightTransportClient::new();
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(|_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": "0xmocked_block_hash"
+				}))
+			});
+
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("midnight_jsonBlock"), predicate::always())
@@ -420,13 +784,9 @@ async fn test_get_blocks_null_result() {
 				Ok(json!({
 					"jsonrpc": "2.0",
 					"id": 1,
-					"result": null
+					"result": "invalid_json"
 				}))
 			});
-
-		new_mock
-			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
 		new_mock
 	});
 
@@ -438,18 +798,39 @@ async fn test_get_blocks_null_result() {
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
-	let err = result.unwrap_err();
-	assert!(err.to_string().contains("Result is not a string"));
-}
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to parse block JSON string"));
 
-#[tokio::test]
-async fn test_get_blocks_parse_failure() {
+	// Test 7: Null block in midnight_jsonBlock response
 	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
 
-	mock_midnight.expect_clone().times(1).returning(|| {
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getHeader"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x1"
+				}
+			}))
+		});
+
+	mock_midnight.expect_clone().returning(|| {
 		let mut new_mock = MockMidnightTransportClient::new();
-
-		// First call: Mock chain_getBlockHash to return a hash
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("chain_getBlockHash"), predicate::always())
@@ -461,7 +842,68 @@ async fn test_get_blocks_parse_failure() {
 				}))
 			});
 
-		// Second call: Mock midnight_jsonBlock with malformed block data
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("midnight_jsonBlock"), predicate::always())
+			.returning(|_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": "null"
+				}))
+			});
+		new_mock
+	});
+
+	let client =
+		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+			mock_midnight,
+			None,
+		);
+
+	let result = client.get_blocks(1, None).await;
+	assert!(result.is_err());
+	assert!(result.unwrap_err().to_string().contains("Block not found"));
+
+	// Test 8: Invalid block structure in midnight_jsonBlock response
+	let mut mock_midnight = MockMidnightTransportClient::new();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "0xmocked_finalized_head_hash"
+			}))
+		});
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("chain_getHeader"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": {
+					"number": "0x1"
+				}
+			}))
+		});
+
+	mock_midnight.expect_clone().returning(|| {
+		let mut new_mock = MockMidnightTransportClient::new();
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(|_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": "0xmocked_block_hash"
+				}))
+			});
+
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("midnight_jsonBlock"), predicate::always())
@@ -471,16 +913,12 @@ async fn test_get_blocks_parse_failure() {
 					"id": 1,
 					"result": json!({
 						"header": {
-							"number": "not_a_hex_number",
-							"hash": "invalid_hash"
-						}
+							"invalid_field": "invalid_value"
+						},
+						"body": []
 					}).to_string()
 				}))
 			});
-
-		new_mock
-			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
 		new_mock
 	});
 
@@ -492,8 +930,10 @@ async fn test_get_blocks_parse_failure() {
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
-	let err = result.unwrap_err();
-	assert!(err.to_string().contains("Failed to parse block"));
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to parse block"));
 }
 
 #[tokio::test]
