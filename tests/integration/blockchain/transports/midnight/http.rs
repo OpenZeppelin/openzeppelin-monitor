@@ -1,6 +1,7 @@
 use mockito::Server;
 use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, MidnightTransportClient, RotatingTransport, TransientErrorRetryStrategy,
+	BlockchainTransport, MidnightHttpTransportClient, RotatingTransport,
+	TransientErrorRetryStrategy,
 };
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -16,7 +17,7 @@ async fn test_client_creation() {
 	let mock = create_midnight_valid_server_mock_network_response(&mut server);
 	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
 
-	match MidnightTransportClient::new(&network).await {
+	match MidnightHttpTransportClient::new(&network).await {
 		Ok(transport) => {
 			let active_url = transport.get_current_url().await;
 			assert_eq!(active_url, server.url());
@@ -27,7 +28,7 @@ async fn test_client_creation() {
 
 	let network = create_midnight_test_network_with_urls(vec!["invalid-url"]);
 
-	match MidnightTransportClient::new(&network).await {
+	match MidnightHttpTransportClient::new(&network).await {
 		Err(error) => {
 			assert!(error.to_string().contains("All RPC URLs failed to connect"))
 		}
@@ -53,7 +54,7 @@ async fn test_client_creation_with_fallback() {
 
 	let network = create_midnight_test_network_with_urls(vec![&server.url(), &server2.url()]);
 
-	match MidnightTransportClient::new(&network).await {
+	match MidnightHttpTransportClient::new(&network).await {
 		Ok(transport) => {
 			let active_url = transport.get_current_url().await;
 			assert_eq!(active_url, server2.url());
@@ -72,7 +73,7 @@ async fn test_client_update_client() {
 	let mock1 = create_midnight_valid_server_mock_network_response(&mut server);
 
 	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
-	let client = MidnightTransportClient::new(&network).await.unwrap();
+	let client = MidnightHttpTransportClient::new(&network).await.unwrap();
 
 	// Test successful update
 	let result = client.update_client(&server2.url()).await;
@@ -97,7 +98,7 @@ async fn test_client_try_connect() {
 	let mock2 = create_midnight_valid_server_mock_network_response(&mut server2);
 
 	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
-	let client = MidnightTransportClient::new(&network).await.unwrap();
+	let client = MidnightHttpTransportClient::new(&network).await.unwrap();
 
 	let result = client.try_connect(&server2.url()).await;
 	assert!(result.is_ok(), "Try connect should succeed");
@@ -133,7 +134,7 @@ async fn test_send_raw_request() {
 		.create();
 
 	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
-	let client = MidnightTransportClient::new(&network).await.unwrap();
+	let client = MidnightHttpTransportClient::new(&network).await.unwrap();
 
 	// Test with params
 	let params = json!({"key": "value"});
@@ -170,7 +171,7 @@ async fn test_set_retry_policy() {
 	let mock = create_midnight_valid_server_mock_network_response(&mut server);
 
 	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
-	let mut client = MidnightTransportClient::new(&network).await.unwrap();
+	let mut client = MidnightHttpTransportClient::new(&network).await.unwrap();
 
 	// Set up a sequence of responses to test retry behavior
 	let retry_mock = server
@@ -227,7 +228,7 @@ async fn test_update_endpoint_manager_client() {
 		.await;
 
 	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
-	let mut client = MidnightTransportClient::new(&network).await.unwrap();
+	let mut client = MidnightHttpTransportClient::new(&network).await.unwrap();
 
 	// Test initial client
 	let result = client

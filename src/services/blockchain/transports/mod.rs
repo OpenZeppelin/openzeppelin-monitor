@@ -12,18 +12,35 @@ mod stellar {
 }
 mod midnight {
 	pub mod http;
+	pub mod ws;
 }
 
-mod endpoint_manager;
-mod http;
-mod ws;
+mod http {
+	pub mod endpoint_manager;
+	pub mod transport;
+}
 
-pub use endpoint_manager::EndpointManager;
+mod ws {
+	pub mod config;
+	pub mod connection;
+	pub mod endpoint_manager;
+	pub mod transport;
+}
+
+pub use http::{
+	endpoint_manager::EndpointManager as HttpEndpointManager, transport::HttpTransportClient,
+};
+pub use ws::{
+	config::WsConfig, endpoint_manager::EndpointManager as WsEndpointManager,
+	transport::WsTransportClient,
+};
+
 pub use evm::http::EVMTransportClient;
-pub use http::HttpTransportClient;
-pub use midnight::http::MidnightTransportClient;
+pub use midnight::{
+	http::MidnightTransportClient as MidnightHttpTransportClient,
+	ws::MidnightTransportClient as MidnightWsTransportClient,
+};
 pub use stellar::http::StellarTransportClient;
-pub use ws::WsTransportClient;
 
 use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::{

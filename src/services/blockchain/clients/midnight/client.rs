@@ -17,8 +17,8 @@ use crate::{
 	services::{
 		blockchain::{
 			client::BlockChainClient,
-			transports::{BlockchainTransport, MidnightTransportClient},
-			BlockFilterFactory, WsTransportClient,
+			transports::{BlockchainTransport, MidnightHttpTransportClient},
+			BlockFilterFactory, MidnightWsTransportClient,
 		},
 		filter::MidnightBlockFilter,
 	},
@@ -44,7 +44,7 @@ impl<H: Send + Sync + Clone, W: Send + Sync + Clone> MidnightClient<H, W> {
 	}
 }
 
-impl MidnightClient<MidnightTransportClient, WsTransportClient> {
+impl MidnightClient<MidnightHttpTransportClient, MidnightWsTransportClient> {
 	/// Creates a new Midnight client instance
 	///
 	/// # Arguments
@@ -53,17 +53,19 @@ impl MidnightClient<MidnightTransportClient, WsTransportClient> {
 	/// # Returns
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
-		let http_client = MidnightTransportClient::new(network).await?;
-		let ws_client = WsTransportClient::new(network).await.map_or_else(
-			|e| {
-				// We fail to create a WebSocket client if there are no working URLs
-				// This limits the functionality of the service, by not allowing monitoring of transaction status or event-related data
-				// but it is not a critical issue
-				tracing::warn!("Failed to create WebSocket client: {}", e);
-				None
-			},
-			Some,
-		);
+		let http_client = MidnightHttpTransportClient::new(network).await?;
+		let ws_client = MidnightWsTransportClient::new(network, None)
+			.await
+			.map_or_else(
+				|e| {
+					// We fail to create a WebSocket client if there are no working URLs
+					// This limits the functionality of the service, by not allowing monitoring of transaction status or event-related data
+					// but it is not a critical issue
+					tracing::warn!("Failed to create WebSocket client: {}", e);
+					None
+				},
+				Some,
+			);
 		Ok(Self::new_with_transport(http_client, ws_client))
 	}
 }
