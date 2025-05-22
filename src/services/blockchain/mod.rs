@@ -23,7 +23,7 @@ pub use clients::{
 pub use error::BlockChainError;
 pub use pool::{ClientPool, ClientPoolTrait};
 pub use transports::{
-	BlockchainTransport, EVMTransportClient, EndpointManager, HttpTransportClient,
+	BlockchainTransport, EVMTransportClient, HttpEndpointManager, HttpTransportClient,
 	MidnightTransportClient, RotatingTransport, StellarTransportClient,
-	TransientErrorRetryStrategy, WsTransportClient,
+	TransientErrorRetryStrategy, WsEndpointManager, WsTransportClient,
 };

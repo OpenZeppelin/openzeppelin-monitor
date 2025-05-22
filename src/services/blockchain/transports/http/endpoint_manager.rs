@@ -1,4 +1,4 @@
-//! Manages the rotation of blockchain RPC endpoints
+//! Manages the rotation of blockchain HTTP RPC endpoints
 //!
 //! Provides methods for rotating between multiple URLs and sending requests to the active endpoint
 //! with automatic fallback to other URLs on failure.
