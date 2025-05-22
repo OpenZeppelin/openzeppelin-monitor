@@ -15,6 +15,13 @@ pub mod builders {
 		pub mod monitor;
 	}
 
+	pub mod midnight {
+		pub mod block;
+		pub mod event;
+		pub mod monitor;
+		pub mod transaction;
+	}
+
 	// Chain agnostic test helpers
 	pub mod network;
 	pub mod trigger;

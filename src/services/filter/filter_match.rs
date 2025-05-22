@@ -234,6 +234,91 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				)
 				.await;
 		}
+		MonitorMatch::Midnight(midnight_monitor_match) => {
+			let transaction = midnight_monitor_match.transaction.clone();
+
+			// Create structured JSON data
+			let mut data_json = json!({
+				"monitor": {
+					"name": midnight_monitor_match.monitor.name.clone(),
+				},
+				"transaction": {
+					"hash": transaction.hash().to_string(),
+				},
+				"functions": [],
+				"events": []
+			});
+
+			// Process matched functions
+			let functions = data_json["functions"].as_array_mut().unwrap();
+			for func in midnight_monitor_match.matched_on.functions.iter() {
+				let mut function_data = json!({
+					"signature": func.signature.clone(),
+					"args": {}
+				});
+
+				// Add function arguments if present
+				if let Some(args) = &midnight_monitor_match.matched_on_args {
+					if let Some(func_args) = &args.functions {
+						for func_arg in func_args {
+							if func_arg.signature == func.signature {
+								if let Some(arg_entries) = &func_arg.args {
+									let args_obj = function_data["args"].as_object_mut().unwrap();
+									for arg in arg_entries {
+										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
+									}
+								}
+							}
+						}
+					}
+				}
+
+				functions.push(function_data);
+			}
+
+			// Process matched events
+			let events = data_json["events"].as_array_mut().unwrap();
+			for event in midnight_monitor_match.matched_on.events.iter() {
+				let mut event_data = json!({
+					"signature": event.signature.clone(),
+					"args": {}
+				});
+
+				// Add event arguments if present
+				if let Some(args) = &midnight_monitor_match.matched_on_args {
+					if let Some(event_args) = &args.events {
+						for event_arg in event_args {
+							if event_arg.signature == event.signature {
+								if let Some(arg_entries) = &event_arg.args {
+									let args_obj = event_data["args"].as_object_mut().unwrap();
+									for arg in arg_entries {
+										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
+									}
+								}
+							}
+						}
+					}
+				}
+
+				events.push(event_data);
+			}
+
+			// Swallow any errors since it's logged in the trigger service and we want to continue
+			// processing other matches
+			let _ = trigger_service
+				.execute(
+					&midnight_monitor_match
+						.monitor
+						.triggers
+						.iter()
+						.map(|s| s.to_string())
+						.collect::<Vec<_>>(),
+					json_to_hashmap(&data_json),
+					&matching_monitor,
+					trigger_scripts,
+				)
+				.await;
+		}
 	}
 	Ok(())
 }

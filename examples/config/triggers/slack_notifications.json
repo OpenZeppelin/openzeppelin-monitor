@@ -40,5 +40,19 @@
         "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
+  },
+  "midnight_bulletin_post_slack": {
+    "name": "Bulletin Post Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/A/B/C"
+      },
+      "message": {
+        "title": "midnight_bulletin_post_slack triggered",
+        "body": "A call to ${functions.0.signature} was made to the bulletin board | ${transaction.hash}"
+      }
+    }
   }
 }

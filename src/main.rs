@@ -375,8 +375,21 @@ async fn main() -> Result<()> {
 					error!("Failed to get Stellar client for network: {}", network.slug);
 				}
 			}
-			BlockChainType::Midnight => unimplemented!("Midnight not implemented"),
-			BlockChainType::Solana => unimplemented!("Solana not implemented"),
+			BlockChainType::Midnight => {
+				if let Ok(client) = client_pool.get_midnight_client(&network).await {
+					let _ = block_watcher
+						.start_network_watcher(&network, (*client).clone())
+						.await
+						.inspect_err(|e| {
+							error!("Failed to start Midnight network watcher: {}", e);
+						});
+				} else {
+					error!(
+						"Failed to get Midnight client for network: {}",
+						network.slug
+					);
+				}
+			}
 		}
 	}
 

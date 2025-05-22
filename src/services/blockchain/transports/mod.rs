@@ -10,14 +10,20 @@ mod evm {
 mod stellar {
 	pub mod http;
 }
+mod midnight {
+	pub mod http;
+}
 
 mod endpoint_manager;
 mod http;
+mod ws;
 
 pub use endpoint_manager::EndpointManager;
 pub use evm::http::EVMTransportClient;
 pub use http::HttpTransportClient;
+pub use midnight::http::MidnightTransportClient;
 pub use stellar::http::StellarTransportClient;
+pub use ws::WsTransportClient;
 
 use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::{

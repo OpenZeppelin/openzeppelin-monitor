@@ -498,7 +498,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
 
 [NOTE]
 ====
-* The `abi` field is optional for Stellar contracts. If not provided, the monitor will automatically fetch the contract's SEP-48 interface from the chain.
+* The `contract_spec` field is optional for Stellar contracts. If not provided, the monitor will automatically fetch the contract's SEP-48 interface from the chain.
 * You can find the contract specification through Stellar contract explorer tool. For example: link:https://lab.stellar.org/smart-contracts/contract-explorer?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=https:////mainnet.sorobanrpc.com&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;&smartContracts$explorer$contractId=CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE;;[Stellar DEX Contract Interface^]
 ====
 
@@ -564,6 +564,173 @@ The monitor will now:
 
 * Adjust the swap threshold by modifying the `expression` value.
 * Monitor additional dex swaps by creating new monitor configurations.
+* xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
+* xref:index.adoc#secret_management[Configure secure secret management] for sensitive data using environment variables or Hashicorp Cloud Vault
+* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].
+
+
+=== Monitoring Bulletin Post (Midnight):
+
+==== 1. Network Configuration:
+
+Create the Midnight testnet network configuration:
+
+[source,bash]
+----
+cp examples/config/networks/examples/midnight_testnet.json config/networks/midnight_testnet.json
+----
+
+The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/networks/midnight_testnet.json[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
+
+[source,json]
+----
+{
+  "network_type": "Midnight",
+  "slug": "midnight_testnet",
+  "name": "Midnight Testnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_RPC_URL_HERE"
+      },
+      "weight": 100
+    },
+    {
+      "type_": "ws_rpc",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_WSS_RPC_URL_HERE"
+      },
+      "weight": 100
+    }
+  ],
+  "chain_id": 0,
+  "block_time_ms": 6000,
+  "confirmation_blocks": 2,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 13,
+  "store_blocks": false
+}
+----
+
+[NOTE]
+====
+A websocket RPC URL (wss://) is required in the network configuration to monitor transaction status. This is because transaction status information is retrieved through Substrate events, which are only available via websocket connections.
+====
+
+==== 2. Monitor Configuration:
+
+Create the bulletin board post monitor configuration:
+
+[source,bash]
+----
+cp examples/config/monitors/midnight_testnet_bulletin_post.json config/monitors/midnight_testnet_bulletin_post.json
+----
+
+This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/monitors/midnight_testnet_bulletin_post.json[configuration^] monitors `post` transactions to a specific bulletin board contract. You can customize the notification channels by modifying the `triggers` array.
+
+[source,json]
+----
+{
+  "name": "Bulletin post",
+  "paused": false,
+  "networks": [
+    "midnight_testnet"
+  ],
+  "addresses": [
+    {
+      "address": "020200048fe17c5b2ae77e7154ff983dc37f18736a61aaef774c7a997935e84abe8361"
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "post()",
+        "expression": null
+      }
+    ],
+    "events": [],
+    "transactions": [
+      {
+        "status": "Any",
+        "expression": null
+      }
+    ]
+  },
+  "trigger_conditions": [],
+  "triggers": [
+    "midnight_bulletin_post_slack"
+  ]
+}
+----
+
+[NOTE]
+====
+* Event monitoring is currently not supported
+* Due to the privacy-focused design of the network:
+  ** Transaction details cannot be monitored (except for transaction status)
+  ** Function and event arguments cannot be monitored
+* Function signatures are simplified:
+  ** All argument variations are treated identically. For example `post`, `post()`, and `post(x, y, z)` are equivalent
+====
+
+==== 3. Notification Configuration:
+
+===== For Slack Notifications:
+
+[source,bash]
+----
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
+----
+
+Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/triggers/slack_notifications.json[configuration^].
+
+[source,json]
+----
+{
+   "midnight_bulletin_post_slack": {
+    "name": "Bulletin Post Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/A/B/C"
+      },
+      "message": {
+        "title": "midnight_bulletin_post_slack triggered",
+        "body": "A call to ${functions.0.signature} was made to the bulletin board | ${transaction.hash}"
+      }
+    }
+  }
+}
+----
+
+==== 4. Run the Monitor:
+
+**Local Deployment**
+
+[source,bash]
+----
+./openzeppelin-monitor
+----
+
+**Docker Deployment**
+
+[source,bash]
+----
+cargo make docker-compose-up
+----
+
+The monitor will now:
+
+1. Check for new Midnight blocks every minute.
+2. Watch for `post` calls to a bulletin board contract.
+3. Send notifications via Slack when a new post occurs.
+
+==== 5. Next Steps:
+
 * xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
 * xref:index.adoc#secret_management[Configure secure secret management] for sensitive data using environment variables or Hashicorp Cloud Vault
 * Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].

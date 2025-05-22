@@ -156,7 +156,7 @@ impl PartialEq for SecretValue {
 /// - The value is dropped
 /// - `zeroize()` is called explicitly
 /// - The value is moved
-#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SecretString(String);
 
 impl PartialEq for SecretString {
@@ -296,10 +296,22 @@ impl AsRef<str> for SecretString {
 impl fmt::Display for SecretValue {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			SecretValue::Plain(secret) => write!(f, "{}", secret.as_str()),
+			SecretValue::Plain(_) => write!(f, "<secret string>"),
 			SecretValue::Environment(env_var) => write!(f, "{}", env_var),
 			SecretValue::HashicorpCloudVault(name) => write!(f, "{}", name),
 		}
+	}
+}
+
+impl fmt::Debug for SecretString {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "<secret string>")
+	}
+}
+
+impl fmt::Display for SecretString {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "<secret string>")
 	}
 }
 
@@ -824,6 +836,36 @@ mod tests {
 	}
 
 	#[test]
+	fn test_secret_string_debug() {
+		let secret = SecretString::new("test".to_string());
+		assert_eq!(format!("{:?}", secret), "<secret string>");
+
+		let secret = SecretValue::Plain(SecretString::new("test".to_string()));
+		assert_eq!(format!("{:?}", secret), "Plain(<secret string>)");
+
+		let secret = SecretValue::Environment("test".to_string());
+		assert_eq!(format!("{:?}", secret), "Environment(\"test\")");
+
+		let secret = SecretValue::HashicorpCloudVault("test".to_string());
+		assert_eq!(format!("{:?}", secret), "HashicorpCloudVault(\"test\")");
+	}
+
+	#[test]
+	fn test_secret_string_display() {
+		let secret = SecretString::new("test".to_string());
+		assert_eq!(format!("{}", secret), "<secret string>");
+
+		let secret = SecretValue::Plain(SecretString::new("test".to_string()));
+		assert_eq!(format!("{}", secret), "<secret string>");
+
+		let secret = SecretValue::Environment("test".to_string());
+		assert_eq!(format!("{}", secret), "test");
+
+		let secret = SecretValue::HashicorpCloudVault("test".to_string());
+		assert_eq!(format!("{}", secret), "test");
+	}
+
+	#[test]
 	fn test_secret_value_starts_with() {
 		let plain = SecretValue::Plain(SecretString::new("PREFIX_value".to_string()));
 		let env = SecretValue::Environment("PREFIX_value".to_string());
@@ -884,7 +926,7 @@ mod tests {
 		let plain = SecretValue::Plain(SecretString::new("plainval".to_string()));
 		let env = SecretValue::Environment("envval".to_string());
 		let vault = SecretValue::HashicorpCloudVault("vaultval".to_string());
-		assert_eq!(format!("{}", plain), "plainval");
+		assert_eq!(format!("{}", plain), "<secret string>");
 		assert_eq!(format!("{}", env), "envval");
 		assert_eq!(format!("{}", vault), "vaultval");
 	}
