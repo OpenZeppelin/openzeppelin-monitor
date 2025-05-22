@@ -4,22 +4,24 @@
 //! via WebSocket protocol, supporting connection checks and failover.
 
 use async_trait::async_trait;
+use futures_util::{SinkExt, StreamExt};
 use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::{sync::Mutex, time::timeout};
-use tokio_tungstenite::connect_async;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::{
 	models::Network,
 	services::blockchain::transports::{
+		ws::{
+			config::WsConfig, connection::WebSocketConnection, endpoint_manager::EndpointManager,
+		},
 		BlockchainTransport, RotatingTransport, TransientErrorRetryStrategy,
 	},
 };
-
-use super::{config::WsConfig, connection::WebSocketConnection, endpoint_manager::EndpointManager};
 
 /// Basic WebSocket transport client for blockchain interactions
 ///
@@ -34,7 +36,7 @@ use super::{config::WsConfig, connection::WebSocketConnection, endpoint_manager:
 #[derive(Clone, Debug)]
 pub struct WsTransportClient {
 	/// WebSocket connection state and stream
-	connection: Arc<Mutex<WebSocketConnection>>,
+	pub connection: Arc<Mutex<WebSocketConnection>>,
 	/// Manages WebSocket endpoint rotation and request handling
 	endpoint_manager: Arc<EndpointManager>,
 	/// Configuration settings for WebSocket connections
@@ -55,14 +57,14 @@ impl WsTransportClient {
 	///
 	/// # Returns
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
-	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
-		let config = WsConfig::from_network(network);
+	pub async fn new(network: &Network, config: Option<WsConfig>) -> Result<Self, anyhow::Error> {
+		let config = config.unwrap_or_else(|| WsConfig::from_network(network));
 
 		// Filter and sort WebSocket URLs by weight
 		let mut ws_urls: Vec<_> = network
 			.rpc_urls
 			.iter()
-			.filter(|rpc_url| rpc_url.type_ == "ws" && rpc_url.weight > 0)
+			.filter(|rpc_url| rpc_url.type_ == "ws_rpc" && rpc_url.weight > 0)
 			.collect();
 
 		ws_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
@@ -77,21 +79,27 @@ impl WsTransportClient {
 
 		for rpc_url in ws_urls {
 			let url = rpc_url.url.as_ref().to_string();
-			if active_url.is_none()
-				&& timeout(config.connection_timeout, connect_async(&url))
-					.await
-					.is_ok()
-			{
-				active_url = Some(url);
-				continue;
+			if active_url.is_none() {
+				match timeout(config.connection_timeout, connect_async(&url)).await {
+					Ok(Ok(_)) => {
+						active_url = Some(url);
+						continue;
+					}
+					Ok(Err(e)) => {
+						return Err(anyhow::anyhow!("Failed to connect to {}: {}", url, e));
+					}
+					Err(_) => {
+						return Err(anyhow::anyhow!("Connection timeout for {}", url));
+					}
+				}
 			}
 			fallback_urls.push(url);
 		}
 
 		let active_url =
-			active_url.ok_or_else(|| anyhow::anyhow!("No working WebSocket URLs found"))?;
+			active_url.ok_or_else(|| anyhow::anyhow!("Failed to connect to any WebSocket URL"))?;
 		let endpoint_manager = Arc::new(EndpointManager::new(&config, &active_url, fallback_urls));
-		let connection = Arc::new(Mutex::new(WebSocketConnection::new()));
+		let connection = Arc::new(Mutex::new(WebSocketConnection::default()));
 
 		let client = Self {
 			connection,
@@ -112,6 +120,102 @@ impl WsTransportClient {
 	async fn connect(&self) -> Result<(), anyhow::Error> {
 		let url = self.endpoint_manager.get_active_url().await?;
 		self.try_connect(&url).await
+	}
+
+	/// Sends a JSON-RPC request via WebSocket
+	///
+	/// This method handles:
+	/// - Connection state verification
+	/// - Request formatting
+	/// - Message sending with timeout
+	/// - Response parsing
+	/// - Automatic URL rotation on failure
+	///
+	/// # Arguments
+	/// * `method` - The RPC method to call
+	/// * `params` - Optional parameters for the method call
+	///
+	/// # Returns
+	/// * `Result<Value, anyhow::Error>` - JSON response or error
+	async fn send_raw_request<P>(
+		&self,
+		method: &str,
+		params: Option<P>,
+	) -> Result<Value, anyhow::Error>
+	where
+		P: Into<Value> + Send + Clone + Serialize,
+	{
+		loop {
+			let mut connection = self.connection.lock().await;
+			if !connection.is_connected() {
+				return Err(anyhow::anyhow!("Not connected"));
+			}
+			connection.update_activity();
+
+			let stream = match connection.stream.as_mut() {
+				Some(stream) => stream,
+				None => {
+					drop(connection);
+					if !self.endpoint_manager.should_rotate().await {
+						return Err(anyhow::anyhow!("Not connected"));
+					}
+					self.endpoint_manager.rotate_url(self).await?;
+					continue;
+				}
+			};
+
+			let request_body = self.customize_request(method, params.clone()).await;
+
+			// Try to send the request
+			if let Err(e) = stream
+				.send(Message::Text(request_body.to_string().into()))
+				.await
+			{
+				drop(connection);
+				if !self.endpoint_manager.should_rotate().await {
+					return Err(anyhow::anyhow!("Failed to send request: {}", e));
+				}
+				self.endpoint_manager.rotate_url(self).await?;
+				continue;
+			}
+
+			// Wait for response with timeout
+			match tokio::time::timeout(self.config.message_timeout, stream.next()).await {
+				Ok(Some(Ok(Message::Text(text)))) => {
+					return Ok(serde_json::from_str(&text)?);
+				}
+				Ok(Some(Ok(_))) => {
+					connection.is_healthy = false;
+					connection.stream = None;
+					drop(connection);
+					if !self.endpoint_manager.should_rotate().await {
+						return Err(anyhow::anyhow!("Unexpected message type"));
+					}
+					self.endpoint_manager.rotate_url(self).await?;
+					continue;
+				}
+				Ok(Some(Err(e))) => {
+					connection.is_healthy = false;
+					connection.stream = None;
+					drop(connection);
+					if !self.endpoint_manager.should_rotate().await {
+						return Err(anyhow::anyhow!("WebSocket error: {}", e));
+					}
+					self.endpoint_manager.rotate_url(self).await?;
+					continue;
+				}
+				Ok(None) | Err(_) => {
+					connection.is_healthy = false;
+					connection.stream = None;
+					drop(connection);
+					if !self.endpoint_manager.should_rotate().await {
+						return Err(anyhow::anyhow!("Connection error"));
+					}
+					self.endpoint_manager.rotate_url(self).await?;
+					continue;
+				}
+			}
+		}
 	}
 }
 
@@ -153,15 +257,7 @@ impl BlockchainTransport for WsTransportClient {
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		let mut connection = self.connection.lock().await;
-		if !connection.is_connected() {
-			return Err(anyhow::anyhow!("Not connected"));
-		}
-		connection.update_activity();
-
-		self.endpoint_manager
-			.send_raw_request(self, method, params)
-			.await
+		self.send_raw_request(method, params).await
 	}
 
 	/// Updates the retry policy configuration

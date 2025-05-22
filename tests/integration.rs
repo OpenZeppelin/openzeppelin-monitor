@@ -29,10 +29,17 @@ mod integration {
 			mod midnight {
 				mod http;
 				mod transport;
+				mod ws;
 			}
-			mod endpoint_manager;
-			mod http;
-			mod ws;
+
+			mod http {
+				mod endpoint_manager;
+				mod transport;
+			}
+			mod ws {
+				mod endpoint_manager;
+				mod transport;
+			}
 		}
 	}
 	mod bootstrap {

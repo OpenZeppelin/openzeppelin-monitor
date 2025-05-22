@@ -6,21 +6,7 @@
 //! - Weight-based URL selection
 //! - Connection health monitoring
 //! - Thread-safe URL rotation
-//!
-//! # Example
-//! ```rust
-//! use crate::services::blockchain::transports::ws::{EndpointManager, WsConfig};
-//!
-//! let config = WsConfig::from_network(&network);
-//! let endpoint_manager = EndpointManager::new(
-//!     &config,
-//!     "wss://primary.example.com",
-//!     vec!["wss://backup1.example.com".to_string()]
-//! );
-//! ```
 
-use serde::Serialize;
-use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
@@ -37,6 +23,7 @@ use crate::services::blockchain::transports::{ws::config::WsConfig, RotatingTran
 /// * `fallback_urls` - List of fallback URLs to use when the active URL fails
 /// * `rotation_lock` - Mutex to ensure thread-safe URL rotation
 /// * `config` - Configuration settings for WebSocket connections
+/// * `client` - The WebSocket client instance
 #[derive(Clone, Debug)]
 pub struct EndpointManager {
 	/// The currently active WebSocket endpoint URL
@@ -82,15 +69,6 @@ impl EndpointManager {
 	/// # Returns
 	/// * `Ok(())` if rotation was successful
 	/// * `Err` if no fallback URLs are available or connection fails
-	///
-	/// # Example
-	/// ```rust
-	/// # use crate::services::blockchain::transports::RotatingTransport;
-	/// # async fn example(transport: &impl RotatingTransport) -> Result<(), anyhow::Error> {
-	/// endpoint_manager.rotate_url(transport).await?;
-	/// # Ok(())
-	/// # }
-	/// ```
 	pub async fn rotate_url<T: RotatingTransport>(
 		&self,
 		transport: &T,
@@ -163,58 +141,6 @@ impl EndpointManager {
 		))
 	}
 
-	#[allow(dead_code)]
-	/// Determines if rotation should be attempted and executes it if needed
-	///
-	/// Checks if there are fallback URLs available and attempts rotation if possible.
-	///
-	/// # Arguments
-	/// * `transport` - The transport client implementing the `RotatingTransport` trait
-	///
-	/// # Returns
-	/// * `Ok(true)` if rotation was needed and successful
-	/// * `Ok(false)` if no rotation was needed
-	/// * `Err` if rotation was attempted but failed
-	async fn should_attempt_rotation<T: RotatingTransport>(
-		&self,
-		transport: &T,
-	) -> Result<bool, anyhow::Error> {
-		if self.should_rotate().await {
-			match self.rotate_url(transport).await {
-				Ok(_) => Ok(true),
-				Err(e) => Err(e.context("Failed to rotate URL")),
-			}
-		} else {
-			Ok(false)
-		}
-	}
-
-	/// Placeholder for sending a raw request via WebSocket
-	///
-	/// This is a placeholder implementation as WebSocket communication
-	/// is handled by the substrate client.
-	///
-	/// # Arguments
-	/// * `_transport` - The transport client (unused)
-	/// * `_method` - The RPC method to call (unused)
-	/// * `_params` - The parameters for the RPC call (unused)
-	///
-	/// # Returns
-	/// Always returns an error indicating this method is not implemented
-	pub async fn send_raw_request<
-		T: RotatingTransport,
-		P: Into<Value> + Send + Clone + Serialize,
-	>(
-		&self,
-		_transport: &T,
-		_method: &str,
-		_params: Option<P>,
-	) -> Result<Value, anyhow::Error> {
-		Err(anyhow::anyhow!(
-			"WebSocket send_raw_request not implemented; use substrate client"
-		))
-	}
-
 	/// Retrieves the currently active WebSocket URL
 	///
 	/// # Returns
@@ -227,51 +153,6 @@ impl EndpointManager {
 		} else {
 			Ok(url.clone())
 		}
-	}
-
-	/// Gets the next URL to use for rotation
-	///
-	/// Retrieves the next available URL from the fallback list, ensuring it's different
-	/// from the current active URL.
-	///
-	/// # Returns
-	/// * `Ok(String)` containing the next URL to use
-	/// * `Err` if no fallback URLs are available
-	pub async fn get_next_url(&self) -> Result<String, anyhow::Error> {
-		let _guard = self.rotation_lock.lock().await;
-		let mut fallback_urls = self.fallback_urls.write().await;
-
-		if fallback_urls.is_empty() {
-			return Err(anyhow::anyhow!("No fallback URLs available"));
-		}
-
-		// Get the first URL from the pre-sorted list
-		Ok(fallback_urls.remove(0))
-	}
-
-	/// Updates the active URL and manages fallback URLs
-	///
-	/// Sets a new active URL and moves the old active URL to the fallback list
-	/// if it's not empty.
-	///
-	/// # Arguments
-	/// * `url` - The new URL to set as active
-	///
-	/// # Returns
-	/// * `Ok(())` if the update was successful
-	/// * `Err` if the update failed
-	pub async fn update_active_url(&self, url: &str) -> Result<(), anyhow::Error> {
-		let mut active_url = self.active_url.write().await;
-		let old_url = active_url.clone();
-
-		// Add the old URL to fallback URLs if it's not empty
-		if !old_url.is_empty() {
-			let mut fallback_urls = self.fallback_urls.write().await;
-			fallback_urls.push(old_url);
-		}
-
-		*active_url = url.to_string();
-		Ok(())
 	}
 
 	/// Checks if URL rotation should be attempted
