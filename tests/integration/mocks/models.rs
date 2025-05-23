@@ -99,7 +99,7 @@ pub fn create_midnight_test_network_with_urls(urls: Vec<&str>) -> Network {
 		.name("test")
 		.slug("test")
 		.network_type(BlockChainType::Midnight)
-		.rpc_urls(urls)
+		.websocket_rpc_urls(urls)
 		.build()
 }
 

@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use crate::integration::mocks::{
-	create_midnight_test_network_with_urls, create_midnight_valid_server_mock_network_response,
+	create_method_response, create_midnight_test_network_with_urls,
+	create_midnight_valid_server_mock_network_response, start_test_websocket_server,
 	MockMidnightClientTrait, MockMidnightWsTransportClient,
 };
 use mockall::predicate;
@@ -9,6 +12,7 @@ use openzeppelin_monitor::{
 	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
 	utils::tests::midnight::block::BlockBuilder,
 };
+use serde_json::json;
 
 #[tokio::test]
 async fn test_get_events() {
@@ -26,40 +30,19 @@ async fn test_get_events() {
 
 #[tokio::test]
 async fn test_get_chain_type() {
-	let mut server = Server::new_async().await;
+	let mut responses = HashMap::new();
+	create_method_response(&mut responses, "system_chain", &json!("testnet-02-1"), None);
+	let (url, shutdown_tx) = start_test_websocket_server(responses).await;
 
-	// Mock system_chain when initializing client
-	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
-
-	// Test testnet chain type
-	let mock_dev = server
-		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":"testnet-02-1","id":1}"#)
-		.expect(1)
-		.create_async()
-		.await;
-
-	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
-
+	let network = create_midnight_test_network_with_urls(vec![&url]);
 	let client = MidnightClient::new(&network).await.unwrap();
-	mock_init.assert_async().await;
 
 	let result = client.get_chain_type().await;
 	assert!(result.is_ok());
 	assert_eq!(result.unwrap(), "testnet-02-1");
-	mock_dev.assert_async().await;
 
-	// Test mainnet chain type
-	let mock_prod = server
-		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":"mainnet-01-1","id":1}"#)
-		.create_async()
-		.await;
-
-	let result = client.get_chain_type().await;
-	assert!(result.is_ok());
-	assert_eq!(result.unwrap(), "mainnet-01-1");
-	mock_prod.assert_async().await;
+	// Cleanup
+	let _ = shutdown_tx.send(());
 }
 
 #[tokio::test]

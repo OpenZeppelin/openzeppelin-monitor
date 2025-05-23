@@ -93,6 +93,18 @@ impl NetworkBuilder {
 		self
 	}
 
+	pub fn websocket_rpc_urls(mut self, urls: Vec<&str>) -> Self {
+		self.rpc_urls = urls
+			.into_iter()
+			.map(|url| RpcUrl {
+				type_: "ws_rpc".to_string(),
+				url: SecretValue::Plain(SecretString::new(url.to_string())),
+				weight: 100,
+			})
+			.collect();
+		self
+	}
+
 	pub fn add_rpc_url(mut self, url: &str, type_: &str, weight: u32) -> Self {
 		self.rpc_urls.push(RpcUrl {
 			type_: type_.to_string(),
@@ -254,6 +266,21 @@ mod tests {
 		// Check defaults are applied
 		assert!(network.rpc_urls.iter().all(|url| url.type_ == "rpc"));
 		assert!(network.rpc_urls.iter().all(|url| url.weight == 100));
+	}
+
+	#[test]
+	fn test_websocket_rpc_urls() {
+		let network = NetworkBuilder::new()
+			.websocket_rpc_urls(vec!["wss://ws1.example.com", "wss://ws2.example.com"])
+			.build();
+
+		assert_eq!(network.rpc_urls.len(), 2);
+		assert_eq!(
+			network.rpc_urls[0].url.as_ref().to_string(),
+			"wss://ws1.example.com".to_string()
+		);
+		assert_eq!(network.rpc_urls[0].type_, "ws_rpc");
+		assert_eq!(network.rpc_urls[1].type_, "ws_rpc");
 	}
 
 	#[test]

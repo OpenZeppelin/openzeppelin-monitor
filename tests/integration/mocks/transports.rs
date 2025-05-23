@@ -3,7 +3,7 @@ use mockall::mock;
 use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message;
@@ -254,19 +254,30 @@ impl RotatingTransport for MockMidnightWsTransportClient {
 	}
 }
 
+/// Type alias for method responses
+type MethodResponse = Box<dyn Fn(&Value) -> Value + Send + Sync>;
+
 /// Start a test WebSocket server that simulates a Substrate client.
 /// Returns a URL for the server and a channel for shutting down the server.
+///
+/// # Arguments
+///
+/// * `method_responses` - A map of method names to their response functions.
+///   Each function takes the request and returns a response value.
 ///
 /// # Returns
 ///
 /// A tuple containing:
 /// - The URL of the server
 /// - A channel for shutting down the server
-pub async fn start_test_websocket_server() -> (String, oneshot::Sender<()>) {
+pub async fn start_test_websocket_server(
+	method_responses: std::collections::HashMap<String, MethodResponse>,
+) -> (String, oneshot::Sender<()>) {
 	let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 	let addr = listener.local_addr().unwrap();
 	let url = format!("ws://{}", addr);
 	let (shutdown_tx, shutdown_rx) = oneshot::channel();
+	let method_responses = Arc::new(method_responses);
 
 	tokio::spawn(async move {
 		let mut shutdown_rx = shutdown_rx;
@@ -299,6 +310,7 @@ pub async fn start_test_websocket_server() -> (String, oneshot::Sender<()>) {
 						};
 
 						let (write, read) = ws_stream.split();
+						let method_responses = method_responses.clone();
 
 						// Spawn a new task to handle this connection
 						let handle = tokio::spawn(async move {
@@ -318,103 +330,25 @@ pub async fn start_test_websocket_server() -> (String, oneshot::Sender<()>) {
 												match method {
 													"timeout_test" => {
 														// Sleep for 10 seconds to cause a timeout
-														// This will depend on the config of the WebSocket client
-														// But for testing purposes we set this at a low number (1s)
 														tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 														return;
 													},
-													"system_chain" => {
-														// Send chain response
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": "Development"
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
-													"system_chainType" => {
-														// Send chain type response
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": "Development"
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
-													"chain_subscribeNewHeads" => {
-														// Send subscription confirmation
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": "0x1"
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
-													"chain_getBlockHash" => {
-														// Send block hash response
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": "0x0000000000000000000000000000000000000000000000000000000000000000"
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
-													"chain_getFinalizedHead" => {
-														// Send finalized head response
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": "0x0000000000000000000000000000000000000000000000000000000000000000"
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
-													"state_getRuntimeVersion" => {
-														// Send runtime version response
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": {
-																"specName": "midnight",
-																"implName": "midnight-node",
-																"authoringVersion": 1,
-																"specVersion": 1,
-																"implVersion": 1,
-																"apis": [],
-																"transactionVersion": 1
-															}
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
-													"state_call" => {
-														let data = std::fs::read_to_string("tests/integration/fixtures/midnight/state_call.json").unwrap();
-														let json_response: Value = serde_json::from_str(&data).unwrap();
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": json_response["result"]
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
-													"state_getStorage" => {
-														// Send storage response
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"result": "0x0000000000000000000000000000000000000000000000000000000000000000"
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
-													}
 													_ => {
-														// Send error for unknown methods
-														let response = json!({
-															"jsonrpc": "2.0",
-															"id": id,
-															"error": {
-																"code": -32601,
-																"message": format!("Method not found: {}", method)
-															}
-														});
-														let _ = write.send(Message::Text(response.to_string().into())).await;
+														if let Some(response_fn) = method_responses.get(method) {
+															let response = response_fn(&request);
+															let _ = write.send(Message::Text(response.to_string().into())).await;
+														} else {
+															// Send error for unknown methods
+															let response = json!({
+																"jsonrpc": "2.0",
+																"id": id,
+																"error": {
+																	"code": -32601,
+																	"message": format!("Method not found: {}", method)
+																}
+															});
+															let _ = write.send(Message::Text(response.to_string().into())).await;
+														}
 													}
 												}
 											}
@@ -456,4 +390,83 @@ pub async fn start_test_websocket_server() -> (String, oneshot::Sender<()>) {
 	});
 
 	(url, shutdown_tx)
+}
+
+pub fn create_method_response(
+	responses: &mut HashMap<String, MethodResponse>,
+	method: &str,
+	result: &Value,
+	id: Option<u64>,
+) {
+	let result = result.clone();
+	responses.insert(
+		method.to_string(),
+		Box::new(move |_: &Value| {
+			json!({
+				"jsonrpc": "2.0",
+				"id": id.unwrap_or(1),
+				"result": result
+			})
+		}) as MethodResponse,
+	);
+}
+
+/// Helper function to create default method responses for common Substrate methods
+pub fn create_default_method_responses() -> HashMap<String, MethodResponse> {
+	let mut responses = HashMap::new();
+
+	// Add default responses for common methods
+	create_method_response(&mut responses, "system_chain", &json!("Development"), None);
+	create_method_response(
+		&mut responses,
+		"system_chainType",
+		&json!("Development"),
+		None,
+	);
+	create_method_response(
+		&mut responses,
+		"chain_subscribeNewHeads",
+		&json!("0x1"),
+		None,
+	);
+	create_method_response(
+		&mut responses,
+		"chain_getBlockHash",
+		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
+		None,
+	);
+	create_method_response(
+		&mut responses,
+		"chain_getFinalizedHead",
+		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
+		None,
+	);
+	create_method_response(
+		&mut responses,
+		"state_getRuntimeVersion",
+		&json!({
+			"specName": "midnight",
+			"implName": "midnight-node",
+			"authoringVersion": 1,
+			"specVersion": 1,
+			"implVersion": 1,
+			"apis": [],
+			"transactionVersion": 1
+		}),
+		None,
+	);
+	create_method_response(
+		&mut responses,
+		"state_getStorage",
+		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
+		None,
+	);
+
+	// Special case for state_call as it needs to read from a file
+	let data =
+		std::fs::read_to_string("tests/integration/fixtures/midnight/state_call.json").unwrap();
+	let json_response: Value = serde_json::from_str(&data).unwrap();
+	create_method_response(&mut responses, "state_call", &json_response["result"], None);
+
+	responses
 }
