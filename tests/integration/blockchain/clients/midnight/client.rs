@@ -1,18 +1,14 @@
-use std::collections::HashMap;
-
 use crate::integration::mocks::{
-	create_method_response, create_midnight_test_network_with_urls,
-	create_midnight_valid_server_mock_network_response, start_test_websocket_server,
-	MockMidnightClientTrait, MockMidnightWsTransportClient,
+	MockMidnightClientTrait, MockMidnightWsTransportClient, MockSubstrateClient,
 };
 use mockall::predicate;
-use mockito::Server;
 use openzeppelin_monitor::{
 	models::BlockType,
 	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
 	utils::tests::midnight::block::BlockBuilder,
 };
 use serde_json::json;
+use subxt::events::EventsClient;
 
 #[tokio::test]
 async fn test_get_events() {
@@ -28,69 +24,116 @@ async fn test_get_events() {
 	assert_eq!(result.unwrap().len(), 0);
 }
 
+// Helper function to create a configured mock substrate client
+fn create_mock_substrate_client() -> MockSubstrateClient {
+	let mut mock = MockSubstrateClient::new();
+	mock.expect_get_events()
+		.returning(|| EventsClient::new(MockSubstrateClient::new()));
+	mock
+}
+
 #[tokio::test]
 async fn test_get_chain_type() {
-	let mut responses = HashMap::new();
-	create_method_response(&mut responses, "system_chain", &json!("testnet-02-1"), None);
-	let (url, shutdown_tx) = start_test_websocket_server(responses).await;
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = create_mock_substrate_client();
 
-	let network = create_midnight_test_network_with_urls(vec![&url]);
-	let client = MidnightClient::new(&network).await.unwrap();
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("system_chain"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "testnet-02-1"
+			}))
+		});
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
 
 	let result = client.get_chain_type().await;
 	assert!(result.is_ok());
 	assert_eq!(result.unwrap(), "testnet-02-1");
-
-	// Cleanup
-	let _ = shutdown_tx.send(());
 }
 
 #[tokio::test]
 async fn test_get_chain_type_error_cases() {
-	let mut server = Server::new_async().await;
+	// Test case 1: Missing result field
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = create_mock_substrate_client();
 
-	// Mock system_chain when initializing client
-	let mock_init = create_midnight_valid_server_mock_network_response(&mut server);
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("system_chain"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1
+			}))
+		});
 
-	// Test missing result field
-	let mock_missing_result = server
-		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","id":1}"#)
-		.create_async()
-		.await;
-
-	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
-	let client = MidnightClient::new(&network).await.unwrap();
-	mock_init.assert_async().await;
-	let result = client.get_chain_type().await;
-
-	assert!(result.is_ok());
-	assert_eq!(result.unwrap(), "");
-	mock_missing_result.assert_async().await;
-
-	// Test null result field
-	let mock_null_result = server
-		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":null,"id":1}"#)
-		.create_async()
-		.await;
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
 
 	let result = client.get_chain_type().await;
 	assert!(result.is_ok());
 	assert_eq!(result.unwrap(), "");
-	mock_null_result.assert_async().await;
 
-	// Test invalid JSON response
-	let mock_invalid_json = server
-		.mock("POST", "/")
-		.with_body(r#"{"jsonrpc":"2.0","result":123,"id":1}"#)
-		.create_async()
-		.await;
+	// Test case 2: Null result
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = create_mock_substrate_client();
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("system_chain"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": null
+			}))
+		});
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
 
 	let result = client.get_chain_type().await;
 	assert!(result.is_ok());
 	assert_eq!(result.unwrap(), "");
-	mock_invalid_json.assert_async().await;
+
+	// Test case 3: Non-string result
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = create_mock_substrate_client();
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("system_chain"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": 123
+			}))
+		});
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), "");
 }
 
 #[tokio::test]
@@ -133,14 +176,31 @@ async fn test_get_blocks() {
 
 #[tokio::test]
 async fn test_new_client() {
-	let mut server = Server::new_async().await;
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = create_mock_substrate_client();
 
-	let mock = create_midnight_valid_server_mock_network_response(&mut server);
-	// Create a test network
-	let network = create_midnight_test_network_with_urls(vec![&server.url()]);
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("system_chain"), predicate::always())
+		.returning(|_, _| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "testnet-02-1"
+			}))
+		});
 
-	// Test successful client creation
-	let result = MidnightClient::new(&network).await;
-	assert!(result.is_ok(), "Client creation should succeed");
-	mock.assert();
+	mock_midnight
+		.expect_get_current_url()
+		.returning(|| "ws://dummy".to_string());
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), "testnet-02-1");
 }

@@ -131,68 +131,6 @@ impl RotatingTransport for MockStellarTransportClient {
 	}
 }
 
-// Mock implementation of a Midnight transport client.
-// Used for testing Midnight compatible blockchain interactions.
-// Provides functionality to simulate raw JSON-RPC request handling.
-mock! {
-	pub MidnightHttpTransportClient {
-		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, anyhow::Error>;
-		pub async fn get_current_url(&self) -> String;
-		pub async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error>;
-		pub async fn update_client(&self, url: &str) -> Result<(), anyhow::Error>;
-	}
-
-	impl Clone for MidnightHttpTransportClient {
-		fn clone(&self) -> Self;
-	}
-}
-
-#[async_trait::async_trait]
-impl BlockchainTransport for MockMidnightHttpTransportClient {
-	async fn get_current_url(&self) -> String {
-		self.get_current_url().await
-	}
-
-	async fn send_raw_request<P>(
-		&self,
-		method: &str,
-		params: Option<P>,
-	) -> Result<Value, anyhow::Error>
-	where
-		P: Into<Value> + Send + Clone,
-	{
-		let params_value = params.map(|p| p.into());
-		self.send_raw_request(method, params_value.and_then(|v| v.as_array().cloned()))
-			.await
-	}
-
-	fn set_retry_policy(
-		&mut self,
-		_: ExponentialBackoff,
-		_: Option<TransientErrorRetryStrategy>,
-	) -> Result<(), anyhow::Error> {
-		Ok(())
-	}
-
-	fn update_endpoint_manager_client(
-		&mut self,
-		_: ClientWithMiddleware,
-	) -> Result<(), anyhow::Error> {
-		Ok(())
-	}
-}
-
-#[async_trait::async_trait]
-impl RotatingTransport for MockMidnightHttpTransportClient {
-	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
-		self.try_connect(url).await
-	}
-
-	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
-		self.update_client(url).await
-	}
-}
-
 // Mock implementation of a WebSocket transport client.
 // Used for testing WebSocket connections.
 mock! {
@@ -255,7 +193,7 @@ impl RotatingTransport for MockMidnightWsTransportClient {
 }
 
 /// Type alias for method responses
-type MethodResponse = Box<dyn Fn(&Value) -> Value + Send + Sync>;
+pub type MethodResponse = Box<dyn Fn(&Value) -> Value + Send + Sync>;
 
 /// Start a test WebSocket server that simulates a Substrate client.
 /// Returns a URL for the server and a channel for shutting down the server.
@@ -271,13 +209,13 @@ type MethodResponse = Box<dyn Fn(&Value) -> Value + Send + Sync>;
 /// - The URL of the server
 /// - A channel for shutting down the server
 pub async fn start_test_websocket_server(
-	method_responses: std::collections::HashMap<String, MethodResponse>,
+	method_responses: Option<std::collections::HashMap<String, MethodResponse>>,
 ) -> (String, oneshot::Sender<()>) {
 	let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 	let addr = listener.local_addr().unwrap();
 	let url = format!("ws://{}", addr);
 	let (shutdown_tx, shutdown_rx) = oneshot::channel();
-	let method_responses = Arc::new(method_responses);
+	let method_responses = Arc::new(method_responses.unwrap_or_default());
 
 	tokio::spawn(async move {
 		let mut shutdown_rx = shutdown_rx;
@@ -438,6 +376,12 @@ pub fn create_default_method_responses() -> HashMap<String, MethodResponse> {
 	create_method_response(
 		&mut responses,
 		"chain_getFinalizedHead",
+		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
+		None,
+	);
+	create_method_response(
+		&mut responses,
+		"chain_getFinalisedHead",
 		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
 		None,
 	);

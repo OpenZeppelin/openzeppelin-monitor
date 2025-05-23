@@ -88,8 +88,8 @@ impl WsTransportClient {
 					Ok(Err(e)) => {
 						return Err(anyhow::anyhow!("Failed to connect to {}: {}", url, e));
 					}
-					Err(_) => {
-						return Err(anyhow::anyhow!("Connection timeout for {}", url));
+					Err(e) => {
+						return Err(anyhow::anyhow!("Connection timeout for {}: {}", url, e));
 					}
 				}
 			}

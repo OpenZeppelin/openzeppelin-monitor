@@ -36,7 +36,8 @@ fn create_test_network_with_urls(urls: Vec<&str>) -> Network {
 
 #[tokio::test]
 async fn test_ws_transport_connection() {
-	let (url, shutdown_tx) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url, shutdown_tx) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 	let network = create_test_network_with_urls(vec![&url]);
 
 	// Test client creation
@@ -58,8 +59,10 @@ async fn test_ws_transport_connection() {
 #[tokio::test]
 async fn test_ws_transport_fallback() {
 	// Start two test servers
-	let (url1, shutdown_tx1) = start_test_websocket_server(create_default_method_responses()).await;
-	let (url2, shutdown_tx2) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url1, shutdown_tx1) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
+	let (url2, shutdown_tx2) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 
 	let network = create_test_network_with_urls(vec![&url1, &url2]);
 	let client = MidnightWsTransportClient::new(&network, None)
@@ -126,9 +129,12 @@ async fn test_ws_transport_no_ws_urls() {
 #[tokio::test]
 async fn test_ws_transport_multiple_fallbacks() {
 	// Start three test servers
-	let (url1, shutdown_tx1) = start_test_websocket_server(create_default_method_responses()).await;
-	let (url2, shutdown_tx2) = start_test_websocket_server(create_default_method_responses()).await;
-	let (url3, shutdown_tx3) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url1, shutdown_tx1) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
+	let (url2, shutdown_tx2) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
+	let (url3, shutdown_tx3) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 
 	let network = create_test_network_with_urls(vec![&url1, &url2, &url3]);
 	let client = MidnightWsTransportClient::new(&network, None)
@@ -156,7 +162,8 @@ async fn test_ws_transport_multiple_fallbacks() {
 
 #[tokio::test]
 async fn test_ws_transport_unimplemented_methods() {
-	let (url, shutdown_tx) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url, shutdown_tx) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let mut client = MidnightWsTransportClient::new(&network, None)
 		.await
@@ -187,7 +194,8 @@ async fn test_ws_transport_unimplemented_methods() {
 
 #[tokio::test]
 async fn test_ws_transport_request_response() {
-	let (url, shutdown_tx) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url, shutdown_tx) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let client = MidnightWsTransportClient::new(&network, None)
 		.await
@@ -226,9 +234,11 @@ async fn test_ws_transport_request_response() {
 
 #[tokio::test]
 async fn test_ws_transport_timeout() {
-	let (url, shutdown_tx) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url, shutdown_tx) = start_test_websocket_server(None).await;
+
 	let network = create_test_network_with_urls(vec![&url]);
-	let client = MidnightWsTransportClient::new(&network, None)
+
+	let client = MidnightWsTransportClient::new(&network, Some(WsConfig::single_attempt()))
 		.await
 		.unwrap();
 
@@ -236,8 +246,8 @@ async fn test_ws_transport_timeout() {
 	let result = client.send_raw_request("timeout_test", None::<Value>).await;
 	assert!(result.is_err(), "Should timeout on hanging request");
 	assert!(
-		result.unwrap_err().to_string().contains("Connection error"),
-		"Should indicate connection error"
+		result.unwrap_err().to_string().contains("Response timeout"),
+		"Should indicate response timeout"
 	);
 
 	// Cleanup
@@ -246,7 +256,8 @@ async fn test_ws_transport_timeout() {
 
 #[tokio::test]
 async fn test_ws_transport_connection_state() {
-	let (url, shutdown_tx) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url, shutdown_tx) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let client = MidnightWsTransportClient::new(&network, None)
 		.await
@@ -267,7 +278,7 @@ async fn test_ws_transport_connection_state() {
 
 	// Start a new server
 	let (new_url, new_shutdown_tx) =
-		start_test_websocket_server(create_default_method_responses()).await;
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 	let network = create_test_network_with_urls(vec![&new_url]);
 	let client = MidnightWsTransportClient::new(&network, None)
 		.await
@@ -283,7 +294,8 @@ async fn test_ws_transport_connection_state() {
 
 #[tokio::test]
 async fn test_ws_transport_concurrent_requests() {
-	let (url, shutdown_tx) = start_test_websocket_server(create_default_method_responses()).await;
+	let (url, shutdown_tx) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let client = MidnightWsTransportClient::new(&network, None)
 		.await

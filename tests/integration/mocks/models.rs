@@ -84,16 +84,6 @@ pub fn create_evm_test_network_with_urls(urls: Vec<&str>) -> Network {
 		.build()
 }
 
-pub fn create_midnight_valid_server_mock_network_response(server: &mut Server) -> Mock {
-	server
-		.mock("POST", "/")
-		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"system_chain","params":[]}"#)
-		.with_header("content-type", "application/json")
-		.with_status(200)
-		.with_body(r#"{"jsonrpc":"2.0","id":1,"result":"1"}"#)
-		.create()
-}
-
 pub fn create_midnight_test_network_with_urls(urls: Vec<&str>) -> Network {
 	NetworkBuilder::new()
 		.name("test")

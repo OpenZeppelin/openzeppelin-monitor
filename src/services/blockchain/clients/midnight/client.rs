@@ -9,7 +9,10 @@ use futures;
 use serde_json::json;
 use std::marker::PhantomData;
 use std::str::FromStr;
-use subxt::client::OnlineClient;
+use subxt::{
+	client::{OnlineClient, OnlineClientT},
+	events::EventsClient,
+};
 use tracing::instrument;
 
 use crate::{
@@ -27,19 +30,27 @@ use crate::{
 ///
 /// Provides high-level access to Midnight blockchain data and operations through HTTP and WebSocket transport.
 #[derive(Clone)]
-pub struct MidnightClient<W: Send + Sync + Clone> {
+pub struct MidnightClient<
+	W: Send + Sync + Clone,
+	S: SubstrateClientTrait = OnlineClient<subxt::SubstrateConfig>,
+> {
 	/// The underlying Midnight transport client for RPC communication
 	ws_client: W,
+	/// The Substrate client for event handling
+	substrate_client: S,
 }
 
-impl<W: Send + Sync + Clone> MidnightClient<W> {
+impl<W: Send + Sync + Clone, S: SubstrateClientTrait> MidnightClient<W, S> {
 	/// Creates a new Midnight client instance with specific transport clients
-	pub fn new_with_transport(ws_client: W) -> Self {
-		Self { ws_client }
+	pub fn new_with_transport(ws_client: W, substrate_client: S) -> Self {
+		Self {
+			ws_client,
+			substrate_client,
+		}
 	}
 }
 
-impl MidnightClient<MidnightWsTransportClient> {
+impl MidnightClient<MidnightWsTransportClient, OnlineClient<subxt::SubstrateConfig>> {
 	/// Creates a new Midnight client instance
 	///
 	/// # Arguments
@@ -49,7 +60,12 @@ impl MidnightClient<MidnightWsTransportClient> {
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let ws_client = MidnightWsTransportClient::new(network, None).await?;
-		Ok(Self::new_with_transport(ws_client))
+		let substrate_client = OnlineClient::<subxt::SubstrateConfig>::from_insecure_url(
+			ws_client.get_current_url().await,
+		)
+		.await
+		.map_err(|e| anyhow::anyhow!("Failed to create subxt client: {}", e))?;
+		Ok(Self::new_with_transport(ws_client, substrate_client))
 	}
 }
 
@@ -60,6 +76,26 @@ impl<W: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for 
 		MidnightBlockFilter {
 			_client: PhantomData,
 		}
+	}
+}
+
+/// Trait for Substrate client implementation
+///
+/// Provides a method to get events from the Substrate client
+#[async_trait]
+pub trait SubstrateClientTrait:
+	Send + Sync + Clone + OnlineClientT<subxt::SubstrateConfig>
+{
+	fn get_events(&self) -> EventsClient<subxt::SubstrateConfig, Self>;
+}
+
+/// Default implementation for Substrate client trait
+///
+/// Provides a default implementation for the Substrate client trait
+#[async_trait]
+impl SubstrateClientTrait for OnlineClient<subxt::SubstrateConfig> {
+	fn get_events(&self) -> EventsClient<subxt::SubstrateConfig, Self> {
+		self.events()
 	}
 }
 
@@ -90,7 +126,9 @@ pub trait MidnightClientTrait {
 }
 
 #[async_trait]
-impl<W: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for MidnightClient<W> {
+impl<W: Send + Sync + Clone + BlockchainTransport, S: SubstrateClientTrait> MidnightClientTrait
+	for MidnightClient<W, S>
+{
 	/// Retrieves events within a block range
 	/// Compactc does not support events yet
 	#[instrument(skip(self), fields(start_block, end_block))]
@@ -99,12 +137,6 @@ impl<W: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for Midni
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<MidnightEvent>, anyhow::Error> {
-		let substrate_client = OnlineClient::<subxt::SubstrateConfig>::from_insecure_url(
-			self.ws_client.get_current_url().await,
-		)
-		.await
-		.map_err(|e| anyhow::anyhow!("Failed to create subxt client: {}", e))?;
-
 		let end_block = end_block.unwrap_or(start_block);
 		let block_range = start_block..=end_block;
 
@@ -133,10 +165,10 @@ impl<W: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for Midni
 
 		// Fetch events for each block in parallel
 		let raw_events = futures::future::join_all(block_hashes.into_iter().map(|block_hash| {
-			let client = substrate_client.clone();
+			let client = self.substrate_client.clone();
 			async move {
 				client
-					.events()
+					.get_events()
 					.at(block_hash)
 					.await
 					.map_err(|e| anyhow::anyhow!("Failed to get events: {}", e))
@@ -198,7 +230,9 @@ impl<W: Send + Sync + Clone + BlockchainTransport> MidnightClientTrait for Midni
 }
 
 #[async_trait]
-impl<W: Send + Sync + Clone + BlockchainTransport> BlockChainClient for MidnightClient<W> {
+impl<W: Send + Sync + Clone + BlockchainTransport, S: SubstrateClientTrait> BlockChainClient
+	for MidnightClient<W, S>
+{
 	/// Retrieves the latest block number with retry functionality
 	///
 	/// Blocks may only be finalised on a particular node, and not on others due to load-balancing.
