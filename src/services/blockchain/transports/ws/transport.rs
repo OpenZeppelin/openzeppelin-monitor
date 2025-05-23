@@ -9,9 +9,9 @@ use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::Value;
-use std::sync::Arc;
-use tokio::{sync::Mutex, time::timeout};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use std::{sync::Arc, time::Duration};
+use tokio::{net::TcpStream, sync::Mutex, time::timeout};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 use crate::{
 	models::Network,
@@ -152,9 +152,16 @@ impl WsTransportClient {
 			}
 			connection.update_activity();
 
+			// Helper function to handle connection errors
+			let handle_connection_error = |connection: &mut WebSocketConnection| {
+				connection.is_healthy = false;
+				connection.stream = None;
+			};
+
 			let stream = match connection.stream.as_mut() {
 				Some(stream) => stream,
 				None => {
+					handle_connection_error(&mut connection);
 					drop(connection);
 					if !self.endpoint_manager.should_rotate().await {
 						return Err(anyhow::anyhow!("Not connected"));
@@ -171,6 +178,7 @@ impl WsTransportClient {
 				.send(Message::Text(request_body.to_string().into()))
 				.await
 			{
+				handle_connection_error(&mut connection);
 				drop(connection);
 				if !self.endpoint_manager.should_rotate().await {
 					return Err(anyhow::anyhow!("Failed to send request: {}", e));
@@ -179,14 +187,87 @@ impl WsTransportClient {
 				continue;
 			}
 
+			// Helper function to handle ping messages
+			async fn handle_ping(
+				stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+				data: Vec<u8>,
+			) -> Result<(), anyhow::Error> {
+				stream
+					.send(Message::Pong(data.into()))
+					.await
+					.map_err(|e| anyhow::anyhow!("Failed to send pong: {}", e))
+			}
+
+			// Helper function to wait for response
+			async fn wait_for_response(
+				stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+				timeout: Duration,
+			) -> Result<Message, anyhow::Error> {
+				tokio::time::timeout(timeout, stream.next())
+					.await
+					.map_err(|_| anyhow::anyhow!("Response timeout"))?
+					.ok_or_else(|| anyhow::anyhow!("Connection closed"))?
+					.map_err(|e| anyhow::anyhow!("WebSocket error: {}", e))
+			}
+
 			// Wait for response with timeout
-			match tokio::time::timeout(self.config.message_timeout, stream.next()).await {
-				Ok(Some(Ok(Message::Text(text)))) => {
+			match wait_for_response(stream, self.config.message_timeout).await {
+				Ok(Message::Text(text)) => {
 					return Ok(serde_json::from_str(&text)?);
 				}
-				Ok(Some(Ok(_))) => {
-					connection.is_healthy = false;
-					connection.stream = None;
+				Ok(Message::Ping(data)) => {
+					// Respond to ping and wait for actual response
+					if let Err(e) = handle_ping(stream, data.to_vec()).await {
+						handle_connection_error(&mut connection);
+						drop(connection);
+						if !self.endpoint_manager.should_rotate().await {
+							return Err(e);
+						}
+						self.endpoint_manager.rotate_url(self).await?;
+						continue;
+					}
+
+					// Keep connection lock and wait for actual response
+					match wait_for_response(stream, self.config.message_timeout).await {
+						Ok(Message::Text(text)) => {
+							return Ok(serde_json::from_str(&text)?);
+						}
+						Ok(Message::Ping(data)) => {
+							// Handle nested ping
+							if let Err(e) = handle_ping(stream, data.to_vec()).await {
+								handle_connection_error(&mut connection);
+								drop(connection);
+								if !self.endpoint_manager.should_rotate().await {
+									return Err(e);
+								}
+								self.endpoint_manager.rotate_url(self).await?;
+								continue;
+							}
+							drop(connection);
+							continue;
+						}
+						Ok(_) => {
+							handle_connection_error(&mut connection);
+							drop(connection);
+							if !self.endpoint_manager.should_rotate().await {
+								return Err(anyhow::anyhow!("Unexpected message type"));
+							}
+							self.endpoint_manager.rotate_url(self).await?;
+							continue;
+						}
+						Err(e) => {
+							handle_connection_error(&mut connection);
+							drop(connection);
+							if !self.endpoint_manager.should_rotate().await {
+								return Err(e);
+							}
+							self.endpoint_manager.rotate_url(self).await?;
+							continue;
+						}
+					}
+				}
+				Ok(_) => {
+					handle_connection_error(&mut connection);
 					drop(connection);
 					if !self.endpoint_manager.should_rotate().await {
 						return Err(anyhow::anyhow!("Unexpected message type"));
@@ -194,22 +275,11 @@ impl WsTransportClient {
 					self.endpoint_manager.rotate_url(self).await?;
 					continue;
 				}
-				Ok(Some(Err(e))) => {
-					connection.is_healthy = false;
-					connection.stream = None;
+				Err(e) => {
+					handle_connection_error(&mut connection);
 					drop(connection);
 					if !self.endpoint_manager.should_rotate().await {
-						return Err(anyhow::anyhow!("WebSocket error: {}", e));
-					}
-					self.endpoint_manager.rotate_url(self).await?;
-					continue;
-				}
-				Ok(None) | Err(_) => {
-					connection.is_healthy = false;
-					connection.stream = None;
-					drop(connection);
-					if !self.endpoint_manager.should_rotate().await {
-						return Err(anyhow::anyhow!("Connection error"));
+						return Err(e);
 					}
 					self.endpoint_manager.rotate_url(self).await?;
 					continue;
@@ -257,7 +327,8 @@ impl BlockchainTransport for WsTransportClient {
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		self.send_raw_request(method, params).await
+		// Call the internal implementation instead of recursively calling self
+		WsTransportClient::send_raw_request(self, method, params).await
 	}
 
 	/// Updates the retry policy configuration

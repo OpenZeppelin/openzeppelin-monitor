@@ -29,7 +29,7 @@ use openzeppelin_monitor::{
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
 
-use super::{MockEVMTransportClient, MockMidnightTransportClient, MockStellarTransportClient};
+use super::{MockEVMTransportClient, MockMidnightWsTransportClient, MockStellarTransportClient};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -197,10 +197,10 @@ mock! {
 	impl ClientPoolTrait for ClientPool {
 		type EvmClient = MockEvmClientTrait<MockEVMTransportClient>;
 		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
-		type MidnightClient = MockMidnightClientTrait<MockMidnightTransportClient>;
+		type MidnightClient = MockMidnightClientTrait<MockMidnightWsTransportClient>;
 		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockEVMTransportClient>>,  anyhow::Error>;
 		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>,  anyhow::Error>;
-		async fn get_midnight_client(&self, network: &Network) -> Result<Arc<MockMidnightClientTrait<MockMidnightTransportClient>>,  anyhow::Error>;
+		async fn get_midnight_client(&self, network: &Network) -> Result<Arc<MockMidnightClientTrait<MockMidnightWsTransportClient>>,  anyhow::Error>;
 	}
 
 	impl Clone for ClientPool {

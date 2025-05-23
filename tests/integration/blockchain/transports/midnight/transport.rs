@@ -7,9 +7,7 @@ use openzeppelin_monitor::{
 	utils::tests::midnight::event::EventBuilder,
 };
 
-use crate::integration::mocks::{
-	MockMidnightTransportClient, MockWsTransportClient, WsTransportClientWrapper,
-};
+use crate::integration::mocks::MockMidnightWsTransportClient;
 
 fn create_mock_block(number: u64) -> Value {
 	json!({
@@ -41,8 +39,8 @@ fn create_recursive_mock_midnight_transport_client(
 	_depth: u32,
 	block_hash: Option<String>,
 	events: Option<Vec<Value>>,
-) -> MockMidnightTransportClient {
-	let mut new_mock: MockMidnightTransportClient = MockMidnightTransportClient::new();
+) -> MockMidnightWsTransportClient {
+	let mut new_mock: MockMidnightWsTransportClient = MockMidnightWsTransportClient::new();
 	let block_hash = block_hash.clone();
 	let events = events.clone();
 
@@ -92,13 +90,8 @@ async fn test_get_events_implementation() {
 			serde_json::to_value(EventBuilder::new().build()).unwrap()
 		]),
 	);
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			Some(mock_ws.client),
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_events(1, Some(10)).await;
 
@@ -109,10 +102,10 @@ async fn test_get_events_implementation() {
 
 #[tokio::test]
 async fn test_get_events_missing_result() {
-	let mut mock_midnight: MockMidnightTransportClient = MockMidnightTransportClient::new();
+	let mut mock_midnight: MockMidnightWsTransportClient = MockMidnightWsTransportClient::new();
 
 	mock_midnight.expect_clone().returning(move || {
-		let mut new_mock: MockMidnightTransportClient = MockMidnightTransportClient::new();
+		let mut new_mock: MockMidnightWsTransportClient = MockMidnightWsTransportClient::new();
 		// Mock chain_getBlockHash response
 		new_mock
 			.expect_send_raw_request()
@@ -138,13 +131,7 @@ async fn test_get_events_missing_result() {
 		new_mock
 	});
 
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
-
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			Some(mock_ws.client),
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_events(1, Some(10)).await;
 
@@ -155,7 +142,7 @@ async fn test_get_events_missing_result() {
 
 #[tokio::test]
 async fn test_get_latest_block_number_success() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	// Mock response with a finalized block hash
 	let mock_get_finalised_head_response = json!({
@@ -185,11 +172,7 @@ async fn test_get_latest_block_number_success() {
 		)
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_ok());
@@ -199,7 +182,7 @@ async fn test_get_latest_block_number_success() {
 #[tokio::test]
 async fn test_get_latest_block_number_invalid_response() {
 	// Test case 1: Invalid finalized block hash response
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	let mock_get_finalised_head_response = json!({
 		"some": "invalid_response"
@@ -210,11 +193,7 @@ async fn test_get_latest_block_number_invalid_response() {
 		.with(predicate::eq("chain_getFinalisedHead"), predicate::always())
 		.returning(move |_, _| Ok(mock_get_finalised_head_response.clone()));
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -222,7 +201,7 @@ async fn test_get_latest_block_number_invalid_response() {
 	assert!(err.to_string().contains("Missing 'result' field"));
 
 	// Test case 2: Invalid get header response
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	let mock_get_finalised_head_response = json!({
 		"result": "0xfinalised_block_hash"
@@ -243,11 +222,7 @@ async fn test_get_latest_block_number_invalid_response() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -255,7 +230,7 @@ async fn test_get_latest_block_number_invalid_response() {
 	assert!(err.to_string().contains("Failed to parse block number"));
 
 	// Test case 3: Missing result field for get header response
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	let mock_get_finalised_head_response = json!({
 		"result": "0xfinalised_block_hash"
@@ -274,11 +249,7 @@ async fn test_get_latest_block_number_invalid_response() {
 		.expect_send_raw_request()
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 	let result = client.get_latest_block_number().await;
 
 	assert!(result.is_err());
@@ -288,11 +259,11 @@ async fn test_get_latest_block_number_invalid_response() {
 
 #[tokio::test]
 async fn test_get_single_block() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	// Mock response without result field
 	mock_midnight.expect_clone().times(1).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash response
 		new_mock
@@ -332,15 +303,11 @@ async fn test_get_single_block() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_ok());
@@ -350,11 +317,11 @@ async fn test_get_single_block() {
 
 #[tokio::test]
 async fn test_get_multiple_blocks() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	// Mock response for 3 blocks
 	mock_midnight.expect_clone().times(3).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash response
 		new_mock
@@ -395,15 +362,11 @@ async fn test_get_multiple_blocks() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_blocks(1, Some(3)).await;
 	assert!(result.is_ok());
@@ -413,11 +376,11 @@ async fn test_get_multiple_blocks() {
 
 #[tokio::test]
 async fn test_get_blocks_missing_result() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	// Mock response without result field
 	mock_midnight.expect_clone().returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 		let mock_response = json!({
 			"jsonrpc": "2.0",
 			"id": 1
@@ -429,15 +392,11 @@ async fn test_get_blocks_missing_result() {
 			.returning(move |_, _| Ok(mock_response.clone()));
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
@@ -447,10 +406,10 @@ async fn test_get_blocks_missing_result() {
 
 #[tokio::test]
 async fn test_get_blocks_null_result() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	mock_midnight.expect_clone().times(1).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash to return a hash
 		new_mock
@@ -478,15 +437,11 @@ async fn test_get_blocks_null_result() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
@@ -496,10 +451,10 @@ async fn test_get_blocks_null_result() {
 
 #[tokio::test]
 async fn test_get_blocks_parse_failure() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	mock_midnight.expect_clone().times(1).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash to return a hash
 		new_mock
@@ -532,15 +487,11 @@ async fn test_get_blocks_parse_failure() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None,
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_blocks(1, None).await;
 	assert!(result.is_err());
@@ -550,13 +501,9 @@ async fn test_get_blocks_parse_failure() {
 
 #[tokio::test]
 async fn test_get_events_ws_client_not_initialized() {
-	let mock_midnight = MockMidnightTransportClient::new();
+	let mock_midnight = MockMidnightWsTransportClient::new();
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None, // No WebSocket client
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_events(1, Some(10)).await;
 
@@ -567,19 +514,14 @@ async fn test_get_events_ws_client_not_initialized() {
 
 #[tokio::test]
 async fn test_get_events_failed_subxt_client() {
-	let mock_midnight = MockMidnightTransportClient::new();
-	let mut mock_ws = MockWsTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	// Mock WebSocket client to return an invalid URL
-	mock_ws
+	mock_midnight
 		.expect_get_current_url()
 		.returning(|| "invalid_url".to_string());
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			Some(mock_ws),
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_events(1, Some(10)).await;
 
@@ -590,12 +532,11 @@ async fn test_get_events_failed_subxt_client() {
 
 #[tokio::test]
 async fn test_get_events_failed_block_hash() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	// Mock chain_getBlockHash to return an error
 	mock_midnight.expect_clone().returning(move || {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("chain_getBlockHash"), predicate::always())
@@ -603,11 +544,7 @@ async fn test_get_events_failed_block_hash() {
 		new_mock
 	});
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			Some(mock_ws.client),
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_events(1, Some(10)).await;
 
@@ -618,12 +555,11 @@ async fn test_get_events_failed_block_hash() {
 
 #[tokio::test]
 async fn test_get_events_invalid_block_hash() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
 
 	// Mock chain_getBlockHash to return an invalid hash
 	mock_midnight.expect_clone().returning(move || {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("chain_getBlockHash"), predicate::always())
@@ -637,11 +573,7 @@ async fn test_get_events_invalid_block_hash() {
 		new_mock
 	});
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			Some(mock_ws.client),
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_events(1, Some(10)).await;
 
@@ -659,13 +591,8 @@ async fn test_get_events_default_event_type() {
 			"result": "invalid_event_data"
 		})]),
 	);
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
 
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			Some(mock_ws.client),
-		);
+	let client = MidnightClient::<MockMidnightWsTransportClient>::new_with_transport(mock_midnight);
 
 	let result = client.get_events(1, Some(10)).await;
 

@@ -1,4 +1,4 @@
-use crate::integration::mocks::{start_test_websocket_server, MockMidnightTransportClient};
+use crate::integration::mocks::{start_test_websocket_server, MockMidnightWsTransportClient};
 use openzeppelin_monitor::services::blockchain::{WsConfig, WsEndpointManager};
 
 use mockall::predicate;
@@ -13,7 +13,7 @@ async fn test_endpoint_rotation() {
 
 	let config = WsConfig::single_attempt();
 	let manager = WsEndpointManager::new(&config, &url1, vec![url2.clone(), url3.clone()]);
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 	transport.expect_try_connect().returning(|_| Ok(()));
 	transport.expect_update_client().returning(|_| Ok(()));
 
@@ -44,7 +44,7 @@ async fn test_rotate_url_no_fallbacks() {
 	// Create manager with no fallback URLs
 	let config = WsConfig::single_attempt();
 	let manager = WsEndpointManager::new(&config, &url, vec![]);
-	let transport = MockMidnightTransportClient::new();
+	let transport = MockMidnightWsTransportClient::new();
 
 	// Attempt to rotate
 	let result = manager.rotate_url(&transport).await;
@@ -76,7 +76,7 @@ async fn test_rotate_url_connection_failure() {
 	let manager = WsEndpointManager::new(&config, &url, vec![invalid_url.to_string()]);
 
 	// Create a mock that fails to connect
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 	transport
 		.expect_try_connect()
 		.with(predicate::eq(invalid_url))
@@ -137,7 +137,7 @@ async fn test_endpoint_manager_configuration() {
 		.build();
 
 	let manager = WsEndpointManager::new(&config, &url1, vec![url2.clone()]);
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 
 	transport.expect_try_connect().returning(|_| Ok(()));
 	transport.expect_update_client().returning(|_| Ok(()));
@@ -162,9 +162,9 @@ async fn test_endpoint_manager_thread_safety() {
 		&url1,
 		vec![url2.clone(), url3.clone()],
 	);
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 	transport.expect_clone().returning(|| {
-		let mut transport = MockMidnightTransportClient::new();
+		let mut transport: MockMidnightWsTransportClient = MockMidnightWsTransportClient::new();
 		transport.expect_try_connect().returning(|_| Ok(()));
 		transport.expect_update_client().returning(|_| Ok(()));
 		transport
@@ -205,7 +205,7 @@ async fn test_endpoint_manager_error_handling() {
 		&url,
 		vec![invalid_url.to_string()],
 	);
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 	transport
 		.expect_try_connect()
 		.with(predicate::always())
@@ -244,7 +244,7 @@ async fn test_endpoint_manager_state_management() {
 
 	// Test successful rotation
 	let manager = WsEndpointManager::new(&config, &url1, vec![url2.clone()]);
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 	transport
 		.expect_try_connect()
 		.with(predicate::eq(url2.clone()))
@@ -267,7 +267,7 @@ async fn test_endpoint_manager_state_management() {
 
 	// Test failed rotation with a new mock instance
 	let manager = WsEndpointManager::new(&config, &url1, vec![invalid_url.to_string()]);
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 	transport
 		.expect_try_connect()
 		.with(predicate::eq(invalid_url))
@@ -301,7 +301,7 @@ async fn test_endpoint_manager_retry_settings() {
 
 	let invalid_url = "ws://invalid-domain-that-does-not-exist:12345";
 	let manager = WsEndpointManager::new(&config, &url, vec![invalid_url.to_string()]);
-	let mut transport = MockMidnightTransportClient::new();
+	let mut transport = MockMidnightWsTransportClient::new();
 
 	// Set up mock to fail connection attempts
 	transport

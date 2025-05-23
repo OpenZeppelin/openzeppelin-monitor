@@ -1,6 +1,6 @@
 use crate::integration::mocks::{
 	create_midnight_test_network_with_urls, create_midnight_valid_server_mock_network_response,
-	MockMidnightClientTrait, MockMidnightTransportClient,
+	MockMidnightClientTrait, MockMidnightWsTransportClient,
 };
 use mockall::predicate;
 use mockito::Server;
@@ -12,7 +12,7 @@ use openzeppelin_monitor::{
 
 #[tokio::test]
 async fn test_get_events() {
-	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 
 	mock.expect_get_events()
 		.with(predicate::eq(1u64), predicate::eq(Some(2u64)))
@@ -112,7 +112,7 @@ async fn test_get_chain_type_error_cases() {
 
 #[tokio::test]
 async fn test_get_latest_block_number() {
-	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock.expect_get_latest_block_number()
 		.times(1)
 		.returning(|| Ok(100u64));
@@ -124,7 +124,7 @@ async fn test_get_latest_block_number() {
 
 #[tokio::test]
 async fn test_get_blocks() {
-	let mut mock = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 
 	let block = BlockBuilder::new()
 		.parent_hash("0xabc123".to_string())

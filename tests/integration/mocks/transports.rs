@@ -135,20 +135,20 @@ impl RotatingTransport for MockStellarTransportClient {
 // Used for testing Midnight compatible blockchain interactions.
 // Provides functionality to simulate raw JSON-RPC request handling.
 mock! {
-	pub MidnightTransportClient {
+	pub MidnightHttpTransportClient {
 		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
 		pub async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error>;
 		pub async fn update_client(&self, url: &str) -> Result<(), anyhow::Error>;
 	}
 
-	impl Clone for MidnightTransportClient {
+	impl Clone for MidnightHttpTransportClient {
 		fn clone(&self) -> Self;
 	}
 }
 
 #[async_trait::async_trait]
-impl BlockchainTransport for MockMidnightTransportClient {
+impl BlockchainTransport for MockMidnightHttpTransportClient {
 	async fn get_current_url(&self) -> String {
 		self.get_current_url().await
 	}
@@ -183,7 +183,7 @@ impl BlockchainTransport for MockMidnightTransportClient {
 }
 
 #[async_trait::async_trait]
-impl RotatingTransport for MockMidnightTransportClient {
+impl RotatingTransport for MockMidnightHttpTransportClient {
 	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
 		self.try_connect(url).await
 	}
@@ -196,68 +196,35 @@ impl RotatingTransport for MockMidnightTransportClient {
 // Mock implementation of a WebSocket transport client.
 // Used for testing WebSocket connections.
 mock! {
-	pub WsTransportClient {
+	pub MidnightWsTransportClient {
+		pub async fn send_raw_request(&self, method: &str, params: Option<Vec<Value>>) -> Result<Value, anyhow::Error>;
 		pub async fn get_current_url(&self) -> String;
+		pub async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error>;
+		pub async fn update_client(&self, url: &str) -> Result<(), anyhow::Error>;
 	}
 
-	impl Clone for WsTransportClient {
+	impl Clone for MidnightWsTransportClient {
 		fn clone(&self) -> Self;
 	}
 }
 
-/// Wrapper for WsTransportClient that manages the WebSocket server lifecycle
-pub struct WsTransportClientWrapper {
-	pub client: MockWsTransportClient,
-	_shutdown_tx: oneshot::Sender<()>,
-}
-
-impl WsTransportClientWrapper {
-	pub async fn new() -> Result<Self, anyhow::Error> {
-		let (url, shutdown_tx) = start_test_websocket_server().await;
-		let mut client = MockWsTransportClient::new();
-		client
-			.expect_get_current_url()
-			.returning(move || url.clone());
-		Ok(Self {
-			client,
-			_shutdown_tx: shutdown_tx,
-		})
-	}
-
-	pub async fn _new_with_url(url: String) -> Result<Self, anyhow::Error> {
-		let mut client = MockWsTransportClient::new();
-		client
-			.expect_get_current_url()
-			.returning(move || url.clone());
-		Ok(Self {
-			client,
-			_shutdown_tx: oneshot::channel().0,
-		})
-	}
-}
-
-// impl Drop for WsTransportClientWrapper {
-// 	fn drop(&mut self) {
-// 		// Send shutdown signal when the client is dropped
-// 		let _ = std::mem::replace(&mut self.shutdown_tx, oneshot::channel().0).send(());
-// 	}
-// }
-
 #[async_trait::async_trait]
-impl BlockchainTransport for MockWsTransportClient {
+impl BlockchainTransport for MockMidnightWsTransportClient {
 	async fn get_current_url(&self) -> String {
 		self.get_current_url().await
 	}
 
 	async fn send_raw_request<P>(
 		&self,
-		_method: &str,
-		_params: Option<P>,
+		method: &str,
+		params: Option<P>,
 	) -> Result<Value, anyhow::Error>
 	where
 		P: Into<Value> + Send + Clone,
 	{
-		Err(anyhow::anyhow!("`send_raw_request` not implemented"))
+		let params_value = params.map(|p| p.into());
+		self.send_raw_request(method, params_value.and_then(|v| v.as_array().cloned()))
+			.await
 	}
 
 	fn set_retry_policy(
@@ -265,16 +232,25 @@ impl BlockchainTransport for MockWsTransportClient {
 		_: ExponentialBackoff,
 		_: Option<TransientErrorRetryStrategy>,
 	) -> Result<(), anyhow::Error> {
-		Err(anyhow::anyhow!("`set_retry_policy` not implemented"))
+		Ok(())
 	}
 
 	fn update_endpoint_manager_client(
 		&mut self,
 		_: ClientWithMiddleware,
 	) -> Result<(), anyhow::Error> {
-		Err(anyhow::anyhow!(
-			"`update_endpoint_manager_client` not implemented"
-		))
+		Ok(())
+	}
+}
+
+#[async_trait::async_trait]
+impl RotatingTransport for MockMidnightWsTransportClient {
+	async fn try_connect(&self, url: &str) -> Result<(), anyhow::Error> {
+		self.try_connect(url).await
+	}
+
+	async fn update_client(&self, url: &str) -> Result<(), anyhow::Error> {
+		self.update_client(url).await
 	}
 }
 
@@ -344,7 +320,6 @@ pub async fn start_test_websocket_server() -> (String, oneshot::Sender<()>) {
 														// Sleep for 10 seconds to cause a timeout
 														// This will depend on the config of the WebSocket client
 														// But for testing purposes we set this at a low number (1s)
-														println!("Sleeping for 10 seconds");
 														tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 														return;
 													},
