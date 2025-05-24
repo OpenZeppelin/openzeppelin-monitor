@@ -354,7 +354,7 @@ pub fn create_default_method_responses() -> HashMap<String, MethodResponse> {
 	let mut responses = HashMap::new();
 
 	// Add default responses for common methods
-	create_method_response(&mut responses, "system_chain", &json!("Development"), None);
+	create_method_response(&mut responses, "system_chain", &json!("testnet-02-1"), None);
 	create_method_response(
 		&mut responses,
 		"system_chainType",

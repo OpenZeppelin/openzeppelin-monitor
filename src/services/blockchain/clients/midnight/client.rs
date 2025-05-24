@@ -140,6 +140,13 @@ impl<W: Send + Sync + Clone + BlockchainTransport, S: SubstrateClientTrait> Midn
 		end_block: Option<u64>,
 	) -> Result<Vec<MidnightEvent>, anyhow::Error> {
 		let end_block = end_block.unwrap_or(start_block);
+		if start_block > end_block {
+			return Err(anyhow::anyhow!(
+				"start_block {} cannot be greater than end_block {}",
+				start_block,
+				end_block
+			));
+		}
 		let block_range = start_block..=end_block;
 
 		// Fetch block hashes in parallel
@@ -222,11 +229,11 @@ impl<W: Send + Sync + Clone + BlockchainTransport, S: SubstrateClientTrait> Midn
 			.await
 			.with_context(|| "Failed to get chain type")?;
 
-		Ok(response
+		response
 			.get("result")
 			.and_then(|v| v.as_str())
-			.unwrap_or_default()
-			.to_string())
+			.map(|s| s.to_string())
+			.ok_or_else(|| anyhow::anyhow!("Missing or invalid 'result' field"))
 	}
 }
 
@@ -295,7 +302,16 @@ impl<W: Send + Sync + Clone + BlockchainTransport, S: SubstrateClientTrait> Bloc
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
-		let block_futures: Vec<_> = (start_block..=end_block.unwrap_or(start_block))
+		let end_block = end_block.unwrap_or(start_block);
+		if start_block > end_block {
+			return Err(anyhow::anyhow!(
+				"start_block {} cannot be greater than end_block {}",
+				start_block,
+				end_block
+			));
+		}
+
+		let block_futures: Vec<_> = (start_block..=end_block)
 			.map(|block_number| {
 				let params = json!([format!("0x{:x}", block_number)]);
 				let client = self.ws_client.clone();

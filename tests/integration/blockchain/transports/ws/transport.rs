@@ -188,7 +188,7 @@ async fn test_ws_transport_request_response() {
 	create_method_response(
 		&mut responses,
 		"system_chain",
-		&json!("Development"),
+		&json!("testnet-02-1"),
 		Some(1),
 	);
 	create_method_response(
@@ -209,7 +209,7 @@ async fn test_ws_transport_request_response() {
 	assert!(response.is_object(), "Response should be a JSON object");
 	assert_eq!(
 		response["result"].as_str().unwrap(),
-		"Development",
+		"testnet-02-1",
 		"Should get expected response"
 	);
 

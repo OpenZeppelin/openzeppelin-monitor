@@ -327,7 +327,6 @@ impl BlockchainTransport for WsTransportClient {
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		// Call the internal implementation instead of recursively calling self
 		WsTransportClient::send_raw_request(self, method, params).await
 	}
 

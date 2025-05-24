@@ -1,6 +1,5 @@
 use crate::integration::mocks::{
-	subxt_utils::mock_empty_events, MockMidnightClientTrait, MockMidnightWsTransportClient,
-	MockSubstrateClient,
+	mock_empty_events, MockMidnightClientTrait, MockMidnightWsTransportClient, MockSubstrateClient,
 };
 use mockall::predicate;
 use openzeppelin_monitor::{
@@ -82,8 +81,11 @@ async fn test_get_chain_type_error_cases() {
 		);
 
 	let result = client.get_chain_type().await;
-	assert!(result.is_ok());
-	assert_eq!(result.unwrap(), "");
+	assert!(result.is_err());
+	assert_eq!(
+		result.unwrap_err().to_string(),
+		"Missing or invalid 'result' field"
+	);
 
 	// Test case 2: Null result
 	let mut mock_midnight = MockMidnightWsTransportClient::new();
@@ -107,8 +109,11 @@ async fn test_get_chain_type_error_cases() {
 		);
 
 	let result = client.get_chain_type().await;
-	assert!(result.is_ok());
-	assert_eq!(result.unwrap(), "");
+	assert!(result.is_err());
+	assert_eq!(
+		result.unwrap_err().to_string(),
+		"Missing or invalid 'result' field"
+	);
 
 	// Test case 3: Non-string result
 	let mut mock_midnight = MockMidnightWsTransportClient::new();
