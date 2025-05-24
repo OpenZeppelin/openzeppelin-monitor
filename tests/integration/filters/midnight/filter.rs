@@ -19,7 +19,7 @@ use openzeppelin_monitor::{
 
 use crate::integration::{
 	filters::common::setup_trigger_execution_service,
-	mocks::{MockMidnightClientTrait, MockMidnightTransportClient},
+	mocks::{MockMidnightClientTrait, MockMidnightWsTransportClient},
 };
 
 // Helper function to check function signatures in a match
@@ -68,7 +68,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 		.add_rpc_transaction(transaction.into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 
 	// Set up expectations for the mock client
 	mock_client
@@ -141,7 +141,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 		.add_rpc_transaction(transaction.into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));
@@ -228,7 +228,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 		.add_rpc_transaction(tx2.into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));
@@ -275,7 +275,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 		.function("main(uint64 amount)", None)
 		.build();
 
-	let mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 
 	// Create an invalid block type (e.g., EVM block for Midnight monitor)
 	let invalid_block = BlockType::EVM(Box::default());
@@ -326,7 +326,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 		.add_rpc_transaction(transaction.into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));
@@ -397,7 +397,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 		.add_rpc_transaction(transaction.into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));
@@ -468,7 +468,7 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 		.add_rpc_transaction(transaction.into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));
@@ -562,7 +562,7 @@ async fn test_monitor_transaction_status_success() -> Result<(), Box<FilterError
 		.add_rpc_transaction(transaction.clone().into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));
@@ -639,7 +639,7 @@ async fn test_monitor_transaction_status_failure() -> Result<(), Box<FilterError
 		.add_rpc_transaction(transaction.into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));
@@ -719,7 +719,7 @@ async fn test_monitor_transaction_status_any() -> Result<(), Box<FilterError>> {
 		.add_rpc_transaction(failure_tx.clone().into())
 		.build();
 
-	let mut mock_client = MockMidnightClientTrait::<MockMidnightTransportClient>::new();
+	let mut mock_client = MockMidnightClientTrait::<MockMidnightWsTransportClient>::new();
 	mock_client
 		.expect_get_chain_type()
 		.returning(|| Ok("testnet-02-1".to_string()));

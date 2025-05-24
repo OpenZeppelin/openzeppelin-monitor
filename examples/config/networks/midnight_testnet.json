@@ -4,14 +4,6 @@
   "name": "Midnight Testnet",
   "rpc_urls": [
     {
-      "type_": "rpc",
-      "url": {
-        "type": "plain",
-        "value": "https://rpc.testnet-02.midnight.network"
-      },
-      "weight": 100
-    },
-    {
       "type_": "ws_rpc",
       "url": {
         "type": "plain",

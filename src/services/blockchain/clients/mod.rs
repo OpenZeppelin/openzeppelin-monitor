@@ -16,5 +16,7 @@ mod midnight {
 }
 
 pub use evm::client::{EvmClient, EvmClientTrait};
-pub use midnight::client::{MidnightClient, MidnightClientTrait};
+pub use midnight::client::{
+	MidnightClient, MidnightClientTrait, SubstrateClientTrait as MidnightSubstrateClientTrait,
+};
 pub use stellar::client::{StellarClient, StellarClientTrait};
