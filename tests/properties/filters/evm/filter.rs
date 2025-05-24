@@ -323,6 +323,377 @@ proptest! {
 		prop_assert_eq!(result, expected);
 	}
 
+	// Tests string comparison expressions in filter conditions
+	// Note: String comparisons are case-insensitive
+	#[test]
+	fn test_string_expression_evaluation(
+		value_orig in "[a-zA-Z0-9_]+",
+		operator in prop_oneof![
+			Just("=="),
+			Just("!="),
+			Just("starts_with"),
+			Just("ends_with"),
+			Just("contains")
+		],
+		compare_to_orig in "[a-zA-Z0-9_]+",
+	) {
+		let rhs_for_expr = format!("'{}'", compare_to_orig.replace('\'', "\\'"));
+		let expr = format!("name {} {}", operator, rhs_for_expr);
+
+		let params = vec![EVMMatchParamEntry {
+			name: "name".to_string(),
+			value: value_orig.clone(),
+			kind: "string".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+
+		let eval_result = filter.evaluate_expression(&expr, &Some(params.clone()));
+
+		let value_normalized = value_orig.to_lowercase();
+		let compare_to_normalized = compare_to_orig.to_lowercase();
+
+		let expected = match operator {
+			"==" => value_normalized == compare_to_normalized,
+			"!=" => value_normalized != compare_to_normalized,
+			"starts_with" => value_normalized.starts_with(&compare_to_normalized),
+			"ends_with" => value_normalized.ends_with(&compare_to_normalized),
+			"contains" => value_normalized.contains(&compare_to_normalized),
+			_ => false
+		};
+
+		prop_assert_eq!(eval_result, expected,
+			"\nExpression: '{}'\nOriginal LHS: '{}'\nOriginal RHS: '{}'\nNormalized LHS: '{}'\nNormalized RHS: '{}'\nEvaluated: {}, Expected: {}",
+			expr, value_orig, compare_to_orig, value_normalized, compare_to_normalized, eval_result, expected
+		);
+	}
+
+	// Tests boolean comparison expressions for true/false values
+	// Verifies that boolean expressions are evaluated correctly
+	#[test]
+	fn test_bool_expression_evaluation(
+		value in prop_oneof![Just("true"), Just("false")],
+		operator in prop_oneof![Just("=="), Just("!=")],
+		compare_to in prop_oneof![Just("true"), Just("false")],
+	) {
+		let expr = format!("is_active {} {}", operator, compare_to);
+
+		let params = vec![EVMMatchParamEntry {
+			name: "is_active".to_string(),
+			value: value.to_string(),
+			kind: "bool".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = match operator {
+			"==" => value == compare_to,
+			"!=" => value != compare_to,
+			_ => false
+		};
+
+		prop_assert_eq!(result, expected);
+	}
+
+	// Tests fixed-point number comparison expressions
+	// Verifies all comparison operators work correctly with fixed-point numbers
+	#[test]
+	fn test_fixed_point_numbers_expression_evaluation(
+		value in 0.1_f64..1000000.0_f64,
+		operator in prop_oneof![
+			Just(">"), Just(">="), Just("<"), Just("<="),
+			Just("=="), Just("!=")
+		],
+		compare_to in 0.1_f64..1000000.0_f64,
+	) {
+		let expr = format!("amount {} {}", operator, compare_to);
+
+		let params = vec![EVMMatchParamEntry {
+			name: "amount".to_string(),
+			value: value.to_string(),
+			kind: "fixed".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = match operator {
+			">" => value > compare_to,
+			">=" => value >= compare_to,
+			"<" => value < compare_to,
+			"<=" => value <= compare_to,
+			"==" => value == compare_to,
+			"!=" => value != compare_to,
+			_ => false
+		};
+
+		prop_assert_eq!(result, expected);
+	}
+
+	// Tests signed integer comparison expressions (int8 to int256)
+	// Verifies all comparison operators work correctly
+	#[test]
+	fn test_signed_int_expression_evaluation(
+		value_i128 in (i128::MIN / 2)..(i128::MAX / 2),
+		operator in prop_oneof![
+			Just(">"), Just(">="), Just("<"), Just("<="),
+			Just("=="), Just("!=")
+		],
+		compare_to_i128 in (i128::MIN / 2)..(i128::MAX / 2),
+		signed_kind_str in prop_oneof![
+			Just("int8"), Just("int16"), Just("int32"), Just("int64"),
+			Just("int128"), Just("int256")
+		]
+	) {
+		let param_name = "signedValue";
+		let expr = format!("{} {} {}", param_name, operator, compare_to_i128);
+
+		let params = vec![EVMMatchParamEntry {
+			name: param_name.to_string(),
+			value: value_i128.to_string(),
+			kind: signed_kind_str.to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = match operator {
+			">" => value_i128 > compare_to_i128,
+			">=" => value_i128 >= compare_to_i128,
+			"<" => value_i128 < compare_to_i128,
+			"<=" => value_i128 <= compare_to_i128,
+			"==" => value_i128 == compare_to_i128,
+			"!=" => value_i128 != compare_to_i128,
+			_ => false,
+		};
+
+		prop_assert_eq!(result, expected,
+			"Expr: '{}', LHS Value: {}, Kind: {}, RHS Value: {}, Evaluated: {}, Expected: {}",
+			expr, value_i128, signed_kind_str, compare_to_i128, result, expected
+		);
+	}
+
+	// Tests unsigned integer comparison expressions (uint8 to uint128, and "number")
+	// Verifies all comparison operators work correctly
+	#[test]
+	fn test_unsigned_int_expression_evaluation(
+		value_u64 in 0u64..u64::MAX / 2,
+		operator in prop_oneof![
+			Just(">"), Just(">="), Just("<"), Just("<="),
+			Just("=="), Just("!=")
+		],
+		compare_to_u64 in 0u64..u64::MAX / 2,
+		unsigned_kind_str in prop_oneof![
+			Just("uint8"), Just("uint16"), Just("uint32"), Just("uint64"),
+			Just("uint128"),
+			Just("number")
+		]
+	) {
+		let param_name = "unsignedValue";
+		let lhs_value_str = if unsigned_kind_str == "uint128" {
+			(value_u64 as u128 * 1_000_000_000_000u128).to_string()
+		} else {
+			value_u64.to_string()
+		};
+		let rhs_value_str = if unsigned_kind_str == "uint128" {
+			(compare_to_u64 as u128 * 1_000_000_000_000u128).to_string()
+		} else {
+			compare_to_u64.to_string()
+		};
+
+		let expr = format!("{} {} {}", param_name, operator, rhs_value_str);
+
+		let params = vec![EVMMatchParamEntry {
+			name: param_name.to_string(),
+			value: lhs_value_str.clone(),
+			kind: unsigned_kind_str.to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+		let lhs_as_u128 = lhs_value_str.parse::<u128>().unwrap_or_default();
+		let rhs_as_u128 = rhs_value_str.parse::<u128>().unwrap_or_default();
+
+		let expected = match operator {
+			">" => lhs_as_u128 > rhs_as_u128,
+			">=" => lhs_as_u128 >= rhs_as_u128,
+			"<" => lhs_as_u128 < rhs_as_u128,
+			"<=" => lhs_as_u128 <= rhs_as_u128,
+			"==" => lhs_as_u128 == rhs_as_u128,
+			"!=" => lhs_as_u128 != rhs_as_u128,
+			_ => false,
+		};
+
+		prop_assert_eq!(result, expected,
+			"Expr: '{}', LHS Value: {}, Kind: {}, RHS Value: {}, Evaluated: {}, Expected: {}",
+			expr, lhs_value_str, unsigned_kind_str, rhs_value_str, result, expected
+		);
+	}
+
+	// Tests JSON array contains operation with integer values
+	#[test]
+	fn test_array_contains_i64_expression_evaluation(
+			values in prop::collection::vec(any::<i64>(), 0..5),
+			target in any::<i64>(),
+	) {
+			let param_name = "array_param";
+			let value_str = serde_json::to_string(&values).unwrap();
+
+			let expr = format!("{} contains {}", param_name, target);
+
+			let params = vec![EVMMatchParamEntry {
+					name: param_name.to_string(),
+					value: value_str,
+					kind: "array".to_string(),
+					indexed: false,
+			}];
+
+			let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+					_client: PhantomData,
+			};
+			let result = filter.evaluate_expression(&expr, &Some(params));
+
+			let expected = values.contains(&target);
+			prop_assert_eq!(
+					result, expected,
+					"Failed on values: {:?}, target: {}, expected: {}",
+					values, target, expected
+			);
+	}
+
+	// Tests JSON array contains operation with string values
+	#[test]
+	fn test_array_contains_string_expression_evaluation(
+			values in prop::collection::vec("[a-zA-Z0-9_]{1,8}", 0..5),
+			target in "[a-zA-Z0-9_]{1,8}",
+	) {
+			let param_name = "array_param";
+			let value_str = serde_json::to_string(&values).unwrap();
+
+			let expr = format!(r#"{} contains "{}""#, param_name, target);
+
+			let params = vec![EVMMatchParamEntry {
+					name: param_name.to_string(),
+					value: value_str,
+					kind: "array".to_string(),
+					indexed: false,
+			}];
+
+			let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+					_client: PhantomData,
+			};
+			let result = filter.evaluate_expression(&expr, &Some(params));
+			// Normalize the target for comparison
+			let target_lowercase = target.to_lowercase();
+			let expected = values.iter().any(|v| v.to_lowercase() == target_lowercase);
+			prop_assert_eq!(
+					result, expected,
+					"Failed on values: {:?}, target: {}, expected: {}",
+					values, target, expected
+			);
+	}
+
+
+	// Tests JSON array contains operation with mixed types
+	#[test]
+	fn test_vec_json_array_mixed_types_expression_evaluation(
+			int_values in prop::collection::vec(any::<i64>(), 0..2),
+			string_values in prop::collection::vec("[a-zA-Z0-9_]{1,8}", 0..2),
+			target in prop_oneof![any::<i64>().prop_map(|v| v.to_string()), "[a-zA-Z0-9_]{1,8}"],
+	) {
+			let param_name = "array_param";
+
+			// Create mixed type array with proper JSON representation
+			let mut mixed_array = Vec::new();
+			for v in &int_values {
+					mixed_array.push(json!(v));
+			}
+			for v in &string_values {
+					mixed_array.push(json!(v));
+			}
+			let value_str = serde_json::to_string(&mixed_array).unwrap();
+
+			// Create expression with proper quoting based on target type
+			let expr = if target.parse::<i64>().is_ok() {
+					format!("{} contains {}", param_name, target)
+			} else {
+					format!(r#"{} contains "{}""#, param_name, target)
+			};
+
+			let params = vec![EVMMatchParamEntry {
+					name: param_name.to_string(),
+					value: value_str,
+					kind: "array".to_string(),
+					indexed: false,
+			}];
+
+			let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+					_client: PhantomData,
+			};
+			let result = filter.evaluate_expression(&expr, &Some(params));
+
+			// Manually check for presence in original values
+			let expected_str_match = string_values.iter().any(|s_val| s_val.eq_ignore_ascii_case(&target));
+			let expected = int_values.iter().any(|v| v.to_string() == target) || expected_str_match;
+
+			prop_assert_eq!(
+					result, expected,
+					"Failed on values: {:?}, target: {}, expected: {}",
+					mixed_array, target, expected
+			);
+	}
+
+	// Tests JSON array equality comparison
+	#[test]
+	fn test_vec_json_array_equality_expression_evaluation(
+			values1 in prop::collection::vec(any::<i64>(), 0..5),
+			values2 in prop::collection::vec(any::<i64>(), 0..5),
+	) {
+		let param_name = "array_param";
+		let value_str1 = serde_json::to_string(&values1).unwrap();
+		let value_str2 = serde_json::to_string(&values2).unwrap();
+
+		// For single-quoted string literal in expression, escape single quotes
+		let escaped_rhs_for_single_quotes = value_str2.replace('\'', r#"\'"#);
+		let expr = format!(r#"{} == '{}'"#, param_name, escaped_rhs_for_single_quotes);
+
+		let params = vec![EVMMatchParamEntry {
+			name: param_name.to_string(),
+			value: value_str1.clone(),
+			kind: "array".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+		let result = filter.evaluate_expression(&expr, &Some(params));
+
+		let expected = value_str1.eq_ignore_ascii_case(&value_str2);
+
+		prop_assert_eq!(
+			result, expected,
+			"Failed on values1: {:?}, values2: {:?}, expected: {}",
+			values1, values2, expected
+		);
+	}
+
 	// Tests logical AND combinations with mixed types
 	// Verifies that combining numeric and address comparisons works correctly
 	#[test]
