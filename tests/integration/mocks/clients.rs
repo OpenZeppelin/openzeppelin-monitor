@@ -29,19 +29,7 @@ use openzeppelin_monitor::{
 
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
-use once_cell::sync::Lazy;
-use serde_json::value::RawValue;
 use std::{marker::PhantomData, sync::Arc};
-use subxt::{
-	backend::{
-		legacy::LegacyBackend,
-		rpc::{RawRpcFuture, RawRpcSubscription, RpcClientT},
-		Backend,
-	},
-	client::{OfflineClientT, OnlineClientT},
-	config::substrate::DynamicHasher256,
-	events::EventsClient,
-};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -222,7 +210,7 @@ mock! {
 
 mock! {
 	pub SubstrateClient {
-		pub fn get_events(&self) -> EventsClient<subxt::SubstrateConfig, Self>;
+		pub async fn get_events_at(&self, block_hash: subxt::utils::H256) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error>;
 	}
 
 	impl Clone for SubstrateClient {
@@ -230,54 +218,12 @@ mock! {
 	}
 }
 
-impl OfflineClientT<subxt::SubstrateConfig> for MockSubstrateClient {
-	fn metadata(&self) -> subxt::Metadata {
-		unimplemented!("Mock metadata not needed for tests")
-	}
-	fn genesis_hash(&self) -> subxt::utils::H256 {
-		subxt::utils::H256::default()
-	}
-	fn runtime_version(&self) -> subxt::client::RuntimeVersion {
-		subxt::client::RuntimeVersion {
-			spec_version: 0,
-			transaction_version: 0,
-		}
-	}
-	fn hasher(&self) -> DynamicHasher256 {
-		unimplemented!("Mock hasher not needed for tests")
-	}
-}
-
 #[async_trait::async_trait]
-impl RpcClientT for MockSubstrateClient {
-	fn request_raw<'a>(
-		&'a self,
-		_method: &'a str,
-		_params: Option<Box<RawValue>>,
-	) -> RawRpcFuture<'a, Box<RawValue>> {
-		Box::pin(async move { unimplemented!("Mock request_raw not needed for tests") })
-	}
-
-	fn subscribe_raw<'a>(
-		&'a self,
-		_sub: &'a str,
-		_params: Option<Box<RawValue>>,
-		_unsub: &'a str,
-	) -> RawRpcFuture<'a, RawRpcSubscription> {
-		Box::pin(async move { unimplemented!("Mock subscribe_raw not needed for tests") })
-	}
-}
-
-impl OnlineClientT<subxt::SubstrateConfig> for MockSubstrateClient {
-	fn backend(&self) -> &dyn Backend<subxt::SubstrateConfig> {
-		static BACKEND: Lazy<LegacyBackend<subxt::SubstrateConfig>> =
-			Lazy::new(|| LegacyBackend::builder().build(Box::new(MockSubstrateClient::new())));
-		&*BACKEND
-	}
-}
-
 impl MidnightSubstrateClientTrait for MockSubstrateClient {
-	fn get_events(&self) -> EventsClient<subxt::SubstrateConfig, Self> {
-		self.get_events()
+	async fn get_events_at(
+		&self,
+		block_hash: subxt::utils::H256,
+	) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error> {
+		self.get_events_at(block_hash).await
 	}
 }

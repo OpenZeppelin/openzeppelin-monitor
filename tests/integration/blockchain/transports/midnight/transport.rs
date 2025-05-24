@@ -6,9 +6,10 @@ use openzeppelin_monitor::{
 	services::blockchain::{BlockChainClient, MidnightClient, MidnightClientTrait},
 	utils::tests::midnight::event::EventBuilder,
 };
-use subxt::events::EventsClient;
 
-use crate::integration::mocks::{MockMidnightWsTransportClient, MockSubstrateClient};
+use crate::integration::mocks::{
+	subxt_utils::mock_empty_events, MockMidnightWsTransportClient, MockSubstrateClient,
+};
 
 fn create_mock_block(number: u64) -> Value {
 	json!({
@@ -108,22 +109,14 @@ fn create_mock_midnight_clients(
 	// Set up the substrate mock to return a new mock with get_events expectation when cloned
 	substrate_mock.expect_clone().returning(|| {
 		let mut new_mock = MockSubstrateClient::new();
-		new_mock.expect_get_events().returning(|| {
-			let mut events_mock = MockSubstrateClient::new();
-			events_mock
-				.expect_clone()
-				.returning(MockSubstrateClient::new);
-			EventsClient::new(events_mock)
-		});
+		new_mock
+			.expect_get_events_at()
+			.returning(|_| Ok(mock_empty_events()));
 		new_mock.expect_clone().returning(|| {
 			let mut new_mock = MockSubstrateClient::new();
-			new_mock.expect_get_events().returning(|| {
-				let mut events_mock = MockSubstrateClient::new();
-				events_mock
-					.expect_clone()
-					.returning(MockSubstrateClient::new);
-				EventsClient::new(events_mock)
-			});
+			new_mock
+				.expect_get_events_at()
+				.returning(|_| Ok(mock_empty_events()));
 			new_mock.expect_clone().returning(MockSubstrateClient::new);
 			new_mock
 		});
@@ -164,12 +157,12 @@ async fn test_get_events_missing_result() {
 
 	mock_substrate.expect_clone().returning(|| {
 		let mut new_mock = MockSubstrateClient::new();
-		new_mock.expect_get_events().returning(|| {
+		new_mock.expect_get_events_at().returning(|_| {
 			let mut events_mock = MockSubstrateClient::new();
 			events_mock
 				.expect_clone()
 				.returning(MockSubstrateClient::new);
-			EventsClient::new(events_mock)
+			Ok(mock_empty_events())
 		});
 		new_mock
 	});

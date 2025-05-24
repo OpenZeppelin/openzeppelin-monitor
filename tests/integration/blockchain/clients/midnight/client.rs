@@ -1,5 +1,6 @@
 use crate::integration::mocks::{
-	MockMidnightClientTrait, MockMidnightWsTransportClient, MockSubstrateClient,
+	subxt_utils::mock_empty_events, MockMidnightClientTrait, MockMidnightWsTransportClient,
+	MockSubstrateClient,
 };
 use mockall::predicate;
 use openzeppelin_monitor::{
@@ -8,7 +9,6 @@ use openzeppelin_monitor::{
 	utils::tests::midnight::block::BlockBuilder,
 };
 use serde_json::json;
-use subxt::events::EventsClient;
 
 #[tokio::test]
 async fn test_get_events() {
@@ -27,8 +27,8 @@ async fn test_get_events() {
 // Helper function to create a configured mock substrate client
 fn create_mock_substrate_client() -> MockSubstrateClient {
 	let mut mock = MockSubstrateClient::new();
-	mock.expect_get_events()
-		.returning(|| EventsClient::new(MockSubstrateClient::new()));
+	mock.expect_get_events_at()
+		.returning(|_| Ok(mock_empty_events()));
 	mock
 }
 

@@ -9,10 +9,7 @@ use futures;
 use serde_json::json;
 use std::marker::PhantomData;
 use std::str::FromStr;
-use subxt::{
-	client::{OnlineClient, OnlineClientT},
-	events::EventsClient,
-};
+use subxt::client::OnlineClient;
 use tracing::instrument;
 
 use crate::{
@@ -83,10 +80,12 @@ impl<W: Send + Sync + Clone + BlockchainTransport> BlockFilterFactory<Self> for 
 ///
 /// Provides a method to get events from the Substrate client
 #[async_trait]
-pub trait SubstrateClientTrait:
-	Send + Sync + Clone + OnlineClientT<subxt::SubstrateConfig>
-{
-	fn get_events(&self) -> EventsClient<subxt::SubstrateConfig, Self>;
+pub trait SubstrateClientTrait: Send + Sync + Clone {
+	/// Get events at a specific block hash
+	async fn get_events_at(
+		&self,
+		block_hash: subxt::utils::H256,
+	) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error>;
 }
 
 /// Default implementation for Substrate client trait
@@ -94,8 +93,11 @@ pub trait SubstrateClientTrait:
 /// Provides a default implementation for the Substrate client trait
 #[async_trait]
 impl SubstrateClientTrait for OnlineClient<subxt::SubstrateConfig> {
-	fn get_events(&self) -> EventsClient<subxt::SubstrateConfig, Self> {
-		self.events()
+	async fn get_events_at(
+		&self,
+		block_hash: subxt::utils::H256,
+	) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error> {
+		self.events().at(block_hash).await
 	}
 }
 
@@ -168,8 +170,7 @@ impl<W: Send + Sync + Clone + BlockchainTransport, S: SubstrateClientTrait> Midn
 			let client = self.substrate_client.clone();
 			async move {
 				client
-					.get_events()
-					.at(block_hash)
+					.get_events_at(block_hash)
 					.await
 					.map_err(|e| anyhow::anyhow!("Failed to get events: {}", e))
 			}
