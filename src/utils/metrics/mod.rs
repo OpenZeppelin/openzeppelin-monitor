@@ -405,6 +405,13 @@ mod tests {
 		let total_memory = TOTAL_MEMORY.get();
 		assert!(total_memory > 0.0);
 
+		let expected_percentage = if total_memory > 0.0 {
+			(memory_usage / total_memory) * 100.0
+		} else {
+			0.0
+		};
+		assert_eq!(memory_percent, expected_percentage);
+
 		let available_memory = AVAILABLE_MEMORY.get();
 		assert!(available_memory >= 0.0);
 

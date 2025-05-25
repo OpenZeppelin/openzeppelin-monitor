@@ -98,7 +98,7 @@ pub fn metadata<E: TypeInfo + 'static>() -> subxt::Metadata {
 	let runtime_metadata: RuntimeMetadataPrefixed = meta.into();
 	let metadata: subxt::Metadata = runtime_metadata.try_into().unwrap();
 
-	subxt::Metadata::from(metadata)
+	metadata
 }
 
 /// Creates an `Events` object for test purposes based on the provided metadata and event records.
