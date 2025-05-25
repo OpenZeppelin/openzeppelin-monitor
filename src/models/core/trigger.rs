@@ -36,7 +36,7 @@ pub enum TriggerType {
 }
 
 /// Notification message fields
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct NotificationMessage {
 	/// Notification title or subject

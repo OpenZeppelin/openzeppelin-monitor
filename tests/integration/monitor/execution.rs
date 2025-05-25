@@ -3,8 +3,10 @@ use crate::integration::{
 		load_test_data, setup_monitor_service, setup_network_service, setup_trigger_service,
 	},
 	mocks::{
-		create_test_network, MockClientPool, MockEvmClientTrait, MockMidnightClientTrait,
-		MockNetworkRepository, MockStellarClientTrait, MockTriggerRepository,
+		create_test_network, MockClientPool, MockEVMTransportClient, MockEvmClientTrait,
+		MockFilterService, MockMidnightClientTrait, MockMidnightWsTransportClient,
+		MockNetworkRepository, MockStellarClientTrait, MockStellarTransportClient,
+		MockTriggerRepository,
 	},
 };
 use mockall::predicate;
@@ -17,7 +19,9 @@ use openzeppelin_monitor::{
 		RepositoryError, TriggerRepository, TriggerService,
 	},
 	services::{
-		filter::FilterService, notification::NotificationService, trigger::TriggerExecutionService,
+		filter::{FilterError, FilterService},
+		notification::NotificationService,
+		trigger::TriggerExecutionService,
 	},
 	utils::{
 		monitor::execution::{execute_monitor, MonitorExecutionConfig},
@@ -1550,7 +1554,7 @@ async fn test_filter_block_failure_evm() {
 	mock_client
 		.expect_get_blocks()
 		.with(predicate::eq(12345u64), predicate::eq(None))
-		.return_once(move |_, _| Err(anyhow::anyhow!("Failed to filter block")));
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
 
 	let mock_client = Arc::new(mock_client);
 
@@ -1560,13 +1564,27 @@ async fn test_filter_block_failure_evm() {
 
 	let client_pool = Arc::new(mock_pool);
 
+	let mut mock_filter_service = MockFilterService::new();
+
+	mock_filter_service
+		.expect_filter_block::<MockEvmClientTrait<MockEVMTransportClient>>()
+		.returning(
+			move |_: &MockEvmClientTrait<MockEVMTransportClient>, _, _, _| {
+				Err(FilterError::internal_error(
+					"Internal Error".to_string(),
+					None,
+					None,
+				))
+			},
+		);
+
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
 		network_slug: Some("ethereum_mainnet".to_string()),
 		block_number: Some(12345),
 		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
 		network_service: Arc::new(Mutex::new(mock_network_service)),
-		filter_service: Arc::new(FilterService::new()),
+		filter_service: Arc::new(mock_filter_service),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
 		client_pool,
@@ -1610,7 +1628,7 @@ async fn test_filter_block_failure_midnight() {
 	mock_client
 		.expect_get_blocks()
 		.with(predicate::eq(11243u64), predicate::eq(None))
-		.return_once(move |_, _| Err(anyhow::anyhow!("Failed to filter block")));
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
 
 	let mock_client = Arc::new(mock_client);
 
@@ -1621,13 +1639,27 @@ async fn test_filter_block_failure_midnight() {
 
 	let client_pool = Arc::new(mock_pool);
 
+	let mut mock_filter_service = MockFilterService::new();
+
+	mock_filter_service
+		.expect_filter_block::<MockMidnightClientTrait<MockMidnightWsTransportClient>>()
+		.returning(
+			move |_: &MockMidnightClientTrait<MockMidnightWsTransportClient>, _, _, _| {
+				Err(FilterError::internal_error(
+					"Internal Error".to_string(),
+					None,
+					None,
+				))
+			},
+		);
+
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
 		network_slug: Some("midnight_testnet".to_string()),
 		block_number: Some(11243),
 		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
 		network_service: Arc::new(Mutex::new(mock_network_service)),
-		filter_service: Arc::new(FilterService::new()),
+		filter_service: Arc::new(mock_filter_service),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
 		client_pool,
@@ -1663,11 +1695,10 @@ async fn test_filter_block_failure_stellar() {
 	let trigger_execution_service =
 		TriggerExecutionService::new(trigger_service, notification_service);
 
-	// Mock the client to fail when getting blocks
 	mock_client
 		.expect_get_blocks()
-		.with(predicate::eq(172627u64), predicate::eq(None))
-		.return_once(move |_, _| Err(anyhow::anyhow!("Failed to filter block")));
+		.with(predicate::eq(11243u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
 
 	mock_client
 		.expect_get_contract_spec()
@@ -1682,13 +1713,27 @@ async fn test_filter_block_failure_stellar() {
 
 	let client_pool = Arc::new(mock_pool);
 
+	let mut mock_filter_service = MockFilterService::new();
+
+	mock_filter_service
+		.expect_filter_block::<MockStellarClientTrait<MockStellarTransportClient>>()
+		.returning(
+			move |_: &MockStellarClientTrait<MockStellarTransportClient>, _, _, _| {
+				Err(FilterError::internal_error(
+					"Internal Error".to_string(),
+					None,
+					None,
+				))
+			},
+		);
+
 	let result = execute_monitor(MonitorExecutionConfig {
 		path: test_data.monitor.name.clone(),
 		network_slug: Some("stellar_testnet".to_string()),
-		block_number: Some(172627),
+		block_number: Some(11243),
 		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
 		network_service: Arc::new(Mutex::new(mock_network_service)),
-		filter_service: Arc::new(FilterService::new()),
+		filter_service: Arc::new(mock_filter_service),
 		trigger_execution_service: Arc::new(trigger_execution_service),
 		active_monitors_trigger_scripts: HashMap::new(),
 		client_pool,

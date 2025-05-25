@@ -10,7 +10,7 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, ClientPoolTrait},
-		filter::{handle_match, FilterService},
+		filter::{handle_match, FilterServiceTrait},
 		trigger::TriggerExecutionService,
 	},
 	utils::monitor::MonitorExecutionError,
@@ -37,13 +37,14 @@ pub struct MonitorExecutionConfig<
 	N: NetworkRepositoryTrait + Send + Sync + 'static,
 	TR: TriggerRepositoryTrait + Send + Sync + 'static,
 	CP: ClientPoolTrait + Send + Sync + 'static,
+	FS: FilterServiceTrait + Send + Sync + 'static,
 > {
 	pub path: String,
 	pub network_slug: Option<String>,
 	pub block_number: Option<u64>,
 	pub monitor_service: Arc<Mutex<MonitorService<M, N, TR>>>,
 	pub network_service: Arc<Mutex<NetworkService<N>>>,
-	pub filter_service: Arc<FilterService>,
+	pub filter_service: Arc<FS>,
 	pub trigger_execution_service: Arc<TriggerExecutionService<TR>>,
 	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 	pub client_pool: Arc<CP>,
@@ -75,8 +76,9 @@ pub async fn execute_monitor<
 	N: NetworkRepositoryTrait + Send + Sync + 'static,
 	TR: TriggerRepositoryTrait + Send + Sync + 'static,
 	CP: ClientPoolTrait + Send + Sync + 'static,
+	FS: FilterServiceTrait + Send + Sync + 'static,
 >(
-	config: MonitorExecutionConfig<M, N, TR, CP>,
+	config: MonitorExecutionConfig<M, N, TR, CP, FS>,
 ) -> ExecutionResult<String> {
 	tracing::debug!("Loading monitor configuration");
 	let monitor = config
