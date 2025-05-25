@@ -1,8 +1,8 @@
 use openzeppelin_monitor::{
 	models::BlockChainType,
 	services::blockchain::{
-		ClientPool, ClientPoolTrait, EVMTransportClient, EvmClient, MidnightClient, StellarClient,
-		StellarTransportClient, WsTransportClient,
+		ClientPool, ClientPoolTrait, EVMTransportClient, EvmClient, MidnightClient,
+		MidnightWsTransportClient, StellarClient, StellarTransportClient, WsTransportClient,
 	},
 	utils::tests::network::NetworkBuilder,
 };
@@ -116,7 +116,6 @@ async fn test_get_stellar_client_creates_and_caches() {
 }
 
 #[tokio::test]
-#[ignore = "Test requires proper mocking of subxt client creation which is currently not implemented"]
 async fn test_get_midnight_client_creates_and_caches() {
 	// Start two test WebSocket servers
 	let (url1, shutdown_tx1) =
@@ -127,10 +126,13 @@ async fn test_get_midnight_client_creates_and_caches() {
 
 	// First request should create new client
 	let client1 = pool.get_midnight_client(&network).await.unwrap();
+
 	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<MidnightClient<WsTransportClient>>(BlockChainType::Midnight)
-			.await,
+		pool.get_client_count::<MidnightClient<MidnightWsTransportClient>>(
+			BlockChainType::Midnight
+		)
+		.await,
 		1
 	);
 
@@ -138,8 +140,10 @@ async fn test_get_midnight_client_creates_and_caches() {
 	let client2 = pool.get_midnight_client(&network).await.unwrap();
 	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<MidnightClient<WsTransportClient>>(BlockChainType::Midnight)
-			.await,
+		pool.get_client_count::<MidnightClient<MidnightWsTransportClient>>(
+			BlockChainType::Midnight
+		)
+		.await,
 		1
 	);
 
@@ -217,7 +221,6 @@ async fn test_different_stellar_networks_get_different_clients() {
 }
 
 #[tokio::test]
-#[ignore = "Test requires proper mocking of subxt client creation which is currently not implemented"]
 async fn test_different_midnight_networks_get_different_clients() {
 	let pool = ClientPool::new();
 
@@ -243,8 +246,10 @@ async fn test_different_midnight_networks_get_different_clients() {
 	// Should have different clients
 	assert_eq!(pool.storages.len(), 3);
 	assert_eq!(
-		pool.get_client_count::<MidnightClient<WsTransportClient>>(BlockChainType::Midnight)
-			.await,
+		pool.get_client_count::<MidnightClient<MidnightWsTransportClient>>(
+			BlockChainType::Midnight
+		)
+		.await,
 		2
 	);
 	assert!(!Arc::ptr_eq(&client1, &client2));
@@ -419,8 +424,7 @@ async fn test_get_stellar_client_handles_errors() {
 
 #[tokio::test]
 async fn test_get_midnight_client_handles_errors() {
-	let (url1, shutdown_tx1) =
-		start_test_websocket_server(Some(create_default_method_responses())).await;
+	let (url1, shutdown_tx1) = start_test_websocket_server(None).await;
 	let pool = ClientPool::new();
 	let network = create_midnight_test_network_with_urls(vec![&url1]);
 
@@ -450,8 +454,10 @@ async fn test_get_midnight_client_handles_errors() {
 		0
 	);
 	assert_eq!(
-		pool.get_client_count::<MidnightClient<WsTransportClient>>(BlockChainType::Midnight)
-			.await,
+		pool.get_client_count::<MidnightClient<MidnightWsTransportClient>>(
+			BlockChainType::Midnight
+		)
+		.await,
 		0
 	);
 

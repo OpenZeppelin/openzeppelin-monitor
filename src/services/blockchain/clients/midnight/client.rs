@@ -108,6 +108,13 @@ pub trait SubstrateClientTrait: Send + Sync + Clone {
 		&self,
 		block_hash: subxt::utils::H256,
 	) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error>;
+
+	async fn get_finalized_block(
+		&self,
+	) -> Result<
+		subxt::blocks::Block<subxt::SubstrateConfig, OnlineClient<subxt::SubstrateConfig>>,
+		subxt::Error,
+	>;
 }
 
 /// Default implementation for Substrate client trait
@@ -121,6 +128,15 @@ impl SubstrateClientTrait for OnlineClient<subxt::SubstrateConfig> {
 		block_hash: subxt::utils::H256,
 	) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error> {
 		self.events().at(block_hash).await
+	}
+
+	async fn get_finalized_block(
+		&self,
+	) -> Result<
+		subxt::blocks::Block<subxt::SubstrateConfig, OnlineClient<subxt::SubstrateConfig>>,
+		subxt::Error,
+	> {
+		self.blocks().at_latest().await
 	}
 }
 

@@ -334,15 +334,15 @@ pub fn create_method_response(
 	responses: &mut HashMap<String, MethodResponse>,
 	method: &str,
 	result: &Value,
-	id: Option<u64>,
 ) {
 	let result = result.clone();
 	responses.insert(
 		method.to_string(),
-		Box::new(move |_: &Value| {
+		Box::new(move |request: &Value| {
+			let request_id = request.get("id").cloned();
 			json!({
 				"jsonrpc": "2.0",
-				"id": id.unwrap_or(1),
+				"id": request_id,
 				"result": result
 			})
 		}) as MethodResponse,
@@ -354,36 +354,23 @@ pub fn create_default_method_responses() -> HashMap<String, MethodResponse> {
 	let mut responses = HashMap::new();
 
 	// Add default responses for common methods
-	create_method_response(&mut responses, "system_chain", &json!("testnet-02-1"), None);
-	create_method_response(
-		&mut responses,
-		"system_chainType",
-		&json!("Development"),
-		None,
-	);
-	create_method_response(
-		&mut responses,
-		"chain_subscribeNewHeads",
-		&json!("0x1"),
-		None,
-	);
+	create_method_response(&mut responses, "system_chain", &json!("testnet-02-1"));
+	create_method_response(&mut responses, "system_chainType", &json!("Development"));
+	create_method_response(&mut responses, "chain_subscribeNewHeads", &json!("0x1"));
 	create_method_response(
 		&mut responses,
 		"chain_getBlockHash",
 		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		None,
 	);
 	create_method_response(
 		&mut responses,
 		"chain_getFinalizedHead",
 		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		None,
 	);
 	create_method_response(
 		&mut responses,
 		"chain_getFinalisedHead",
 		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		None,
 	);
 	create_method_response(
 		&mut responses,
@@ -397,20 +384,18 @@ pub fn create_default_method_responses() -> HashMap<String, MethodResponse> {
 			"apis": [],
 			"transactionVersion": 1
 		}),
-		None,
 	);
 	create_method_response(
 		&mut responses,
 		"state_getStorage",
 		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		None,
 	);
 
 	// Special case for state_call as it needs to read from a file
 	let data =
 		std::fs::read_to_string("tests/integration/fixtures/midnight/state_call.json").unwrap();
 	let json_response: Value = serde_json::from_str(&data).unwrap();
-	create_method_response(&mut responses, "state_call", &json_response["result"], None);
+	create_method_response(&mut responses, "state_call", &json_response["result"]);
 
 	responses
 }

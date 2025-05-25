@@ -185,17 +185,11 @@ async fn test_ws_transport_unimplemented_methods() {
 #[tokio::test]
 async fn test_ws_transport_request_response() {
 	let mut responses = HashMap::new();
-	create_method_response(
-		&mut responses,
-		"system_chain",
-		&json!("testnet-02-1"),
-		Some(1),
-	);
+	create_method_response(&mut responses, "system_chain", &json!("testnet-02-1"));
 	create_method_response(
 		&mut responses,
 		"chain_getBlockHash",
 		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		Some(2),
 	);
 
 	let (url, shutdown_tx) = start_test_websocket_server(Some(responses)).await;

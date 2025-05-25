@@ -211,6 +211,12 @@ mock! {
 mock! {
 	pub SubstrateClient {
 		pub async fn get_events_at(&self, block_hash: subxt::utils::H256) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error>;
+		pub async fn get_finalized_block(
+			&self,
+		) -> Result<
+			subxt::blocks::Block<subxt::SubstrateConfig, subxt::OnlineClient<subxt::SubstrateConfig>>,
+			subxt::Error,
+		>;
 	}
 
 	impl Clone for SubstrateClient {
@@ -225,5 +231,14 @@ impl MidnightSubstrateClientTrait for MockSubstrateClient {
 		block_hash: subxt::utils::H256,
 	) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error> {
 		self.get_events_at(block_hash).await
+	}
+
+	async fn get_finalized_block(
+		&self,
+	) -> Result<
+		subxt::blocks::Block<subxt::SubstrateConfig, subxt::OnlineClient<subxt::SubstrateConfig>>,
+		subxt::Error,
+	> {
+		self.get_finalized_block().await
 	}
 }
