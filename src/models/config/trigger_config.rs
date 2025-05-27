@@ -198,6 +198,22 @@ impl ConfigLoader for Trigger {
 							])),
 						));
 					}
+
+					// Check trigger name uniqueness before pushing
+					if trigger_pairs
+						.iter()
+						.any(|(_, existing_trigger): &(String, Trigger)| {
+							existing_trigger.name == trigger.name
+						}) {
+						return Err(ConfigError::validation_error(
+							format!("Duplicate trigger name found: '{}'", trigger.name),
+							None,
+							Some(HashMap::from([
+								("path".to_string(), file_path.display().to_string()),
+								("trigger_name".to_string(), name.clone()),
+							])),
+						));
+					}
 					trigger_pairs.push((name, trigger));
 				}
 			}
@@ -1425,5 +1441,53 @@ mod tests {
 			},
 		};
 		assert!(max_body_length.validate().is_err());
+	}
+
+	#[tokio::test]
+	async fn test_load_all_duplicate_trigger_name() {
+		let temp_dir = TempDir::new().unwrap();
+		let file_path_1 = temp_dir.path().join("duplicate_trigger.json");
+		let file_path_2 = temp_dir.path().join("duplicate_trigger_2.json");
+
+		let trigger_config_1 = r#"{
+			"name": "TestTrigger",
+			"trigger_type": "Slack",
+			"config": {
+				"slack_url": {
+					"type": "plain",
+					"value": "https://hooks.slack.com/services/xxx"
+				}
+			}
+			"message": {
+				"title": "Test",
+				"body": "Test"
+			}
+		}"#;
+
+		let trigger_config_2 = r#"{
+			"name": "TestTrigger",
+			"trigger_type": "Discord",
+			"config": {
+				"discord_url": {
+					"type": "plain",
+					"value": "https://discord.com/api/webhooks/xxx"
+				}
+			}
+			"message": {
+				"title": "Test",
+				"body": "Test"
+			}
+		}"#;
+
+		fs::write(&file_path_1, trigger_config_1).unwrap();
+		fs::write(&file_path_2, trigger_config_2).unwrap();
+
+		let result: Result<HashMap<String, Trigger>, ConfigError> =
+			Trigger::load_all(Some(temp_dir.path())).await;
+
+		assert!(result.is_err());
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err.message.contains("Duplicate trigger name found"));
+		}
 	}
 }

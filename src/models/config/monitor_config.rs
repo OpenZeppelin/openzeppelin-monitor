@@ -74,6 +74,24 @@ impl ConfigLoader for Monitor {
 				.to_string();
 
 			let monitor = Self::load_from_path(&path).await?;
+
+			// Check monitor name uniqueness before pushing
+			if pairs
+				.iter()
+				.any(|(_, existing_monitor): &(String, Monitor)| {
+					existing_monitor.name == monitor.name
+				}) {
+				return Err(ConfigError::validation_error(
+					format!("Duplicate monitor name found: '{}'", monitor.name),
+					None,
+					Some(HashMap::from([
+						("monitor_name".to_string(), monitor.name.clone()),
+						("filename".to_string(), name),
+						("path".to_string(), path.display().to_string()),
+					])),
+				));
+			}
+
 			pairs.push((name, monitor));
 		}
 
@@ -574,5 +592,77 @@ mod tests {
 		assert!(logs_contain(
 			"script file has overly permissive write permissions"
 		));
+	}
+
+	#[tokio::test]
+	async fn test_load_all_monitors_duplicate_name() {
+		let temp_dir = TempDir::new().unwrap();
+
+		let valid_config_1 = r#"{
+            "name": "TestMonitor",
+			"networks": ["ethereum_mainnet"],
+			"paused": false,
+			"addresses": [
+				{
+					"address": "0x0000000000000000000000000000000000000000",
+					"contract_spec": null
+				}
+			],
+            "match_conditions": {
+                "functions": [
+                    {"signature": "transfer(address,uint256)"}
+                ],
+                "events": [
+                    {"signature": "Transfer(address,address,uint256)"}
+                ],
+                "transactions": [
+					{
+						"status": "Success",
+						"expression": null
+					}
+                ]
+            },
+			"trigger_conditions": [],
+			"triggers": ["trigger1", "trigger2"]
+        }"#;
+
+		let valid_config_2 = r#"{
+            "name": "TestMonitor",
+			"networks": ["ethereum_mainnet"],
+			"paused": false,
+			"addresses": [
+				{
+					"address": "0x0000000000000000000000000000000000000000",
+					"contract_spec": null
+				}
+			],
+            "match_conditions": {
+                "functions": [
+                    {"signature": "transfer(address,uint256)"}
+                ],
+                "events": [
+                    {"signature": "Transfer(address,address,uint256)"}
+                ],
+                "transactions": [
+					{
+						"status": "Success",
+						"expression": null
+					}
+                ]
+            },
+			"trigger_conditions": [],
+			"triggers": ["trigger1", "trigger2"]
+        }"#;
+
+		fs::write(temp_dir.path().join("monitor1.json"), valid_config_1).unwrap();
+		fs::write(temp_dir.path().join("monitor2.json"), valid_config_2).unwrap();
+
+		let result: Result<HashMap<String, Monitor>, _> =
+			Monitor::load_all(Some(temp_dir.path())).await;
+
+		assert!(result.is_err());
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err.message.contains("Duplicate monitor name found"));
+		}
 	}
 }

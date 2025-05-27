@@ -109,6 +109,22 @@ impl ConfigLoader for Network {
 				.to_string();
 
 			let network = Self::load_from_path(&path).await?;
+			// Check network name uniqueness before pushing
+			if pairs
+				.iter()
+				.any(|(_, existing_network): &(String, Network)| {
+					existing_network.name == network.name
+				}) {
+				return Err(ConfigError::validation_error(
+					format!("Duplicate network name found: '{}'", network.name),
+					None,
+					Some(HashMap::from([
+						("network_name".to_string(), network.name.clone()),
+						("filename".to_string(), name),
+						("path".to_string(), path.display().to_string()),
+					])),
+				));
+			}
 			pairs.push((name, network));
 		}
 
@@ -317,6 +333,8 @@ impl ConfigLoader for Network {
 mod tests {
 	use super::*;
 	use crate::utils::tests::builders::network::NetworkBuilder;
+	use std::fs;
+	use tempfile::TempDir;
 	use tracing_test::traced_test;
 
 	// Replace create_valid_network() with NetworkBuilder usage
@@ -553,5 +571,67 @@ mod tests {
 		));
 		assert!(!logs_contain("https://secure.network"));
 		assert!(!logs_contain("wss://secure.ws.network"));
+	}
+
+	#[tokio::test]
+	async fn test_load_all_duplicate_network_name() {
+		let temp_dir = TempDir::new().unwrap();
+		let file_path_1 = temp_dir.path().join("duplicate_network.json");
+		let file_path_2 = temp_dir.path().join("duplicate_network_2.json");
+
+		let network_config_1 = r#"{
+			"name": "TestNetwork",
+			"slug": "test_network",
+			"network_type": "EVM",
+			"rpc_urls": [
+				{
+					"type_": "rpc",
+					"url": {
+						"type": "plain",
+						"value": "https://eth.drpc.org"
+					},
+					"weight": 100
+				}
+			],
+			"chain_id": 1,
+			"block_time_ms": 1000,
+			"confirmation_blocks": 1,
+			"cron_schedule": "0 */5 * * * *",
+			"max_past_blocks": 10,
+			"store_blocks": true
+		}"#;
+
+		let network_config_2 = r#"{
+			"name": "TestNetwork",
+			"slug": "test_network",
+			"network_type": "EVM",
+			"rpc_urls": [
+				{
+					"type_": "rpc",
+					"url": {
+						"type": "plain",
+						"value": "https://eth.drpc.org"
+					},
+					"weight": 100
+				}
+			],
+			"chain_id": 1,
+			"block_time_ms": 1000,
+			"confirmation_blocks": 1,
+			"cron_schedule": "0 */5 * * * *",
+			"max_past_blocks": 10,
+			"store_blocks": true
+		}"#;
+
+		fs::write(&file_path_1, network_config_1).unwrap();
+		fs::write(&file_path_2, network_config_2).unwrap();
+
+		let result: Result<HashMap<String, Network>, ConfigError> =
+			Network::load_all(Some(temp_dir.path())).await;
+
+		assert!(result.is_err());
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err.message.contains("Duplicate network name found"));
+		}
 	}
 }
