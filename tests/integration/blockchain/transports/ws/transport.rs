@@ -1,4 +1,6 @@
-use crate::integration::mocks::start_test_websocket_server;
+use crate::integration::mocks::{
+	create_default_method_responses, create_method_response, start_test_websocket_server,
+};
 use openzeppelin_monitor::{
 	models::{BlockChainType, Network},
 	services::blockchain::{
@@ -11,7 +13,7 @@ use openzeppelin_monitor::{
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::time::sleep;
 
 // Helper function to create a test network with specific URLs
@@ -36,7 +38,8 @@ fn create_test_network_with_urls(urls: Vec<&str>) -> Network {
 
 #[tokio::test]
 async fn test_ws_transport_connection() {
-	let (url, shutdown_tx) = start_test_websocket_server().await;
+	let (url, shutdown_tx) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
 	let network = create_test_network_with_urls(vec![&url]);
 
 	// Test client creation
@@ -58,8 +61,8 @@ async fn test_ws_transport_connection() {
 #[tokio::test]
 async fn test_ws_transport_fallback() {
 	// Start two test servers
-	let (url1, shutdown_tx1) = start_test_websocket_server().await;
-	let (url2, shutdown_tx2) = start_test_websocket_server().await;
+	let (url1, shutdown_tx1) = start_test_websocket_server(None).await;
+	let (url2, shutdown_tx2) = start_test_websocket_server(None).await;
 
 	let network = create_test_network_with_urls(vec![&url1, &url2]);
 	let client = WsTransportClient::new(&network, None).await.unwrap();
@@ -124,9 +127,9 @@ async fn test_ws_transport_no_ws_urls() {
 #[tokio::test]
 async fn test_ws_transport_multiple_fallbacks() {
 	// Start three test servers
-	let (url1, shutdown_tx1) = start_test_websocket_server().await;
-	let (url2, shutdown_tx2) = start_test_websocket_server().await;
-	let (url3, shutdown_tx3) = start_test_websocket_server().await;
+	let (url1, shutdown_tx1) = start_test_websocket_server(None).await;
+	let (url2, shutdown_tx2) = start_test_websocket_server(None).await;
+	let (url3, shutdown_tx3) = start_test_websocket_server(None).await;
 
 	let network = create_test_network_with_urls(vec![&url1, &url2, &url3]);
 	let client = WsTransportClient::new(&network, None).await.unwrap();
@@ -152,7 +155,7 @@ async fn test_ws_transport_multiple_fallbacks() {
 
 #[tokio::test]
 async fn test_ws_transport_unimplemented_methods() {
-	let (url, shutdown_tx) = start_test_websocket_server().await;
+	let (url, shutdown_tx) = start_test_websocket_server(None).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let mut client = WsTransportClient::new(&network, None).await.unwrap();
 
@@ -181,7 +184,15 @@ async fn test_ws_transport_unimplemented_methods() {
 
 #[tokio::test]
 async fn test_ws_transport_request_response() {
-	let (url, shutdown_tx) = start_test_websocket_server().await;
+	let mut responses = HashMap::new();
+	create_method_response(&mut responses, "system_chain", &json!("testnet-02-1"));
+	create_method_response(
+		&mut responses,
+		"chain_getBlockHash",
+		&json!("0x0000000000000000000000000000000000000000000000000000000000000000"),
+	);
+
+	let (url, shutdown_tx) = start_test_websocket_server(Some(responses)).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let client = WsTransportClient::new(&network, None).await.unwrap();
 
@@ -192,7 +203,7 @@ async fn test_ws_transport_request_response() {
 	assert!(response.is_object(), "Response should be a JSON object");
 	assert_eq!(
 		response["result"].as_str().unwrap(),
-		"Development",
+		"testnet-02-1",
 		"Should get expected response"
 	);
 
@@ -218,16 +229,21 @@ async fn test_ws_transport_request_response() {
 
 #[tokio::test]
 async fn test_ws_transport_timeout() {
-	let (url, shutdown_tx) = start_test_websocket_server().await;
+	let (url, shutdown_tx) =
+		start_test_websocket_server(Some(create_default_method_responses())).await;
+
 	let network = create_test_network_with_urls(vec![&url]);
-	let client = WsTransportClient::new(&network, None).await.unwrap();
+
+	let client = WsTransportClient::new(&network, Some(WsConfig::single_attempt()))
+		.await
+		.unwrap();
 
 	// Test request timeout by sending a request that will cause the server to hang
 	let result = client.send_raw_request("timeout_test", None::<Value>).await;
 	assert!(result.is_err(), "Should timeout on hanging request");
 	assert!(
-		result.unwrap_err().to_string().contains("Connection error"),
-		"Should indicate connection error"
+		result.unwrap_err().to_string().contains("Response timeout"),
+		"Should indicate response timeout"
 	);
 
 	// Cleanup
@@ -236,7 +252,7 @@ async fn test_ws_transport_timeout() {
 
 #[tokio::test]
 async fn test_ws_transport_connection_state() {
-	let (url, shutdown_tx) = start_test_websocket_server().await;
+	let (url, shutdown_tx) = start_test_websocket_server(None).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let client = WsTransportClient::new(&network, None).await.unwrap();
 
@@ -254,7 +270,7 @@ async fn test_ws_transport_connection_state() {
 	sleep(Duration::from_millis(100)).await;
 
 	// Start a new server
-	let (new_url, new_shutdown_tx) = start_test_websocket_server().await;
+	let (new_url, new_shutdown_tx) = start_test_websocket_server(None).await;
 	let network = create_test_network_with_urls(vec![&new_url]);
 	let client = WsTransportClient::new(&network, None).await.unwrap();
 
@@ -268,7 +284,7 @@ async fn test_ws_transport_connection_state() {
 
 #[tokio::test]
 async fn test_ws_transport_concurrent_requests() {
-	let (url, shutdown_tx) = start_test_websocket_server().await;
+	let (url, shutdown_tx) = start_test_websocket_server(None).await;
 	let network = create_test_network_with_urls(vec![&url]);
 	let client = WsTransportClient::new(&network, None).await.unwrap();
 
@@ -293,7 +309,7 @@ async fn test_ws_transport_concurrent_requests() {
 
 #[tokio::test]
 async fn test_websocket_connection_health() {
-	let (url, shutdown_tx) = start_test_websocket_server().await;
+	let (url, shutdown_tx) = start_test_websocket_server(None).await;
 	let network = create_test_network_with_urls(vec![&url]);
 
 	// Create client with custom config
@@ -324,8 +340,8 @@ async fn test_websocket_connection_health() {
 	let result = client.send_raw_request("timeout_test", None::<Value>).await;
 	assert!(result.is_err(), "Should timeout on hanging request");
 	assert!(
-		result.unwrap_err().to_string().contains("Connection error"),
-		"Should indicate connection error"
+		result.unwrap_err().to_string().contains("Response timeout"),
+		"Should indicate response timeout"
 	);
 
 	let connection = client.connection.lock().await;

@@ -1,5 +1,8 @@
 //! Midnight block data structures.
 //!
+//! This module provides data structures and implementations for working with Midnight blockchain blocks.
+//! It includes types for representing block headers, digests, and block data from RPC responses.
+//!
 //! Note: These structures are based on the Midnight RPC implementation:
 //! <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs>
 
@@ -10,17 +13,27 @@ use crate::models::MidnightRpcTransactionEnum;
 
 /// Represents a Midnight block
 ///
+/// This struct contains the block header, body (transactions), and transaction indices.
+/// The transactions_index field is renamed from "transactionsIndex" in the RPC response
+/// to follow Rust naming conventions.
+///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L214-L218>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RpcBlock<Header = BlockHeader> {
+	/// The block header containing metadata about the block
 	pub header: Header,
+	/// The list of transactions in the block
 	pub body: Vec<MidnightRpcTransactionEnum>,
 	// NOTE: This should be `transactionsIndex` in the RPC response but it's not
 	// so we're using `transactions_index` here but expect this may change in the future
 	#[serde(rename = "transactions_index")]
 	pub transactions_index: Vec<(String, String)>,
 }
+
 /// Represents a Midnight block header
+///
+/// This struct contains the essential metadata for a Midnight block, including
+/// parent hash, block number, state root, and digest information.
 ///
 /// Based on the response from the Midnight RPC endpoint
 /// <https://docs.midnight.network/files/Insomnia_2024-11-21.json>
@@ -29,40 +42,55 @@ pub struct RpcBlock<Header = BlockHeader> {
 pub struct BlockHeader {
 	/// Hash of the parent block
 	pub parent_hash: String, // Hash
-	/// Block number
+	/// Block number in hexadecimal format
 	pub number: String, // Hex string
-	/// State root hash
+	/// State root hash representing the final state after applying all transactions
 	pub state_root: String, // Hash
-	/// Extrinsics root hash
+	/// Extrinsics root hash representing the Merkle root of all transactions
 	pub extrinsics_root: String, // Hash
-	/// Block digest information
+	/// Block digest containing additional block information
 	pub digest: BlockDigest,
 }
 
 /// Block digest containing logs
+///
+/// This struct represents the digest information for a block, which includes
+/// various logs and metadata about the block's processing.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct BlockDigest {
-	/// Vector of log entries
+	/// Vector of log entries in hexadecimal format
 	pub logs: Vec<String>, // Hex strings
 }
 
 /// Wrapper around RpcBlock that implements additional functionality
 ///
 /// This type provides a convenient interface for working with Midnight block data
-/// while maintaining compatibility with the RPC response format.
+/// while maintaining compatibility with the RPC response format. It implements
+/// methods for accessing and processing block information.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block(pub RpcBlock);
 
 impl Block {
-	/// Get the block number
+	/// Get the block number as a decimal value
 	///
-	/// Returns the block number as an `Option<u64>`.
+	/// Converts the hexadecimal block number to a decimal u64 value.
+	/// Returns None if the conversion fails.
+	///
+	/// # Returns
+	/// * `Option<u64>` - The block number as a decimal value, or None if conversion fails
 	pub fn number(&self) -> Option<u64> {
 		Some(u64::from_str_radix(self.0.header.number.trim_start_matches("0x"), 16).unwrap_or(0))
 	}
 }
 
 impl From<RpcBlock> for Block {
+	/// Creates a new Block from an RpcBlock
+	///
+	/// # Arguments
+	/// * `header` - The RpcBlock to convert
+	///
+	/// # Returns
+	/// A new Block instance
 	fn from(header: RpcBlock) -> Self {
 		Self(header)
 	}
@@ -71,6 +99,10 @@ impl From<RpcBlock> for Block {
 impl Deref for Block {
 	type Target = RpcBlock;
 
+	/// Dereferences the Block to access the underlying RpcBlock
+	///
+	/// # Returns
+	/// A reference to the underlying RpcBlock
 	fn deref(&self) -> &Self::Target {
 		&self.0
 	}
@@ -80,6 +112,7 @@ impl Deref for Block {
 mod tests {
 	use super::*;
 
+	/// Tests block creation and number conversion
 	#[test]
 	fn test_block_creation_and_number() {
 		let rpc_block = RpcBlock::<BlockHeader> {
@@ -107,6 +140,7 @@ mod tests {
 		assert_eq!(block.header.digest.logs, Vec::<String>::new());
 	}
 
+	/// Tests serialization and deserialization of Block
 	#[test]
 	fn test_serde_serialization() {
 		let rpc_block = RpcBlock {

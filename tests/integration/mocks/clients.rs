@@ -6,11 +6,12 @@
 //! - [`MockStellarClientTrait`] - Mock implementation of Stellar blockchain client
 //! - [`MockMidnightClientTrait`] - Mock implementation of Midnight blockchain client
 //! - [`MockClientPool`] - Mock implementation of the client pool
+//! - [`MockSubstrateClient`] - Mock implementation of the Substrate client
 //!
 //! These mocks allow testing blockchain-related functionality without actual
 //! network connections.
 
-use std::{marker::PhantomData, sync::Arc};
+use super::{MockEVMTransportClient, MockMidnightWsTransportClient, MockStellarTransportClient};
 
 use openzeppelin_monitor::{
 	models::{
@@ -20,7 +21,7 @@ use openzeppelin_monitor::{
 	services::{
 		blockchain::{
 			BlockChainClient, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
-			MidnightClientTrait, StellarClientTrait,
+			MidnightClientTrait, MidnightSubstrateClientTrait, StellarClientTrait,
 		},
 		filter::{EVMBlockFilter, MidnightBlockFilter, StellarBlockFilter},
 	},
@@ -28,8 +29,7 @@ use openzeppelin_monitor::{
 
 use async_trait::async_trait;
 use mockall::{mock, predicate::*};
-
-use super::{MockEVMTransportClient, MockMidnightTransportClient, MockStellarTransportClient};
+use std::{marker::PhantomData, sync::Arc};
 
 mock! {
 	/// Mock implementation of the EVM client trait.
@@ -197,13 +197,48 @@ mock! {
 	impl ClientPoolTrait for ClientPool {
 		type EvmClient = MockEvmClientTrait<MockEVMTransportClient>;
 		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
-		type MidnightClient = MockMidnightClientTrait<MockMidnightTransportClient>;
+		type MidnightClient = MockMidnightClientTrait<MockMidnightWsTransportClient>;
 		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockEVMTransportClient>>,  anyhow::Error>;
 		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>,  anyhow::Error>;
-		async fn get_midnight_client(&self, network: &Network) -> Result<Arc<MockMidnightClientTrait<MockMidnightTransportClient>>,  anyhow::Error>;
+		async fn get_midnight_client(&self, network: &Network) -> Result<Arc<MockMidnightClientTrait<MockMidnightWsTransportClient>>,  anyhow::Error>;
 	}
 
 	impl Clone for ClientPool {
 		fn clone(&self) -> Self;
+	}
+}
+
+mock! {
+	pub SubstrateClient {
+		pub async fn get_events_at(&self, block_hash: subxt::utils::H256) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error>;
+		pub async fn get_finalized_block(
+			&self,
+		) -> Result<
+			subxt::blocks::Block<subxt::SubstrateConfig, subxt::OnlineClient<subxt::SubstrateConfig>>,
+			subxt::Error,
+		>;
+	}
+
+	impl Clone for SubstrateClient {
+		fn clone(&self) -> Self;
+	}
+}
+
+#[async_trait::async_trait]
+impl MidnightSubstrateClientTrait for MockSubstrateClient {
+	async fn get_events_at(
+		&self,
+		block_hash: subxt::utils::H256,
+	) -> Result<subxt::events::Events<subxt::SubstrateConfig>, subxt::Error> {
+		self.get_events_at(block_hash).await
+	}
+
+	async fn get_finalized_block(
+		&self,
+	) -> Result<
+		subxt::blocks::Block<subxt::SubstrateConfig, subxt::OnlineClient<subxt::SubstrateConfig>>,
+		subxt::Error,
+	> {
+		self.get_finalized_block().await
 	}
 }

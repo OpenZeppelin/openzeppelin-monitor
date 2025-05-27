@@ -1,5 +1,8 @@
 //! Midnight transaction data structures.
 //!
+//! This module provides data structures and implementations for working with Midnight blockchain transactions.
+//! It includes types for representing RPC transactions, operations, and transaction processing.
+//!
 //! Note: These structures are based on the Midnight RPC implementation:
 //! <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs>
 
@@ -20,67 +23,107 @@ use crate::{
 
 /// Represents a Midnight RPC transaction Enum
 ///
+/// This enum represents different types of transactions that can be received from the Midnight RPC.
+/// It includes standard Midnight transactions, malformed transactions, timestamps, and runtime upgrades.
+///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L200-L211>
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum RpcTransaction {
+	/// A standard Midnight transaction with raw data and parsed transaction information
 	MidnightTransaction {
+		/// Raw transaction data (serialized as string)
 		#[serde(skip)]
 		tx_raw: String,
+		/// Parsed transaction information
 		tx: MidnightRpcTransaction,
 	},
+	/// A transaction that could not be properly parsed
 	MalformedMidnightTransaction,
+	/// A timestamp transaction
 	Timestamp(u64),
+	/// A runtime upgrade transaction
 	RuntimeUpgrade,
+	/// An unknown transaction type
 	UnknownTransaction,
 }
 
 /// Represents a Midnight transaction operations
 ///
+/// This enum defines the various operations that can be performed in a Midnight transaction,
+/// including contract calls, deployments, coin operations, and maintenance actions.
+///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L185-L192>
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Operation {
+	/// A contract call operation with target address and entry point
 	Call {
+		/// The contract address to call
 		address: String,
+		/// The entry point to call (hex-encoded)
 		entry_point: String,
 	},
+	/// A contract deployment operation
 	Deploy {
+		/// The address where the contract is deployed
 		address: String,
 	},
+	/// A fallible coin operation
 	FallibleCoins,
+	/// A guaranteed coin operation
 	GuaranteedCoins,
+	/// A contract maintenance operation
 	Maintain {
+		/// The contract address to maintain
 		address: String,
 	},
+	/// A claim mint operation
 	ClaimMint {
+		/// The value to mint
 		value: u128,
+		/// The type of coin to mint
 		coin_type: String,
 	},
 }
 
 /// Represents a Midnight transaction
 ///
+/// This struct contains the core information about a Midnight transaction,
+/// including its hash, operations, and identifiers.
+///
 /// <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs#L194-L198>
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct MidnightRpcTransaction {
+	/// The transaction hash
 	pub tx_hash: String,
+	/// The list of operations in the transaction
 	pub operations: Vec<Operation>,
+	/// The list of identifiers associated with the transaction
 	pub identifiers: Vec<String>,
 }
 
 /// Wrapper around MidnightRpcTransaction that provides additional functionality
 ///
 /// This type implements convenience methods for working with Midnight transactions
-/// while maintaining compatibility with the RPC response format.
+/// while maintaining compatibility with the RPC response format. It provides methods
+/// for accessing transaction details and processing transaction data.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Transaction(pub MidnightRpcTransaction);
 
 impl Transaction {
 	/// Get the transaction hash
+	///
+	/// # Returns
+	/// A reference to the transaction hash string
 	pub fn hash(&self) -> &String {
 		&self.0.tx_hash
 	}
 
-	/// Get the contract addresses of the transaction
+	/// Get the contract addresses involved in the transaction
+	///
+	/// This method extracts all contract addresses from Call, Deploy, and Maintain operations.
+	///
+	/// # Returns
+	/// A vector of contract addresses as strings
 	pub fn contract_addresses(&self) -> Vec<String> {
 		self.0
 			.operations
@@ -94,7 +137,13 @@ impl Transaction {
 			.collect()
 	}
 
-	/// Get the contract entry points of the transaction
+	/// Get the contract entry points called in the transaction
+	///
+	/// This method extracts and decodes entry points from Call operations.
+	/// Entry points are decoded from hex to UTF-8 strings.
+	///
+	/// # Returns
+	/// A vector of decoded entry point strings
 	pub fn entry_points(&self) -> Vec<String> {
 		self.0
 			.operations
@@ -110,7 +159,13 @@ impl Transaction {
 			.collect()
 	}
 
-	/// Get the contract addresses and entry points of the transaction
+	/// Get the contract addresses and their corresponding entry points
+	///
+	/// This method pairs contract addresses with their entry points for Call operations.
+	/// Entry points are decoded from hex to UTF-8 strings.
+	///
+	/// # Returns
+	/// A vector of (address, entry_point) pairs
 	pub fn contract_addresses_and_entry_points(&self) -> Vec<(String, String)> {
 		self.0
 			.operations
@@ -136,18 +191,43 @@ impl Transaction {
 }
 
 impl From<MidnightRpcTransaction> for Transaction {
+	/// Creates a new Transaction from a MidnightRpcTransaction
+	///
+	/// # Arguments
+	/// * `tx` - The MidnightRpcTransaction to convert
+	///
+	/// # Returns
+	/// A new Transaction instance
 	fn from(tx: MidnightRpcTransaction) -> Self {
 		Self(tx)
 	}
 }
 
 impl From<Transaction> for MidnightRpcTransaction {
+	/// Converts a Transaction back into a MidnightRpcTransaction
+	///
+	/// # Arguments
+	/// * `tx` - The Transaction to convert
+	///
+	/// # Returns
+	/// The underlying MidnightRpcTransaction
 	fn from(tx: Transaction) -> Self {
 		tx.0
 	}
 }
 
 impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
+	/// Converts a ContractAction into an Operation
+	///
+	/// This implementation handles the conversion of different types of contract actions
+	/// into their corresponding Operation variants, including proper encoding of addresses
+	/// and entry points.
+	///
+	/// # Arguments
+	/// * `action` - The ContractAction to convert
+	///
+	/// # Returns
+	/// The corresponding Operation variant
 	fn from(action: ContractAction<P, D>) -> Self {
 		match action {
 			ContractAction::Call(call) => Operation::Call {
@@ -173,6 +253,19 @@ impl<D: DB>
 {
 	type Error = anyhow::Error;
 
+	/// Attempts to create a Transaction from a tuple of transaction data and chain configuration
+	///
+	/// This implementation processes the transaction data and attempts to decrypt any coins
+	/// using the provided chain configuration's viewing keys.
+	///
+	/// # Arguments
+	/// * `(block_tx, ledger_tx, chain_configurations)` - A tuple containing:
+	///   - The block transaction
+	///   - An optional ledger transaction
+	///   - A reference to chain configurations
+	///
+	/// # Returns
+	/// * `Result<Self, Self::Error>` - The processed transaction or an error
 	fn try_from(
 		(block_tx, ledger_tx, chain_configurations): (
 			Transaction,
@@ -202,6 +295,10 @@ impl<D: DB>
 impl Deref for Transaction {
 	type Target = MidnightRpcTransaction;
 
+	/// Dereferences the Transaction to access the underlying MidnightRpcTransaction
+	///
+	/// # Returns
+	/// A reference to the underlying MidnightRpcTransaction
 	fn deref(&self) -> &Self::Target {
 		&self.0
 	}
@@ -211,6 +308,7 @@ impl Deref for Transaction {
 mod tests {
 	use super::*;
 
+	/// Tests the conversion from MidnightRpcTransaction to Transaction
 	#[test]
 	fn test_transaction_from_rpc_transaction() {
 		let tx_info = MidnightRpcTransaction {
@@ -239,6 +337,7 @@ mod tests {
 		);
 	}
 
+	/// Tests the Deref implementation for Transaction
 	#[test]
 	fn test_transaction_deref() {
 		let tx_info = MidnightRpcTransaction {
@@ -267,6 +366,7 @@ mod tests {
 		);
 	}
 
+	/// Tests the contract_addresses method
 	#[test]
 	fn test_contract_addresses() {
 		let tx_info = MidnightRpcTransaction {
@@ -296,6 +396,7 @@ mod tests {
 		assert!(addresses.contains(&"0x789".to_string()));
 	}
 
+	/// Tests the entry_points method
 	#[test]
 	fn test_entry_points() {
 		let tx_info = MidnightRpcTransaction {
@@ -324,6 +425,7 @@ mod tests {
 		assert!(entry_points.contains(&"entry2".to_string()));
 	}
 
+	/// Tests the contract_addresses_and_entry_points method
 	#[test]
 	fn test_contract_addresses_and_entry_points() {
 		let tx_info = MidnightRpcTransaction {

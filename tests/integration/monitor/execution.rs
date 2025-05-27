@@ -3,8 +3,10 @@ use crate::integration::{
 		load_test_data, setup_monitor_service, setup_network_service, setup_trigger_service,
 	},
 	mocks::{
-		create_test_network, MockClientPool, MockEvmClientTrait, MockMidnightClientTrait,
-		MockNetworkRepository, MockStellarClientTrait, MockTriggerRepository,
+		create_test_network, MockClientPool, MockEVMTransportClient, MockEvmClientTrait,
+		MockFilterService, MockMidnightClientTrait, MockMidnightWsTransportClient,
+		MockNetworkRepository, MockStellarClientTrait, MockStellarTransportClient,
+		MockTriggerRepository,
 	},
 };
 use mockall::predicate;
@@ -17,7 +19,9 @@ use openzeppelin_monitor::{
 		RepositoryError, TriggerRepository, TriggerService,
 	},
 	services::{
-		filter::FilterService, notification::NotificationService, trigger::TriggerExecutionService,
+		filter::{FilterError, FilterService},
+		notification::NotificationService,
+		trigger::TriggerExecutionService,
 	},
 	utils::{
 		monitor::execution::{execute_monitor, MonitorExecutionConfig},
@@ -1522,4 +1526,223 @@ async fn test_load_from_path_with_mixed_services() {
 	std::fs::remove_file(network_path).unwrap();
 	std::fs::remove_file(trigger_path).unwrap();
 	std::fs::remove_file(monitor_path).unwrap();
+}
+
+#[tokio::test]
+async fn test_filter_block_failure_evm() {
+	let test_data = load_test_data("evm");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_network_service("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	let mut mock_client = MockEvmClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"evm_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	// Mock the client to fail when getting blocks
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(12345u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(mock_client));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let mut mock_filter_service = MockFilterService::new();
+
+	mock_filter_service
+		.expect_filter_block::<MockEvmClientTrait<MockEVMTransportClient>>()
+		.returning(
+			move |_: &MockEvmClientTrait<MockEVMTransportClient>, _, _, _| {
+				Err(FilterError::internal_error(
+					"Internal Error".to_string(),
+					None,
+					None,
+				))
+			},
+		);
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("ethereum_mainnet".to_string()),
+		block_number: Some(12345),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(mock_filter_service),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to filter block"));
+}
+
+#[tokio::test]
+async fn test_filter_block_failure_midnight() {
+	let test_data = load_test_data("midnight");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_network_service("Midnight", "midnight_testnet", BlockChainType::Midnight);
+	let mut mock_client = MockMidnightClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"midnight_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	mock_client
+		.expect_get_chain_type()
+		.returning(|| Ok("testnet-02-1".to_string()));
+
+	// Mock the client to fail when getting blocks
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(11243u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_midnight_client()
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let mut mock_filter_service = MockFilterService::new();
+
+	mock_filter_service
+		.expect_filter_block::<MockMidnightClientTrait<MockMidnightWsTransportClient>>()
+		.returning(
+			move |_: &MockMidnightClientTrait<MockMidnightWsTransportClient>, _, _, _| {
+				Err(FilterError::internal_error(
+					"Internal Error".to_string(),
+					None,
+					None,
+				))
+			},
+		);
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("midnight_testnet".to_string()),
+		block_number: Some(11243),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(mock_filter_service),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to filter block"));
+}
+
+#[tokio::test]
+async fn test_filter_block_failure_stellar() {
+	let test_data = load_test_data("stellar");
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_network_service("Stellar", "stellar_testnet", BlockChainType::Stellar);
+	let mut mock_client = MockStellarClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"stellar_large_transfer_usdc_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(11243u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(test_data.blocks.clone()));
+
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_stellar_client()
+		.times(2)
+		.returning(move |_| Ok(mock_client.clone()));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let mut mock_filter_service = MockFilterService::new();
+
+	mock_filter_service
+		.expect_filter_block::<MockStellarClientTrait<MockStellarTransportClient>>()
+		.returning(
+			move |_: &MockStellarClientTrait<MockStellarTransportClient>, _, _, _| {
+				Err(FilterError::internal_error(
+					"Internal Error".to_string(),
+					None,
+					None,
+				))
+			},
+		);
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: test_data.monitor.name.clone(),
+		network_slug: Some("stellar_testnet".to_string()),
+		block_number: Some(11243),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(mock_filter_service),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to filter block"));
 }
