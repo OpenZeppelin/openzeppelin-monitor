@@ -274,6 +274,7 @@ docker compose logs -f
 
 ==== Configuration References
 
+* Monitor, network, and trigger names **must be unique** across all configurations files
 * Monitor's `networks` array must contain valid network `slug` values from network configuration files
 * Monitor's `triggers` array must contain valid trigger configuration keys
 * Example valid references:
@@ -624,7 +625,7 @@ A Network configuration defines connection details and operational parameters fo
 
 |name
 |String
-|Human-readable network name
+|**Unique** Human-readable network name
 
 |rpc_urls
 |Array[Object]
@@ -726,7 +727,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 
 |name
 |String
-|Human-readable name for the notification
+|**Unique** Human-readable name for the notification
 
 |trigger_type
 |String
@@ -779,7 +780,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 
 |name
 |String
-|Human-readable name for the notification
+|**Unique** Human-readable name for the notification
 
 |trigger_type
 |String
@@ -856,7 +857,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 
 |name
 |String
-|Human-readable name for the notification
+|**Unique** Human-readable name for the notification
 
 |trigger_type
 |String
@@ -917,7 +918,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 
 |name
 |String
-|Human-readable name for the notification
+|**Unique** Human-readable name for the notification
 
 |trigger_type
 |String
@@ -963,7 +964,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 
 |name
 |String
-|Human-readable name for the notification
+|**Unique** Human-readable name for the notification
 
 |trigger_type
 |String
@@ -1013,7 +1014,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 
 |name
 |String
-|Human-readable name for the notification
+|**Unique** Human-readable name for the notification
 
 |trigger_type
 |String
@@ -1427,7 +1428,7 @@ Match transaction properties. The available fields and expression syntax depend 
 
 |name
 |String
-|Unique identifier for this monitor
+|**Unique** identifier for this monitor
 
 |networks
 |Array[String]
