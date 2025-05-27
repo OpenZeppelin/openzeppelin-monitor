@@ -203,7 +203,7 @@ impl ConfigLoader for Trigger {
 					if trigger_pairs
 						.iter()
 						.any(|(_, existing_trigger): &(String, Trigger)| {
-							existing_trigger.name == trigger.name
+							existing_trigger.name.to_lowercase() == trigger.name.to_lowercase()
 						}) {
 						return Err(ConfigError::validation_error(
 							format!("Duplicate trigger name found: '{}'", trigger.name),
@@ -1468,7 +1468,7 @@ mod tests {
 
 		let trigger_config_2 = r#"{
 			"test_trigger_2": {
-				"name": "TestTrigger",
+				"name": "testTrigger",
 				"trigger_type": "discord",
 				"config": {
 					"discord_url": {
@@ -1488,7 +1488,7 @@ mod tests {
 
 		let result: Result<HashMap<String, Trigger>, ConfigError> =
 			Trigger::load_all(Some(temp_dir.path())).await;
-		println!("RESULT: {:?}", result);
+
 		assert!(result.is_err());
 		if let Err(ConfigError::ValidationError(err)) = result {
 			assert!(err.message.contains("Duplicate trigger name found"));

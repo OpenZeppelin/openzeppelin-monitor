@@ -79,7 +79,7 @@ impl ConfigLoader for Monitor {
 			if pairs
 				.iter()
 				.any(|(_, existing_monitor): &(String, Monitor)| {
-					existing_monitor.name == monitor.name
+					existing_monitor.name.to_lowercase() == monitor.name.to_lowercase()
 				}) {
 				return Err(ConfigError::validation_error(
 					format!("Duplicate monitor name found: '{}'", monitor.name),
@@ -627,7 +627,7 @@ mod tests {
         }"#;
 
 		let valid_config_2 = r#"{
-            "name": "TestMonitor",
+            "name": "Testmonitor",
 			"networks": ["ethereum_mainnet"],
 			"paused": false,
 			"addresses": [

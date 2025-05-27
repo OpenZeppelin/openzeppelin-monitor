@@ -113,7 +113,7 @@ impl ConfigLoader for Network {
 			if pairs
 				.iter()
 				.any(|(_, existing_network): &(String, Network)| {
-					existing_network.name == network.name
+					existing_network.name.to_lowercase() == network.name.to_lowercase()
 				}) {
 				return Err(ConfigError::validation_error(
 					format!("Duplicate network name found: '{}'", network.name),
@@ -580,7 +580,7 @@ mod tests {
 		let file_path_2 = temp_dir.path().join("duplicate_network_2.json");
 
 		let network_config_1 = r#"{
-			"name": "TestNetwork",
+			"name": "Testnetwork",
 			"slug": "test_network",
 			"network_type": "EVM",
 			"rpc_urls": [
