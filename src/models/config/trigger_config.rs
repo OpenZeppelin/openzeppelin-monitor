@@ -1450,32 +1450,36 @@ mod tests {
 		let file_path_2 = temp_dir.path().join("duplicate_trigger_2.json");
 
 		let trigger_config_1 = r#"{
-			"name": "TestTrigger",
-			"trigger_type": "Slack",
-			"config": {
-				"slack_url": {
-					"type": "plain",
-					"value": "https://hooks.slack.com/services/xxx"
+			"test_trigger_1": {
+				"name": "TestTrigger",
+				"trigger_type": "slack",
+				"config": {
+					"slack_url": {
+						"type": "plain",
+						"value": "https://hooks.slack.com/services/xxx"
+					},
+					"message": {
+						"title": "Test",
+						"body": "Test"
+					}
 				}
-			}
-			"message": {
-				"title": "Test",
-				"body": "Test"
 			}
 		}"#;
 
 		let trigger_config_2 = r#"{
-			"name": "TestTrigger",
-			"trigger_type": "Discord",
-			"config": {
-				"discord_url": {
-					"type": "plain",
-					"value": "https://discord.com/api/webhooks/xxx"
+			"test_trigger_2": {
+				"name": "TestTrigger",
+				"trigger_type": "discord",
+				"config": {
+					"discord_url": {
+						"type": "plain",
+						"value": "https://discord.com/api/webhooks/xxx"
+					},
+					"message": {
+						"title": "Test",
+						"body": "Test"
+					}
 				}
-			}
-			"message": {
-				"title": "Test",
-				"body": "Test"
 			}
 		}"#;
 
@@ -1484,7 +1488,7 @@ mod tests {
 
 		let result: Result<HashMap<String, Trigger>, ConfigError> =
 			Trigger::load_all(Some(temp_dir.path())).await;
-
+		println!("RESULT: {:?}", result);
 		assert!(result.is_err());
 		if let Err(ConfigError::ValidationError(err)) = result {
 			assert!(err.message.contains("Duplicate trigger name found"));
