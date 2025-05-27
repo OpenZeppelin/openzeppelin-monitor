@@ -2,7 +2,7 @@
 //!
 //! This module contains mock implementations of various traits used throughout
 //! the application, primarily for testing. It includes mocks for:
-//! - Blockchain clients (EVM and Stellar)
+//! - Blockchain clients
 //! - Repository interfaces
 //!
 //! The mocks are implemented using the `mockall` crate.

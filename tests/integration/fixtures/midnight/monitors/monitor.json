@@ -1,0 +1,38 @@
+{
+  "name": "Monitor for Bulletin Board Take down",
+  "paused": false,
+  "networks": [
+    "midnight_testnet"
+  ],
+  "addresses": [
+    {
+      "address": "020200bf19b4b8a1cb232880d26999f01c0aca5c57635365019456109be2ee809f5919"
+    }
+  ],
+  "chain_configurations": [
+    {
+      "midnight": {
+        "viewing_keys": [
+          {
+            "type": "plain",
+            "value": "abcdefghijklmnopqrstuvwxyz12345678901112131415161718192021222324"
+          }
+        ]
+      }
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "take_down()",
+        "expression": null
+      }
+    ],
+    "events": [],
+    "transactions": []
+  },
+  "trigger_conditions": [],
+  "triggers": [
+    "example_trigger_slack"
+  ]
+}

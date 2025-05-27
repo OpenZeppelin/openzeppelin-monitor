@@ -99,6 +99,7 @@ body:
       options:
         - EVM
         - Stellar
+        - Midnight
         - Other
     validations:
       required: true
