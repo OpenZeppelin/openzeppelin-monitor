@@ -609,7 +609,7 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
 
 [NOTE]
 ====
-A websocket RPC URL (wss://) is required in the network configuration to monitor transaction status. This is because transaction status information is retrieved through Substrate events, which are only available via websocket connections.
+A websocket RPC URL (wss://) is required in the network configuration for Midnight networks. This is because transaction status information is retrieved through Substrate events, which are only available via websocket connections.
 ====
 
 ==== 2. Monitor Configuration:
