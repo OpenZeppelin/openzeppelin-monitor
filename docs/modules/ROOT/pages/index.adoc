@@ -621,7 +621,7 @@ A Network configuration defines connection details and operational parameters fo
 
 |slug
 |String
-|Unique identifier for the network
+|**Unique** identifier for the network
 
 |name
 |String
