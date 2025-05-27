@@ -14,6 +14,7 @@ use crate::{
 		TriggerTypeConfig,
 	},
 	services::trigger::validate_script_config,
+	utils::normalize_string,
 };
 
 const TELEGRAM_MAX_BODY_LENGTH: usize = 4096;
@@ -203,7 +204,8 @@ impl ConfigLoader for Trigger {
 					if trigger_pairs
 						.iter()
 						.any(|(_, existing_trigger): &(String, Trigger)| {
-							existing_trigger.name.to_lowercase() == trigger.name.to_lowercase()
+							normalize_string(&existing_trigger.name)
+								== normalize_string(&trigger.name)
 						}) {
 						return Err(ConfigError::validation_error(
 							format!("Duplicate trigger name found: '{}'", trigger.name),

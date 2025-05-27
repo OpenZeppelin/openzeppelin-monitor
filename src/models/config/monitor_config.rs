@@ -9,6 +9,7 @@ use std::{collections::HashMap, fs, path::Path};
 use crate::{
 	models::{config::error::ConfigError, ConfigLoader, Monitor},
 	services::trigger::validate_script_config,
+	utils::normalize_string,
 };
 
 #[async_trait]
@@ -79,7 +80,7 @@ impl ConfigLoader for Monitor {
 			if pairs
 				.iter()
 				.any(|(_, existing_monitor): &(String, Monitor)| {
-					existing_monitor.name.to_lowercase() == monitor.name.to_lowercase()
+					normalize_string(&existing_monitor.name) == normalize_string(&monitor.name)
 				}) {
 				return Err(ConfigError::validation_error(
 					format!("Duplicate monitor name found: '{}'", monitor.name),

@@ -12,6 +12,7 @@ use crate::{
 	models::{Monitor, MonitorMatch, ScriptLanguage, TriggerTypeConfig},
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{notification::NotificationService, trigger::error::TriggerError},
+	utils::normalize_string,
 };
 
 /// Trait for executing triggers
@@ -166,7 +167,11 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 					})?;
 				// Store the script content with its language
 				scripts.insert(
-					format!("{}|{}", monitor.name, condition.script_path),
+					format!(
+						"{}|{}",
+						normalize_string(&monitor.name),
+						condition.script_path
+					),
 					(condition.language.clone(), content),
 				);
 			}
@@ -206,7 +211,11 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				})?;
 
 				scripts.insert(
-					format!("{}|{}", monitor.name, script_path.display()),
+					format!(
+						"{}|{}",
+						normalize_string(&monitor.name),
+						script_path.display()
+					),
 					(language.clone(), content),
 				);
 			}

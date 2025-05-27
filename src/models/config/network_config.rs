@@ -8,7 +8,7 @@ use std::{collections::HashMap, path::Path, str::FromStr};
 
 use crate::{
 	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network, SecretValue},
-	utils::get_cron_interval_ms,
+	utils::{get_cron_interval_ms, normalize_string},
 };
 
 impl Network {
@@ -113,7 +113,7 @@ impl ConfigLoader for Network {
 			if pairs
 				.iter()
 				.any(|(_, existing_network): &(String, Network)| {
-					existing_network.name.to_lowercase() == network.name.to_lowercase()
+					normalize_string(&existing_network.name) == normalize_string(&network.name)
 				}) {
 				return Err(ConfigError::validation_error(
 					format!("Duplicate network name found: '{}'", network.name),

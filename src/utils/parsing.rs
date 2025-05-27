@@ -16,6 +16,19 @@ pub fn parse_string_to_bytes_size(s: &str) -> Result<u64, String> {
 	}
 }
 
+/// Normalizes a string by trimming whitespace and converting to lowercase.
+///
+/// This is useful for case-insensitive comparisons and removing leading/trailing whitespace.
+///
+/// # Arguments
+/// * `input` - The string to normalize
+///
+/// # Returns
+/// * `String` - The normalized string (trimmed and lowercase)
+pub fn normalize_string(input: &str) -> String {
+	input.trim().to_lowercase()
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -58,6 +71,26 @@ mod tests {
 				"Expected error for invalid input: {}",
 				input
 			);
+		}
+	}
+
+	#[test]
+	fn test_normalize_string() {
+		let test_cases = vec![
+			("Hello World", "hello world"),
+			("  UPPERCASE  ", "uppercase"),
+			("MixedCase", "mixedcase"),
+			("  trim me  ", "trim me"),
+			("", ""),
+			("   ", ""),
+			("already lowercase", "already lowercase"),
+		];
+
+		for (input, expected) in test_cases {
+			let result = normalize_string(input);
+			println!("result: {}", result);
+			println!("expected: {}", expected);
+			assert_eq!(result, expected, "Failed to normalize: '{}'", input);
 		}
 	}
 }
