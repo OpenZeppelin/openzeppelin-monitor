@@ -49,6 +49,10 @@ pub trait ConfigLoader: Sized {
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError>;
 
 	/// Validate uniqueness of the configuration
+	/// # Arguments
+	/// * `instances` - The instances to validate uniqueness against
+	/// * `current_instance` - The current instance to validate uniqueness for
+	/// * `file_path` - The path to the file containing the current instance (for logging purposes)
 	///
 	/// Returns Ok(()) if valid, or an error message if found duplicate names.
 	fn validate_uniqueness(
