@@ -203,7 +203,11 @@ impl ConfigLoader for Trigger {
 					let existing_triggers: Vec<&Trigger> =
 						trigger_pairs.iter().map(|(_, trigger)| trigger).collect();
 					// Check trigger name uniqueness before pushing
-					Self::validate_uniqueness(&existing_triggers, &trigger, &name, &file_path)?;
+					Self::validate_uniqueness(
+						&existing_triggers,
+						&trigger,
+						&file_path.display().to_string(),
+					)?;
 
 					trigger_pairs.push((name, trigger));
 				}
@@ -665,8 +669,7 @@ impl ConfigLoader for Trigger {
 	fn validate_uniqueness(
 		instances: &[&Self],
 		current_instance: &Self,
-		filename: &str,
-		path: &Path,
+		file_path: &str,
 	) -> Result<(), ConfigError> {
 		// Check trigger name uniqueness before pushing
 		if instances.iter().any(|existing_trigger| {
@@ -680,8 +683,7 @@ impl ConfigLoader for Trigger {
 						"trigger_name".to_string(),
 						current_instance.name.to_string(),
 					),
-					("filename".to_string(), filename.to_string()),
-					("path".to_string(), path.display().to_string()),
+					("path".to_string(), file_path.to_string()),
 				])),
 			))
 		} else {

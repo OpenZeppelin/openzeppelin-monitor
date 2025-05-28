@@ -54,7 +54,6 @@ pub trait ConfigLoader: Sized {
 	fn validate_uniqueness(
 		instances: &[&Self],
 		current_instance: &Self,
-		filename: &str,
-		path: &Path,
+		file_path: &str,
 	) -> Result<(), ConfigError>;
 }

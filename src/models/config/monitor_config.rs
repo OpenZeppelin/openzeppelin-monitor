@@ -79,7 +79,7 @@ impl ConfigLoader for Monitor {
 			let existing_monitors: Vec<&Monitor> =
 				pairs.iter().map(|(_, monitor)| monitor).collect();
 			// Check monitor name uniqueness before pushing
-			Self::validate_uniqueness(&existing_monitors, &monitor, &name, &path)?;
+			Self::validate_uniqueness(&existing_monitors, &monitor, &path.display().to_string())?;
 
 			pairs.push((name, monitor));
 		}
@@ -212,8 +212,7 @@ impl ConfigLoader for Monitor {
 	fn validate_uniqueness(
 		instances: &[&Self],
 		current_instance: &Self,
-		filename: &str,
-		path: &Path,
+		file_path: &str,
 	) -> Result<(), ConfigError> {
 		// Check monitor name uniqueness before pushing
 		if instances.iter().any(|existing_monitor| {
@@ -227,8 +226,7 @@ impl ConfigLoader for Monitor {
 						"monitor_name".to_string(),
 						current_instance.name.to_string(),
 					),
-					("filename".to_string(), filename.to_string()),
-					("path".to_string(), path.display().to_string()),
+					("path".to_string(), file_path.to_string()),
 				])),
 			))
 		} else {

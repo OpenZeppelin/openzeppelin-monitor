@@ -113,7 +113,7 @@ impl ConfigLoader for Network {
 			let existing_networks: Vec<&Network> =
 				pairs.iter().map(|(_, network)| network).collect();
 			// Check network name uniqueness before pushing
-			Self::validate_uniqueness(&existing_networks, &network, &name, &path)?;
+			Self::validate_uniqueness(&existing_networks, &network, &path.display().to_string())?;
 
 			pairs.push((name, network));
 		}
@@ -321,8 +321,7 @@ impl ConfigLoader for Network {
 	fn validate_uniqueness(
 		instances: &[&Self],
 		current_instance: &Self,
-		filename: &str,
-		path: &Path,
+		file_path: &str,
 	) -> Result<(), ConfigError> {
 		let fields = [
 			("name", &current_instance.name),
@@ -343,8 +342,7 @@ impl ConfigLoader for Network {
 					None,
 					Some(HashMap::from([
 						(format!("network_{}", field_name), field_value.to_string()),
-						("filename".to_string(), filename.to_string()),
-						("path".to_string(), path.display().to_string()),
+						("path".to_string(), file_path.to_string()),
 					])),
 				));
 			}
