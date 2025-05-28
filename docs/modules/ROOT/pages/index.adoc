@@ -1189,7 +1189,7 @@ Slack, Discord, Telegram, Email and Webhook support Markdown formatting in their
 }
 ----
 
-==== Important Considerations:
+==== Important Considerations
 
 * Email notification port defaults to 465 if not specified.
 * Template variables are context-dependent:
@@ -1556,7 +1556,7 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 |The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default.
 |===
 
-==== Important Considerations:
+==== Important Considerations
 
 * Network slugs in the monitor must match valid network configurations.
 * Trigger IDs must match configured triggers.
@@ -1745,9 +1745,9 @@ docker compose restart monitor
 
 The monitor implements a comprehensive error handling system with rich context and tracing capabilities. For detailed information about error handling, see xref:error.adoc[Error Handling Guide].
 
-== Important Considerations:
+== Important Considerations
 
-=== Performance Considerations:
+=== Performance Considerations
 
 * Monitor performance depends on network congestion and RPC endpoint reliability.
 ** View the xref:rpc.adoc#list_of_rpc_calls[list of RPC calls] made by the monitor.
