@@ -76,22 +76,10 @@ impl ConfigLoader for Monitor {
 
 			let monitor = Self::load_from_path(&path).await?;
 
+			let existing_monitors: Vec<&Monitor> =
+				pairs.iter().map(|(_, monitor)| monitor).collect();
 			// Check monitor name uniqueness before pushing
-			if pairs
-				.iter()
-				.any(|(_, existing_monitor): &(String, Monitor)| {
-					normalize_string(&existing_monitor.name) == normalize_string(&monitor.name)
-				}) {
-				return Err(ConfigError::validation_error(
-					format!("Duplicate monitor name found: '{}'", monitor.name),
-					None,
-					Some(HashMap::from([
-						("monitor_name".to_string(), monitor.name.clone()),
-						("filename".to_string(), name),
-						("path".to_string(), path.display().to_string()),
-					])),
-				));
-			}
+			Self::validate_uniqueness(&existing_monitors, &monitor, &name, &path)?;
 
 			pairs.push((name, monitor));
 		}
@@ -218,6 +206,33 @@ impl ConfigLoader for Monitor {
 					);
 				}
 			}
+		}
+	}
+
+	fn validate_uniqueness(
+		instances: &[&Self],
+		current_instance: &Self,
+		filename: &str,
+		path: &Path,
+	) -> Result<(), ConfigError> {
+		// Check monitor name uniqueness before pushing
+		if instances.iter().any(|existing_monitor| {
+			normalize_string(&existing_monitor.name) == normalize_string(&current_instance.name)
+		}) {
+			Err(ConfigError::validation_error(
+				format!("Duplicate monitor name found: '{}'", current_instance.name),
+				None,
+				Some(HashMap::from([
+					(
+						"monitor_name".to_string(),
+						current_instance.name.to_string(),
+					),
+					("filename".to_string(), filename.to_string()),
+					("path".to_string(), path.display().to_string()),
+				])),
+			))
+		} else {
+			Ok(())
 		}
 	}
 }

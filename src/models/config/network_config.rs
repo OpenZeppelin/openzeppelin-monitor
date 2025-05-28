@@ -110,29 +110,10 @@ impl ConfigLoader for Network {
 
 			let network = Self::load_from_path(&path).await?;
 
-			// Check both name and slug uniqueness
-			for (field_name, field_value) in [("name", &network.name), ("slug", &network.slug)] {
-				if pairs
-					.iter()
-					.any(|(_, existing_network): &(String, Network)| {
-						let existing_value = match field_name {
-							"name" => &existing_network.name,
-							"slug" => &existing_network.slug,
-							_ => unreachable!(),
-						};
-						normalize_string(existing_value) == normalize_string(field_value)
-					}) {
-					return Err(ConfigError::validation_error(
-						format!("Duplicate network {} found: '{}'", field_name, field_value),
-						None,
-						Some(HashMap::from([
-							(format!("network_{}", field_name), field_value.to_string()),
-							("filename".to_string(), name.clone()),
-							("path".to_string(), path.display().to_string()),
-						])),
-					));
-				}
-			}
+			let existing_networks: Vec<&Network> =
+				pairs.iter().map(|(_, network)| network).collect();
+			// Check network name uniqueness before pushing
+			Self::validate_uniqueness(&existing_networks, &network, &name, &path)?;
 
 			pairs.push((name, network));
 		}
@@ -335,6 +316,40 @@ impl ConfigLoader for Network {
 				);
 			}
 		}
+	}
+
+	fn validate_uniqueness(
+		instances: &[&Self],
+		current_instance: &Self,
+		filename: &str,
+		path: &Path,
+	) -> Result<(), ConfigError> {
+		let fields = [
+			("name", &current_instance.name),
+			("slug", &current_instance.slug),
+		];
+
+		for (field_name, field_value) in fields {
+			if instances.iter().any(|existing_network| {
+				let existing_value = match field_name {
+					"name" => &existing_network.name,
+					"slug" => &existing_network.slug,
+					_ => unreachable!(),
+				};
+				normalize_string(existing_value) == normalize_string(field_value)
+			}) {
+				return Err(ConfigError::validation_error(
+					format!("Duplicate network {} found: '{}'", field_name, field_value),
+					None,
+					Some(HashMap::from([
+						(format!("network_{}", field_name), field_value.to_string()),
+						("filename".to_string(), filename.to_string()),
+						("path".to_string(), path.display().to_string()),
+					])),
+				));
+			}
+		}
+		Ok(())
 	}
 }
 

@@ -200,22 +200,11 @@ impl ConfigLoader for Trigger {
 						));
 					}
 
+					let existing_triggers: Vec<&Trigger> =
+						trigger_pairs.iter().map(|(_, trigger)| trigger).collect();
 					// Check trigger name uniqueness before pushing
-					if trigger_pairs
-						.iter()
-						.any(|(_, existing_trigger): &(String, Trigger)| {
-							normalize_string(&existing_trigger.name)
-								== normalize_string(&trigger.name)
-						}) {
-						return Err(ConfigError::validation_error(
-							format!("Duplicate trigger name found: '{}'", trigger.name),
-							None,
-							Some(HashMap::from([
-								("path".to_string(), file_path.display().to_string()),
-								("trigger_name".to_string(), name.clone()),
-							])),
-						));
-					}
+					Self::validate_uniqueness(&existing_triggers, &trigger, &name, &file_path)?;
+
 					trigger_pairs.push((name, trigger));
 				}
 			}
@@ -671,6 +660,33 @@ impl ConfigLoader for Trigger {
 				}
 			}
 		};
+	}
+
+	fn validate_uniqueness(
+		instances: &[&Self],
+		current_instance: &Self,
+		filename: &str,
+		path: &Path,
+	) -> Result<(), ConfigError> {
+		// Check trigger name uniqueness before pushing
+		if instances.iter().any(|existing_trigger| {
+			normalize_string(&existing_trigger.name) == normalize_string(&current_instance.name)
+		}) {
+			Err(ConfigError::validation_error(
+				format!("Duplicate trigger name found: '{}'", current_instance.name),
+				None,
+				Some(HashMap::from([
+					(
+						"trigger_name".to_string(),
+						current_instance.name.to_string(),
+					),
+					("filename".to_string(), filename.to_string()),
+					("path".to_string(), path.display().to_string()),
+				])),
+			))
+		} else {
+			Ok(())
+		}
 	}
 }
 
