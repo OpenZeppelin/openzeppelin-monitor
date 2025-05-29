@@ -17,6 +17,14 @@ runs:
       uses: dtolnay/rust-toolchain@1.86.0  # v1.86.0
       with:
         components: ${{ (inputs.components != '') && format('{0}, rustfmt, clippy', inputs.components) || 'rustfmt, clippy' }}
+    - name: Prepare cache identifiers
+      id: cache-info
+      shell: bash
+      run: |
+        echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+        echo "LOCK_HASH=$(sha256sum Cargo.lock | cut -d' ' -f1)" >> $GITHUB_ENV
     - name: Restore cargo dependencies from cache
       uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
       id: cache
+      with:
+        shared-key: ${{ env.DATE }}-${{ env.LOCK_HASH }}

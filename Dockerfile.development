@@ -9,8 +9,6 @@ RUN apk update && apk add openssl-dev
 # Copy
 COPY . .
 
-RUN cargo --version
-
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     RUST_BACKTRACE=1 cargo install --root /usr/app --path . --debug --locked
