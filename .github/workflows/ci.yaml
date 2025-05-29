@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore: [docs/**, '**.md', .github/**]
+    paths-ignore: [docs/**, '**.md', .github/**, .gitignore]
   push:
     branches: [main]
     paths-ignore:
@@ -201,7 +201,7 @@ jobs:
           flags: properties
           fail_ci_if_error: false
   docker-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-oz-4core
     needs: [changed_files, ci]
     if: |
       ${{ github.event.pull_request.draft == false && needs.changed_files.outputs.changed-docker-files == 'true' }}

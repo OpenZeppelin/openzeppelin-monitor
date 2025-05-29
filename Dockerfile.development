@@ -9,12 +9,10 @@ RUN apk update && apk add openssl-dev
 # Copy
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo install --root /usr/app --path . --debug --locked
+RUN cargo install --root /usr/app --path . --debug --locked
 
 # Wolfi image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base
+FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base:latest
 
 ARG version=3.12
 
