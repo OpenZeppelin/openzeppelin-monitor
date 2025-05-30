@@ -1,12 +1,13 @@
 //! Property-based tests for Stellar transaction matching and filtering.
 //! Tests cover signature/address normalization, expression evaluation, and transaction matching.
 
+use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use openzeppelin_monitor::{
 	models::{
 		Monitor, StellarContractFunction, StellarContractInput, StellarDecodedTransaction,
-		StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
-		StellarTransaction, StellarTransactionInfo, TransactionStatus,
+		StellarEvent, StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
+		StellarMatchParamsMap, StellarTransaction, StellarTransactionInfo, TransactionStatus,
 	},
 	services::{
 		blockchain::{StellarClient, StellarTransportClient},
@@ -14,7 +15,7 @@ use openzeppelin_monitor::{
 			stellar_helpers::{
 				are_same_address, are_same_signature, normalize_address, normalize_signature,
 			},
-			StellarBlockFilter,
+			EventMap, StellarBlockFilter,
 		},
 	},
 	utils::tests::stellar::monitor::MonitorBuilder,
@@ -27,7 +28,7 @@ use stellar_xdr::curr::{
 	AccountId, Hash, HostFunction, Int128Parts, InvokeContractArgs, InvokeHostFunctionOp, Memo,
 	MuxedAccount, Operation, OperationBody, Preconditions, ScAddress, ScString, ScSymbol, ScVal,
 	StringM, Transaction as XdrTransaction, TransactionEnvelope, TransactionExt,
-	TransactionV1Envelope, UInt128Parts, Uint256, VecM,
+	TransactionV1Envelope, UInt128Parts, Uint256, VecM, WriteXdr,
 };
 
 prop_compose! {
@@ -253,6 +254,29 @@ prop_compose! {
 			.function(format!("{}({})", function_name, param_type).as_str(), Some(format!("param0 >= {}", min_value)))
 			.function(format!("not_{}({})", function_name, param_type).as_str(), Some(format!("param0 >= {}", min_value)))
 			.build()
+	}
+}
+
+// Generates valid JSON objects of different complexity
+prop_compose! {
+	fn valid_json_objects()(
+		num_fields in 1..5usize
+	) -> String {
+		let mut obj = serde_json::Map::new();
+		for i in 0..num_fields {
+			let key = format!("key{}", i);
+			let value = match i % 3 {
+				0 => serde_json::Value::String(format!("value{}", i)),
+				1 => serde_json::Value::Number(serde_json::Number::from(i)),
+				_ => {
+					let mut nested = serde_json::Map::new();
+					nested.insert("nested_key".into(), serde_json::Value::String(format!("nested_value{}", i)));
+					serde_json::Value::Object(nested)
+				}
+			};
+			obj.insert(key, value);
+		}
+		serde_json::Value::Object(obj).to_string()
 	}
 }
 
@@ -1061,5 +1085,525 @@ proptest! {
 
 		// Verify empty input produces empty output
 		prop_assert!(params.is_empty());
+	}
+
+	// Tests property-based matching for event functions
+	#[test]
+	fn test_find_matching_events_for_transaction_property(
+		// Generate a transaction hash
+		tx_hash in "[a-zA-Z0-9]{64}",
+		// Generate an event name
+		event_name in prop_oneof![
+			Just("Transfer"),
+			Just("Approval"),
+			Just("Mint"),
+			Just("Burn"),
+			Just("AdminChanged")
+		],
+		// Generate parameter type (only use numeric types for simplicity)
+		param_type in prop_oneof![
+			Just("I128"),
+			Just("U128"),
+		],
+		// Generate a value for expression testing
+		value in 0u128..1000000u128,
+		// Generate a threshold for expression testing
+		threshold in 0u128..1000000u128,
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create the event signature
+		let event_signature = format!("{}({})", event_name, param_type);
+
+		// Create monitor with the event condition
+		let monitor = MonitorBuilder::new()
+			.event(&event_signature, Some(format!("param0 >= {}", threshold)))
+			.build();
+
+		// Create transaction
+		let transaction = StellarTransaction::from(StellarTransactionInfo {
+			status: "SUCCESS".to_string(),
+			transaction_hash: tx_hash.clone(),
+			application_order: 1,
+			fee_bump: false,
+			envelope_xdr: None,
+			envelope_json: None,
+			result_xdr: None,
+			result_json: None,
+			result_meta_xdr: None,
+			result_meta_json: None,
+			diagnostic_events_xdr: None,
+			diagnostic_events_json: None,
+			ledger: 1234,
+			ledger_close_time: 1234567890,
+			decoded: None,
+		});
+
+		// Create event with the matching transaction hash
+		let test_event = EventMap {
+			event: StellarMatchParamsMap {
+				signature: event_signature.clone(),
+				args: Some(vec![
+					StellarMatchParamEntry {
+						name: "param0".to_string(),
+						value: value.to_string(),
+						kind: param_type.to_string(),
+						indexed: false,
+					}
+				]),
+			},
+			tx_hash: tx_hash.clone(),
+		};
+
+		let events = vec![test_event];
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		// Call the function under test
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		// Determine if we should have a match based on the expression
+		let should_match = value >= threshold;
+
+		// Verify the results
+		if should_match {
+			// Should have exactly one match
+			prop_assert_eq!(matched_events.len(), 1);
+			prop_assert_eq!(&matched_events[0].signature, &event_signature);
+			prop_assert_eq!(&matched_events[0].expression, &Some(format!("param0 >= {}", threshold)));
+
+			// Verify matched arguments
+			if let Some(events) = &matched_args.events {
+				prop_assert_eq!(events.len(), 1);
+				prop_assert_eq!(&events[0].signature, &event_signature);
+				prop_assert!(events[0].args.is_some());
+			}
+		} else {
+			// Should have no matches
+			prop_assert!(matched_events.is_empty());
+			if let Some(events) = &matched_args.events {
+				prop_assert!(events.is_empty());
+			}
+		}
+	}
+
+	// Tests property-based matching for decode_events
+	#[test]
+	fn test_decode_events_property(
+		// Generate a contract address
+		contract_address in valid_address(),
+		// Generate an event name
+		event_name in prop_oneof![
+			Just("Transfer"),
+			Just("Approval"),
+			Just("Mint"),
+			Just("Burn")
+		],
+		// Generate a transaction hash
+		tx_hash in "[a-zA-Z0-9]{64}",
+		// Generate a value for expression testing
+		value in 0u64..u64::MAX,
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create a buffer for event name encoding (8 byte prefix + name)
+		let mut event_name_buffer = vec![0u8; 8];
+		event_name_buffer.extend_from_slice(event_name.as_bytes());
+		let encoded_event_name = BASE64.encode(event_name_buffer);
+
+		// Create I128 value separately
+		let value_i128 = Int128Parts { hi: 0, lo: value };
+		let sc_val = ScVal::I128(value_i128);
+		let encoded_value = sc_val.to_xdr_base64(stellar_xdr::curr::Limits::none()).unwrap();
+
+		// Create test event
+		let stellar_event = StellarEvent {
+			contract_id: contract_address.clone(),
+			transaction_hash: tx_hash.clone(),
+			topic_xdr: Some(vec![encoded_event_name.clone()]),
+			value_xdr: Some(encoded_value.clone()),
+			event_type: "contract".to_string(),
+			ledger: 1234,
+			ledger_closed_at: "2023-01-01T00:00:00Z".to_string(),
+			id: "0".to_string(),
+			paging_token: "0".to_string(),
+			in_successful_contract_call: true,
+			topic_json: None,
+			value_json: None,
+		};
+
+		let monitored_addresses = vec![normalize_address(&contract_address)];
+		let events = vec![stellar_event];
+		let contract_specs = Vec::new();
+
+		// Run the function under test
+		let decoded_events = filter.decode_events(&events, &monitored_addresses, &contract_specs);
+		// Verify the results
+		prop_assert_eq!(decoded_events.len(), 1);
+		prop_assert_eq!(&decoded_events[0].tx_hash, &tx_hash);
+
+		let decoded_event = &decoded_events[0].event;
+		prop_assert!(decoded_event.signature.starts_with(event_name));
+		prop_assert!(decoded_event.signature.contains("I128"));
+
+		// Verify the args are properly decoded
+		if let Some(args) = &decoded_event.args {
+			prop_assert_eq!(args.len(), 1);
+			prop_assert_eq!(&args[0].kind, "I128");
+			prop_assert_eq!(&args[0].name, "0");
+			prop_assert!(!args[0].indexed);
+			prop_assert_eq!(&args[0].value, &value.to_string());
+		}
+	}
+
+	// Tests property-based validation of compare_values for different types
+	#[test]
+	fn test_compare_values_property(
+		// Generate random values of different types
+		bool_value in any::<bool>(),
+		i32_value in any::<i32>(),
+		u32_value in any::<u32>(),
+		i64_value in any::<i64>(),
+		u64_value in any::<u64>(),
+		string_value in "[a-zA-Z0-9]{3,10}",
+		// Generate comparison operators
+		operator in prop_oneof![
+			Just("=="), Just("!="), Just(">"),
+			Just(">="), Just("<"), Just("<=")
+		],
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Test boolean comparisons
+		let bool_result = filter.compare_values(
+			"bool",
+			&bool_value.to_string(),
+			"==",
+			&bool_value.to_string()
+		);
+		prop_assert!(bool_result);
+
+		// Test i32 comparisons
+		let i32_result = filter.compare_values(
+			"i32",
+			&i32_value.to_string(),
+			"==",
+			&i32_value.to_string()
+		);
+		prop_assert!(i32_result);
+
+		// Test u32 comparisons
+		let u32_result = filter.compare_values(
+			"u32",
+			&u32_value.to_string(),
+			"==",
+			&u32_value.to_string()
+		);
+		prop_assert!(u32_result);
+
+		// Test i64 comparisons
+		let i64_result = filter.compare_values(
+			"i64",
+			&i64_value.to_string(),
+			"==",
+			&i64_value.to_string()
+		);
+		prop_assert!(i64_result);
+
+		// Test u64 comparisons
+		let u64_result = filter.compare_values(
+			"u64",
+			&u64_value.to_string(),
+			"==",
+			&u64_value.to_string()
+		);
+		prop_assert!(u64_result);
+
+		// Test string comparisons
+		let string_result = filter.compare_values(
+			"string",
+			&string_value,
+			"==",
+			&string_value
+		);
+		prop_assert!(string_result);
+
+		// Test inequality of different values
+		if operator == "!=" {
+			let different_bool = filter.compare_values(
+				"bool",
+				&bool_value.to_string(),
+				"!=",
+				&(!bool_value).to_string()
+			);
+			prop_assert!(different_bool);
+
+			let different_number = filter.compare_values(
+				"i32",
+				&i32_value.to_string(),
+				"!=",
+				&(i32_value.wrapping_add(1)).to_string()
+			);
+			prop_assert!(different_number);
+		}
+
+		// Test invalid type
+		let invalid_type = filter.compare_values(
+			"non_existent_type",
+			&string_value,
+			"==",
+			&string_value
+		);
+		prop_assert!(!invalid_type);
+	}
+
+	// Tests property-based validation of compare_vec function
+	#[test]
+	fn test_compare_vec_property(
+		// Generate array elements and test values
+		elements in prop::collection::vec(any::<i32>(), 1..5),
+		extra_element in any::<i32>(),
+		operator in prop_oneof![
+			Just("contains"), Just("=="), Just("!=")
+		],
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create a comma-separated string
+		let vec_string = elements.iter()
+			.map(|e| e.to_string())
+			.collect::<Vec<_>>()
+			.join(",");
+
+		// Choose a random element to test with contains
+		let contained_element = elements.get(elements.len() / 2)
+			.cloned()
+			.unwrap_or(elements[0]);
+
+		// Test direct value that should be contained
+		if operator == "contains" {
+			let contains_result = filter.compare_vec(
+				&vec_string,
+				"contains",
+				&contained_element.to_string()
+			);
+			prop_assert!(contains_result);
+
+			// Test with element that shouldn't be in the array
+			// Find a value not in our vector
+			prop_assume!(!elements.contains(&extra_element));
+			let not_contains_result = filter.compare_vec(
+				&vec_string,
+				"contains",
+				&extra_element.to_string()
+			);
+			prop_assert!(!not_contains_result);
+		}
+
+		// Test equality comparisons
+		if operator == "==" {
+			// Same vec should be equal
+			let eq_result = filter.compare_vec(
+				&vec_string,
+				"==",
+				&vec_string
+			);
+			prop_assert!(eq_result);
+
+			// Test JSON array format
+			let json_vec = serde_json::to_string(&elements).unwrap();
+			let json_eq_result = filter.compare_vec(
+				&json_vec,
+				"==",
+				&json_vec
+			);
+			prop_assert!(json_eq_result);
+		}
+
+		// Test inequality
+		if operator == "!=" {
+			// Different vec should be unequal
+			let mut different_elements = elements.clone();
+			if !different_elements.is_empty() {
+				different_elements[0] = extra_element;
+			} else {
+				different_elements.push(extra_element);
+			}
+
+			let different_vec_string = different_elements.iter()
+				.map(|e| e.to_string())
+				.collect::<Vec<_>>()
+				.join(",");
+
+			let neq_result = filter.compare_vec(
+				&vec_string,
+				"!=",
+				&different_vec_string
+			);
+			prop_assert!(neq_result);
+		}
+
+		// Test unsupported operator
+		let unsupported_result = filter.compare_vec(
+			&vec_string,
+			">",
+			&vec_string
+		);
+		prop_assert!(!unsupported_result);
+	}
+
+	// Tests JSON vs JSON equality comparisons
+	#[test]
+	fn test_prop_compare_map_json_equality(
+		json1 in valid_json_objects(),
+		modifier in 0..2u8
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Clone json1 for equality test
+		let json2 = json1.clone();
+
+		// Create a modified version for inequality test
+		let json3 = if modifier == 0 {
+			// Completely different object
+			r#"{"different": "object"}"#.to_string()
+		} else {
+			// Modify the first object slightly
+			let mut obj = serde_json::from_str::<serde_json::Value>(&json1).unwrap();
+			if let Some(obj_map) = obj.as_object_mut() {
+				if let Some(first_key) = obj_map.keys().next().cloned() {
+					obj_map.insert(first_key, "modified_value".into());
+				}
+			}
+			obj.to_string()
+		};
+
+		// Equality tests
+		prop_assert!(filter.compare_map(&json1, "==", &json2));
+		prop_assert!(!filter.compare_map(&json1, "==", &json3));
+		prop_assert!(filter.compare_map(&json1, "!=", &json3));
+		prop_assert!(!filter.compare_map(&json1, "!=", &json2));
+	}
+
+	// Tests numeric comparisons (JSON numbers)
+	#[test]
+	fn test_prop_compare_map_numeric(
+		num1 in 0i32..1000i32,
+		num2 in 0i32..1000i32
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		let str_num1 = num1.to_string();
+		let str_num2 = num2.to_string();
+
+		prop_assert_eq!(filter.compare_map(&str_num1, ">", &str_num2), num1 > num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, ">=", &str_num2), num1 >= num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "<", &str_num2), num1 < num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "<=", &str_num2), num1 <= num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "==", &str_num2), num1 == num2);
+		prop_assert_eq!(filter.compare_map(&str_num1, "!=", &str_num2), num1 != num2);
+	}
+
+	// Tests JSON vs string with value comparisons
+	#[test]
+	fn test_prop_compare_map_json_vs_string(
+		json_obj in valid_json_objects(),
+		key_index in 0..4usize
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Parse the JSON object
+		let parsed_json = serde_json::from_str::<serde_json::Value>(&json_obj).unwrap();
+		if let Some(obj) = parsed_json.as_object() {
+			// Only test if we have keys
+			if !obj.is_empty() {
+				// Get an existing key
+				let key = format!("key{}", key_index % obj.len());
+
+				// Get the actual value at that key
+				if let Some(value) = obj.get(&key) {
+					// Create a modified JSON where the key's value matches the key itself
+					let mut modified_obj = obj.clone();
+					modified_obj.insert(key.clone(), serde_json::Value::String(key.clone()));
+					let modified_json = serde_json::Value::Object(modified_obj).to_string();
+
+					// Now this should pass - we're checking if key's value equals the key
+					prop_assert!(filter.compare_map(&modified_json, "==", &key));
+
+					// Test with original value - should only be true if the value happens to equal the key
+					let value_str = match value {
+						serde_json::Value::String(s) => s.clone(),
+						_ => value.to_string().trim_matches('"').to_string(),
+					};
+
+					prop_assert_eq!(
+						filter.compare_map(&json_obj, "==", &key),
+						value_str == key
+					);
+				}
+
+				// Test with a non-existent key (should always be false)
+				let non_existent_key = "nonexistent_key";
+				prop_assert!(!filter.compare_map(&json_obj, "==", non_existent_key));
+			}
+		}
+	}
+
+	// Tests JSON vs JSON with direct value comparisons
+	#[test]
+	fn test_prop_compare_map_json_direct(
+		num1 in 0..100i32,
+		num2 in 0..100i32,
+		str1 in "[a-zA-Z0-9]{1,10}",
+		str2 in "[a-zA-Z0-9]{1,10}"
+	) {
+		let filter = StellarBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Test numeric JSON comparisons
+		let json_num1 = num1.to_string();
+		let json_num2 = num2.to_string();
+
+		prop_assert_eq!(filter.compare_map(&json_num1, ">", &json_num2), num1 > num2);
+		prop_assert_eq!(filter.compare_map(&json_num1, "<", &json_num2), num1 < num2);
+		prop_assert_eq!(filter.compare_map(&json_num1, "==", &json_num2), num1 == num2);
+
+		// Test string JSON comparisons
+		let json_str1 = format!(r#""{}""#, str1);
+		let json_str2 = format!(r#""{}""#, str2);
+
+		prop_assert_eq!(filter.compare_map(&json_str1, "==", &json_str2), str1 == str2);
+
+		// Test comparing a JSON object with specific values
+		let obj1 = format!(r#"{{"value": {}, "text": "{}"}}"#, num1, str1);
+		let obj2 = format!(r#"{{"value": {}, "text": "{}"}}"#, num1, str1);  // Same values
+		let obj3 = format!(r#"{{"value": {}, "text": "{}"}}"#, num2, str2);  // Different values
+
+		prop_assert!(filter.compare_map(&obj1, "==", &obj2));
+		prop_assert_eq!(filter.compare_map(&obj1, "==", &obj3), num1 == num2 && str1 == str2);
 	}
 }
