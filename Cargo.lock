@@ -3719,6 +3719,7 @@ dependencies = [
  "reqwest",
  "reqwest-middleware",
  "reqwest-retry",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2",
@@ -3739,6 +3740,7 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid 1.17.0",
+ "winnow 0.7.10",
  "zeroize",
 ]
 

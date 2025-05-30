@@ -1383,43 +1383,6 @@ Match transaction properties. The available fields and expression syntax depend 
 | Destination account address of the *first* relevant operation (e.g., payment recipient or invoked contract). Case-insensitive comparison.
 |===
 
-==== Expression Syntax Enhancements
-
-*Supported Value Types:*
-
-- *Numeric (uint/int types):* Supports standard comparison operators: `>`, `>=`, `<`, `<=`, `==`, `!=`.
-- *Address:* Supports equality checks `==`, `!=`. Comparisons are **case-insensitive**.
-- *String:* Supports equality (`==`, `!=`). Comparisons are **case-insensitive**.
-- *EVM Specific:* The `input` field also supports `starts_with`, `ends_with`, `contains`.
-- *Boolean (`bool`):* Supports equality checks `==`, `!=`. Values are `true` or `false`.
-
-
-*Logical Operators:*
-
-- AND - All conditions must be true
-- OR - At least one condition must be true
-- () - Parentheses for grouping
-
-*Examples (EVM):*
-
-[source,json]
------
-// Match transfers where the amount is between 1000 and 5000
-"amount >= 1000 AND amount <= 5000"
-
-// Match transactions with high value OR sent from a specific address
-"(value > 10000000000000000000) OR (from == 0xDeAdBeef...)"
-
-// Match specific function calls based on input data prefix (case-insensitive)
-"input starts_with 0xa9059cbb"
-
-// Monitor high gas fees (EIP-1559)
-"max_fee_per_gas > 50000000000 AND max_priority_fee_per_gas > 2000000000" // >50 Gwei fee, >2 Gwei tip
-
-// Match transactions at the start of a block with high gas usage
-"transaction_index == 0 AND gas_used > 100000"
------
-
 ==== Available Fields
 
 [cols="1,1,2"]
@@ -1463,43 +1426,312 @@ Match transaction properties. The available fields and expression syntax depend 
 ** Then either function OR event conditions must match
 ** Both transaction AND (function OR event) must match if both specified
 
-==== Expressions
 
-[cols="1,2", options="header"]
+=== Expressions
+
+Expressions allow for condition checking of function arguments, event parameters, and transaction fields.
+
+*Supported Parameter/Field Types and Basic Operations:*
+
+[cols="1,2,1,2a", options="header"]
 |===
-|Network Type |Access Method
+| Type | Description | Example Operators | Notes
 
-|Stellar
-|Arguments accessed by parameter names for functions and numeric index for events (e.g., [0, 1, 2])
+| Numeric (uint/int variants)
+| Integer values (e.g., `42`, `-100`) or decimal values (e.g., `3.14`, `-0.5`).
+| `>`, `>=`, `<`, `<=`, `==`, `!=`
+| Numbers must have digits before and after a decimal point if one is present (e.g., `.5` or `5.` are not valid standalone numbers).
 
-|EVM
-|Arguments accessed by parameter names from ABI
+| Address
+| Blockchain addresses.
+| `==`, `!=`
+| Comparisons (e.g., `from == '0xABC...'`) are typically case-insensitive regarding the hex characters of the address value itself.
+
+| String
+| Text values. Can be single-quoted (e.g., `'hello'`) or, on the right-hand side of a comparison, unquoted (e.g., `active`).
+| `==`, `!=`, `starts_with`, `ends_with`, `contains`
+| Quoted strings support `\'` to escape a single quote and `\\` to escape a backslash. All string comparison operations (e.g., `name == 'Alice'`, `description contains 'error'`) are performed case-insensitively during evaluation. See the dedicated "String Operations" section for more examples and details.
+
+| Boolean
+| True or false values.
+| `==`, `!=`
+| Represented as `true` or `false`. These keywords are parsed case-insensitively (e.g., `TRUE`, `False` are also valid in expressions).
+
+| Hex String Literal
+| A string literal starting with `0x` or `0X` followed by hexadecimal characters (0-9, a-f, A-F).
+| `==`, `!=`, `starts_with`, `ends_with`, `contains`
+| Treated as a string for comparison purposes (e.g., `input_data starts_with '0xa9059cbb'`). Comparison is case-sensitive for the hex characters after `0x`.
+
+| Array (EVM/Stellar)
+| Ordered list of items. For Stellar, often a JSON string in config (e.g., `'["a", {"id":1}]'`). For EVM, typically decoded from ABI parameters.
+| `contains`, `==`, `!=`, `[index]`
+| Detailed operations, including indexed access and behavior of `contains`, vary by network. See "Operations on Complex Types" below.
+
+| Object/Map (Stellar)
+| Key-value pairs, typically represented as a JSON string in config (e.g., `'{"key": "value", "id": 123}'`).
+| `.key_access`, `==`, `!=`
+| Supports dot notation for field access (e.g., `data.id`). See "Operations on Complex Types" for details.
+
+| Vec (Stellar)
+| Ordered list, where the parameter's value can be a CSV string (e.g., `"foo,bar"`) or a JSON array string (e.g., `'["foo","bar"]'`).
+| `contains`, `==`, `!=`
+| Behavior of `contains` and `==` differs based on whether the value is CSV or a JSON array string. See "Operations on Complex Types" for details.
+
 |===
 
-===== Examples
 
-For EVM event `Transfer(address from, address to, uint256 value)`:
+*Logical Operators:*
+
+- AND - All conditions must be true
+- OR - At least one condition must be true
+- () - Parentheses for grouping
+- AND has higher precedence than OR (i.e., AND operations are evaluated before OR operations if not grouped by parentheses)
+
+
+*Variable Naming and Access (Left-hand side of conditions):*
+
+The left-hand side (LHS) of a condition specifies the data field or parameter whose value you want to evaluate.
+
+*Base Names:*
+
+- These are the direct names of parameters or fields, such as `amount`, `from`, `status`, or event parameter indices like `0`, `1` (common in Stellar events).
+- Base names can consist of alphanumeric characters (a-z, A-Z, 0-9) and underscores (`_`).
+- They can start with a letter, an underscore, or a digit. Starting with a digit is primarily relevant for numerically indexed parameters (e.g., Stellar event parameters).
+- *Important:* Variable names are case-sensitive during evaluation. The name used in the expression must exactly match the casing of the field name in the source data (e.g., from an ABI or blockchain data structure). For example, if a field is named `TotalValue` in the data, an expression using `totalvalue` will not find it.
+- Variable names cannot be keywords (e.g., `true`, `AND`, `OR`, `contains`). Keywords themselves are parsed case-insensitively.
+
+*Path Accessors (for complex types):*
+
+If a base parameter is a complex type like an object, map, or array, you can access its internal data using accessors:
+
+*Key Access:* Use dot notation (`.`) to access properties of an object or map.
+
+- Examples: `transaction.value`, `user.name`, `data.0` (if `0` is a valid key name as a string).
+- Keys typically consist of alphanumeric characters and underscores. They usually start with a letter or underscore, but purely numeric keys (e.g., `.0`, `.123`) are also supported for map-like structures where keys might be strings representing numbers.
+- Keys cannot contain hyphens (`-`).
+
+*Index Access:* Use bracket notation (`[]`) to access elements of an array by their zero-based integer index.
+
+- Examples: `my_array[0]`, `log_entries[3]`.
+- The index must be a non-negative integer.
+
+*Combined Access:* You can combine key and index accessors to navigate nested structures.
+
+- Example: `event.data_array[0].property` (accesses the `property` field of the first object in `data_array`, which is part of `event`).
+- Example: `map.numeric_key_as_string_0[1].name` (accesses the `name` property of the second element of an array stored under the key `0` in `map`).
+
+
+*String Operations:*
+
+Several operators are available for matching patterns and comparing string values. These are particularly useful for EVM transaction `input` data, Stellar parameters defined with `kind: "string"`, or any other field that contains text.
+
+- `string_param starts_with 'prefix'`::
+  Checks if the string parameter's value begins with the specified `prefix`.
+  Example: `transaction.input starts_with '0xa9059cbb'` (checks for ERC20 transfer function selector).
+
+- `string_param ends_with 'suffix'`::
+  Checks if the string parameter's value ends with the specified `suffix`.
+  Example: `file_name ends_with '.txt'`
+
+- `string_param contains 'substring'`::
+  Checks if the string parameter's value contains the specified `substring` anywhere within it.
+  Example: `message contains 'error'`
+
+- `string_param == 'exact_string'`::
+  Checks if the string parameter's value is exactly equal to `exact_string`.
+
+- `string_param != 'different_string'`::
+  Checks if the string parameter's value is not equal to `different_string`.
+
+*Important Notes on String Operations:*
+
+- *Operator Keywords:* The operator keywords themselves (`starts_with`, `ends_with`, `contains`, `AND`, `OR`, `true`, `false`, comparison symbols like `==`, `>`) are parsed case-insensitively. For example, `CONTAINS` is treated the same as `contains`, and `TRUE` is the same as `true`.
+- *Case-Insensitive Evaluation for String Comparisons:* When comparing string data (e.g., from event parameters, transaction fields, or function arguments) with literal string values in your expression, all standard string operations perform a **case-insensitive** comparison during evaluation.
+  * Equality (`==`) and Inequality (`!=`)
+  * Pattern matching (`starts_with`, `ends_with`, `contains`)
+
+- *Variable Name Case Sensitivity:* It is important to distinguish this from variable names (the left-hand side of your condition, e.g., `status`). Variable names *are* case-sensitive and must exactly match the field names in your source data (ABI, etc.).
+
+
+*Whitespace Handling:*
+Flexible whitespace is generally allowed around operators, parentheses, and keywords for readability. However, whitespace within quoted string literals is significant and preserved.
+
+
+==== Operations on Complex Types
+
+Beyond simple primitive types, expressions can also interact with more complex data structures like arrays, objects, and vectors.
+
+===== EVM Specifics
+
+*Array Operations (`kind: "array"`)*
+
+When an EVM parameter is an array (often represented internally or configured with `kind: "array"` and its value being a JSON string representation if manually configured), the following operations are supported:
+
+- `array_param contains 'value'` checks if the string `'value'` exists within the array.
+- `array_param == '["raw_json_array_string"]'` string comparison of the array's entire JSON string representation against the provided string
+- `array_param != '["raw_json_array_string"]'` the negation of the above
+- `array_param[0]` indexed access
+
+===== Stellar Specifics
+
+*Object (`kind: "object"`) / Map (`kind: "Map"`) Operations*
+
+- `object_param.key == 'value'` checks if the object or map has a key named `key` with the value `'value'`.
+- `object_param.nested_key.another_key > 100` checks if the nested key `another_key` within `nested_key` has a value greater than 100.
+- `object_param == '{"raw_json_object_string"}'` checks if the object or map matches the provided JSON string representation.
+- `object_param != '{"raw_json_object_string"}'` the negation of the above
+
+*Array (`kind: "array"`) Operations*
+
+- `array_param[index]` accesses the element at the specified `index` in the array.
+- `array_param[0] == 'value'` checks if the first element in the array is equal to `'value'`.
+- `array_param[1].property == 'value'` checks if the second element in the array has a property named `property` with the value `'value'`.
+- `array_param contains 'value'` checks if the array contains the string `'value'`.
+- `array_param == '["raw_json_array_string"]'` checks if the array matches the provided JSON string representation.
+- `array_param != '["raw_json_array_string"]'` the negation of the above
+
+*Vector (`kind: "vec"`) Operations*
+When a Stellar parameter has `kind: "vec"`, its value can be either a CSV string or a JSON array string.
+
+- `vec_param contains 'item'` checks if the vector contains the string `'item'`. This works for both CSV and JSON array strings.
+- `vec_param == 'raw_string_value'` checks if the vector matches the provided raw string value. This works for both CSV and JSON array strings.
+- `vec_param != 'raw_string_value'` the negation of the above
+
+*Event Parameter Access (Stellar)*
+
+Stellar event parameters are typically accessed by their numeric index as the base variable name (e.g., `0`, `1`, `2`). If an indexed event parameter is itself a complex type (like an array or map, represented as a JSON string), you can then apply the respective access methods:
+
+* If event parameter `0` (kind: "Map") is `'{"id": 123, "name": "Test"}'`:
+** `0.id == 123`
+** `0.name contains 'est'` (case-insensitive)
+* If event parameter `1` (kind: "array") is `'["alpha", {"val": "beta"}]'`:
+** `1[0] == 'ALPHA'` (case-insensitive)
+** `1[1].val == 'Beta'` (case-insensitive)
+** `1 contains 'beta'` (case-insensitive deep search)
+
+===== EVM Examples
+
+These examples assume common EVM event parameters or transaction fields.
+
+.Basic Comparisons
 [source,json]
 ----
-{
-  "expression": "value > 10000000000"
-}
+// Numeric
+"transaction.value > 1000000000000000000" // Value greater than 1 ETH
+"event.amount <= 500"
+"block.number == 12345678"
+
+// String (case-insensitive evaluation for '==' and 'contains')
+"transaction.to == '0xdeadbeef...'" // Address check (address value comparison itself is case-insensitive)
+"event.token_name == 'mytoken'"
+"transaction.input contains 'a9059cbb'" // Checks for ERC20 transfer selector
+
+// Boolean
+"receipt.status == true" // or simply "receipt.status" if boolean field can be evaluated directly
+"event.isFinalized == false"
 ----
 
-For Stellar event `Transfer(address, address, uint256)`:
+.Logical Operators
 [source,json]
 ----
-{
-  "expression": "2 > 10000000000"
-}
+"transaction.value > 1000 AND event.type == 'Deposit'"
+"(receipt.status == true OR event.fallback_triggered == true) AND user.is_whitelisted == false"
 ----
 
-For EVM or Stellar function `transfer(Address from, Address to, I128 amount)`:
+.String Operations
 [source,json]
 ----
-{
-  "expression": "amount > 1000"
-}
+"transaction.input starts_with '0xa9059cbb'" // Case-insensitive for the operation
+"event.message ends_with 'failed'"
+"event.details contains 'critical alert'"
+----
+
+.Array Operations
+Assume `event.ids` is `[10, 20, 30]` and `event.participants` is `[{"user": "Alice", "role": "admin"}, {"user": "Bob", "role": "editor"}]`.
+[source,json]
+----
+"event.ids[0] == 10"
+"event.ids contains '20'" // Checks for string '20' (case-insensitive)
+
+"event.participants contains 'Alice'"  // True (deep search, case-insensitive)
+"event.participants contains 'editor'" // True (deep search, case-insensitive)
+"event.participants == '[{\"user\": \"Alice\", \"role\": \"admin\"}, {\"user\": \"Bob\", \"role\": \"editor\"}]'" // Raw JSON match (case-sensitive for structure and keys)
+----
+
+
+===== Stellar Examples
+
+.Basic Comparisons
+[source,json]
+----
+// Numeric
+"event.params.amount > 10000000" // Accessing 'amount' field in an object 'params'
+"ledger.sequence >= 123456"
+
+// String (case-insensitive evaluation for '==' and 'contains')
+"event.params.recipient == 'GBD22...'" // Address check
+"event.type == 'payment_processed'"
+
+// Boolean
+"transaction.successful == true"
+"event.data.is_verified == false"
+----
+
+.Logical Operators
+[source,json]
+----
+"event.data.value > 500 AND event.source_account == 'GCA7Z...'"
+"(event.type == 'TRANSFER' OR event.type == 'PAYMENT') AND event.params.asset_code == 'XLM'"
+----
+
+.String Operations
+[source,json]
+----
+"event.contract_id starts_with 'CA23...'"
+"event.memo ends_with '_TEST'"
+"event.params.description contains 'urgent'"
+----
+
+.Object (`kind: "object"`) / Map (`kind: "Map"`) Operations
+Assume `event.details` (kind: "Map") is `'{"id": 123, "user": {"name": "CHarlie", "status": "Active"}, "tags": ["new"]}'`.
+[source,json]
+----
+"event.details.id == 123"
+"event.details.user.name == 'charlie'"  // Case-insensitive string comparison
+"event.details.user.status contains 'act'" // Case-insensitive contains
+"event.details.tags == '[\"new\"]'" // Raw JSON string match for the 'tags' field
+----
+
+.Array (`kind: "array"`) Operations
+Assume `event.items` (kind: "array") is `'[{"sku": "A1", "qty": 10}, {"sku": "B2", "qty": 5, "notes":"Rush order"}]'`.
+[source,json]
+----
+"event.items[0].sku == 'a1'"
+"event.items[1].qty < 10"
+"event.items contains 'A1'"       // Deep search (case-insensitive)
+"event.items contains 'rush order'" // Deep search (case-insensitive)
+----
+
+.Vector (`kind: "vec"`) Operations
+Assume `csv_data` (kind: "vec") is `"ALPHA,Bravo,Charlie"` and `json_array_data` (kind: "vec") is `'["Delta", {"id": "ECHO"}, "Foxtrot"]'`.
+[source,json]
+----
+"csv_data contains 'bravo'"   // Case-insensitive CSV element match
+"csv_data == 'ALPHA,Bravo,Charlie'" // Raw string match
+
+"json_array_data contains 'delta'" // Case-insensitive deep search (like array)
+"json_array_data contains 'ECHO'"  // Case-insensitive deep search (like array)
+----
+
+.Event Parameter Access (Numerically Indexed)
+Assume event parameter `0` is `12345` (u64), `1` (kind: "array") is `'["Val1", "VAL2"]'`, and `2` (kind: "Map") is `'{"keyA": "dataX", "keyB": 789}'`.
+[source,json]
+----
+"0 > 10000"
+"1[0] == 'val1'"
+"1 contains 'val2'"
+"2.keyA == 'DATAX'"
+"2.keyB < 1000"
 ----
 
 [NOTE]

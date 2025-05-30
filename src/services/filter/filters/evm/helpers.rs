@@ -4,8 +4,9 @@
 //! and formatting, including address and hash conversions, signature normalization,
 //! and token value formatting.
 
-use alloy::primitives::{Address, B256};
+use alloy::primitives::{Address, B256, I256, U256};
 use ethabi::{Hash, Token};
+use std::str::FromStr;
 
 /// Converts an H256 hash to its hexadecimal string representation.
 ///
@@ -168,6 +169,53 @@ pub fn format_token_value(token: &Token) -> String {
 	}
 }
 
+/// Converts a string to a U256 value.
+pub fn string_to_u256(value_str: &str) -> Result<U256, String> {
+	let trimmed = value_str.trim();
+
+	if trimmed.is_empty() {
+		return Err("Input string is empty".to_string());
+	}
+
+	if let Some(hex_val) = trimmed
+		.strip_prefix("0x")
+		.or_else(|| trimmed.strip_prefix("0X"))
+	{
+		// Hexadecimal parsing
+		if hex_val.is_empty() {
+			return Err("Hex string '0x' is missing value digits".to_string());
+		}
+		U256::from_str_radix(hex_val, 16)
+			.map_err(|e| format!("Failed to parse hex '{}': {}", hex_val, e))
+	} else {
+		// Decimal parsing
+		U256::from_str(trimmed).map_err(|e| format!("Failed to parse decimal '{}': {}", trimmed, e))
+	}
+}
+
+/// Converts a string to an I256 value.
+pub fn string_to_i256(value_str: &str) -> Result<I256, String> {
+	let trimmed = value_str.trim();
+	if trimmed.is_empty() {
+		return Err("Input string is empty".to_string());
+	}
+
+	if let Some(hex_val_no_sign) = trimmed
+		.strip_prefix("0x")
+		.or_else(|| trimmed.strip_prefix("0X"))
+	{
+		if hex_val_no_sign.is_empty() {
+			return Err("Hex string '0x' is missing value digits".to_string());
+		}
+		// Parse hex as U256 first
+		U256::from_str_radix(hex_val_no_sign, 16)
+			.map_err(|e| format!("Failed to parse hex magnitude '{}': {}", hex_val_no_sign, e))
+			.map(I256::from_raw)
+	} else {
+		I256::from_str(trimmed).map_err(|e| format!("Failed to parse decimal '{}': {}", trimmed, e))
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -250,6 +298,96 @@ mod tests {
 		// Test invalid hex string
 		let result = string_to_h160("invalid_hex");
 		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_string_to_u256() {
+		// --- Helpers ---
+		fn u256_hex_val(hex_str: &str) -> U256 {
+			U256::from_str_radix(hex_str.strip_prefix("0x").unwrap_or(hex_str), 16).unwrap()
+		}
+
+		// --- Constants for testing ---
+		const U256_MAX_STR: &str =
+			"115792089237316195423570985008687907853269984665640564039457584007913129639935";
+		const U256_MAX_HEX_STR: &str =
+			"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+		const U256_OVERFLOW_STR: &str =
+			"115792089237316195423570985008687907853269984665640564039457584007913129639936";
+		const U256_HEX_OVERFLOW_STR: &str =
+			"0x10000000000000000000000000000000000000000000000000000000000000000";
+		const ZERO_STR: &str = "0";
+		const SMALL_NUM_STR: &str = "123";
+		const SMALL_NUM_HEX_STR: &str = "0x7b"; // 123 in hex
+
+		// --- Valid numbers cases ---
+		assert_eq!(string_to_u256(ZERO_STR), Ok(U256::ZERO));
+		assert_eq!(
+			string_to_u256(SMALL_NUM_STR),
+			Ok(U256::from_str(SMALL_NUM_STR).unwrap())
+		);
+		assert_eq!(string_to_u256(U256_MAX_STR), Ok(U256::MAX));
+
+		// --- Valid hex cases ---
+		assert_eq!(string_to_u256("0x0"), Ok(U256::ZERO));
+		assert_eq!(string_to_u256("0X0"), Ok(U256::ZERO)); // Case insensitive
+		assert_eq!(
+			string_to_u256(SMALL_NUM_HEX_STR),
+			Ok(u256_hex_val(SMALL_NUM_HEX_STR))
+		);
+		assert_eq!(string_to_u256(U256_MAX_HEX_STR), Ok(U256::MAX));
+
+		// --- Invalid cases ---
+		assert!(string_to_u256("").is_err());
+		assert!(string_to_u256("   ").is_err());
+		assert!(string_to_u256("0x").is_err());
+		assert!(string_to_u256("abc").is_err());
+		assert!(string_to_u256("-123").is_err());
+		assert!(string_to_u256(U256_OVERFLOW_STR).is_err());
+		assert!(string_to_u256(U256_HEX_OVERFLOW_STR).is_err());
+	}
+
+	#[test]
+	fn test_string_to_i256() {
+		// --- Constants for testing ---
+		const I256_MAX_STR: &str =
+			"57896044618658097711785492504343953926634992332820282019728792003956564819967";
+		const I256_MAX_HEX_STR: &str =
+			"0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+		const I256_MIN_STR: &str =
+			"-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+		const I256_MIN_HEX_STR: &str =
+			"0x8000000000000000000000000000000000000000000000000000000000000000";
+		const I256_POS_OVERFLOW_STR: &str =
+			"57896044618658097711785492504343953926634992332820282019728792003956564819968";
+		const I256_NEG_OVERFLOW_STR: &str =
+			"-57896044618658097711785492504343953926634992332820282019728792003956564819969";
+		const I256_HEX_OVERFLOW_STR: &str =
+			"0x10000000000000000000000000000000000000000000000000000000000000000";
+
+		// --- Valid numbers cases ---
+		assert_eq!(string_to_i256("0"), Ok(I256::ZERO));
+		assert_eq!(string_to_i256("123"), Ok(I256::from_str("123").unwrap()));
+		assert_eq!(string_to_i256(I256_MAX_STR), Ok(I256::MAX));
+		assert_eq!(string_to_i256(I256_MIN_STR), Ok(I256::MIN));
+		assert_eq!(string_to_i256("-123"), Ok(I256::from_str("-123").unwrap()));
+		assert_eq!(string_to_i256("-0"), Ok(I256::ZERO));
+
+		// --- Valid hex cases ---
+		assert_eq!(string_to_i256("0x0"), Ok(I256::ZERO));
+		assert_eq!(string_to_i256("0X0"), Ok(I256::ZERO)); // Case insensitive
+		assert_eq!(string_to_i256(I256_MAX_HEX_STR), Ok(I256::MAX));
+		assert_eq!(string_to_i256(I256_MIN_HEX_STR), Ok(I256::MIN));
+
+		// --- Invalid cases ---
+		assert!(string_to_i256("").is_err());
+		assert!(string_to_i256("   ").is_err());
+		assert!(string_to_i256("0x").is_err());
+		assert!(string_to_i256("abc").is_err());
+		assert!(string_to_i256("-abc").is_err());
+		assert!(string_to_i256(I256_POS_OVERFLOW_STR).is_err());
+		assert!(string_to_i256(I256_NEG_OVERFLOW_STR).is_err());
+		assert!(string_to_i256(I256_HEX_OVERFLOW_STR).is_err());
 	}
 
 	#[test]
