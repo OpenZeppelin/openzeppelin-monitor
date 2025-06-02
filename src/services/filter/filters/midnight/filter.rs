@@ -279,22 +279,9 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		let chain_type = client.get_chain_type().await?;
 		let network_id = map_chain_type(&chain_type);
 
-		// We check if the network has a websocket RPC url
-		// If it does, we will use it to get transaction events
-		// Otherwise, we will not be able to monitor transaction status
-		// So we warn the user of this limitation
-		let has_websocket_rpc = network.rpc_urls.iter().any(|url| url.type_ == "ws_rpc");
-		if !has_websocket_rpc {
-			tracing::error!("Network {} does not have a websocket RPC url. This will restrict transaction status monitoring.", network.slug);
-		}
-
-		let events = if has_websocket_rpc {
-			client
-				.get_events(midnight_block.number().unwrap_or(0), None)
-				.await?
-		} else {
-			vec![]
-		};
+		let events = client
+			.get_events(midnight_block.number().unwrap_or(0), None)
+			.await?;
 
 		// Get all chain configurations from monitors
 		let chain_configurations = monitors
@@ -337,16 +324,12 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 
 				tracing::debug!("Processing transaction: {:?}", transaction.hash());
 
-				// We only find matching transactions if we have a websocket RPC url
-				// Otherwise, we will not be able to monitor transaction status
-				if has_websocket_rpc {
-					self.find_matching_transaction(
-						&events,
-						transaction,
-						monitor,
-						&mut matched_transactions,
-					);
-				}
+				self.find_matching_transaction(
+					&events,
+					transaction,
+					monitor,
+					&mut matched_transactions,
+				);
 
 				self.find_matching_functions_for_transaction(
 					&monitored_addresses,

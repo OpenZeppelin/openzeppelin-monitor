@@ -663,7 +663,8 @@ A Network configuration defines connection details and operational parameters fo
 ==== Important Considerations
 
 * We strongly recommend using private RPC providers for improved reliability.
-* For Midnight networks, transaction status monitoring requires a websocket RPC URL (`"type_": "ws_rpc"`) in the network configuration. Without it, transaction status monitoring will be disabled.
+* For EVM and Stellar networks, use `"type_": "rpc"` with HTTP/HTTPS URLs
+* For Midnight network, use `"type_": "ws_rpc",` with WebSocket URLs (wss:// or ws://)
 
 === Trigger Configuration
 

@@ -27,7 +27,6 @@ mod integration {
 				mod transport;
 			}
 			mod midnight {
-				mod http;
 				mod transport;
 				mod ws;
 			}

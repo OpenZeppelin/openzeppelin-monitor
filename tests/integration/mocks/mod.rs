@@ -12,6 +12,7 @@ mod logging;
 mod models;
 mod repositories;
 mod services;
+mod subxt;
 mod transports;
 #[allow(unused_imports)]
 pub use clients::*;
@@ -23,5 +24,9 @@ pub use models::*;
 pub use repositories::*;
 #[allow(unused_imports)]
 pub use services::*;
+#[allow(unused_imports)]
+pub use subxt::*;
+#[allow(unused_imports)]
+pub use subxt::*;
 #[allow(unused_imports)]
 pub use transports::*;

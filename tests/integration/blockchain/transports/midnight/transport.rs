@@ -8,7 +8,7 @@ use openzeppelin_monitor::{
 };
 
 use crate::integration::mocks::{
-	MockMidnightTransportClient, MockWsTransportClient, WsTransportClientWrapper,
+	mock_empty_events, MockMidnightWsTransportClient, MockSubstrateClient,
 };
 
 fn create_mock_block(number: u64) -> Value {
@@ -37,18 +37,18 @@ fn create_mock_block(number: u64) -> Value {
 	})
 }
 
-fn create_recursive_mock_midnight_transport_client(
-	_depth: u32,
+fn create_mock_midnight_clients(
 	block_hash: Option<String>,
 	events: Option<Vec<Value>>,
-) -> MockMidnightTransportClient {
-	let mut new_mock: MockMidnightTransportClient = MockMidnightTransportClient::new();
+) -> (MockMidnightWsTransportClient, MockSubstrateClient) {
+	let mut midnight_mock = MockMidnightWsTransportClient::new();
+	let mut substrate_mock = MockSubstrateClient::new();
 	let block_hash = block_hash.clone();
 	let events = events.clone();
 
 	// Mock chain_getBlockHash response
 	let block_hash_clone = block_hash.clone();
-	new_mock
+	midnight_mock
 		.expect_send_raw_request()
 		.with(predicate::eq("chain_getBlockHash"), predicate::always())
 		.returning(move |_, _| {
@@ -59,9 +59,13 @@ fn create_recursive_mock_midnight_transport_client(
 			}))
 		});
 
+	midnight_mock
+		.expect_get_current_url()
+		.returning(move || "ws://dummy".to_string());
+
 	// Mock midnight_decodeEvents response
 	let events_clone = events.clone();
-	new_mock
+	midnight_mock
 		.expect_send_raw_request()
 		.with(predicate::eq("midnight_decodeEvents"), predicate::always())
 		.returning(move |_, _| {
@@ -72,32 +76,69 @@ fn create_recursive_mock_midnight_transport_client(
 			}))
 		});
 
-	new_mock.expect_clone().returning(move || {
-		create_recursive_mock_midnight_transport_client(
-			_depth - 1,
-			block_hash.clone(),
-			events.clone(),
-		)
+	midnight_mock.expect_clone().returning(move || {
+		let mut new_mock = MockMidnightWsTransportClient::new();
+		let block_hash_clone = block_hash.clone();
+		let events_clone = events.clone();
+
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(move |_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": block_hash_clone.clone()
+				}))
+			});
+
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("midnight_decodeEvents"), predicate::always())
+			.returning(move |_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": events_clone.clone()
+				}))
+			});
+
+		new_mock
 	});
 
-	new_mock
+	// Set up the substrate mock to return a new mock with get_events expectation when cloned
+	substrate_mock.expect_clone().returning(|| {
+		let mut new_mock = MockSubstrateClient::new();
+		new_mock
+			.expect_get_events_at()
+			.returning(|_| Ok(mock_empty_events()));
+		new_mock.expect_clone().returning(|| {
+			let mut new_mock = MockSubstrateClient::new();
+			new_mock
+				.expect_get_events_at()
+				.returning(|_| Ok(mock_empty_events()));
+			new_mock.expect_clone().returning(MockSubstrateClient::new);
+			new_mock
+		});
+		new_mock
+	});
+
+	(midnight_mock, substrate_mock)
 }
 
 #[tokio::test]
 async fn test_get_events_implementation() {
-	let mock_midnight = create_recursive_mock_midnight_transport_client(
-		1,
+	let (mock_midnight, mock_substrate) = create_mock_midnight_clients(
 		Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string()),
 		Some(vec![
 			serde_json::to_value(EventBuilder::new().build()).unwrap()
 		]),
 	);
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			Some(mock_ws.client),
+			mock_substrate,
 		);
 
 	let result = client.get_events(1, Some(10)).await;
@@ -109,10 +150,23 @@ async fn test_get_events_implementation() {
 
 #[tokio::test]
 async fn test_get_events_missing_result() {
-	let mut mock_midnight: MockMidnightTransportClient = MockMidnightTransportClient::new();
+	let mut mock_midnight: MockMidnightWsTransportClient = MockMidnightWsTransportClient::new();
+	let mut mock_substrate = MockSubstrateClient::new();
+
+	mock_substrate.expect_clone().returning(|| {
+		let mut new_mock = MockSubstrateClient::new();
+		new_mock.expect_get_events_at().returning(|_| {
+			let mut events_mock = MockSubstrateClient::new();
+			events_mock
+				.expect_clone()
+				.returning(MockSubstrateClient::new);
+			Ok(mock_empty_events())
+		});
+		new_mock
+	});
 
 	mock_midnight.expect_clone().returning(move || {
-		let mut new_mock: MockMidnightTransportClient = MockMidnightTransportClient::new();
+		let mut new_mock: MockMidnightWsTransportClient = MockMidnightWsTransportClient::new();
 		// Mock chain_getBlockHash response
 		new_mock
 			.expect_send_raw_request()
@@ -138,12 +192,10 @@ async fn test_get_events_missing_result() {
 		new_mock
 	});
 
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
-
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			Some(mock_ws.client),
+			mock_substrate,
 		);
 
 	let result = client.get_events(1, Some(10)).await;
@@ -155,8 +207,8 @@ async fn test_get_events_missing_result() {
 
 #[tokio::test]
 async fn test_get_latest_block_number_success() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
-
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 	// Mock response with a finalized block hash
 	let mock_get_finalised_head_response = json!({
 		"result": "0xfinalised_block_hash"
@@ -186,9 +238,9 @@ async fn test_get_latest_block_number_success() {
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 	let result = client.get_latest_block_number().await;
 
@@ -199,8 +251,8 @@ async fn test_get_latest_block_number_success() {
 #[tokio::test]
 async fn test_get_latest_block_number_invalid_response() {
 	// Test case 1: Invalid finalized block hash response
-	let mut mock_midnight = MockMidnightTransportClient::new();
-
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 	let mock_get_finalised_head_response = json!({
 		"some": "invalid_response"
 	});
@@ -211,9 +263,9 @@ async fn test_get_latest_block_number_invalid_response() {
 		.returning(move |_, _| Ok(mock_get_finalised_head_response.clone()));
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 	let result = client.get_latest_block_number().await;
 
@@ -222,8 +274,8 @@ async fn test_get_latest_block_number_invalid_response() {
 	assert!(err.to_string().contains("Missing 'result' field"));
 
 	// Test case 2: Invalid get header response
-	let mut mock_midnight = MockMidnightTransportClient::new();
-
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 	let mock_get_finalised_head_response = json!({
 		"result": "0xfinalised_block_hash"
 	});
@@ -244,9 +296,9 @@ async fn test_get_latest_block_number_invalid_response() {
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 	let result = client.get_latest_block_number().await;
 
@@ -255,7 +307,8 @@ async fn test_get_latest_block_number_invalid_response() {
 	assert!(err.to_string().contains("Failed to parse block number"));
 
 	// Test case 3: Missing result field for get header response
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 
 	let mock_get_finalised_head_response = json!({
 		"result": "0xfinalised_block_hash"
@@ -275,9 +328,9 @@ async fn test_get_latest_block_number_invalid_response() {
 		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_get_header_response.clone()));
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 	let result = client.get_latest_block_number().await;
 
@@ -288,11 +341,12 @@ async fn test_get_latest_block_number_invalid_response() {
 
 #[tokio::test]
 async fn test_get_single_block() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 
 	// Mock response without result field
 	mock_midnight.expect_clone().times(1).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash response
 		new_mock
@@ -332,14 +386,14 @@ async fn test_get_single_block() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 
 	let result = client.get_blocks(1, None).await;
@@ -350,11 +404,12 @@ async fn test_get_single_block() {
 
 #[tokio::test]
 async fn test_get_multiple_blocks() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 
 	// Mock response for 3 blocks
 	mock_midnight.expect_clone().times(3).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash response
 		new_mock
@@ -395,14 +450,14 @@ async fn test_get_multiple_blocks() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 
 	let result = client.get_blocks(1, Some(3)).await;
@@ -413,11 +468,11 @@ async fn test_get_multiple_blocks() {
 
 #[tokio::test]
 async fn test_get_blocks_missing_result() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
-
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 	// Mock response without result field
 	mock_midnight.expect_clone().returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 		let mock_response = json!({
 			"jsonrpc": "2.0",
 			"id": 1
@@ -429,14 +484,14 @@ async fn test_get_blocks_missing_result() {
 			.returning(move |_, _| Ok(mock_response.clone()));
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 
 	let result = client.get_blocks(1, None).await;
@@ -447,10 +502,11 @@ async fn test_get_blocks_missing_result() {
 
 #[tokio::test]
 async fn test_get_blocks_null_result() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 
 	mock_midnight.expect_clone().times(1).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash to return a hash
 		new_mock
@@ -478,14 +534,14 @@ async fn test_get_blocks_null_result() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 
 	let result = client.get_blocks(1, None).await;
@@ -496,10 +552,11 @@ async fn test_get_blocks_null_result() {
 
 #[tokio::test]
 async fn test_get_blocks_parse_failure() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 
 	mock_midnight.expect_clone().times(1).returning(|| {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 
 		// First call: Mock chain_getBlockHash to return a hash
 		new_mock
@@ -532,14 +589,14 @@ async fn test_get_blocks_parse_failure() {
 
 		new_mock
 			.expect_clone()
-			.returning(MockMidnightTransportClient::new);
+			.returning(MockMidnightWsTransportClient::new);
 		new_mock
 	});
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			None,
+			mock_substrate,
 		);
 
 	let result = client.get_blocks(1, None).await;
@@ -549,53 +606,12 @@ async fn test_get_blocks_parse_failure() {
 }
 
 #[tokio::test]
-async fn test_get_events_ws_client_not_initialized() {
-	let mock_midnight = MockMidnightTransportClient::new();
-
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			None, // No WebSocket client
-		);
-
-	let result = client.get_events(1, Some(10)).await;
-
-	assert!(result.is_err());
-	let err = result.unwrap_err();
-	assert!(err.to_string().contains("WebSocket client not initialized"));
-}
-
-#[tokio::test]
-async fn test_get_events_failed_subxt_client() {
-	let mock_midnight = MockMidnightTransportClient::new();
-	let mut mock_ws = MockWsTransportClient::new();
-
-	// Mock WebSocket client to return an invalid URL
-	mock_ws
-		.expect_get_current_url()
-		.returning(|| "invalid_url".to_string());
-
-	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
-			mock_midnight,
-			Some(mock_ws),
-		);
-
-	let result = client.get_events(1, Some(10)).await;
-
-	assert!(result.is_err());
-	let err = result.unwrap_err();
-	assert!(err.to_string().contains("Failed to create subxt client"));
-}
-
-#[tokio::test]
 async fn test_get_events_failed_block_hash() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
-
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 	// Mock chain_getBlockHash to return an error
 	mock_midnight.expect_clone().returning(move || {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("chain_getBlockHash"), predicate::always())
@@ -604,9 +620,9 @@ async fn test_get_events_failed_block_hash() {
 	});
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			Some(mock_ws.client),
+			mock_substrate,
 		);
 
 	let result = client.get_events(1, Some(10)).await;
@@ -618,12 +634,11 @@ async fn test_get_events_failed_block_hash() {
 
 #[tokio::test]
 async fn test_get_events_invalid_block_hash() {
-	let mut mock_midnight = MockMidnightTransportClient::new();
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
-
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
 	// Mock chain_getBlockHash to return an invalid hash
 	mock_midnight.expect_clone().returning(move || {
-		let mut new_mock = MockMidnightTransportClient::new();
+		let mut new_mock = MockMidnightWsTransportClient::new();
 		new_mock
 			.expect_send_raw_request()
 			.with(predicate::eq("chain_getBlockHash"), predicate::always())
@@ -638,9 +653,9 @@ async fn test_get_events_invalid_block_hash() {
 	});
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			Some(mock_ws.client),
+			mock_substrate,
 		);
 
 	let result = client.get_events(1, Some(10)).await;
@@ -652,28 +667,340 @@ async fn test_get_events_invalid_block_hash() {
 
 #[tokio::test]
 async fn test_get_events_default_event_type() {
-	let mock_midnight = create_recursive_mock_midnight_transport_client(
-		1,
+	let (mock_midnight, mock_substrate) = create_mock_midnight_clients(
 		Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string()),
 		Some(vec![json!({
 			"result": "invalid_event_data"
 		})]),
 	);
-	let mock_ws = WsTransportClientWrapper::new().await.unwrap();
 
 	let client =
-		MidnightClient::<MockMidnightTransportClient, MockWsTransportClient>::new_with_transport(
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
 			mock_midnight,
-			Some(mock_ws.client),
+			mock_substrate,
 		);
 
 	let result = client.get_events(1, Some(10)).await;
 
 	assert!(result.is_ok());
+
 	let events = result.unwrap();
 	assert_eq!(events.len(), 10);
 	match &events[0].0 {
 		MidnightEventType::Unknown(_) => (),
 		_ => panic!("Expected Unknown event type"),
 	}
+}
+
+#[tokio::test]
+async fn test_range_validation() {
+	let mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+	// Test invalid sequence range for blocks
+	let result = client.get_blocks(10, Some(5)).await;
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(err
+		.to_string()
+		.contains("start_block 10 cannot be greater than end_block 5"));
+
+	// Test invalid sequence range for events
+	let result = client.get_events(10, Some(5)).await;
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(err
+		.to_string()
+		.contains("start_block 10 cannot be greater than end_block 5"));
+}
+
+#[tokio::test]
+async fn test_single_block_retrieval() {
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
+
+	// Mock responses for block operations
+	mock_midnight.expect_clone().times(1).returning(|| {
+		let mut new_mock = MockMidnightWsTransportClient::new();
+
+		// Mock chain_getBlockHash response
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(|_, params: Option<Vec<Value>>| {
+				let block_num = u64::from_str_radix(
+					params.as_ref().unwrap()[0]
+						.as_str()
+						.unwrap()
+						.trim_start_matches("0x"),
+					16,
+				)
+				.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": format!("0x{}000000000000000000000000000000000000000000000000000000000000000", block_num)
+				}))
+			});
+
+		// Mock midnight_jsonBlock response
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("midnight_jsonBlock"), predicate::always())
+			.returning(|_, params: Option<Vec<Value>>| {
+				let block_hash = params.as_ref().unwrap()[0].as_str().unwrap().to_string();
+				let block_num = block_hash.chars().nth(2)
+					.unwrap()
+					.to_string()
+					.parse::<u64>()
+					.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": create_mock_block(block_num).to_string()
+				}))
+			});
+
+		new_mock
+	});
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+	let result = client.get_blocks(5, Some(5)).await;
+	assert!(result.is_ok());
+	let blocks = result.unwrap();
+	assert_eq!(blocks.len(), 1);
+}
+
+#[tokio::test]
+async fn test_single_block_events() {
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mut mock_substrate = MockSubstrateClient::new();
+
+	// Set up substrate mock expectations
+	mock_substrate.expect_clone().returning(|| {
+		let mut new_mock = MockSubstrateClient::new();
+		new_mock
+			.expect_get_events_at()
+			.returning(|_| Ok(mock_empty_events()));
+		new_mock.expect_clone().returning(|| {
+			let mut new_mock = MockSubstrateClient::new();
+			new_mock
+				.expect_get_events_at()
+				.returning(|_| Ok(mock_empty_events()));
+			new_mock.expect_clone().returning(MockSubstrateClient::new);
+			new_mock
+		});
+		new_mock
+	});
+
+	// Mock responses for event operations
+	mock_midnight.expect_clone().times(2).returning(|| {
+		let mut new_mock = MockMidnightWsTransportClient::new();
+
+		// Mock chain_getBlockHash response
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(|_, params: Option<Vec<Value>>| {
+				let block_num = u64::from_str_radix(
+					params.as_ref().unwrap()[0]
+						.as_str()
+						.unwrap()
+						.trim_start_matches("0x"),
+					16,
+				)
+				.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": format!("0x{}000000000000000000000000000000000000000000000000000000000000000", block_num)
+				}))
+			});
+
+		// Mock midnight_decodeEvents response
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("midnight_decodeEvents"), predicate::always())
+			.returning(|_, _| {
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": vec![
+						serde_json::to_value(EventBuilder::new().build()).unwrap()
+					]
+				}))
+			});
+
+		new_mock
+	});
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+	let result = client.get_events(5, Some(5)).await;
+	assert!(result.is_ok());
+	let events = result.unwrap();
+	assert_eq!(events.len(), 1);
+}
+
+#[tokio::test]
+async fn test_chain_type_scenarios() {
+	let test_cases = vec![
+		(
+			json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": "testnet-02-1"
+			}),
+			true,
+			"testnet-02-1",
+			"",
+		),
+		(
+			json!({
+				"jsonrpc": "2.0",
+				"id": 1
+			}),
+			false,
+			"",
+			"Missing or invalid 'result' field",
+		),
+		(
+			json!({
+				"jsonrpc": "2.0",
+				"id": 1,
+				"result": 123
+			}),
+			false,
+			"",
+			"Missing or invalid 'result' field",
+		),
+	];
+
+	for (mock_response, should_succeed, expected_value, error_contains) in test_cases {
+		let mut mock_midnight = MockMidnightWsTransportClient::new();
+		let mock_substrate = MockSubstrateClient::new();
+
+		mock_midnight
+			.expect_send_raw_request()
+			.with(predicate::eq("system_chain"), predicate::always())
+			.returning(move |_, _| Ok(mock_response.clone()));
+
+		let client = MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+		let result = client.get_chain_type().await;
+		if should_succeed {
+			assert!(result.is_ok());
+			assert_eq!(result.unwrap(), expected_value);
+		} else {
+			assert!(result.is_err());
+			let err = result.unwrap_err();
+			assert!(err.to_string().contains(error_contains));
+		}
+	}
+
+	// Test case for send_raw_request failure
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
+
+	mock_midnight
+		.expect_send_raw_request()
+		.with(predicate::eq("system_chain"), predicate::always())
+		.returning(|_, _| Err(anyhow::anyhow!("Network error")));
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+	let result = client.get_chain_type().await;
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(err.to_string().contains("Failed to get chain type"));
+}
+
+#[tokio::test]
+async fn test_block_range_operations() {
+	let mut mock_midnight = MockMidnightWsTransportClient::new();
+	let mock_substrate = MockSubstrateClient::new();
+
+	// Mock responses for block range operations
+	mock_midnight.expect_clone().times(103).returning(|| {
+		let mut new_mock = MockMidnightWsTransportClient::new();
+
+		// Mock chain_getBlockHash response
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("chain_getBlockHash"), predicate::always())
+			.returning(|_, params: Option<Vec<Value>>| {
+				let block_num = u64::from_str_radix(
+					params.as_ref().unwrap()[0]
+						.as_str()
+						.unwrap()
+						.trim_start_matches("0x"),
+					16,
+				)
+				.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": format!("0xmocked_block_hash_{}", block_num)
+				}))
+			});
+
+		// Mock midnight_jsonBlock response
+		new_mock
+			.expect_send_raw_request()
+			.with(predicate::eq("midnight_jsonBlock"), predicate::always())
+			.returning(|_, params: Option<Vec<Value>>| {
+				let block_hash = params.as_ref().unwrap()[0].as_str().unwrap();
+				let block_num = block_hash
+					.trim_start_matches("0xmocked_block_hash_")
+					.parse::<u64>()
+					.unwrap();
+				Ok(json!({
+					"jsonrpc": "2.0",
+					"id": 1,
+					"result": create_mock_block(block_num).to_string()
+				}))
+			});
+
+		new_mock
+	});
+
+	let client =
+		MidnightClient::<MockMidnightWsTransportClient, MockSubstrateClient>::new_with_transport(
+			mock_midnight,
+			mock_substrate,
+		);
+
+	// Test multiple blocks
+	let result = client.get_blocks(1, Some(3)).await;
+	assert!(result.is_ok());
+	let blocks = result.unwrap();
+	assert_eq!(blocks.len(), 3);
+
+	// Test large range of blocks
+	let result = client.get_blocks(1, Some(100)).await;
+	assert!(result.is_ok());
+	let blocks = result.unwrap();
+	assert_eq!(blocks.len(), 100);
 }

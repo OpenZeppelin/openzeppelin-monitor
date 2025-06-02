@@ -11,7 +11,6 @@ mod stellar {
 	pub mod http;
 }
 mod midnight {
-	pub mod http;
 	pub mod ws;
 }
 
@@ -36,10 +35,7 @@ pub use ws::{
 };
 
 pub use evm::http::EVMTransportClient;
-pub use midnight::{
-	http::MidnightTransportClient as MidnightHttpTransportClient,
-	ws::MidnightTransportClient as MidnightWsTransportClient,
-};
+pub use midnight::ws::MidnightTransportClient as MidnightWsTransportClient;
 pub use stellar::http::StellarTransportClient;
 
 use reqwest_middleware::ClientWithMiddleware;

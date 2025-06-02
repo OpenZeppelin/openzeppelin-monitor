@@ -15,5 +15,5 @@ pub use filter_match::handle_match;
 pub use filters::{
 	evm::helpers as evm_helpers, midnight::helpers as midnight_helpers,
 	stellar::helpers as stellar_helpers, BlockFilter, EVMBlockFilter, FilterService,
-	MidnightBlockFilter, StellarBlockFilter,
+	FilterServiceTrait, MidnightBlockFilter, StellarBlockFilter,
 };

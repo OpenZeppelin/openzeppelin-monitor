@@ -28,11 +28,7 @@ impl Default for NetworkBuilder {
 			chain_id: Some(1),
 			network_passphrase: None,
 			store_blocks: Some(true),
-			rpc_urls: vec![RpcUrl {
-				type_: "rpc".to_string(),
-				url: SecretValue::Plain(SecretString::new("https://test.network".to_string())),
-				weight: 100,
-			}],
+			rpc_urls: vec![],
 			block_time_ms: 1000,
 			confirmation_blocks: 1,
 			cron_schedule: "0 */5 * * * *".to_string(),
@@ -90,6 +86,18 @@ impl NetworkBuilder {
 			.into_iter()
 			.map(|url| RpcUrl {
 				type_: "rpc".to_string(),
+				url: SecretValue::Plain(SecretString::new(url.to_string())),
+				weight: 100,
+			})
+			.collect();
+		self
+	}
+
+	pub fn websocket_rpc_urls(mut self, urls: Vec<&str>) -> Self {
+		self.rpc_urls = urls
+			.into_iter()
+			.map(|url| RpcUrl {
+				type_: "ws_rpc".to_string(),
 				url: SecretValue::Plain(SecretString::new(url.to_string())),
 				weight: 100,
 			})
@@ -175,15 +183,7 @@ mod tests {
 		assert_eq!(network.confirmation_blocks, 1);
 		assert_eq!(network.cron_schedule, "0 */5 * * * *");
 		assert_eq!(network.max_past_blocks, Some(10));
-
-		// Check default RPC URL
-		assert_eq!(network.rpc_urls.len(), 1);
-		assert_eq!(
-			network.rpc_urls[0].url.as_ref().to_string(),
-			"https://test.network".to_string()
-		);
-		assert_eq!(network.rpc_urls[0].type_, "rpc");
-		assert_eq!(network.rpc_urls[0].weight, 100);
+		assert_eq!(network.rpc_urls.len(), 0);
 	}
 
 	#[test]
@@ -240,12 +240,12 @@ mod tests {
 			)
 			.build();
 
-		assert_eq!(network.rpc_urls.len(), 2);
+		assert_eq!(network.rpc_urls.len(), 1);
 		assert_eq!(
-			network.rpc_urls[1].url.as_ref().to_string(),
+			network.rpc_urls[0].url.as_ref().to_string(),
 			"https://rpc1.example.com".to_string()
 		);
-		assert_eq!(network.rpc_urls[1].type_, "rpc");
+		assert_eq!(network.rpc_urls[0].type_, "rpc");
 	}
 
 	#[test]
@@ -266,6 +266,21 @@ mod tests {
 		// Check defaults are applied
 		assert!(network.rpc_urls.iter().all(|url| url.type_ == "rpc"));
 		assert!(network.rpc_urls.iter().all(|url| url.weight == 100));
+	}
+
+	#[test]
+	fn test_websocket_rpc_urls() {
+		let network = NetworkBuilder::new()
+			.websocket_rpc_urls(vec!["wss://ws1.example.com", "wss://ws2.example.com"])
+			.build();
+
+		assert_eq!(network.rpc_urls.len(), 2);
+		assert_eq!(
+			network.rpc_urls[0].url.as_ref().to_string(),
+			"wss://ws1.example.com".to_string()
+		);
+		assert_eq!(network.rpc_urls[0].type_, "ws_rpc");
+		assert_eq!(network.rpc_urls[1].type_, "ws_rpc");
 	}
 
 	#[test]
