@@ -288,7 +288,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 			}
 		};
 
-		tracing::debug!("Comapring addresses: left: {}, right: {}", left, right);
+		tracing::debug!("Comparing addresses: left: {}, right: {}", left, right);
 
 		match operator {
 			ComparisonOperator::Eq => Ok(are_same_address(left, right)),
