@@ -770,10 +770,7 @@ async fn test_get_events_complex_sparse_pagination_with_boundaries() {
 	}
 
 	mock.assert_async().await;
-	for (i, mock) in mocks.into_iter().enumerate() {
-		if i < 9 {
-			// First 9 mocks should definitely be called
-			mock.assert_async().await;
-		}
+	for mock in mocks {
+		mock.assert_async().await;
 	}
 }
