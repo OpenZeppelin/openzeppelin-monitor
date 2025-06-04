@@ -9,7 +9,9 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::services::blockchain::transports::{RotatingTransport, ROTATE_ON_ERROR_CODES};
+use crate::services::blockchain::transports::{
+	RotatingTransport, TransportError, ROTATE_ON_ERROR_CODES,
+};
 
 /// Manages the rotation of blockchain RPC endpoints
 ///
@@ -185,7 +187,7 @@ impl EndpointManager {
 	/// * `params` - The parameters for the RPC method call as a JSON Value
 	///
 	/// # Returns
-	/// * `Result<Value, anyhow::Error>` - The JSON response from the RPC endpoint or an error
+	/// * `Result<Value, TransportError>` - The JSON response from the RPC endpoint or an error
 	///
 	/// # Behavior
 	/// - Automatically rotates to fallback URLs if the request fails with specific status codes
@@ -200,31 +202,51 @@ impl EndpointManager {
 		transport: &T,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, anyhow::Error> {
+	) -> Result<Value, TransportError> {
 		loop {
 			let current_url = self.active_url.read().await.clone();
 			let request_body = transport.customize_request(method, params.clone()).await;
 
-			let response = match self
+			let response_result = self
 				.client
 				.post(current_url.as_str())
 				.header("Content-Type", "application/json")
-				.body(
-					serde_json::to_string(&request_body)
-						.map_err(|e| anyhow::anyhow!("Failed to parse request: {}", e))?,
-				)
+				.body(serde_json::to_string(&request_body).map_err(|e| {
+					TransportError::request_serialization(
+						"Failed to serialize request JSON",
+						Some(Box::new(e)),
+						None,
+					)
+				})?)
 				.send()
-				.await
-			{
+				.await;
+
+			let response = match response_result {
 				Ok(resp) => resp,
-				Err(e) => {
-					tracing::warn!("Network error while sending request: {}", e);
+				Err(network_error) => {
+					tracing::warn!("Network error while sending request: {}", network_error);
 					// Try rotation for network errors without status check
-					if self.should_attempt_rotation(transport, false, None).await? {
-						continue;
+					let should_rotate = self.should_attempt_rotation(transport, false, None).await;
+
+					match should_rotate {
+						Ok(true) => continue,
+						Ok(false) => {
+							return Err(TransportError::network(
+								"Failed to send request due to network error",
+								Some(network_error.into()),
+								None,
+							))
+						}
+						Err(rotation_error) => {
+							let msg = "Failed to rotate URL after network error".to_string();
+							Err(TransportError::url_rotation(
+								msg,
+								Some(rotation_error.into()),
+								None,
+							))
+						}
 					}
-					return Err(anyhow::anyhow!("Failed to send request: {}", e));
-				}
+				}?,
 			};
 
 			let status = response.status();
@@ -233,19 +255,35 @@ impl EndpointManager {
 				tracing::warn!("Request failed with status {}: {}", status, error_body);
 
 				// Try rotation with status code check
-				if self
+				let should_rotate = self
 					.should_attempt_rotation(transport, true, Some(status.as_u16()))
-					.await?
-				{
-					continue;
+					.await;
+
+				match should_rotate {
+					Ok(true) => continue,
+					Ok(false) => {
+						return Err(TransportError::http(
+							status,
+							current_url,
+							error_body.clone(),
+							None,
+							None,
+						));
+					}
+					Err(e) => {
+						let msg = "Failed to rotate URL after HTTP error".to_string();
+						return Err(TransportError::url_rotation(msg, Some(e.into()), None));
+					}
 				}
-				return Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body));
 			}
 
-			return response
-				.json()
-				.await
-				.map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e));
+			return response.json().await.map_err(|e| {
+				TransportError::response_parse(
+					"Failed to parse JSON response",
+					Some(Box::new(e)),
+					None,
+				)
+			});
 		}
 	}
 }

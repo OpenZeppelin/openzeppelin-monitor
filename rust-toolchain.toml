@@ -1,6 +1,6 @@
 [toolchain]
-channel = "stable"
-versioned = "1.86.0"
+channel = "1.86.0"
+profile = "minimal"
 components = [
     "rustc",
     "cargo",

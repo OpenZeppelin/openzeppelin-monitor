@@ -1,0 +1,21 @@
+{
+  "network_type": "EVM",
+  "slug": "bsctest",
+  "name": "BSC Testnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "https://bsc-testnet-dataseed.bnbchain.org"
+      },
+      "weight": 100
+    }
+  ],
+  "chain_id": 97,
+  "block_time_ms": 3000,
+  "confirmation_blocks": 12,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 33,
+  "store_blocks": false
+}

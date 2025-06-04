@@ -207,94 +207,72 @@ impl Deref for Transaction {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use alloy::{
-		primitives::{Address, Bytes, B256, U256, U64},
-		rpc::types::Index,
-	};
-
-	fn create_test_transaction() -> BaseTransaction {
-		BaseTransaction {
-			hash: B256::with_last_byte(1),
-			nonce: U256::from(2),
-			block_hash: Some(B256::with_last_byte(3)),
-			block_number: Some(U64::from(4)),
-			transaction_index: Some(Index::from(0)),
-			from: Some(Address::with_last_byte(5)),
-			to: Some(Address::with_last_byte(6)),
-			value: U256::from(100),
-			gas_price: Some(U256::from(20)),
-			gas: U256::from(21000),
-			input: Bytes::default(),
-			v: None,
-			r: None,
-			s: None,
-			raw: None,
-			transaction_type: None,
-			access_list: None,
-			max_priority_fee_per_gas: None,
-			max_fee_per_gas: None,
-			l2: BaseL2Transaction {
-				deposit_receipt_version: None,
-				source_hash: None,
-				mint: None,
-				y_parity: None,
-			},
-			extra: HashMap::new(),
-		}
-	}
+	use crate::utils::tests::builders::evm::transaction::TransactionBuilder;
+	use alloy::primitives::{Address, B256, U256};
 
 	#[test]
 	fn test_value() {
-		let tx = Transaction(create_test_transaction());
-		assert_eq!(*tx.value(), U256::from(100));
+		let value = U256::from(100);
+		let tx = TransactionBuilder::new().value(value).build();
+		assert_eq!(*tx.value(), value);
 	}
 
 	#[test]
 	fn test_sender() {
-		let tx = Transaction(create_test_transaction());
-		assert_eq!(tx.sender(), Some(&Address::with_last_byte(5)));
+		let address = Address::with_last_byte(5);
+		let tx = TransactionBuilder::new().from(address).build();
+		assert_eq!(tx.sender(), Some(&address));
 	}
 
 	#[test]
 	fn test_recipient() {
-		let tx = Transaction(create_test_transaction());
-		assert_eq!(tx.to(), Some(&Address::with_last_byte(6)));
+		let address = Address::with_last_byte(6);
+		let tx = TransactionBuilder::new().to(address).build();
+		assert_eq!(tx.to(), Some(&address));
 	}
 
 	#[test]
 	fn test_gas() {
-		let tx = Transaction(create_test_transaction());
-		assert_eq!(*tx.gas(), U256::from(21000));
+		let default_tx = TransactionBuilder::new().build(); // Default gas is 21000
+		assert_eq!(*default_tx.gas(), U256::from(21000));
+
+		// Set custom gas limit
+		let gas = U256::from(45000);
+		let tx = TransactionBuilder::new().gas_limit(gas).build();
+		assert_eq!(*tx.gas(), gas);
 	}
 
 	#[test]
 	fn test_gas_price() {
-		let tx = Transaction(create_test_transaction());
-		assert_eq!(tx.gas_price(), Some(&U256::from(20)));
+		let gas_price = U256::from(20);
+		let tx = TransactionBuilder::new().gas_price(gas_price).build();
+		assert_eq!(tx.gas_price(), Some(&gas_price));
 	}
 
 	#[test]
 	fn test_nonce() {
-		let tx = Transaction(create_test_transaction());
-		assert_eq!(*tx.nonce(), U256::from(2));
+		let nonce = U256::from(2);
+		let tx = TransactionBuilder::new().nonce(nonce).build();
+		assert_eq!(*tx.nonce(), nonce);
 	}
 
 	#[test]
 	fn test_hash() {
-		let tx = Transaction(create_test_transaction());
-		assert_eq!(*tx.hash(), B256::with_last_byte(1));
+		let hash = B256::with_last_byte(1);
+		let tx = TransactionBuilder::new().hash(hash).build();
+		assert_eq!(*tx.hash(), hash);
 	}
 
 	#[test]
 	fn test_from_base_transaction() {
-		let base_tx = create_test_transaction();
+		let base_tx = TransactionBuilder::new().build().0;
 		let tx: Transaction = base_tx.clone().into();
 		assert_eq!(tx.0, base_tx);
 	}
 
 	#[test]
 	fn test_deref() {
-		let base_tx = create_test_transaction();
+		let base_tx = TransactionBuilder::new().build().0;
 		let tx = Transaction(base_tx.clone());
 		assert_eq!(*tx, base_tx);
 	}

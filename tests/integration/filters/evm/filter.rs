@@ -3,23 +3,20 @@
 //! Tests the monitoring functionality for EVM-compatible blockchains,
 //! including event and transaction filtering.
 
-use alloy::{
-	consensus::{transaction::Recovered, Signed, TxEnvelope},
-	primitives::{Bytes, TxKind, Uint, U256},
-};
+use alloy::primitives::Uint;
 use serde_json::json;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, ContractSpec, EVMReceiptLog, EventCondition, FunctionCondition, Monitor,
-		MonitorMatch, TransactionCondition, TransactionStatus,
+		BlockType, ContractSpec, EVMReceiptLog, EVMTransactionReceipt, EventCondition,
+		FunctionCondition, Monitor, MonitorMatch, TransactionCondition, TransactionStatus,
 	},
 	services::{
-		blockchain::EvmClient,
+		blockchain::{EvmClient, TransportError},
 		filter::{handle_match, FilterError, FilterService},
 	},
-	utils::tests::evm::receipt::ReceiptBuilder,
+	utils::tests::evm::{receipt::ReceiptBuilder, transaction::TransactionBuilder},
 };
 
 use crate::integration::{
@@ -44,7 +41,13 @@ fn setup_mock_transport(test_data: TestData) -> MockEVMTransportClient {
 				("eth_getLogs", i) => Ok(json!({
 					"result": &receipts[i].logs
 				})),
-				_ => Err(anyhow::anyhow!("Unexpected method call")),
+				_ => Err(TransportError::http(
+					reqwest::StatusCode::METHOD_NOT_ALLOWED,
+					"random.url".to_string(),
+					"Unexpected method call".to_string(),
+					None,
+					None,
+				)),
 			}
 		});
 
@@ -705,10 +708,9 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 		.returning(|_, _, _, _| Ok(()));
 
 	// Create a monitor match with an argument named "signature"
-	use alloy::primitives::{Address, B256};
 	use openzeppelin_monitor::models::{
-		EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EVMTransaction,
-		EVMTransactionReceipt, FunctionCondition, MatchConditions,
+		EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch,
+		FunctionCondition, MatchConditions,
 	};
 
 	// Create test monitor with a function that has an argument called "signature"
@@ -726,38 +728,10 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 		ReceiptBuilder::new().build().logs.clone()
 	}
 
-	fn create_test_evm_transaction() -> EVMTransaction {
-		let tx = alloy::consensus::TxLegacy {
-			chain_id: None,
-			nonce: 0,
-			gas_price: 0,
-			gas_limit: 0,
-			to: TxKind::Call(Address::ZERO),
-			value: U256::ZERO,
-			input: Bytes::default(),
-		};
-
-		let signature =
-			alloy::signers::Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
-
-		let hash = B256::ZERO;
-
-		EVMTransaction::from(alloy::rpc::types::Transaction {
-			inner: Recovered::new_unchecked(
-				TxEnvelope::Legacy(Signed::new_unchecked(tx, signature, hash)),
-				Address::ZERO,
-			),
-			block_hash: None,
-			block_number: None,
-			transaction_index: None,
-			effective_gas_price: None,
-		})
-	}
-
 	// Create a match object
 	let evm_match = EVMMonitorMatch {
 		monitor,
-		transaction: create_test_evm_transaction(),
+		transaction: TransactionBuilder::new().build(),
 		receipt: Some(create_test_evm_transaction_receipt()),
 		logs: Some(create_test_evm_logs()),
 		network_slug: "ethereum_mainnet".to_string(),
@@ -1054,7 +1028,13 @@ async fn test_filter_block_needs_receipt_for_status() -> Result<(), Box<FilterEr
 				("eth_getLogs", _) => Ok(json!({
 					"result": Vec::<EVMReceiptLog>::new()
 				})),
-				_ => Err(anyhow::anyhow!("Unexpected method call")),
+				_ => Err(TransportError::http(
+					reqwest::StatusCode::METHOD_NOT_ALLOWED,
+					"random.url".to_string(),
+					"Unexpected method call".to_string(),
+					None,
+					None,
+				)),
 			}
 		});
 

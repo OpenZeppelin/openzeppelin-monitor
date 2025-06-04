@@ -8,7 +8,7 @@ use std::{collections::HashMap, path::Path, str::FromStr};
 
 use crate::{
 	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network, SecretValue},
-	utils::get_cron_interval_ms,
+	utils::{get_cron_interval_ms, normalize_string},
 };
 
 impl Network {
@@ -109,6 +109,12 @@ impl ConfigLoader for Network {
 				.to_string();
 
 			let network = Self::load_from_path(&path).await?;
+
+			let existing_networks: Vec<&Network> =
+				pairs.iter().map(|(_, network)| network).collect();
+			// Check network name uniqueness before pushing
+			Self::validate_uniqueness(&existing_networks, &network, &path.display().to_string())?;
+
 			pairs.push((name, network));
 		}
 
@@ -311,12 +317,46 @@ impl ConfigLoader for Network {
 			}
 		}
 	}
+
+	fn validate_uniqueness(
+		instances: &[&Self],
+		current_instance: &Self,
+		file_path: &str,
+	) -> Result<(), ConfigError> {
+		let fields = [
+			("name", &current_instance.name),
+			("slug", &current_instance.slug),
+		];
+
+		for (field_name, field_value) in fields {
+			if instances.iter().any(|existing_network| {
+				let existing_value = match field_name {
+					"name" => &existing_network.name,
+					"slug" => &existing_network.slug,
+					_ => unreachable!(),
+				};
+				normalize_string(existing_value) == normalize_string(field_value)
+			}) {
+				return Err(ConfigError::validation_error(
+					format!("Duplicate network {} found: '{}'", field_name, field_value),
+					None,
+					Some(HashMap::from([
+						(format!("network_{}", field_name), field_value.to_string()),
+						("path".to_string(), file_path.to_string()),
+					])),
+				));
+			}
+		}
+		Ok(())
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::utils::tests::builders::network::NetworkBuilder;
+	use std::fs;
+	use tempfile::TempDir;
 	use tracing_test::traced_test;
 
 	// Replace create_valid_network() with NetworkBuilder usage
@@ -553,5 +593,129 @@ mod tests {
 		));
 		assert!(!logs_contain("https://secure.network"));
 		assert!(!logs_contain("wss://secure.ws.network"));
+	}
+
+	#[tokio::test]
+	async fn test_load_all_duplicate_network_name() {
+		let temp_dir = TempDir::new().unwrap();
+		let file_path_1 = temp_dir.path().join("duplicate_network.json");
+		let file_path_2 = temp_dir.path().join("duplicate_network_2.json");
+
+		let network_config_1 = r#"{
+			"name": " Testnetwork",
+			"slug": "test_network",
+			"network_type": "EVM",
+			"rpc_urls": [
+				{
+					"type_": "rpc",
+					"url": {
+						"type": "plain",
+						"value": "https://eth.drpc.org"
+					},
+					"weight": 100
+				}
+			],
+			"chain_id": 1,
+			"block_time_ms": 1000,
+			"confirmation_blocks": 1,
+			"cron_schedule": "0 */5 * * * *",
+			"max_past_blocks": 10,
+			"store_blocks": true
+		}"#;
+
+		let network_config_2 = r#"{
+			"name": "TestNetwork",
+			"slug": "test_network",
+			"network_type": "EVM",
+			"rpc_urls": [
+				{
+					"type_": "rpc",
+					"url": {
+						"type": "plain",
+						"value": "https://eth.drpc.org"
+					},
+					"weight": 100
+				}
+			],
+			"chain_id": 1,
+			"block_time_ms": 1000,
+			"confirmation_blocks": 1,
+			"cron_schedule": "0 */5 * * * *",
+			"max_past_blocks": 10,
+			"store_blocks": true
+		}"#;
+
+		fs::write(&file_path_1, network_config_1).unwrap();
+		fs::write(&file_path_2, network_config_2).unwrap();
+
+		let result: Result<HashMap<String, Network>, ConfigError> =
+			Network::load_all(Some(temp_dir.path())).await;
+
+		assert!(result.is_err());
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err.message.contains("Duplicate network name found"));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_load_all_duplicate_network_slug() {
+		let temp_dir = TempDir::new().unwrap();
+		let file_path_1 = temp_dir.path().join("duplicate_network.json");
+		let file_path_2 = temp_dir.path().join("duplicate_network_2.json");
+
+		let network_config_1 = r#"{
+			"name": "Test Network",
+			"slug": "test_network",
+			"network_type": "EVM",
+			"rpc_urls": [
+				{
+					"type_": "rpc",
+					"url": {
+						"type": "plain",
+						"value": "https://eth.drpc.org"
+					},
+					"weight": 100
+				}
+			],
+			"chain_id": 1,
+			"block_time_ms": 1000,
+			"confirmation_blocks": 1,
+			"cron_schedule": "0 */5 * * * *",
+			"max_past_blocks": 10,
+			"store_blocks": true
+		}"#;
+
+		let network_config_2 = r#"{
+			"name": "Test Network 2",
+			"slug": "test_network",
+			"network_type": "EVM",
+			"rpc_urls": [
+				{
+					"type_": "rpc",
+					"url": {
+						"type": "plain",
+						"value": "https://eth.drpc.org"
+					},
+					"weight": 100
+				}
+			],
+			"chain_id": 1,
+			"block_time_ms": 1000,
+			"confirmation_blocks": 1,
+			"cron_schedule": "0 */5 * * * *",
+			"max_past_blocks": 10,
+			"store_blocks": true
+		}"#;
+
+		fs::write(&file_path_1, network_config_1).unwrap();
+		fs::write(&file_path_2, network_config_2).unwrap();
+
+		let result: Result<HashMap<String, Network>, ConfigError> =
+			Network::load_all(Some(temp_dir.path())).await;
+
+		assert!(result.is_err());
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err.message.contains("Duplicate network slug found"));
+		}
 	}
 }

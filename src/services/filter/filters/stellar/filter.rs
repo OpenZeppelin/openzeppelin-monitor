@@ -24,15 +24,15 @@ use crate::{
 	services::{
 		blockchain::{BlockChainClient, StellarClientTrait},
 		filter::{
+			expression::{self, EvaluationError},
+			filters::stellar::evaluator::StellarConditionEvaluator,
 			stellar_helpers::{
-				are_same_signature, compare_json_values, compare_json_values_vs_string,
-				compare_strings, get_kind_from_value, get_nested_value, normalize_address,
-				parse_json_safe, parse_xdr_value, process_invoke_host_function,
+				are_same_signature, get_kind_from_value, normalize_address, parse_xdr_value,
+				process_invoke_host_function,
 			},
 			BlockFilter, FilterError,
 		},
 	},
-	utils::split_expression,
 };
 
 /// Represents a mapping between a Stellar event and its transaction hash
@@ -175,21 +175,45 @@ impl<T> StellarBlockFilter<T> {
 									},
 								]);
 
-								if self.evaluate_expression(expr, &Some(tx_params)) {
-									matched_transactions.push(TransactionCondition {
-										expression: Some(expr.clone()),
-										status: tx_status,
-									});
-									break;
+								// Evaluate the expression with transaction parameters
+								match self.evaluate_expression(expr, &tx_params) {
+									Ok(true) => {
+										matched_transactions.push(TransactionCondition {
+											expression: Some(expr.to_string()),
+											status: tx_status,
+										});
+										break;
+									}
+									Ok(false) => continue,
+									Err(e) => {
+										tracing::error!(
+											"Failed to evaluate expression '{}': {}",
+											expr,
+											e
+										);
+										continue;
+									}
 								}
 							}
 						} else {
 							// Even with no operations, still evaluate base parameters
-							if self.evaluate_expression(expr, &Some(base_params)) {
-								matched_transactions.push(TransactionCondition {
-									expression: Some(expr.clone()),
-									status: tx_status,
-								});
+							match self.evaluate_expression(expr, &base_params) {
+								Ok(true) => {
+									matched_transactions.push(TransactionCondition {
+										expression: Some(expr.to_string()),
+										status: tx_status,
+									});
+									break;
+								}
+								Ok(false) => continue,
+								Err(e) => {
+									tracing::error!(
+										"Failed to evaluate expression '{}': {}",
+										expr,
+										e
+									);
+									continue;
+								}
 							}
 						}
 					} else {
@@ -365,25 +389,35 @@ impl<T> StellarBlockFilter<T> {
 								) {
 									// Evaluate expression if it exists
 									if let Some(expr) = &condition.expression {
-										if self
-											.evaluate_expression(expr, &Some(param_entries.clone()))
-										{
-											matched_functions.push(FunctionCondition {
-												signature: parsed_operation
-													.function_signature
-													.clone(),
-												expression: Some(expr.clone()),
-											});
-											if let Some(functions) = &mut matched_on_args.functions
-											{
-												functions.push(StellarMatchParamsMap {
+										match self.evaluate_expression(expr, &param_entries) {
+											Ok(true) => {
+												matched_functions.push(FunctionCondition {
 													signature: parsed_operation
 														.function_signature
 														.clone(),
-													args: Some(param_entries.clone()),
+													expression: Some(expr.clone()),
 												});
+												if let Some(functions) =
+													&mut matched_on_args.functions
+												{
+													functions.push(StellarMatchParamsMap {
+														signature: parsed_operation
+															.function_signature
+															.clone(),
+														args: Some(param_entries.clone()),
+													});
+												}
+												break;
 											}
-											break;
+											Ok(false) => continue,
+											Err(e) => {
+												tracing::error!(
+													"Failed to evaluate expression '{}': {}",
+													expr,
+													e
+												);
+												continue;
+											}
 										}
 									} else {
 										// If no expression, match on function name alone
@@ -464,13 +498,24 @@ impl<T> StellarBlockFilter<T> {
 					match &condition.expression {
 						Some(expr) => {
 							if let Some(args) = &event.args {
-								if self.evaluate_expression(expr, &Some(args.clone())) {
-									matched_events.push(EventCondition {
-										signature: event.signature.clone(),
-										expression: Some(expr.clone()),
-									});
-									if let Some(events) = &mut matched_on_args.events {
-										events.push(event.clone());
+								match self.evaluate_expression(expr, args) {
+									Ok(true) => {
+										matched_events.push(EventCondition {
+											signature: event.signature.clone(),
+											expression: Some(expr.clone()),
+										});
+										if let Some(events) = &mut matched_on_args.events {
+											events.push(event.clone());
+										}
+									}
+									Ok(false) => continue,
+									Err(e) => {
+										tracing::error!(
+											"Failed to evaluate expression '{}': {}",
+											expr,
+											e
+										);
+										continue;
 									}
 								}
 							}
@@ -637,363 +682,6 @@ impl<T> StellarBlockFilter<T> {
 		decoded_events
 	}
 
-	/// Compares values based on their type and operator
-	///
-	/// # Arguments
-	/// * `param_type` - The type of parameter being compared
-	/// * `param_value` - The actual value to compare
-	/// * `operator` - The comparison operator
-	/// * `compare_value` - The value to compare against
-	///
-	/// # Returns
-	/// Boolean indicating if the comparison evaluates to true
-	pub fn compare_values(
-		&self,
-		param_type: &str,
-		param_value: &str,
-		operator: &str,
-		compare_value: &str,
-	) -> bool {
-		// Remove quotes from the values to normalize them
-		let param_value = param_value.trim_matches('"');
-		let compare_value = compare_value.trim_matches('"');
-
-		match param_type {
-			"Bool" | "bool" => self.compare_bool(param_value, operator, compare_value),
-			"U32" | "u32" => self.compare_u32(param_value, operator, compare_value),
-			"U64" | "u64" | "Timepoint" | "timepoint" | "Duration" | "duration" => {
-				self.compare_u64(param_value, operator, compare_value)
-			}
-			"I32" | "i32" => self.compare_i32(param_value, operator, compare_value),
-			"I64" | "i64" => self.compare_i64(param_value, operator, compare_value),
-			"U128" | "u128" => self.compare_u128(param_value, operator, compare_value),
-			"I128" | "i128" => self.compare_i128(param_value, operator, compare_value),
-			"U256" | "u256" | "I256" | "i256" => {
-				self.compare_i256(param_value, operator, compare_value)
-			}
-			"Vec" | "vec" => self.compare_vec(param_value, operator, compare_value),
-			"Map" | "map" => self.compare_map(param_value, operator, compare_value),
-			"String" | "string" | "Symbol" | "symbol" | "Address" | "address" | "Bytes"
-			| "bytes" => self.compare_string(param_value, operator, compare_value),
-			_ => {
-				tracing::warn!("Unsupported parameter type: {}", param_type);
-				false
-			}
-		}
-	}
-
-	fn compare_bool(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let Ok(param_value) = param_value.parse::<bool>() else {
-			tracing::warn!("Failed to parse bool parameter value: {}", param_value);
-			return false;
-		};
-		let Ok(compare_value) = compare_value.parse::<bool>() else {
-			tracing::warn!("Failed to parse bool comparison value: {}", compare_value);
-			return false;
-		};
-		match operator {
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!("Unsupported operator for bool type: {}", operator);
-				false
-			}
-		}
-	}
-
-	fn compare_u64(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let Ok(param_value) = param_value.parse::<u64>() else {
-			tracing::warn!("Failed to parse u64 parameter value: {}", param_value);
-			return false;
-		};
-		let Ok(compare_value) = compare_value.parse::<u64>() else {
-			tracing::warn!("Failed to parse u64 comparison value: {}", compare_value);
-			return false;
-		};
-		match operator {
-			">" => param_value > compare_value,
-			">=" => param_value >= compare_value,
-			"<" => param_value < compare_value,
-			"<=" => param_value <= compare_value,
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!("Unsupported operator: {}", operator);
-				false
-			}
-		}
-	}
-
-	fn compare_u32(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let Ok(param_value) = param_value.parse::<u32>() else {
-			tracing::warn!("Failed to parse u32 parameter value: {}", param_value);
-			return false;
-		};
-		let Ok(compare_value) = compare_value.parse::<u32>() else {
-			tracing::warn!("Failed to parse u32 comparison value: {}", compare_value);
-			return false;
-		};
-		match operator {
-			">" => param_value > compare_value,
-			">=" => param_value >= compare_value,
-			"<" => param_value < compare_value,
-			"<=" => param_value <= compare_value,
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!("Unsupported operator: {}", operator);
-				false
-			}
-		}
-	}
-
-	fn compare_i32(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let Ok(param_value) = param_value.parse::<i32>() else {
-			tracing::warn!("Failed to parse i32 parameter value: {}", param_value);
-			return false;
-		};
-		let Ok(compare_value) = compare_value.parse::<i32>() else {
-			tracing::warn!("Failed to parse i32 comparison value: {}", compare_value);
-			return false;
-		};
-		match operator {
-			">" => param_value > compare_value,
-			">=" => param_value >= compare_value,
-			"<" => param_value < compare_value,
-			"<=" => param_value <= compare_value,
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!("Unsupported operator: {}", operator);
-				false
-			}
-		}
-	}
-
-	fn compare_i64(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let Ok(param_value) = param_value.parse::<i64>() else {
-			tracing::warn!("Failed to parse i64 parameter value: {}", param_value);
-			return false;
-		};
-		let Ok(compare_value) = compare_value.parse::<i64>() else {
-			tracing::warn!("Failed to parse i64 comparison value: {}", compare_value);
-			return false;
-		};
-		match operator {
-			">" => param_value > compare_value,
-			">=" => param_value >= compare_value,
-			"<" => param_value < compare_value,
-			"<=" => param_value <= compare_value,
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!("Unsupported operator: {}", operator);
-				false
-			}
-		}
-	}
-
-	fn compare_u128(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let Ok(param_value) = param_value.parse::<u128>() else {
-			tracing::warn!("Failed to parse u128 parameter value: {}", param_value);
-			return false;
-		};
-		let Ok(compare_value) = compare_value.parse::<u128>() else {
-			tracing::warn!("Failed to parse u128 comparison value: {}", compare_value);
-			return false;
-		};
-		match operator {
-			">" => param_value > compare_value,
-			">=" => param_value >= compare_value,
-			"<" => param_value < compare_value,
-			"<=" => param_value <= compare_value,
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!("Unsupported operator: {}", operator);
-				false
-			}
-		}
-	}
-
-	fn compare_i128(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let Ok(param_value) = param_value.parse::<i128>() else {
-			tracing::warn!("Failed to parse i128 parameter value: {}", param_value);
-			return false;
-		};
-		let Ok(compare_value) = compare_value.parse::<i128>() else {
-			tracing::warn!("Failed to parse i128 comparison value: {}", compare_value);
-			return false;
-		};
-		match operator {
-			">" => param_value > compare_value,
-			">=" => param_value >= compare_value,
-			"<" => param_value < compare_value,
-			"<=" => param_value <= compare_value,
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!("Unsupported operator: {}", operator);
-				false
-			}
-		}
-	}
-
-	fn compare_i256(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		match operator {
-			"==" => param_value == compare_value,
-			"!=" => param_value != compare_value,
-			_ => {
-				tracing::warn!(
-					"Only == and != operators are supported for i256: {}",
-					operator
-				);
-				false
-			}
-		}
-	}
-
-	fn compare_string(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let normalized_param = param_value.trim().to_lowercase();
-		let normalized_compare = compare_value.trim().to_lowercase();
-		match operator {
-			"==" => normalized_param == normalized_compare,
-			"!=" => normalized_param != normalized_compare,
-			_ => {
-				tracing::warn!(
-					"Only == and != operators are supported for string types: {}",
-					operator
-				);
-				false
-			}
-		}
-	}
-
-	pub fn compare_vec(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		// Try to parse the param_value as JSON array
-		if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(param_value) {
-			match operator {
-				"contains" => {
-					// For each object in array, check if any field matches the compare_value
-					array.iter().any(|item| {
-						match item {
-							serde_json::Value::Object(map) => {
-								// Check each field in the object
-								map.values().any(|v| {
-									match v {
-										// Direct value match
-										serde_json::Value::String(s) => s == compare_value,
-										// For nested objects with type/value pattern
-										serde_json::Value::Object(nested) => nested
-											.get("value")
-											.and_then(|v| v.as_str())
-											.map(|s| s == compare_value)
-											.unwrap_or(false),
-										// Convert other types to string for comparison
-										_ => v.to_string().trim_matches('"') == compare_value,
-									}
-								})
-							}
-							// For non-object array elements, compare directly
-							_ => item
-								.as_str()
-								.map(|s| s == compare_value)
-								.unwrap_or_else(|| {
-									item.to_string().trim_matches('"') == compare_value
-								}),
-						}
-					})
-				}
-				"==" => param_value == compare_value,
-				"!=" => param_value != compare_value,
-				_ => {
-					tracing::warn!(
-						"Only contains, == and != operators are supported for vec type: {}",
-						operator
-					);
-					false
-				}
-			}
-		} else {
-			// Fallback to original comma-separated string behavior
-			let values: Vec<&str> = param_value.split(',').map(|s| s.trim()).collect();
-			match operator {
-				"contains" => values.contains(&compare_value),
-				"==" => param_value == compare_value,
-				"!=" => param_value != compare_value,
-				_ => {
-					tracing::warn!(
-						"Only contains, == and != operators are supported for vec type: {}",
-						operator
-					);
-					false
-				}
-			}
-		}
-	}
-
-	/// Compares two values that might be JSON or plain strings using the specified operator.
-	///
-	/// # Arguments
-	/// * `param_value` - The first value to compare, which could be a JSON string or plain string
-	/// * `operator` - The comparison operator ("==", "!=", ">", ">=", "<", "<=")
-	/// * `compare_value` - The second value to compare against, which could be a JSON string or
-	///   plain string
-	///
-	/// # Supported Comparison Cases
-	/// 1. **JSON vs JSON**: Both values are valid JSON
-	///    - Supports equality (==, !=)
-	///    - Supports numeric comparisons (>, >=, <, <=) when both values are numbers
-	///
-	/// 2. **JSON vs String**: First value is JSON, second is plain string
-	///    - Supports dot notation to access nested JSON values (e.g., "user.address.city")
-	///    - Can check if the string matches a key in a JSON object
-	///    - Falls back to direct string comparison if above checks fail
-	///
-	/// 3. **String vs JSON**: First value is string, second is JSON
-	///    - Currently returns false as this is an invalid comparison
-	///
-	/// 4. **String vs String**: Neither value is valid JSON
-	///    - Performs direct string comparison
-	///
-	/// # Returns
-	/// * `bool` - True if the comparison succeeds, false otherwise
-	pub fn compare_map(&self, param_value: &str, operator: &str, compare_value: &str) -> bool {
-		let param_json = parse_json_safe(param_value);
-		let compare_json = parse_json_safe(compare_value);
-
-		match (param_json, compare_json) {
-			(Some(ref param_val), Some(ref compare_val)) => {
-				compare_json_values(param_val, operator, compare_val)
-			}
-
-			(Some(param_val), None) => {
-				if compare_value.contains('.') {
-					return get_nested_value(&param_val, compare_value)
-						.map(|nested_val| {
-							compare_json_values_vs_string(nested_val, operator, compare_value)
-						})
-						.unwrap_or(false);
-				}
-
-				if let Some(obj) = param_val.as_object() {
-					if let Some(value) = obj.get(compare_value) {
-						return compare_json_values_vs_string(value, operator, compare_value);
-					}
-				}
-
-				compare_strings(param_value, operator, compare_value)
-			}
-
-			(None, Some(_)) => {
-				tracing::debug!("Invalid comparison: non-JSON value compared against JSON value");
-				false
-			}
-
-			(None, None) => compare_strings(param_value, operator, compare_value),
-		}
-	}
-
 	/// Evaluates a complex matching expression against provided arguments
 	///
 	/// # Arguments
@@ -1005,126 +693,30 @@ impl<T> StellarBlockFilter<T> {
 	pub fn evaluate_expression(
 		&self,
 		expression: &str,
-		args: &Option<Vec<StellarMatchParamEntry>>,
-	) -> bool {
-		let Some(args) = args else {
-			return false;
-		};
-
-		// Split by OR to get highest level conditions
-		let or_conditions: Vec<&str> = expression.split(" OR ").collect();
-
-		// For OR logic, any condition being true makes the whole expression true
-		for or_condition in or_conditions {
-			// Split each OR condition by AND
-			let and_conditions: Vec<&str> = or_condition.trim().split(" AND ").collect();
-
-			// All AND conditions must be true
-			let and_result = and_conditions.iter().all(|condition| {
-				// Remove surrounding parentheses and trim
-				let clean_condition = condition.trim().trim_matches(|c| c == '(' || c == ')');
-
-				// Split into parts while preserving quoted strings
-				let parts = if let Some((left, operator, right)) = split_expression(clean_condition)
-				{
-					vec![left, operator, right]
-				} else {
-					tracing::warn!("Invalid expression format: {}", clean_condition);
-					return false;
-				};
-
-				if parts.len() != 3 {
-					tracing::warn!("Invalid expression format: {}", clean_condition);
-					return false;
-				}
-
-				let [param_expr, operator, value] = [parts[0], parts[1], parts[2]];
-
-				// Find the parameter and its type
-				if param_expr.contains('[') {
-					// Array indexing: arguments[0][0]
-					let indices: Vec<usize> = param_expr
-						.split('[')
-						.skip(1)
-						.filter_map(|s| s.trim_end_matches(']').parse::<usize>().ok())
-						.collect();
-
-					if indices.len() != 2 || indices[0] >= args.len() {
-						tracing::debug!("Invalid array indices: {:?}", indices);
-						return false;
-					}
-
-					let param = &args[indices[0]];
-					let array_values: Vec<&str> = param.value.split(',').collect();
-					if indices[1] >= array_values.len() {
-						tracing::debug!("Array index out of bounds: {}", indices[1]);
-						return false;
-					}
-
-					self.compare_values(
-						&param.kind,
-						array_values[indices[1]].trim(),
-						operator,
-						value,
-					)
-				} else if param_expr.contains('.') {
-					// Map access: map.key
-					let parts: Vec<&str> = param_expr.split('.').collect();
-					if parts.len() != 2 {
-						tracing::debug!("Invalid map access format: {}", param_expr);
-						return false;
-					}
-
-					let [map_name, key] = [parts[0], parts[1]];
-
-					let Some(param) = args.iter().find(|p| p.name == map_name) else {
-						tracing::debug!("Map {} not found", map_name);
-						return false;
-					};
-
-					let Ok(mut map_value) = serde_json::from_str::<serde_json::Value>(&param.value)
-					else {
-						tracing::debug!("Failed to parse map: {}", param.value);
-						return false;
-					};
-
-					// Unescape the keys in the map_value
-					if let serde_json::Value::Object(ref mut map) = map_value {
-						let unescaped_map: serde_json::Map<String, serde_json::Value> = map
-							.iter()
-							.map(|(k, v)| (k.trim_matches('"').to_string(), v.clone()))
-							.collect();
-						*map = unescaped_map;
-					}
-
-					let Some(key_value) = map_value.get(key) else {
-						tracing::debug!("Key {} not found in map", key);
-						return false;
-					};
-
-					self.compare_values(
-						&get_kind_from_value(key_value),
-						&key_value.to_string(),
-						operator,
-						value,
-					)
-				} else {
-					// Regular parameter
-					let Some(param) = args.iter().find(|p| p.name == param_expr) else {
-						tracing::warn!("Parameter {} not found", param_expr);
-						return false;
-					};
-
-					self.compare_values(&param.kind, &param.value, operator, value)
-				}
-			});
-
-			if and_result {
-				return true;
-			}
+		args: &[StellarMatchParamEntry],
+	) -> Result<bool, EvaluationError> {
+		// Check if the expression is empty
+		if expression.trim().is_empty() {
+			tracing::error!("Empty expression provided for evaluation");
+			return Err(EvaluationError::parse_error(
+				"Expression cannot be empty".to_string(),
+				None,
+				None,
+			));
 		}
 
-		false
+		let evaluator = StellarConditionEvaluator::new(args);
+
+		// Parse the expression
+		let parsed_ast = expression::parse(expression).map_err(|e| {
+			tracing::error!("Failed to parse expression '{}': {}", expression, e);
+			let msg = format!("Failed to parse expression '{}': {}", expression, e);
+			EvaluationError::parse_error(msg, None, None)
+		})?;
+		tracing::debug!("Parsed AST for '{}': {:?}", expression, parsed_ast);
+
+		// Evaluate the expression
+		expression::evaluate(&parsed_ast, &evaluator)
 	}
 }
 
@@ -1383,7 +975,6 @@ mod tests {
 	}
 
 	/// Creates a mock transaction for testing
-	/// TODO: Refactor to use TransactionBuilder once it's implemented
 	#[allow(clippy::too_many_arguments)]
 	fn create_test_transaction(
 		status: &str,
@@ -2598,899 +2189,6 @@ mod tests {
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
-	// Test cases for compare_values method:
-	//////////////////////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_compare_bool() {
-		let filter = create_test_filter();
-
-		// Test true/false equality
-		assert!(filter.compare_values("bool", "true", "==", "true"));
-		assert!(filter.compare_values("Bool", "false", "==", "false"));
-		assert!(!filter.compare_values("bool", "true", "==", "false"));
-
-		// Test inequality
-		assert!(filter.compare_values("bool", "true", "!=", "false"));
-		assert!(!filter.compare_values("bool", "true", "!=", "true"));
-
-		// Test invalid operator
-		assert!(!filter.compare_values("bool", "true", ">", "false"));
-
-		// Test invalid bool values
-		assert!(!filter.compare_values("bool", "invalid", "==", "true"));
-		assert!(!filter.compare_values("bool", "true", "==", "invalid"));
-	}
-	#[test]
-	fn test_compare_integers() {
-		let filter = create_test_filter();
-
-		// Test u32
-		assert!(filter.compare_values("u32", "100", ">", "50"));
-		assert!(filter.compare_values("U32", "50", "<", "100"));
-		assert!(filter.compare_values("u32", "100", "==", "100"));
-		assert!(filter.compare_values("u32", "50", "!=", "100"));
-		assert!(!filter.compare_values("u32", "invalid", ">", "50"));
-
-		// Test i32
-		assert!(filter.compare_values("i32", "-10", "<", "0"));
-		assert!(filter.compare_values("I32", "0", ">", "-10"));
-		assert!(!filter.compare_values("i32", "invalid", "<", "0"));
-
-		// Test u64
-		assert!(filter.compare_values("u64", "1000000", ">", "999999"));
-		assert!(filter.compare_values("Timepoint", "100", "<", "200"));
-		assert!(filter.compare_values("duration", "50", "==", "50"));
-
-		// Test i64
-		assert!(filter.compare_values("i64", "-1000000", "<", "0"));
-		assert!(filter.compare_values("I64", "0", ">", "-1000000"));
-
-		// Test u128
-		assert!(filter.compare_values(
-			"u128",
-			"340282366920938463463374607431768211455",
-			"==",
-			"340282366920938463463374607431768211455"
-		));
-		assert!(filter.compare_values("U128", "100", "<", "200"));
-
-		// Test i128
-		assert!(filter.compare_values(
-			"i128",
-			"-170141183460469231731687303715884105728",
-			"<",
-			"0"
-		));
-		assert!(filter.compare_values("I128", "0", ">", "-100"));
-	}
-
-	#[test]
-	fn test_compare_strings() {
-		let filter = create_test_filter();
-		// Test basic string equality
-		assert!(filter.compare_values("string", "hello", "==", "hello"));
-		assert!(filter.compare_values("String", "HELLO", "==", "hello")); // Case insensitive
-		assert!(filter.compare_values("string", "  hello  ", "==", "hello")); // Trim whitespace
-
-		// Test string inequality
-		assert!(filter.compare_values("string", "hello", "!=", "world"));
-		assert!(!filter.compare_values("String", "hello", "!=", "HELLO")); // Case insensitive
-
-		// Test address comparison
-		assert!(filter.compare_values("address", "0x123", "==", "0x123"));
-		assert!(filter.compare_values("Address", "0x123", "!=", "0x456"));
-
-		// Test symbol comparison
-		assert!(filter.compare_values("symbol", "SYM", "==", "sym"));
-		assert!(filter.compare_values("Symbol", "sym1", "!=", "sym2"));
-
-		// Test invalid operators
-		assert!(!filter.compare_values("string", "hello", ">", "world"));
-		assert!(!filter.compare_values("string", "hello", "<", "world"));
-	}
-
-	#[test]
-	fn test_compare_vectors() {
-		let filter = create_test_filter();
-
-		// Test vector contains
-		assert!(filter.compare_values("vec", "value1,value2,value3", "contains", "value2"));
-		assert!(!filter.compare_values("Vec", "value1,value2,value3", "contains", "value4"));
-
-		// Test vector equality
-		assert!(filter.compare_values("vec", "1,2,3", "==", "1,2,3"));
-		assert!(filter.compare_values("Vec", "1,2,3", "!=", "1,2,4"));
-
-		// Test invalid operators
-		assert!(!filter.compare_values("vec", "1,2,3", ">", "1,2,3"));
-	}
-
-	#[test]
-	fn test_unsupported_type() {
-		let filter = create_test_filter();
-
-		// Test unsupported type
-		assert!(!filter.compare_values("unsupported_type", "value", "==", "value"));
-		assert!(!filter.compare_values("float", "1.0", "==", "1.0"));
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	// Test cases for compare_bool method:
-	//////////////////////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_compare_bool_valid_equality() {
-		let filter = create_test_filter();
-
-		// Test true == true
-		assert!(filter.compare_bool("true", "==", "true"));
-
-		// Test false == false
-		assert!(filter.compare_bool("false", "==", "false"));
-
-		// Test true != false
-		assert!(filter.compare_bool("true", "!=", "false"));
-
-		// Test false != true
-		assert!(filter.compare_bool("false", "!=", "true"));
-
-		// Test false == true (should be false)
-		assert!(!filter.compare_bool("false", "==", "true"));
-
-		// Test true == false (should be false)
-		assert!(!filter.compare_bool("true", "==", "false"));
-	}
-
-	#[test]
-	fn test_compare_bool_invalid_values() {
-		let filter = create_test_filter();
-
-		// Test invalid param_value
-		assert!(!filter.compare_bool("not_a_bool", "==", "true"));
-
-		// Test invalid compare_value
-		assert!(!filter.compare_bool("true", "==", "not_a_bool"));
-
-		// Test both invalid values
-		assert!(!filter.compare_bool("invalid1", "==", "invalid2"));
-
-		// Test empty strings
-		assert!(!filter.compare_bool("", "==", "true"));
-		assert!(!filter.compare_bool("true", "==", ""));
-		assert!(!filter.compare_bool("", "==", ""));
-	}
-
-	#[test]
-	fn test_compare_bool_unsupported_operators() {
-		let filter = create_test_filter();
-
-		// Test greater than operator
-		assert!(!filter.compare_bool("true", ">", "false"));
-
-		// Test less than operator
-		assert!(!filter.compare_bool("false", "<", "true"));
-
-		// Test greater than or equal operator
-		assert!(!filter.compare_bool("true", ">=", "false"));
-
-		// Test less than or equal operator
-		assert!(!filter.compare_bool("false", "<=", "true"));
-
-		// Test empty operator
-		assert!(!filter.compare_bool("true", "", "false"));
-
-		// Test invalid operator
-		assert!(!filter.compare_bool("true", "invalid", "false"));
-	}
-
-	#[test]
-	fn test_compare_bool_case_sensitivity() {
-		let filter = create_test_filter();
-
-		// Test TRUE (uppercase)
-		assert!(!filter.compare_bool("TRUE", "==", "true"));
-
-		// Test False (mixed case)
-		assert!(!filter.compare_bool("False", "==", "false"));
-
-		// Test TRUE == TRUE (both uppercase)
-		assert!(!filter.compare_bool("TRUE", "==", "TRUE"));
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	// Test cases for compare_u64 method:
-	//////////////////////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_compare_u64_valid_comparisons() {
-		let filter = create_test_filter();
-
-		// Test greater than
-		assert!(filter.compare_u64("100", ">", "50"));
-		assert!(!filter.compare_u64("50", ">", "100"));
-		assert!(!filter.compare_u64("100", ">", "100"));
-
-		// Test greater than or equal
-		assert!(filter.compare_u64("100", ">=", "50"));
-		assert!(filter.compare_u64("100", ">=", "100"));
-		assert!(!filter.compare_u64("50", ">=", "100"));
-
-		// Test less than
-		assert!(filter.compare_u64("50", "<", "100"));
-		assert!(!filter.compare_u64("100", "<", "50"));
-		assert!(!filter.compare_u64("100", "<", "100"));
-
-		// Test less than or equal
-		assert!(filter.compare_u64("50", "<=", "100"));
-		assert!(filter.compare_u64("100", "<=", "100"));
-		assert!(!filter.compare_u64("100", "<=", "50"));
-
-		// Test equality
-		assert!(filter.compare_u64("100", "==", "100"));
-		assert!(!filter.compare_u64("100", "==", "50"));
-
-		// Test inequality
-		assert!(filter.compare_u64("100", "!=", "50"));
-		assert!(!filter.compare_u64("100", "!=", "100"));
-	}
-
-	#[test]
-	fn test_compare_u64_invalid_values() {
-		let filter = create_test_filter();
-
-		// Test invalid param_value
-		assert!(!filter.compare_u64("not_a_number", ">", "100"));
-		assert!(!filter.compare_u64("", ">", "100"));
-		assert!(!filter.compare_u64("-100", ">", "100")); // Negative numbers aren't valid u64
-
-		// Test invalid compare_value
-		assert!(!filter.compare_u64("100", ">", "not_a_number"));
-		assert!(!filter.compare_u64("100", ">", ""));
-		assert!(!filter.compare_u64("100", ">", "-100")); // Negative numbers aren't valid u64
-
-		// Test values exceeding u64::MAX
-		assert!(!filter.compare_u64("18446744073709551616", ">", "100")); // u64::MAX + 1
-		assert!(!filter.compare_u64("100", ">", "18446744073709551616")); // u64::MAX + 1
-	}
-
-	#[test]
-	fn test_compare_u64_invalid_operators() {
-		let filter = create_test_filter();
-
-		// Test unsupported operators
-		assert!(!filter.compare_u64("100", "<<", "50")); // Bit shift operator
-		assert!(!filter.compare_u64("100", "contains", "50")); // String operator
-		assert!(!filter.compare_u64("100", "", "50")); // Empty operator
-		assert!(!filter.compare_u64("100", "invalid", "50")); // Invalid operator
-	}
-
-	#[test]
-	fn test_compare_u64_boundary_values() {
-		let filter = create_test_filter();
-		let max = u64::MAX.to_string();
-		let zero = "0";
-
-		// Test with u64::MAX
-		assert!(filter.compare_u64(&max, "==", &max));
-		assert!(filter.compare_u64(&max, ">=", zero));
-		assert!(filter.compare_u64(zero, "<=", &max));
-		assert!(!filter.compare_u64(&max, "<", &max));
-		assert!(!filter.compare_u64(&max, ">", &max));
-
-		// Test with zero
-		assert!(filter.compare_u64(zero, "==", zero));
-		assert!(filter.compare_u64(zero, "<=", zero));
-		assert!(filter.compare_u64(zero, ">=", zero));
-		assert!(!filter.compare_u64(zero, "<", zero));
-		assert!(!filter.compare_u64(zero, ">", zero));
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	// Test cases for compare_i32 method:
-	//////////////////////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_compare_i32_valid_comparisons() {
-		let filter = create_test_filter();
-
-		// Test greater than
-		assert!(filter.compare_i32("100", ">", "50"));
-		assert!(!filter.compare_i32("50", ">", "100"));
-		assert!(!filter.compare_i32("100", ">", "100"));
-
-		// Test greater than or equal
-		assert!(filter.compare_i32("100", ">=", "50"));
-		assert!(filter.compare_i32("100", ">=", "100"));
-		assert!(!filter.compare_i32("50", ">=", "100"));
-
-		// Test less than
-		assert!(filter.compare_i32("50", "<", "100"));
-		assert!(!filter.compare_i32("100", "<", "50"));
-		assert!(!filter.compare_i32("100", "<", "100"));
-
-		// Test less than or equal
-		assert!(filter.compare_i32("50", "<=", "100"));
-		assert!(filter.compare_i32("100", "<=", "100"));
-		assert!(!filter.compare_i32("100", "<=", "50"));
-
-		// Test equality
-		assert!(filter.compare_i32("100", "==", "100"));
-		assert!(!filter.compare_i32("100", "==", "50"));
-
-		// Test inequality
-		assert!(filter.compare_i32("100", "!=", "50"));
-		assert!(!filter.compare_i32("100", "!=", "100"));
-	}
-
-	#[test]
-	fn test_compare_i32_negative_numbers() {
-		let filter = create_test_filter();
-
-		// Test negative numbers
-		assert!(filter.compare_i32("-100", ">", "-200"));
-		assert!(filter.compare_i32("-200", "<", "-100"));
-		assert!(filter.compare_i32("-100", "==", "-100"));
-		assert!(filter.compare_i32("0", ">", "-100"));
-		assert!(filter.compare_i32("-100", "<", "0"));
-	}
-
-	#[test]
-	fn test_compare_i32_invalid_values() {
-		let filter = create_test_filter();
-
-		// Test invalid param_value
-		assert!(!filter.compare_i32("not_a_number", ">", "100"));
-		assert!(!filter.compare_i32("", ">", "100"));
-		assert!(!filter.compare_i32("2147483648", ">", "100")); // i32::MAX + 1
-
-		// Test invalid compare_value
-		assert!(!filter.compare_i32("100", ">", "not_a_number"));
-		assert!(!filter.compare_i32("100", ">", ""));
-		assert!(!filter.compare_i32("100", ">", "2147483648")); // i32::MAX + 1
-
-		// Test floating point numbers (invalid for i32)
-		assert!(!filter.compare_i32("100.5", ">", "100"));
-		assert!(!filter.compare_i32("100", ">", "99.9"));
-	}
-
-	#[test]
-	fn test_compare_i32_boundary_values() {
-		let filter = create_test_filter();
-
-		// Test i32::MAX and i32::MIN
-		assert!(filter.compare_i32("2147483647", ">", "0")); // i32::MAX
-		assert!(filter.compare_i32("-2147483648", "<", "0")); // i32::MIN
-		assert!(filter.compare_i32("2147483647", "==", "2147483647")); // i32::MAX == i32::MAX
-		assert!(filter.compare_i32("-2147483648", "==", "-2147483648")); // i32::MIN == i32::MIN
-		assert!(filter.compare_i32("2147483647", ">", "-2147483648")); // i32::MAX > i32::MIN
-	}
-
-	#[test]
-	fn test_compare_i32_invalid_operators() {
-		let filter = create_test_filter();
-
-		// Test unsupported operators
-		assert!(!filter.compare_i32("100", "<<", "50")); // Bit shift operator
-		assert!(!filter.compare_i32("100", "contains", "50")); // String operator
-		assert!(!filter.compare_i32("100", "", "50")); // Empty operator
-		assert!(!filter.compare_i32("100", "&", "50")); // Bitwise operator
-		assert!(!filter.compare_i32("100", "===", "50")); // JavaScript-style equality
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	// Test cases for compare_u32 method:
-	//////////////////////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_compare_u32_valid_comparisons() {
-		let filter = create_test_filter();
-
-		// Test greater than
-		assert!(filter.compare_u32("100", ">", "50"));
-		assert!(!filter.compare_u32("50", ">", "100"));
-		assert!(!filter.compare_u32("100", ">", "100"));
-
-		// Test greater than or equal
-		assert!(filter.compare_u32("100", ">=", "50"));
-		assert!(filter.compare_u32("100", ">=", "100"));
-		assert!(!filter.compare_u32("50", ">=", "100"));
-
-		// Test less than
-		assert!(filter.compare_u32("50", "<", "100"));
-		assert!(!filter.compare_u32("100", "<", "50"));
-		assert!(!filter.compare_u32("100", "<", "100"));
-
-		// Test less than or equal
-		assert!(filter.compare_u32("50", "<=", "100"));
-		assert!(filter.compare_u32("100", "<=", "100"));
-		assert!(!filter.compare_u32("100", "<=", "50"));
-
-		// Test equality
-		assert!(filter.compare_u32("100", "==", "100"));
-		assert!(!filter.compare_u32("100", "==", "50"));
-
-		// Test inequality
-		assert!(filter.compare_u32("100", "!=", "50"));
-		assert!(!filter.compare_u32("100", "!=", "100"));
-	}
-
-	#[test]
-	fn test_compare_u32_boundary_values() {
-		let filter = create_test_filter();
-
-		// Test with u32::MAX
-		assert!(filter.compare_u32(&u32::MAX.to_string(), ">", "0"));
-		assert!(filter.compare_u32("0", "<", &u32::MAX.to_string()));
-		assert!(filter.compare_u32(&u32::MAX.to_string(), "==", &u32::MAX.to_string()));
-
-		// Test with u32::MIN (0)
-		assert!(filter.compare_u32("0", "==", "0"));
-		assert!(filter.compare_u32("1", ">", "0"));
-		assert!(filter.compare_u32("0", "<", "1"));
-	}
-
-	#[test]
-	fn test_compare_u32_invalid_values() {
-		let filter = create_test_filter();
-
-		// Test invalid param_value
-		assert!(!filter.compare_u32("not_a_number", ">", "100"));
-		assert!(!filter.compare_u32("", ">", "100"));
-		assert!(!filter.compare_u32("-100", ">", "100")); // Negative numbers aren't valid u32
-
-		// Test invalid compare_value
-		assert!(!filter.compare_u32("100", ">", "not_a_number"));
-		assert!(!filter.compare_u32("100", ">", ""));
-		assert!(!filter.compare_u32("100", ">", "-100")); // Negative numbers aren't valid u32
-
-		// Test values exceeding u32::MAX
-		assert!(!filter.compare_u32("4294967296", ">", "100")); // u32::MAX + 1
-		assert!(!filter.compare_u32("100", ">", "4294967296")); // u32::MAX + 1
-
-		// Test floating point numbers
-		assert!(!filter.compare_u32("100.5", ">", "100"));
-		assert!(!filter.compare_u32("100", ">", "99.9"));
-	}
-
-	#[test]
-	fn test_compare_u32_invalid_operators() {
-		let filter = create_test_filter();
-
-		// Test unsupported operators
-		assert!(!filter.compare_u32("100", "invalid", "50"));
-		assert!(!filter.compare_u32("100", "", "50"));
-		assert!(!filter.compare_u32("100", ">>", "50"));
-		assert!(!filter.compare_u32("100", "=", "50"));
-		assert!(!filter.compare_u32("100", "===", "50"));
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	// Test cases for compare_i64 method:
-	//////////////////////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_compare_i64_valid_comparisons() {
-		let filter = create_test_filter();
-
-		// Test greater than
-		assert!(filter.compare_i64("100", ">", "50"));
-		assert!(!filter.compare_i64("50", ">", "100"));
-		assert!(!filter.compare_i64("100", ">", "100"));
-
-		// Test greater than or equal
-		assert!(filter.compare_i64("100", ">=", "50"));
-		assert!(filter.compare_i64("100", ">=", "100"));
-		assert!(!filter.compare_i64("50", ">=", "100"));
-
-		// Test less than
-		assert!(filter.compare_i64("50", "<", "100"));
-		assert!(!filter.compare_i64("100", "<", "50"));
-		assert!(!filter.compare_i64("100", "<", "100"));
-
-		// Test less than or equal
-		assert!(filter.compare_i64("50", "<=", "100"));
-		assert!(filter.compare_i64("100", "<=", "100"));
-		assert!(!filter.compare_i64("100", "<=", "50"));
-
-		// Test equality
-		assert!(filter.compare_i64("100", "==", "100"));
-		assert!(!filter.compare_i64("100", "==", "50"));
-
-		// Test inequality
-		assert!(filter.compare_i64("100", "!=", "50"));
-		assert!(!filter.compare_i64("100", "!=", "100"));
-	}
-
-	#[test]
-	fn test_compare_i64_negative_numbers() {
-		let filter = create_test_filter();
-
-		// Test negative numbers
-		assert!(filter.compare_i64("-100", ">", "-200"));
-		assert!(filter.compare_i64("-200", "<", "-100"));
-		assert!(filter.compare_i64("-100", "==", "-100"));
-		assert!(filter.compare_i64("-100", "!=", "-200"));
-		assert!(filter.compare_i64("-100", ">=", "-100"));
-		assert!(filter.compare_i64("-100", "<=", "-100"));
-
-		// Test negative vs positive
-		assert!(filter.compare_i64("-100", "<", "100"));
-		assert!(filter.compare_i64("100", ">", "-100"));
-		assert!(!filter.compare_i64("-100", "==", "100"));
-	}
-
-	#[test]
-	fn test_compare_i64_invalid_values() {
-		let filter = create_test_filter();
-
-		// Test invalid param_value
-		assert!(!filter.compare_i64("not_a_number", ">", "100"));
-		assert!(!filter.compare_i64("", ">", "100"));
-		assert!(!filter.compare_i64("9223372036854775808", ">", "100")); // i64::MAX + 1
-
-		// Test invalid compare_value
-		assert!(!filter.compare_i64("100", ">", "not_a_number"));
-		assert!(!filter.compare_i64("100", ">", ""));
-		assert!(!filter.compare_i64("100", ">", "9223372036854775808")); // i64::MAX + 1
-
-		// Test floating point numbers (invalid for i64)
-		assert!(!filter.compare_i64("100.5", ">", "100"));
-		assert!(!filter.compare_i64("100", ">", "99.9"));
-	}
-
-	#[test]
-	fn test_compare_i64_boundary_values() {
-		let filter = create_test_filter();
-
-		// Test with i64::MAX and i64::MIN
-		assert!(filter.compare_i64("9223372036854775807", ">", "0"));
-		assert!(filter.compare_i64("-9223372036854775808", "<", "0"));
-		assert!(filter.compare_i64("9223372036854775807", "==", "9223372036854775807"));
-		assert!(filter.compare_i64("-9223372036854775808", "==", "-9223372036854775808"));
-		assert!(filter.compare_i64("9223372036854775807", ">=", "9223372036854775807"));
-		assert!(filter.compare_i64("-9223372036854775808", "<=", "-9223372036854775808"));
-	}
-
-	#[test]
-	fn test_compare_i64_invalid_operators() {
-		let filter = create_test_filter();
-
-		// Test unsupported operators
-		assert!(!filter.compare_i64("100", "<<", "50"));
-		assert!(!filter.compare_i64("100", "contains", "50"));
-		assert!(!filter.compare_i64("100", "", "50"));
-		assert!(!filter.compare_i64("100", "invalid", "50"));
-	}
-
-	#[test]
-	fn test_compare_u128_valid_comparisons() {
-		let filter = create_test_filter();
-
-		// Test basic comparisons
-		assert!(filter.compare_u128("100", ">", "50"));
-		assert!(filter.compare_u128("100", ">=", "50"));
-		assert!(filter.compare_u128("50", "<", "100"));
-		assert!(filter.compare_u128("50", "<=", "100"));
-		assert!(filter.compare_u128("100", "==", "100"));
-		assert!(filter.compare_u128("100", "!=", "50"));
-
-		// Test equality edge cases
-		assert!(filter.compare_u128("0", "==", "0"));
-		assert!(filter.compare_u128(
-			"340282366920938463463374607431768211455",
-			"==",
-			"340282366920938463463374607431768211455"
-		)); // max u128
-
-		// Test boundary values
-		assert!(filter.compare_u128("0", "<=", "0"));
-		assert!(filter.compare_u128(
-			"340282366920938463463374607431768211455",
-			">=",
-			"340282366920938463463374607431768211455"
-		));
-
-		// Test false conditions
-		assert!(!filter.compare_u128("50", ">", "100"));
-		assert!(!filter.compare_u128("100", "<", "50"));
-		assert!(!filter.compare_u128("100", "==", "50"));
-		assert!(!filter.compare_u128("100", "!=", "100"));
-	}
-
-	#[test]
-	fn test_compare_u128_invalid_inputs() {
-		let filter = create_test_filter();
-
-		// Test invalid number formats
-		assert!(!filter.compare_u128("not_a_number", ">", "100"));
-		assert!(!filter.compare_u128("100", ">", "not_a_number"));
-		assert!(!filter.compare_u128("", ">", "100"));
-		assert!(!filter.compare_u128("100", ">", ""));
-
-		// Test negative numbers (invalid for u128)
-		assert!(!filter.compare_u128("-100", ">", "100"));
-		assert!(!filter.compare_u128("100", ">", "-100"));
-
-		// Test invalid operator
-		assert!(!filter.compare_u128("100", "invalid_operator", "50"));
-		assert!(!filter.compare_u128("100", "", "50"));
-	}
-
-	#[test]
-	fn test_compare_i128_valid_comparisons() {
-		let filter = create_test_filter();
-
-		// Test basic comparisons
-		assert!(filter.compare_i128("100", ">", "50"));
-		assert!(filter.compare_i128("100", ">=", "50"));
-		assert!(filter.compare_i128("50", "<", "100"));
-		assert!(filter.compare_i128("50", "<=", "100"));
-		assert!(filter.compare_i128("100", "==", "100"));
-		assert!(filter.compare_i128("100", "!=", "50"));
-
-		// Test negative numbers
-		assert!(filter.compare_i128("-100", "<", "0"));
-		assert!(filter.compare_i128("0", ">", "-100"));
-		assert!(filter.compare_i128("-100", "==", "-100"));
-		assert!(filter.compare_i128("-50", ">", "-100"));
-
-		// Test equality edge cases
-		assert!(filter.compare_i128("0", "==", "0"));
-		assert!(filter.compare_i128(
-			"-170141183460469231731687303715884105728",
-			"==",
-			"-170141183460469231731687303715884105728"
-		)); // min i128
-		assert!(filter.compare_i128(
-			"170141183460469231731687303715884105727",
-			"==",
-			"170141183460469231731687303715884105727"
-		)); // max i128
-
-		// Test false conditions
-		assert!(!filter.compare_i128("50", ">", "100"));
-		assert!(!filter.compare_i128("-100", ">", "0"));
-		assert!(!filter.compare_i128("100", "==", "-100"));
-		assert!(!filter.compare_i128("-100", "!=", "-100"));
-	}
-
-	#[test]
-	fn test_compare_i128_invalid_inputs() {
-		let filter = create_test_filter();
-		// Test invalid number formats
-		assert!(!filter.compare_i128("not_a_number", ">", "100"));
-		assert!(!filter.compare_i128("100", ">", "not_a_number"));
-		assert!(!filter.compare_i128("", ">", "100"));
-		assert!(!filter.compare_i128("100", ">", ""));
-
-		// Test numbers exceeding i128 bounds
-		assert!(!filter.compare_i128("170141183460469231731687303715884105728", ">", "0")); // > max i128
-		assert!(!filter.compare_i128("-170141183460469231731687303715884105729", "<", "0")); // < min i128
-
-		// Test invalid operator
-		assert!(!filter.compare_i128("100", "invalid_operator", "50"));
-		assert!(!filter.compare_i128("100", "", "50"));
-	}
-
-	// Tests for compare_i256
-	#[test]
-	fn test_compare_i256() {
-		let filter = create_test_filter();
-
-		// Test equality operator
-		assert!(filter.compare_i256("12345", "==", "12345"));
-		assert!(!filter.compare_i256("12345", "==", "54321"));
-
-		// Test inequality operator
-		assert!(filter.compare_i256("12345", "!=", "54321"));
-		assert!(!filter.compare_i256("12345", "!=", "12345"));
-
-		// Test unsupported operators
-		assert!(!filter.compare_i256("12345", ">", "54321"));
-		assert!(!filter.compare_i256("12345", "<", "54321"));
-		assert!(!filter.compare_i256("12345", ">=", "54321"));
-		assert!(!filter.compare_i256("12345", "<=", "54321"));
-
-		// Test with large numbers
-		assert!(filter.compare_i256(
-			"115792089237316195423570985008687907853269984665640564039457584007913129639935",
-			"==",
-			"115792089237316195423570985008687907853269984665640564039457584007913129639935"
-		));
-		assert!(filter.compare_i256(
-			"115792089237316195423570985008687907853269984665640564039457584007913129639935",
-			"!=",
-			"0"
-		));
-	}
-
-	// Tests for compare_string
-	#[test]
-	fn test_compare_string() {
-		let filter = create_test_filter();
-		// Test basic equality
-		assert!(filter.compare_string("hello", "==", "hello"));
-		assert!(!filter.compare_string("hello", "==", "world"));
-
-		// Test case insensitivity
-		assert!(filter.compare_string("Hello", "==", "hello"));
-		assert!(filter.compare_string("HELLO", "==", "hello"));
-		assert!(filter.compare_string("HeLLo", "==", "hEllO"));
-
-		// Test whitespace trimming
-		assert!(filter.compare_string("  hello  ", "==", "hello"));
-		assert!(filter.compare_string("hello", "==", "  hello  "));
-		assert!(filter.compare_string("  hello  ", "==", "  hello  "));
-
-		// Test inequality
-		assert!(filter.compare_string("hello", "!=", "world"));
-		assert!(!filter.compare_string("hello", "!=", "hello"));
-		assert!(!filter.compare_string("Hello", "!=", "hello"));
-
-		// Test empty strings
-		assert!(filter.compare_string("", "==", ""));
-		assert!(filter.compare_string("  ", "==", ""));
-		assert!(filter.compare_string("hello", "!=", ""));
-
-		// Test unsupported operators
-		assert!(!filter.compare_string("hello", ">", "world"));
-		assert!(!filter.compare_string("hello", "<", "world"));
-		assert!(!filter.compare_string("hello", ">=", "world"));
-		assert!(!filter.compare_string("hello", "<=", "world"));
-	}
-
-	// Tests for compare_vec
-	#[test]
-	fn test_compare_vec() {
-		let filter = create_test_filter();
-
-		// Test contains operator
-		assert!(filter.compare_vec("value1,value2,value3", "contains", "value2"));
-		assert!(!filter.compare_vec("value1,value2,value3", "contains", "value4"));
-
-		// Test with whitespace
-		assert!(filter.compare_vec("value1, value2, value3", "contains", "value2"));
-		assert!(filter.compare_vec("value1,  value2  ,value3", "contains", "value2"));
-
-		// Test exact equality
-		assert!(filter.compare_vec("value1,value2,value3", "==", "value1,value2,value3"));
-		assert!(!filter.compare_vec("value1,value2,value3", "==", "value1,value2"));
-		assert!(!filter.compare_vec("value1,value2", "==", "value1,value2,value3"));
-
-		// Test inequality
-		assert!(filter.compare_vec("value1,value2,value3", "!=", "value1,value2"));
-		assert!(!filter.compare_vec("value1,value2,value3", "!=", "value1,value2,value3"));
-
-		// Test empty vectors
-		assert!(filter.compare_vec("", "==", ""));
-		assert!(!filter.compare_vec("", "contains", "value1"));
-		assert!(filter.compare_vec("value1", "!=", ""));
-
-		// Test single value
-		assert!(filter.compare_vec("value1", "contains", "value1"));
-		assert!(filter.compare_vec("value1", "==", "value1"));
-
-		// Test unsupported operators
-		assert!(!filter.compare_vec("value1,value2,value3", ">", "value1"));
-		assert!(!filter.compare_vec("value1,value2,value3", "<", "value1"));
-		assert!(!filter.compare_vec("value1,value2,value3", ">=", "value1"));
-		assert!(!filter.compare_vec("value1,value2,value3", "<=", "value1"));
-	}
-
-	#[test]
-	fn test_compare_vec_json_array() {
-		let filter = create_test_filter();
-
-		// Test JSON array with objects
-		let json_array = r#"[
-			{
-				"address": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
-				"amount": {
-					"type": "I128",
-					"value": "699998999"
-				},
-				"request_type": 3
-			}
-		]"#;
-
-		// Test direct string match in object
-		assert!(filter.compare_vec(
-			json_array,
-			"contains",
-			"CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
-		));
-
-		// Test nested type/value object match
-		assert!(filter.compare_vec(json_array, "contains", "699998999"));
-
-		// Test numeric value match
-		assert!(filter.compare_vec(json_array, "contains", "3"));
-
-		// Test non-existent value
-		assert!(!filter.compare_vec(json_array, "contains", "nonexistent"));
-
-		// Test exact array equality
-		assert!(filter.compare_vec(json_array, "==", json_array));
-
-		// Test array inequality
-		assert!(filter.compare_vec(json_array, "!=", "[{\"different\": \"content\"}]"));
-
-		// Test invalid operator
-		assert!(!filter.compare_vec(json_array, ">", "something"));
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	// Test cases for compare_map method:
-	//////////////////////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_compare_map_json_vs_json() {
-		let filter = create_test_filter();
-
-		// Test equality comparisons
-		assert!(filter.compare_map(r#"{"a": 1}"#, "==", r#"{"a": 1}"#));
-		assert!(!filter.compare_map(r#"{"a": 1}"#, "==", r#"{"a": 2}"#));
-		assert!(filter.compare_map(r#"{"a": 1}"#, "!=", r#"{"a": 2}"#));
-
-		// Test numeric comparisons
-		assert!(filter.compare_map("42", ">", "10"));
-		assert!(filter.compare_map("10", "<", "42"));
-		assert!(filter.compare_map("42", ">=", "42"));
-		assert!(filter.compare_map("42", "<=", "42"));
-		assert!(!filter.compare_map("10", ">", "42"));
-
-		// Test invalid numeric comparisons
-		assert!(!filter.compare_map(r#"{"a": "string"}"#, ">", r#"{"b": 42}"#));
-	}
-
-	#[test]
-	fn test_compare_map_string_vs_json() {
-		let filter = create_test_filter();
-
-		// This case should always return false
-		assert!(!filter.compare_map("plain string", "==", r#"{"any": "json"}"#));
-	}
-
-	#[test]
-	fn test_compare_map_string_vs_string() {
-		let filter = create_test_filter();
-
-		// Test basic string comparisons
-		assert!(filter.compare_map("hello", "==", "hello"));
-		assert!(filter.compare_map("hello", "!=", "world"));
-		assert!(!filter.compare_map("hello", "==", "world"));
-
-		// Test case sensitivity
-		assert!(!filter.compare_map("Hello", "==", "hello"));
-
-		// Test with spaces and special characters
-		assert!(filter.compare_map("hello world", "==", "hello world"));
-		assert!(filter.compare_map("special!@#$", "==", "special!@#$"));
-	}
-
-	#[test]
-	fn test_compare_map_edge_cases() {
-		let filter = create_test_filter();
-
-		// Test empty strings
-		assert!(filter.compare_map("", "==", ""));
-		assert!(!filter.compare_map("", "==", "non-empty"));
-
-		// Test invalid JSON
-		assert!(!filter.compare_map("{invalid json}", "==", "{}"));
-
-		// Test unsupported operators
-		assert!(!filter.compare_map(r#"{"a": 1}"#, "invalid_operator", r#"{"a": 1}"#));
-
-		// Test with whitespace
-		assert!(filter.compare_map(" hello ", "==", " hello "));
-
-		// Test with null JSON values
-		assert!(filter.compare_map(r#"{"a": null}"#, "==", r#"{"a": null}"#));
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
 	// Test cases for evaluate_expression method:
 	//////////////////////////////////////////////////////////////////////////////
 
@@ -3499,7 +2197,7 @@ mod tests {
 		let filter = create_test_filter();
 
 		// Test setup with simple numeric parameters
-		let args = Some(vec![
+		let args = vec![
 			StellarMatchParamEntry {
 				name: "amount".to_string(),
 				value: "100".to_string(),
@@ -3512,72 +2210,731 @@ mod tests {
 				kind: "bool".to_string(),
 				indexed: false,
 			},
-		]);
+		];
 
 		// Test simple numeric comparison
-		assert!(filter.evaluate_expression("amount > 50", &args));
-		assert!(!filter.evaluate_expression("amount < 50", &args));
+		assert!(filter.evaluate_expression("amount > 50", &args).unwrap());
+		assert!(!filter.evaluate_expression("amount < 50", &args).unwrap());
+		assert!(filter.evaluate_expression("amount == 100", &args).unwrap());
+		assert!(!filter.evaluate_expression("amount != 100", &args).unwrap());
+		assert!(filter.evaluate_expression("amount >= 100", &args).unwrap());
+		assert!(!filter.evaluate_expression("amount <= 50", &args).unwrap());
+		assert!(filter.evaluate_expression("amount == 100", &args).unwrap());
+		assert!(!filter.evaluate_expression("amount == 50", &args).unwrap());
+		assert!(filter.evaluate_expression("amount != 50", &args).unwrap());
+		assert!(!filter.evaluate_expression("amount != 100", &args).unwrap());
 
 		// Test boolean comparison
-		assert!(filter.evaluate_expression("status == true", &args));
-		assert!(!filter.evaluate_expression("status == false", &args));
+		assert!(filter.evaluate_expression("status == true", &args).unwrap());
+		assert!(!filter
+			.evaluate_expression("status == false", &args)
+			.unwrap());
 
 		// Test non-existent parameter
-		assert!(!filter.evaluate_expression("invalid_param == 100", &args));
+		assert!(filter
+			.evaluate_expression("invalid_param == 100", &args)
+			.is_err());
+	}
+
+	#[test]
+	fn test_evaluate_expression_string_comparisons() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "name".to_string(),
+			value: "Alice".to_string(),
+			kind: "string".to_string(),
+			indexed: false,
+		}];
+
+		// Test true conditions
+		assert!(filter
+			.evaluate_expression("name == 'Alice'", &args)
+			.unwrap());
+		assert!(filter.evaluate_expression("name != 'Bob'", &args).unwrap());
+		assert!(filter
+			.evaluate_expression("name contains 'ice'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("name starts_with 'ali'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("name ends_with 'ice'", &args)
+			.unwrap());
+
+		// Test false conditions
+		assert!(!filter.evaluate_expression("name == 'Bob'", &args).unwrap());
+		assert!(!filter
+			.evaluate_expression("name != 'Alice'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("name contains 'Bob'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("name starts_with 'Bob'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("name ends_with 'Bob'", &args)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_basic_field_access() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "object".to_string(),
+			value: r#"{"key1": "value", "key2": "100"}"#.to_string(),
+			kind: "object".to_string(),
+			indexed: false,
+		}];
+
+		// Test true conditions
+		assert!(filter
+			.evaluate_expression("object.key1 == 'value'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("object.key2 != '200'", &args)
+			.unwrap());
+
+		// Test false conditions
+		assert!(!filter
+			.evaluate_expression("object.key1 == 'wrong'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("object.key2 != '100'", &args)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_nested_field_access() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "nested_object".to_string(),
+			value: r#"{"outer": {"inner": "value"}}"#.to_string(),
+			kind: "object".to_string(),
+			indexed: false,
+		}];
+
+		// Test true conditions
+		assert!(filter
+			.evaluate_expression("nested_object.outer.inner == 'value'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("nested_object.outer.inner != 'wrong'", &args)
+			.unwrap());
+
+		// Test false conditions
+		assert!(!filter
+			.evaluate_expression("nested_object.outer.inner == 'wrong'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("nested_object.outer.inner != 'value'", &args)
+			.unwrap());
 	}
 
 	#[test]
 	fn test_evaluate_expression_array_indexing() {
 		let filter = create_test_filter();
+		let args = vec![
+			StellarMatchParamEntry {
+				name: "array_str".to_string(),
+				value: r#"["100", "200", "300", "test"]"#.to_string(),
+				kind: "array".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "array_num".to_string(),
+				value: r#"[100, 200, 300]"#.to_string(),
+				kind: "array".to_string(),
+				indexed: false,
+			},
+		];
 
-		// Test setup with array parameter
-		let args = Some(vec![StellarMatchParamEntry {
-			name: "0".to_string(),
-			value: "10,20,30".to_string(),
-			kind: "Vec".to_string(),
-			indexed: false,
-		}]);
+		// Test true conditions
+		assert!(filter
+			.evaluate_expression("array_str[0] == '100'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("array_str[1] != '100'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("array_num[0] == 100", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("array_num[1] != 100", &args)
+			.unwrap());
 
-		// Test valid array access
-		assert!(filter.evaluate_expression("arguments[0][1] == 20", &args));
+		// Test false conditions
+		assert!(!filter
+			.evaluate_expression("array_str[3] == '100'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("array_str[0] != '100'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("array_num[0] != 100", &args)
+			.unwrap());
 
-		// Test out of bounds index
-		assert!(!filter.evaluate_expression("arguments[0][5] == 10", &args));
-
-		// Test invalid array format
-		assert!(!filter.evaluate_expression("arguments[0] == 10", &args));
+		// Test out-of-bounds access
+		assert!(filter
+			.evaluate_expression("array_num[3] == 100", &args)
+			.is_err());
 	}
 
 	#[test]
-	fn test_evaluate_expression_logical_operators() {
+	fn test_evaluate_expression_object_in_array() {
 		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "objects".to_string(),
+			value: r#"[{"name": "Alice"}, {"name": "Bob"}]"#.to_string(),
+			kind: "array".to_string(),
+			indexed: false,
+		}];
 
-		// Test setup with multiple parameters
-		let args = Some(vec![
+		// Test object in array
+		assert!(filter
+			.evaluate_expression("objects[0].name == 'Alice'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("objects[1].name == 'Bob'", &args)
+			.unwrap());
+
+		// Test out-of-bounds access
+		assert!(filter
+			.evaluate_expression("objects[2].name == 'Charlie'", &args)
+			.is_err());
+	}
+
+	#[test]
+	fn test_evaluate_expression_vec_csv_contains() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "csv_list".to_string(),
+			value: "apple,banana,cherry".to_string(),
+			kind: "vec".to_string(),
+			indexed: false,
+		}];
+
+		assert!(filter
+			.evaluate_expression("csv_list contains 'banana'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("csv_list contains 'grape'", &args)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_vec_json_array_contains() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "json_array_param".to_string(),
+			value: r#"["alice", "bob"]"#.to_string(), // JSON array string
+			kind: "vec".to_string(),
+			indexed: false,
+		}];
+
+		assert!(filter
+			.evaluate_expression("json_array_param contains 'alice'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("json_array_param contains 'charlie'", &args)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_vec_json_array_object_contains_field_value() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "obj_array".to_string(),
+			value: r#"[{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]"#.to_string(),
+			kind: "vec".to_string(),
+			indexed: false,
+		}];
+
+		assert!(filter
+			.evaluate_expression("obj_array contains 'alice'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("obj_array contains '2'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("obj_array contains 'charlie'", &args)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_vec_json_array_object_contains_nested_value_key() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "nested_obj_array".to_string(),
+			value: r#"[{"item": {"type": "name", "value": "alice"}}, {"item": {"type": "name", "value": "bob"}}]"#.to_string(),
+			kind: "vec".to_string(),
+			indexed: false,
+		}];
+
+		assert!(filter
+			.evaluate_expression("nested_obj_array contains 'alice'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("nested_obj_array contains 'charlie'", &args)
+			.unwrap());
+		// "name" is a key or a value of "type", not directly a "value" field's content as per the logic
+		assert!(!filter
+			.evaluate_expression("nested_obj_array contains 'name'", &args)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_vec_eq_ne() {
+		let filter = create_test_filter();
+		let args_csv = vec![StellarMatchParamEntry {
+			name: "csv_list".to_string(),
+			value: "alice,bob".to_string(),
+			kind: "vec".to_string(),
+			indexed: false,
+		}];
+		let args_json_array = vec![StellarMatchParamEntry {
+			name: "json_list".to_string(),
+			value: r#"["alice", "bob"]"#.to_string(),
+			kind: "vec".to_string(),
+			indexed: false,
+		}];
+
+		// Eq/Ne on "vec" compares the raw string value
+		assert!(filter
+			.evaluate_expression("csv_list == 'alice,bob'", &args_csv)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("csv_list == 'alice,charlie'", &args_csv)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("json_list == '[\"alice\", \"bob\"]'", &args_json_array)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("json_list != '[\"alice\", \"charlie\"]'", &args_json_array)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_with_map_path_access() {
+		let filter = create_test_filter();
+		let args = vec![StellarMatchParamEntry {
+			name: "map".to_string(),
+			value: r#"{"prop1": "val1", "nested": {"prop2": 123}}"#.to_string(),
+			kind: "Map".to_string(),
+			indexed: false,
+		}];
+
+		assert!(filter
+			.evaluate_expression("map.prop1 == 'val1'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("map.prop1 == 'wrong'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("map.nested.prop2 == 123", &args)
+			.unwrap());
+
+		// Non-existent nested property
+		assert!(filter
+			.evaluate_expression("map.non_existent_key == 'anything'", &args)
+			.is_err());
+	}
+
+	#[test]
+	fn test_evaluate_expression_map_eq_ne_raw_json() {
+		let filter = create_test_filter();
+		let args_json_map = vec![StellarMatchParamEntry {
+			name: "my_json_map".to_string(),
+			value: r#"{"key1": "value1", "key2": "value2"}"#.to_string(),
+			kind: "map".to_string(),
+			indexed: false,
+		}];
+
+		// Eq/Ne on "object" kind compares the raw JSON string value
+		assert!(filter
+			.evaluate_expression(
+				"my_json_map == '{\"key1\": \"value1\", \"key2\": \"value2\"}'",
+				&args_json_map
+			)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression(
+				"my_json_map == '{\"key1\": \"value1\", \"key2\": \"value3\"}'",
+				&args_json_map
+			)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(
+				"my_json_map != '{\"key1\": \"value1\", \"key2\": \"value3\"}'",
+				&args_json_map
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_logical_and_operator() {
+		let filter = create_test_filter();
+		let args_true_true = vec![
 			StellarMatchParamEntry {
 				name: "value".to_string(),
+				value: "150".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Alice".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+		let args_true_false = vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "150".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Bob".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+		let args_false_true = vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "50".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Alice".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+		let args_false_false = vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "50".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Bob".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+
+		// True AND True
+		assert!(filter
+			.evaluate_expression("value > 100 AND name == 'Alice'", &args_true_true)
+			.unwrap());
+		// True AND False
+		assert!(!filter
+			.evaluate_expression("value > 100 AND name == 'Alice'", &args_true_false)
+			.unwrap());
+		// False AND True
+		assert!(!filter
+			.evaluate_expression("value > 100 AND name == 'Alice'", &args_false_true)
+			.unwrap());
+		// False AND False
+		assert!(!filter
+			.evaluate_expression("value > 100 AND name == 'Alice'", &args_false_false)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_logical_or_operator() {
+		let filter = create_test_filter();
+		let args_true_true = vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "150".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Alice".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+		let args_true_false = vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "150".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Bob".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+		let args_false_true = vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "50".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Alice".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+		let args_false_false = vec![
+			StellarMatchParamEntry {
+				name: "value".to_string(),
+				value: "50".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "name".to_string(),
+				value: "Bob".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+		];
+
+		// True OR True
+		assert!(filter
+			.evaluate_expression("value > 100 OR name == 'Alice'", &args_true_true)
+			.unwrap());
+		// True OR False
+		assert!(filter
+			.evaluate_expression("value > 100 OR name == 'Alice'", &args_true_false)
+			.unwrap());
+		// False OR True
+		assert!(filter
+			.evaluate_expression("value > 100 OR name == 'Alice'", &args_false_true)
+			.unwrap());
+		// False OR False
+		assert!(!filter
+			.evaluate_expression("value > 100 OR name == 'Alice'", &args_false_false)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_logical_combinations_and_precedence() {
+		let filter = create_test_filter();
+
+		// Case 1: (T AND T) OR F  => T (due to AND precedence over OR)
+		let args1 = vec![
+			StellarMatchParamEntry {
+				name: "val1".to_string(),
+				value: "10".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "str1".to_string(),
+				value: "hello".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "bool1".to_string(),
+				value: "true".to_string(),
+				kind: "bool".to_string(),
+				indexed: false,
+			},
+		];
+		assert!(filter
+			.evaluate_expression("val1 > 5 AND str1 == 'hello' OR bool1 == true", &args1)
+			.unwrap());
+
+		// Case 2: T AND (T OR F) => T (parentheses first)
+		assert!(filter
+			.evaluate_expression("val1 > 5 AND (str1 == 'hello' OR bool1 == true)", &args1)
+			.unwrap());
+
+		// Case 3: (T AND F) OR T => T
+		let args2 = vec![
+			StellarMatchParamEntry {
+				name: "val1".to_string(),
+				value: "10".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "str1".to_string(),
+				value: "world".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "bool1".to_string(),
+				value: "true".to_string(),
+				kind: "bool".to_string(),
+				indexed: false,
+			},
+		];
+		assert!(filter
+			.evaluate_expression("val1 > 5 AND str1 == 'hello' OR bool1 == true", &args2)
+			.unwrap());
+
+		// Case 4: (T OR F) AND T => T
+		assert!(filter
+			.evaluate_expression("(val1 > 5 OR str1 == 'hello') AND bool1 == true", &args2)
+			.unwrap());
+
+		// Case 5: (F AND F) OR F => F
+		let args3 = vec![
+			StellarMatchParamEntry {
+				name: "val1".to_string(),
+				value: "1".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "str1".to_string(),
+				value: "world".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "bool1".to_string(),
+				value: "false".to_string(),
+				kind: "bool".to_string(),
+				indexed: false,
+			},
+		];
+		assert!(!filter
+			.evaluate_expression("val1 > 5 AND str1 == 'hello' OR bool1 == true", &args3)
+			.unwrap());
+
+		// Case 6: (F OR F) AND F => F
+		assert!(!filter
+			.evaluate_expression("(val1 > 5 OR str1 == 'hello') AND bool1 == true", &args3)
+			.unwrap());
+
+		// Case 7: T AND F OR F -> (T AND F) OR F -> F OR F -> F
+		let args_t_f_f = vec![
+			StellarMatchParamEntry {
+				name: "a".to_string(),
+				value: "10".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "b".to_string(),
+				value: "foo".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "c".to_string(),
+				value: "false".to_string(),
+				kind: "bool".to_string(),
+				indexed: false,
+			},
+		];
+		assert!(!filter
+			.evaluate_expression("a > 0 AND b == 'bar' OR c == true", &args_t_f_f)
+			.unwrap());
+
+		// Case 8: (T OR F) AND F -> T AND F -> F
+		assert!(!filter
+			.evaluate_expression("(a > 0 OR b == 'bar') AND c == true", &args_t_f_f)
+			.unwrap());
+
+		// Case 9: F AND T OR T -> (F AND T) OR T -> F OR T -> T
+		let args_f_t_t = vec![
+			StellarMatchParamEntry {
+				name: "a".to_string(),
+				value: "-5".to_string(),
+				kind: "i64".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "b".to_string(),
+				value: "bar".to_string(),
+				kind: "string".to_string(),
+				indexed: false,
+			},
+			StellarMatchParamEntry {
+				name: "c".to_string(),
+				value: "true".to_string(),
+				kind: "bool".to_string(),
+				indexed: false,
+			},
+		];
+		assert!(filter
+			.evaluate_expression("a > 0 AND b == 'bar' OR c == true", &args_f_t_t)
+			.unwrap());
+
+		// Case 10: (F OR T) AND T -> T AND T -> T
+		assert!(filter
+			.evaluate_expression("(a > 0 OR b == 'bar') AND c == true", &args_f_t_t)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_event() {
+		let filter = create_test_filter();
+
+		let args = vec![
+			StellarMatchParamEntry {
+				name: "0".to_string(),
 				value: "100".to_string(),
 				kind: "u64".to_string(),
 				indexed: false,
 			},
 			StellarMatchParamEntry {
-				name: "active".to_string(),
+				name: "1".to_string(),
 				value: "true".to_string(),
 				kind: "bool".to_string(),
 				indexed: false,
 			},
-		]);
+		];
 
-		// Test AND operator
-		assert!(filter.evaluate_expression("value > 50 AND active == true", &args));
-		assert!(!filter.evaluate_expression("value < 50 AND active == true", &args));
+		assert!(filter.evaluate_expression("0 == 100", &args).unwrap());
+		assert!(!filter.evaluate_expression("0 == 200", &args).unwrap());
+		assert!(filter.evaluate_expression("1 == true", &args).unwrap());
+		assert!(!filter.evaluate_expression("1 == false", &args).unwrap());
+	}
 
-		// Test OR operator
-		assert!(filter.evaluate_expression("value < 50 OR active == true", &args));
-		assert!(!filter.evaluate_expression("value < 50 OR active == false", &args));
+	#[test]
+	fn test_evaluate_expression_event_vector() {
+		let filter = create_test_filter();
 
-		// Test complex expression
-		assert!(filter.evaluate_expression("value > 50 AND active == true OR value == 100", &args));
+		let args = vec![StellarMatchParamEntry {
+			name: "0".to_string(),
+			value: r#"["100", "200", "300", "test"]"#.to_string(),
+			kind: "array".to_string(),
+			indexed: false,
+		}];
+
+		assert!(filter.evaluate_expression("0[0] == '100'", &args).unwrap());
+		assert!(!filter.evaluate_expression("0[0] == '200'", &args).unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_event_key_access() {
+		let filter = create_test_filter();
+
+		let args = vec![StellarMatchParamEntry {
+			name: "0".to_string(),
+			value: r#"{"0": "value", "1": "100"}"#.to_string(),
+			kind: "Map".to_string(),
+			indexed: false,
+		}];
+
+		assert!(filter.evaluate_expression("0.0 == 'value'", &args).unwrap());
+		assert!(!filter.evaluate_expression("0.1 == '200'", &args).unwrap());
 	}
 
 	#[test]
@@ -3585,28 +2942,41 @@ mod tests {
 		let filter = create_test_filter();
 
 		// Test with empty args
-		assert!(!filter.evaluate_expression("value == 100", &None));
+		assert!(filter.evaluate_expression("amount > 1000", &[]).is_err());
 
-		// Test with empty vector
-		assert!(!filter.evaluate_expression("value == 100", &Some(vec![])));
-
-		// Test invalid expression formats
-		let args = Some(vec![StellarMatchParamEntry {
-			name: "value".to_string(),
-			value: "100".to_string(),
+		// Test with invalid parameter name
+		let args = vec![StellarMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000".to_string(),
 			kind: "u64".to_string(),
 			indexed: false,
-		}]);
+		}];
+		assert!(filter
+			.evaluate_expression("invalid_param > 1000", &args)
+			.is_err());
 
-		// Invalid number of parts
-		assert!(!filter.evaluate_expression("value 100", &args));
-		assert!(!filter.evaluate_expression("value == 100 invalid", &args));
+		// Test with invalid operator
+		assert!(filter
+			.evaluate_expression("amount >>> 1000", &args)
+			.is_err());
 
-		// Invalid operator
-		assert!(!filter.evaluate_expression("value invalid 100", &args));
+		// Test with invalid value format
+		let args = vec![StellarMatchParamEntry {
+			name: "amount".to_string(),
+			value: "not_a_number".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+		assert!(filter.evaluate_expression("amount > 1000", &args).is_err());
 
-		// Empty expression
-		assert!(!filter.evaluate_expression("", &args));
+		// Test with unsupported parameter type
+		let args = vec![StellarMatchParamEntry {
+			name: "param".to_string(),
+			value: "value".to_string(),
+			kind: "unsupported_type".to_string(),
+			indexed: false,
+		}];
+		assert!(filter.evaluate_expression("param == value", &args).is_err());
 	}
 
 	//////////////////////////////////////////////////////////////////////////////

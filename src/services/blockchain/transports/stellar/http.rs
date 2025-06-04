@@ -13,6 +13,7 @@ use crate::{
 	models::Network,
 	services::blockchain::transports::{
 		BlockchainTransport, HttpTransportClient, RotatingTransport, TransientErrorRetryStrategy,
+		TransportError,
 	},
 };
 
@@ -61,12 +62,12 @@ impl BlockchainTransport for StellarTransportClient {
 	/// * `params` - Optional parameters to pass with the request
 	///
 	/// # Returns
-	/// * `Result<Value, anyhow::Error>` - The JSON response or error
+	/// * `Result<Value, TransportError>` - The JSON response or error
 	async fn send_raw_request<P>(
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, anyhow::Error>
+	) -> Result<Value, TransportError>
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{

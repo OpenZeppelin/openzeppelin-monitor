@@ -458,23 +458,23 @@ impl fmt::Display for StellarType {
 			StellarType::Union(types) => {
 				write!(
 					f,
-					"Union<{}>",
+					"{}",
 					types
 						.iter()
 						.map(|t| t.to_string())
 						.collect::<Vec<_>>()
-						.join(", ")
+						.join(",")
 				)
 			}
 			StellarType::Sequence(types) => {
 				write!(
 					f,
-					"Sequence<{}>",
+					"{}",
 					types
 						.iter()
 						.map(|t| t.to_string())
 						.collect::<Vec<_>>()
-						.join(", ")
+						.join(",")
 				)
 			}
 		}
@@ -2154,7 +2154,7 @@ mod tests {
 		}));
 		assert_eq!(
 			StellarType::from(tuple_udt).to_string(),
-			"Tuple<Sequence<Request, U64>>"
+			"Tuple<Request,U64>"
 		);
 
 		// Test nested UDT in Vec
@@ -2333,7 +2333,7 @@ mod tests {
 		// Test without contract spec - should show concrete types
 		assert_eq!(
 			get_function_signature(&invoke_op, None),
-			"process_request(Address,Vec<Map<String,Union<I128, String>>>)"
+			"process_request(Address,Vec<Map<String,I128,String>>)"
 		);
 	}
 

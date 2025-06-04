@@ -12,9 +12,11 @@ mod stellar {
 }
 
 mod endpoint_manager;
+mod error;
 mod http;
 
 pub use endpoint_manager::EndpointManager;
+pub use error::TransportError;
 pub use evm::http::EVMTransportClient;
 pub use http::HttpTransportClient;
 pub use stellar::http::StellarTransportClient;
@@ -42,7 +44,7 @@ pub trait BlockchainTransport: Send + Sync {
 		&self,
 		method: &str,
 		params: Option<P>,
-	) -> Result<Value, anyhow::Error>
+	) -> Result<Value, TransportError>
 	where
 		P: Into<Value> + Send + Clone + Serialize;
 

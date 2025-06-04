@@ -24,12 +24,12 @@ RPC endpoints are configured in the network configuration files with weights for
   "rpc_urls": [
     {
       "type_": "rpc",
-      "url": "https://primary-endpoint.example.com",
+      "url": {"type": "plain", "value": "https://primary-endpoint.example.com"},
       "weight": 100
     },
     {
       "type_": "rpc",
-      "url": "https://backup-endpoint.example.com",
+      "url": {"type": "plain", "value": "https://backup-endpoint.example.com"},
       "weight": 50
     }
   ]
@@ -51,7 +51,11 @@ For high-availability setups, configure at least 3 (private) RPC endpoints with 
 |String
 |Type of endpoint (currently only "rpc" is supported)
 
-|url
+|url.type
+|String
+|Secret type ("Plain", "Environment", or "HashicorpCloudVault")
+
+|url.value
 |String
 |The RPC endpoint URL
 

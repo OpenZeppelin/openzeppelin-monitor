@@ -1,5 +1,69 @@
 # Changelog
 
+## [0.2.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v0.1.0...v0.2.0) (2025-05-14)
+
+
+## ⚠️ ⚠️ Breaking Changes in v0.2.0
+
+* Renamed abi to contract_spec in monitor configurations.
+* Stellar function expressions now use named parameters instead of positional indexes, for example;
+
+    ```
+    (Transfer(address,address,amount)):
+    2 > 1000  → amount > 1000
+    ```
+* Template variables now follow dot notation rather than underscores, for example:
+    * monitor_name → monitor.name
+    * transaction_hash → transaction.hash
+    * function_0_amount → functions.0.args.amount
+    * event_0_signature → events.0.signature
+* Sensitive configuration values (e.g., URLs, usernames, passwords, tokens) must now be defined using the SecretValue object structure, for example:
+
+    * RPC URLs:
+
+        ```
+        "rpc_urls": [
+            {
+                "type_": "rpc",
+                "url": {
+                "type": "plain",
+                "value": "https://eth.drpc.org"
+                },
+                "weight": 100
+            }
+        ]
+        ```
+    
+    * Webhook URLs:
+
+        ```
+        "discord_url": {
+            "type": "plain",
+            "value": "https://discord.com/api/webhooks/123-456-789"
+        }
+        ```
+
+
+### 🚀 Features
+
+* Add environment vars and Hashicorp cloud vault support (breaking) ([#199](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/199)) ([558304f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/558304f335a645c1de2d348a041337ccba2c2a06))
+* Extend support for EVM transaction properties ([#187](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/187)) ([f20086b](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/f20086b0431a787dd55aa8928a09aece80b9a731))
+* Leverage contract spec (SEP-48) for Stellar functions (breaking) ([#208](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/208)) ([5ebc2a4](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/5ebc2a441b9ac6ed66a0807cac2795af2ae5b1c8))
+* Markdown for telegram, discord, slack and email ([#197](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/197)) ([791bf4b](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/791bf4b347d8cfe03ccd53e9797f179c15629a33))
+* Test execute the monitor against specific block ([#133](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/133)) ([563c34f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/563c34fde3c0f334a7c5884de5510bf27e4fca48))
+
+
+### 🐛 Bug Fixes
+
+* Adding validation for unknown field names ([#223](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/223)) ([cadf4da](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/cadf4dac293e2c24a02a2eb188540e1eb312b75f))
+* CLA labels and assistant ([#176](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/176)) ([b14f060](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/b14f0600dc4cac5a5f00d3772328abe123114b2a))
+* Docs pipeline ([#167](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/167)) ([1e78ec4](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/1e78ec4f98f70ac12dea353c1605ac4ac2c5734b))
+* Environment adjustments and cargo lock file improvements ([#219](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/219)) ([1b4d5d8](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/1b4d5d8dbe8cba26fbb84a8f847fc22b1a1dc096))
+* Event and function signatures from matched_on ([#198](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/198)) ([cdd9f1d](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/cdd9f1d7333ee2f3ef9c476a08e918388b3c35f0))
+* Monitor match template var signature collission (breaking) ([#203](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/203)) ([283b724](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/283b724a88f45f82c3c5fc81742a564b70909d45))
+* remove the create-github-app-token action from the scorecard workflow ([#174](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/174)) ([48ca0b1](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/48ca0b106dbee225b5d4824013c2a28b773b23b3))
+* Running duplicate tests ([#181](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/181)) ([ad0f741](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/ad0f741608b2719a1db16dd22bf8c457e5814f86))
+
 ## 0.1.0 (2025-04-07)
 
 

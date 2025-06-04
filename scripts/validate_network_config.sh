@@ -15,7 +15,7 @@ NETWORK_TYPE=`echo ${1} | jq -r '.network_type // "EVM"' | tr '[:upper:]' '[:low
 
 echo "Testing RPCs for ${NETWORK_NAME}"
 
-for u in `echo ${1} | jq '.rpc_urls[] | .url' | tr -d '"'`
+for u in `echo ${1} | jq '.rpc_urls[] | .url.value' | tr -d '"'`
     do
         URL=`echo ${u} | tr -d '"'`
 

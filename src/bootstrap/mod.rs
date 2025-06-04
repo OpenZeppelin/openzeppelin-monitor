@@ -37,6 +37,7 @@ use crate::{
 			TriggerExecutionServiceTrait,
 		},
 	},
+	utils::normalize_string,
 };
 
 /// Type alias for handling ServiceResult
@@ -495,7 +496,8 @@ async fn run_trigger_filters(
 			let script_content = trigger_scripts
 				.get(&format!(
 					"{}|{}",
-					monitor_name, trigger_condition.script_path
+					normalize_string(&monitor_name),
+					trigger_condition.script_path
 				))
 				.ok_or_else(|| {
 					ScriptError::execution_error("Script content not found".to_string(), None, None)

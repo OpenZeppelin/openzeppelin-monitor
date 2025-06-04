@@ -966,7 +966,7 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 
 	fn create_test_stellar_transaction() -> StellarTransaction {
 		match create_test_transaction(BlockChainType::Stellar) {
-			TransactionType::Stellar(transaction) => transaction,
+			TransactionType::Stellar(transaction) => *transaction,
 			_ => panic!("Expected Stellar transaction"),
 		}
 	}

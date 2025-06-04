@@ -14,6 +14,7 @@ mod network_config;
 mod trigger_config;
 
 pub use error::ConfigError;
+
 /// Common interface for loading configuration files
 #[async_trait]
 pub trait ConfigLoader: Sized {
@@ -46,4 +47,17 @@ pub trait ConfigLoader: Sized {
 
 	/// Resolve all secrets in the configuration
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError>;
+
+	/// Validate uniqueness of the configuration
+	/// # Arguments
+	/// * `instances` - The instances to validate uniqueness against
+	/// * `current_instance` - The current instance to validate uniqueness for
+	/// * `file_path` - The path to the file containing the current instance (for logging purposes)
+	///
+	/// Returns Ok(()) if valid, or an error message if found duplicate names.
+	fn validate_uniqueness(
+		instances: &[&Self],
+		current_instance: &Self,
+		file_path: &str,
+	) -> Result<(), ConfigError>;
 }

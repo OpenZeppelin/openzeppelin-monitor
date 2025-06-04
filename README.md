@@ -1,9 +1,11 @@
 # OpenZeppelin Monitor
 
 [![codecov](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor/branch/main/graph/badge.svg?token=VWIY5XZNDB)](https://codecov.io/gh/OpenZeppelin/openzeppelin-monitor)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenZeppelin/openzeppelin-monitor/badge)](https://api.securityscorecards.dev/projects/github.com/OpenZeppelin/openzeppelin-monitor)
 [![CLA Assistant](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/cla.yml/badge.svg)](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/cla.yml)
 [![CI](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/ci.yaml/badge.svg)](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/ci.yaml)
 [![Release Workflow](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/release-please.yml/badge.svg)](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/release-please.yml)
+
 
 > :warning: This software is in alpha. Use in production environments at your own risk.
 
@@ -36,7 +38,9 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 ### Installation
 
-View the [Installation](https://docs.openzeppelin.com/monitor#getting_started) documentation for detailed information. For a quicker introduction, check out the [Quickstart](https://docs.openzeppelin.com/monitor/quickstart) guide.
+- View the [Installation](https://docs.openzeppelin.com/monitor#getting_started) documentation for detailed information. For a quicker introduction, check out the [Quickstart](https://docs.openzeppelin.com/monitor/quickstart) guide.
+
+- As a Pre-requisite, copy example configuration files to `./config` directory and modify according to your needs. See [examples](https://docs.openzeppelin.com/monitor/quickstart#examples) for more information.
 
 ### Usage
 

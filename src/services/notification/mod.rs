@@ -257,11 +257,14 @@ mod tests {
 	use super::*;
 	use crate::{
 		models::{
-			AddressWithSpec, EVMMonitorMatch, EVMTransaction, EVMTransactionReceipt,
-			EventCondition, FunctionCondition, MatchConditions, Monitor, MonitorMatch,
-			ScriptLanguage, TransactionCondition, TriggerType,
+			AddressWithSpec, EVMMonitorMatch, EVMTransactionReceipt, EventCondition,
+			FunctionCondition, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
+			TransactionCondition, TriggerType,
 		},
-		utils::tests::builders::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
+		utils::tests::{
+			builders::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
+			evm::transaction::TransactionBuilder,
+		},
 	};
 	use std::collections::HashMap;
 
@@ -294,43 +297,10 @@ mod tests {
 		builder.build()
 	}
 
-	fn create_test_evm_transaction() -> EVMTransaction {
-		let tx = alloy::consensus::TxLegacy {
-			chain_id: None,
-			nonce: 0,
-			gas_price: 0,
-			gas_limit: 0,
-			to: alloy::primitives::TxKind::Call(alloy::primitives::Address::ZERO),
-			value: alloy::primitives::U256::ZERO,
-			input: alloy::primitives::Bytes::default(),
-		};
-
-		let signature = alloy::signers::Signature::from_scalars_and_parity(
-			alloy::primitives::B256::ZERO,
-			alloy::primitives::B256::ZERO,
-			false,
-		);
-
-		let hash = alloy::primitives::B256::ZERO;
-
-		EVMTransaction::from(alloy::rpc::types::Transaction {
-			inner: alloy::consensus::transaction::Recovered::new_unchecked(
-				alloy::consensus::transaction::TxEnvelope::Legacy(
-					alloy::consensus::Signed::new_unchecked(tx, signature, hash),
-				),
-				alloy::primitives::Address::ZERO,
-			),
-			block_hash: None,
-			block_number: None,
-			transaction_index: None,
-			effective_gas_price: None,
-		})
-	}
-
 	fn create_mock_monitor_match() -> MonitorMatch {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
 			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
-			transaction: create_test_evm_transaction(),
+			transaction: TransactionBuilder::new().build(),
 			receipt: Some(EVMTransactionReceipt::default()),
 			logs: Some(vec![]),
 			network_slug: "evm_mainnet".to_string(),

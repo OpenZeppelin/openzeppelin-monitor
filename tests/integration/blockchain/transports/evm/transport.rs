@@ -3,7 +3,9 @@ use alloy::{
 	rpc::types::Index,
 };
 use mockall::predicate;
-use openzeppelin_monitor::services::blockchain::{BlockChainClient, EvmClient, EvmClientTrait};
+use openzeppelin_monitor::services::blockchain::{
+	BlockChainClient, EvmClient, EvmClientTrait, TransportError,
+};
 use serde_json::{json, Value};
 
 use crate::integration::mocks::MockEVMTransportClient;
@@ -144,7 +146,13 @@ async fn test_get_logs_for_blocks_alloy_error() {
 
 	mock_evm
 		.expect_send_raw_request()
-		.returning(|_: &str, _: Option<Vec<Value>>| Err(anyhow::anyhow!("Alloy error")));
+		.returning(|_: &str, _: Option<Vec<Value>>| {
+			Err(TransportError::request_serialization(
+				"Alloy error",
+				None,
+				None,
+			))
+		});
 
 	let client = EvmClient::<MockEVMTransportClient>::new_with_transport(mock_evm);
 	let result = client.get_logs_for_blocks(1, 10, None).await;

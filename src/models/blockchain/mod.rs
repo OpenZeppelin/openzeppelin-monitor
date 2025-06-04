@@ -11,6 +11,7 @@ pub mod stellar;
 
 /// Supported blockchain platform types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(deny_unknown_fields)]
 pub enum BlockChainType {
 	/// Ethereum Virtual Machine based chains
 	EVM,
@@ -52,7 +53,7 @@ pub enum TransactionType {
 	/// EVM transaction
 	EVM(evm::EVMTransaction),
 	/// Stellar transaction
-	Stellar(stellar::StellarTransaction),
+	Stellar(Box<stellar::StellarTransaction>),
 }
 
 /// Contract spec from different blockchain platforms

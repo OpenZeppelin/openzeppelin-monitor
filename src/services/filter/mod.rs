@@ -6,6 +6,7 @@
 //! - Chain-specific helper functions
 
 mod error;
+mod expression;
 mod filter_match;
 mod filters;
 
