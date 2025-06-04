@@ -476,3 +476,118 @@ async fn test_get_contract_spec_invalid_response() {
 
 	// Failed to get contract code XDR
 }
+
+#[tokio::test]
+async fn test_get_events_sparse_pagination() {
+	let mut server = Server::new_async().await;
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
+
+	// Define all responses in sequence
+	let responses = vec![
+		// First request - empty events but has cursor
+		json!({
+			"result": {
+				"events": [], // Empty due to LedgerScanLimit
+				"cursor": "page_2_cursor"
+			}
+		}),
+		// Second request - empty events again but has cursor
+		json!({
+			"result": {
+				"events": [], // Empty again due to sparse events
+				"cursor": "page_3_cursor"
+			}
+		}),
+		// Third request - empty events again but has cursor
+		json!({
+			"result": {
+				"events": [], // Empty again due to sparse events
+				"cursor": "page_4_cursor"
+			}
+		}),
+		// Fourth request - finally returns some events
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 100,
+						"ledgerClosedAt": "2024-12-29T02:50:10Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291392-0000000001",
+						"pagingToken": "0001364073023291392-0000000001",
+						"inSuccessfulContractCall": true,
+						"txHash": "5a7bf196f1db3ab56089de59985bbf5a6c3e0e6a4672cd91e01680b0fff260d8",
+						"topic": [
+						  "AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"
+						],
+						"value": "AAA"
+					}
+				],
+				"cursor": "page_5_cursor"
+			}
+		}),
+		// Fifth request - another event
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 105,
+						"ledgerClosedAt": "2024-12-29T02:50:15Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291393-0000000002",
+						"pagingToken": "0001364073023291393-0000000002",
+						"inSuccessfulContractCall": true,
+						"txHash": "6b8cf297f2db4bc67089de60985bbf5a7d4e1e7b5672cd92e01680c0fff261e9",
+						"topic": [
+						  "AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"
+						],
+						"value": "BBB"
+					}
+				],
+				"cursor": "page_6_cursor"
+			}
+		}),
+		// Sixth request - empty events with no cursor (end)
+		json!({
+			"result": {
+				"events": [], // Empty and no more pages
+				"cursor": null
+			}
+		}),
+	];
+
+	let mut mocks = Vec::new();
+	for response in &responses {
+		let mock = server
+			.mock("POST", "/")
+			.with_status(200)
+			.with_body(response.to_string())
+			.create_async()
+			.await;
+		mocks.push(mock);
+	}
+
+	let client = StellarClient::new(&network).await.unwrap();
+	let result = client.get_events(1, Some(150)).await.unwrap();
+
+	// Should find 2 events despite empty intermediate pages
+	assert_eq!(result.len(), 2);
+	assert_eq!(result[0].ledger, 100);
+	assert_eq!(
+		result[0].contract_id,
+		"CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK"
+	);
+	assert_eq!(result[1].ledger, 105);
+	assert_eq!(
+		result[1].contract_id,
+		"CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK"
+	);
+
+	mock.assert_async().await;
+	for mock in mocks {
+		mock.assert_async().await;
+	}
+}
