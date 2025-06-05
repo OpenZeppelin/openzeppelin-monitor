@@ -33,10 +33,12 @@ fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
 	}))
 }
 
-fn create_test_trigger_scripts() -> HashMap<String, (ScriptLanguage, String)> {
+fn create_test_trigger_scripts(
+	monitor_name: Option<&str>,
+) -> HashMap<String, (ScriptLanguage, String)> {
 	let mut scripts = HashMap::new();
 	scripts.insert(
-		"test_monitor|test_script.py".to_string(),
+		format!("{}|test_script.py", monitor_name.unwrap_or("test_monitor")),
 		(ScriptLanguage::Python, "print(True)".to_string()),
 	);
 	scripts
@@ -56,13 +58,12 @@ async fn test_notification_service_script_execution() {
 
 	// Create monitor match and trigger scripts
 	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
-	let trigger_scripts = create_test_trigger_scripts();
+	let trigger_scripts = create_test_trigger_scripts(None);
 
 	// Execute the notification
 	let result = notification_service
 		.execute(&trigger, HashMap::new(), &monitor_match, &trigger_scripts)
 		.await;
-
 	assert!(result.is_ok());
 }
 
@@ -79,7 +80,7 @@ async fn test_notification_service_script_execution_failure() {
 		.build();
 
 	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
-	let trigger_scripts = create_test_trigger_scripts();
+	let trigger_scripts = create_test_trigger_scripts(None);
 
 	let result = notification_service
 		.execute(&trigger, HashMap::new(), &monitor_match, &trigger_scripts)
@@ -90,4 +91,27 @@ async fn test_notification_service_script_execution_failure() {
 		.unwrap_err()
 		.to_string()
 		.contains("Script content not found"));
+}
+
+#[tokio::test]
+async fn test_notification_service_script_execution_normalized_monitor_name() {
+	let notification_service = NotificationService::new();
+
+	// Create a script trigger
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.script("test_script.py", ScriptLanguage::Python)
+		.script_arguments(vec!["arg1".to_string()])
+		.script_timeout_ms(1000)
+		.build();
+
+	// Create monitor match and trigger scripts
+	let monitor_match = create_test_evm_match(create_test_monitor("Test Monitor"));
+	let trigger_scripts = create_test_trigger_scripts(Some("test monitor"));
+
+	// Execute the notification
+	let result = notification_service
+		.execute(&trigger, HashMap::new(), &monitor_match, &trigger_scripts)
+		.await;
+	assert!(result.is_ok());
 }

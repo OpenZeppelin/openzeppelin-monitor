@@ -16,7 +16,10 @@ mod slack;
 mod telegram;
 mod webhook;
 
-use crate::models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig};
+use crate::{
+	models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig},
+	utils::normalize_string,
+};
 
 pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
@@ -212,7 +215,11 @@ impl NotificationService {
 						}
 					};
 					let script = trigger_scripts
-						.get(&format!("{}|{}", monitor_name, script_path))
+						.get(&format!(
+							"{}|{}",
+							normalize_string(monitor_name),
+							script_path
+						))
 						.ok_or_else(|| {
 							NotificationError::config_error(
 								"Script content not found".to_string(),
