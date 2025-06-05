@@ -7,7 +7,7 @@ use alloy::{
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
-use super::EVMTransaction;
+use crate::models::EVMTransaction;
 
 /// Base Block struct
 /// Copied from web3 crate (now deprecated) and slightly modified for alloy compatibility

@@ -1,7 +1,7 @@
 //! Integration tests for the OpenZeppelin Monitor.
 //!
 //! Contains tests for blockchain monitoring functionality across different
-//! chains (EVM and Stellar) and mock implementations for testing.
+//! chains and mock implementations for testing.
 
 mod integration {
 	mod blockchain {
@@ -11,6 +11,9 @@ mod integration {
 				mod client;
 			}
 			mod stellar {
+				mod client;
+			}
+			mod midnight {
 				mod client;
 			}
 		}
@@ -23,8 +26,19 @@ mod integration {
 				mod http;
 				mod transport;
 			}
-			mod endpoint_manager;
-			mod http;
+			mod midnight {
+				mod transport;
+				mod ws;
+			}
+
+			mod http {
+				mod endpoint_manager;
+				mod transport;
+			}
+			mod ws {
+				mod endpoint_manager;
+				mod transport;
+			}
 		}
 	}
 	mod bootstrap {
@@ -41,6 +55,9 @@ mod integration {
 			mod filter;
 		}
 		mod stellar {
+			mod filter;
+		}
+		mod midnight {
 			mod filter;
 		}
 	}

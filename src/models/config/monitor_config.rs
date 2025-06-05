@@ -3,21 +3,43 @@
 //! This module implements the ConfigLoader trait for Monitor configurations,
 //! allowing monitors to be loaded from JSON files.
 
-use async_trait::async_trait;
-use std::{collections::HashMap, fs, path::Path};
-
 use crate::{
-	models::{config::error::ConfigError, ConfigLoader, Monitor},
+	models::{config::error::ConfigError, ConfigLoader, Monitor, SecretValue},
 	services::trigger::validate_script_config,
 	utils::normalize_string,
 };
+use async_trait::async_trait;
+use futures::TryStreamExt;
+use std::{collections::HashMap, fs, path::Path};
 
 #[async_trait]
 impl ConfigLoader for Monitor {
 	/// Resolve all secrets in the monitor configuration
 	async fn resolve_secrets(&self) -> Result<Self, ConfigError> {
 		dotenvy::dotenv().ok();
-		Ok(self.clone())
+		let mut monitor = self.clone();
+
+		for chain_configuration in &mut monitor.chain_configurations {
+			// Decrypt the chain configuration for midnight viewing keys
+			if let Some(midnight) = &mut chain_configuration.midnight {
+				midnight.viewing_keys = midnight
+					.viewing_keys
+					.iter()
+					.map(|key| async {
+						key.resolve().await.map(SecretValue::Plain).map_err(|e| {
+							ConfigError::parse_error(
+								format!("failed to resolve viewing key: {}", e),
+								Some(Box::new(e)),
+								None,
+							)
+						})
+					})
+					.collect::<futures::stream::FuturesUnordered<_>>()
+					.try_collect()
+					.await?;
+			}
+		}
+		Ok(monitor)
 	}
 
 	/// Load all monitor configurations from a directory
@@ -571,8 +593,6 @@ mod tests {
 		use std::os::unix::fs::PermissionsExt;
 		use tempfile::TempDir;
 
-		use crate::models::{MatchConditions, TriggerConditions};
-
 		let temp_dir = TempDir::new().unwrap();
 		let script_path = temp_dir.path().join("test_script.sh");
 		File::create(&script_path).unwrap();
@@ -583,24 +603,16 @@ mod tests {
 		permissions.set_mode(0o777);
 		std::fs::set_permissions(&script_path, permissions).unwrap();
 
-		let monitor = Monitor {
-			name: "TestMonitor".to_string(),
-			networks: vec!["ethereum_mainnet".to_string()],
-			paused: false,
-			addresses: vec![],
-			match_conditions: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			trigger_conditions: vec![TriggerConditions {
-				script_path: script_path.to_str().unwrap().to_string(),
-				timeout_ms: 1000,
-				arguments: None,
-				language: ScriptLanguage::Bash,
-			}],
-			triggers: vec![],
-		};
+		let monitor = MonitorBuilder::new()
+			.name("TestMonitor")
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Bash,
+				None,
+			)
+			.build();
 
 		monitor.validate_protocol();
 		assert!(logs_contain(

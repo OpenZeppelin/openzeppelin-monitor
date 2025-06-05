@@ -854,6 +854,36 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 }
 
 #[tokio::test]
+async fn test_load_scripts_continue_path() {
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"some_webhook".to_string(),
+		TriggerBuilder::new()
+			.name("some_webhook")
+			.webhook("https://example.com")
+			.build(),
+	);
+	let mock_trigger_service = setup_trigger_service(mocked_triggers);
+
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(mock_trigger_service, notification_service);
+
+	let monitor = MonitorBuilder::new()
+		.name("test_monitor")
+		.networks(vec!["evm_mainnet".to_string()])
+		.triggers(vec!["some_webhook".to_string()])
+		.build();
+
+	let result = trigger_execution_service.load_scripts(&[monitor]).await;
+
+	assert!(
+		result.unwrap().is_empty(),
+		"Expected no scripts to be loaded"
+	);
+}
+
+#[tokio::test]
 async fn test_trigger_execution_service_execute_multiple_triggers_failed() {
 	// Slack execution success - Webhook execution failure - Script execution failure
 	// We should see two errors regarding the webhook and one regarding the script

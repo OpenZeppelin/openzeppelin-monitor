@@ -10,7 +10,7 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, ClientPoolTrait},
-		filter::{handle_match, FilterService},
+		filter::{handle_match, FilterServiceTrait},
 		trigger::TriggerExecutionService,
 	},
 	utils::monitor::MonitorExecutionError,
@@ -37,13 +37,14 @@ pub struct MonitorExecutionConfig<
 	N: NetworkRepositoryTrait + Send + Sync + 'static,
 	TR: TriggerRepositoryTrait + Send + Sync + 'static,
 	CP: ClientPoolTrait + Send + Sync + 'static,
+	FS: FilterServiceTrait + Send + Sync + 'static,
 > {
 	pub path: String,
 	pub network_slug: Option<String>,
 	pub block_number: Option<u64>,
 	pub monitor_service: Arc<Mutex<MonitorService<M, N, TR>>>,
 	pub network_service: Arc<Mutex<NetworkService<N>>>,
-	pub filter_service: Arc<FilterService>,
+	pub filter_service: Arc<FS>,
 	pub trigger_execution_service: Arc<TriggerExecutionService<TR>>,
 	pub active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 	pub client_pool: Arc<CP>,
@@ -75,8 +76,9 @@ pub async fn execute_monitor<
 	N: NetworkRepositoryTrait + Send + Sync + 'static,
 	TR: TriggerRepositoryTrait + Send + Sync + 'static,
 	CP: ClientPoolTrait + Send + Sync + 'static,
+	FS: FilterServiceTrait + Send + Sync + 'static,
 >(
-	config: MonitorExecutionConfig<M, N, TR, CP>,
+	config: MonitorExecutionConfig<M, N, TR, CP, FS>,
 ) -> ExecutionResult<String> {
 	tracing::debug!("Loading monitor configuration");
 	let monitor = config
@@ -256,18 +258,59 @@ pub async fn execute_monitor<
 					})?
 			}
 			BlockChainType::Midnight => {
-				return Err(MonitorExecutionError::execution_error(
-					"Midnight network not supported",
-					None,
-					None,
-				))
-			}
-			BlockChainType::Solana => {
-				return Err(MonitorExecutionError::execution_error(
-					"Solana network not supported",
-					None,
-					None,
-				))
+				let client = config
+					.client_pool
+					.get_midnight_client(&network)
+					.await
+					.map_err(|e| {
+						MonitorExecutionError::execution_error(
+							format!("Failed to get Midnight client: {}", e),
+							None,
+							None,
+						)
+					})?;
+
+				// If block number is not provided, get the latest block number
+				let block_number = match config.block_number {
+					Some(block_number) => block_number,
+					None => client.get_latest_block_number().await.map_err(|e| {
+						MonitorExecutionError::execution_error(e.to_string(), None, None)
+					})?,
+				};
+
+				let blocks = client.get_blocks(block_number, None).await.map_err(|e| {
+					MonitorExecutionError::execution_error(
+						format!("Failed to get block {}: {}", block_number, e),
+						None,
+						None,
+					)
+				})?;
+
+				let block = blocks.first().ok_or_else(|| {
+					MonitorExecutionError::not_found(
+						format!("Block {} not found", block_number),
+						None,
+						None,
+					)
+				})?;
+
+				config
+					.filter_service
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						&[monitor.clone()],
+						Some(&contract_specs),
+					)
+					.await
+					.map_err(|e| {
+						MonitorExecutionError::execution_error(
+							format!("Failed to filter block: {}", e),
+							None,
+							None,
+						)
+					})?
 			}
 		};
 

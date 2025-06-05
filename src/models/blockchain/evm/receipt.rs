@@ -1,14 +1,12 @@
 //! EVM receipt data structures.
 
-use std::ops::Deref;
-
-use serde::{Deserialize, Serialize};
-
 use alloy::{
 	consensus::{Eip658Value, ReceiptEnvelope},
 	primitives::{aliases::B2048, Address, Bytes, Log as AlloyLog, B256, U256, U64},
 	rpc::types::{Index, TransactionReceipt as AlloyTransactionReceipt},
 };
+use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 
 /// Base Receipt struct
 /// Copied from web3 crate (now deprecated) and slightly modified for alloy compatibility

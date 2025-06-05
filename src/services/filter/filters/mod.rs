@@ -5,6 +5,7 @@
 //! - Generic BlockFilter trait
 //! - EVM-specific implementation
 //! - Stellar-specific implementation
+//! - Midnight-specific implementation
 
 pub mod evm {
 	pub mod evaluator;
@@ -17,6 +18,11 @@ pub mod stellar {
 	pub mod helpers;
 }
 
+pub mod midnight {
+	pub mod filter;
+	pub mod helpers;
+}
+
 use async_trait::async_trait;
 
 use crate::{
@@ -24,6 +30,7 @@ use crate::{
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
 pub use evm::filter::EVMBlockFilter;
+pub use midnight::filter::MidnightBlockFilter;
 pub use stellar::filter::StellarBlockFilter;
 
 /// Trait for filtering blockchain data
@@ -36,6 +43,18 @@ pub trait BlockFilter {
 	async fn filter_block(
 		&self,
 		client: &Self::Client,
+		network: &Network,
+		block: &BlockType,
+		monitors: &[Monitor],
+		contract_specs: Option<&[(String, ContractSpec)]>,
+	) -> Result<Vec<MonitorMatch>, FilterError>;
+}
+
+#[async_trait]
+pub trait FilterServiceTrait: Send + Sync {
+	async fn filter_block<T: BlockFilterFactory<T> + Send + Sync + 'static>(
+		&self,
+		client: &T,
 		network: &Network,
 		block: &BlockType,
 		monitors: &[Monitor],
@@ -62,6 +81,23 @@ impl Default for FilterService {
 
 impl FilterService {
 	pub async fn filter_block<T: BlockFilterFactory<T>>(
+		&self,
+		client: &T,
+		network: &Network,
+		block: &BlockType,
+		monitors: &[Monitor],
+		contract_specs: Option<&[(String, ContractSpec)]>,
+	) -> Result<Vec<MonitorMatch>, FilterError> {
+		let filter = T::filter();
+		filter
+			.filter_block(client, network, block, monitors, contract_specs)
+			.await
+	}
+}
+
+#[async_trait]
+impl FilterServiceTrait for FilterService {
+	async fn filter_block<T: BlockFilterFactory<T> + Send + Sync + 'static>(
 		&self,
 		client: &T,
 		network: &Network,
