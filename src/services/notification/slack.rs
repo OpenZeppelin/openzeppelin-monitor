@@ -12,6 +12,7 @@ use crate::{
 };
 
 /// Implementation of Slack notifications via webhooks
+#[derive(Debug)]
 pub struct SlackNotifier {
 	inner: WebhookNotifier,
 }
@@ -27,7 +28,7 @@ impl SlackNotifier {
 		url: String,
 		title: String,
 		body_template: String,
-	) -> Result<Self, Box<NotificationError>> {
+	) -> Result<Self, NotificationError> {
 		Ok(Self {
 			inner: WebhookNotifier::new(WebhookConfig {
 				url,
@@ -60,27 +61,29 @@ impl SlackNotifier {
 	/// * `config` - Trigger configuration containing Slack parameters
 	///
 	/// # Returns
-	/// * `Option<Self>` - Notifier instance if config is Slack type
-	pub fn from_config(config: &TriggerTypeConfig) -> Option<Self> {
-		match config {
-			TriggerTypeConfig::Slack { slack_url, message } => {
-				let mut headers = HashMap::new();
-				headers.insert("Content-Type".to_string(), "application/json".to_string());
+	/// * `Result<Self, NotificationError>` - Notifier instance if config is Slack type
+	pub fn from_config(config: &TriggerTypeConfig) -> Result<Self, NotificationError> {
+		if let TriggerTypeConfig::Slack { slack_url, message } = config {
+			let webhook_config = WebhookConfig {
+				url: slack_url.as_ref().to_string(),
+				url_params: None,
+				title: message.title.clone(),
+				body_template: message.body.clone(),
+				method: Some("POST".to_string()),
+				secret: None,
+				headers: None,
+				payload_fields: None,
+			};
 
-				WebhookNotifier::new(WebhookConfig {
-					url: slack_url.as_ref().to_string(),
-					url_params: None,
-					title: message.title.clone(),
-					body_template: message.body.clone(),
-					method: Some("POST".to_string()),
-					secret: None,
-					headers: Some(headers),
-					payload_fields: None,
-				})
-				.ok()
-				.map(|inner| Self { inner })
-			}
-			_ => None,
+			Ok(Self {
+				inner: WebhookNotifier::new(webhook_config)?,
+			})
+		} else {
+			Err(NotificationError::config_error(
+				format!("Invalid slack configuration: {:?}", config),
+				None,
+				None,
+			))
 		}
 	}
 }
@@ -93,8 +96,8 @@ impl Notifier for SlackNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), anyhow::Error>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		let mut payload_fields = HashMap::new();
 		let blocks = serde_json::json!([
 			{
@@ -186,12 +189,32 @@ mod tests {
 		let config = create_test_slack_config();
 
 		let notifier = SlackNotifier::from_config(&config);
-		assert!(notifier.is_some());
+		assert!(notifier.is_ok());
 
 		let notifier = notifier.unwrap();
 		assert_eq!(notifier.inner.url, "https://slack.example.com");
 		assert_eq!(notifier.inner.title, "Test Alert");
 		assert_eq!(notifier.inner.body_template, "Test message ${value}");
+	}
+
+	#[test]
+	fn test_from_config_invalid_type() {
+		// Create a config that is not a Slack type
+		let config = TriggerTypeConfig::Discord {
+			discord_url: SecretValue::Plain(SecretString::new(
+				"https://discord.example.com".to_string(),
+			)),
+			message: NotificationMessage {
+				title: "Test Alert".to_string(),
+				body: "Test message ${value}".to_string(),
+			},
+		};
+
+		let notifier = SlackNotifier::from_config(&config);
+		assert!(notifier.is_err());
+
+		let error = notifier.unwrap_err();
+		assert!(matches!(error, NotificationError::ConfigError { .. }));
 	}
 
 	////////////////////////////////////////////////////////////
@@ -203,6 +226,9 @@ mod tests {
 		let notifier = create_test_notifier("Test message");
 		let result = notifier.notify("Test message").await;
 		assert!(result.is_err());
+
+		let error = result.unwrap_err();
+		assert!(matches!(error, NotificationError::NotifyFailed { .. }));
 	}
 
 	#[tokio::test]
@@ -212,5 +238,8 @@ mod tests {
 			.notify_with_payload("Test message", HashMap::new())
 			.await;
 		assert!(result.is_err());
+
+		let error = result.unwrap_err();
+		assert!(matches!(error, NotificationError::NotifyFailed { .. }));
 	}
 }

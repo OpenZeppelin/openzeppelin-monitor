@@ -476,3 +476,301 @@ async fn test_get_contract_spec_invalid_response() {
 
 	// Failed to get contract code XDR
 }
+
+#[tokio::test]
+async fn test_get_events_sparse_pagination() {
+	let mut server = Server::new_async().await;
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
+
+	// Define all responses in sequence
+	let responses = vec![
+		// First request - empty events but has cursor
+		json!({
+			"result": {
+				"events": [], // Empty due to LedgerScanLimit
+				"cursor": "page_2_cursor"
+			}
+		}),
+		// Second request - empty events again but has cursor
+		json!({
+			"result": {
+				"events": [], // Empty again due to sparse events
+				"cursor": "page_3_cursor"
+			}
+		}),
+		// Third request - empty events again but has cursor
+		json!({
+			"result": {
+				"events": [], // Empty again due to sparse events
+				"cursor": "page_4_cursor"
+			}
+		}),
+		// Fourth request - finally returns some events
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 100,
+						"ledgerClosedAt": "2024-12-29T02:50:10Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291392-0000000001",
+						"pagingToken": "0001364073023291392-0000000001",
+						"inSuccessfulContractCall": true,
+						"txHash": "5a7bf196f1db3ab56089de59985bbf5a6c3e0e6a4672cd91e01680b0fff260d8",
+						"topic": [
+						  "AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"
+						],
+						"value": "AAA"
+					}
+				],
+				"cursor": "page_5_cursor"
+			}
+		}),
+		// Fifth request - another event
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 105,
+						"ledgerClosedAt": "2024-12-29T02:50:15Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291393-0000000002",
+						"pagingToken": "0001364073023291393-0000000002",
+						"inSuccessfulContractCall": true,
+						"txHash": "6b8cf297f2db4bc67089de60985bbf5a7d4e1e7b5672cd92e01680c0fff261e9",
+						"topic": [
+						  "AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"
+						],
+						"value": "BBB"
+					}
+				],
+				"cursor": "page_6_cursor"
+			}
+		}),
+		// Sixth request - empty events with no cursor (end)
+		json!({
+			"result": {
+				"events": [], // Empty and no more pages
+				"cursor": null
+			}
+		}),
+	];
+
+	let mut mocks = Vec::new();
+	for response in &responses {
+		let mock = server
+			.mock("POST", "/")
+			.with_status(200)
+			.with_body(response.to_string())
+			.create_async()
+			.await;
+		mocks.push(mock);
+	}
+
+	let client = StellarClient::new(&network).await.unwrap();
+	let result = client.get_events(1, Some(150)).await.unwrap();
+
+	// Should find 2 events despite empty intermediate pages
+	assert_eq!(result.len(), 2);
+	assert_eq!(result[0].ledger, 100);
+	assert_eq!(
+		result[0].contract_id,
+		"CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK"
+	);
+	assert_eq!(result[1].ledger, 105);
+	assert_eq!(
+		result[1].contract_id,
+		"CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK"
+	);
+
+	mock.assert_async().await;
+	for mock in mocks {
+		mock.assert_async().await;
+	}
+}
+
+#[tokio::test]
+async fn test_get_events_complex_sparse_pagination_with_boundaries() {
+	let mut server = Server::new_async().await;
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
+
+	// Define all responses in sequence - testing complex scenarios
+	let responses = vec![
+		// Page 1: Empty start
+		json!({
+			"result": {
+				"events": [],
+				"cursor": "page_2_cursor"
+			}
+		}),
+		// Page 2: Event exactly at start_sequence (should be included)
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 10, // Exactly at start_sequence
+						"ledgerClosedAt": "2024-12-29T02:50:10Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291390-0000000001",
+						"pagingToken": "0001364073023291390-0000000001",
+						"inSuccessfulContractCall": true,
+						"txHash": "1a1bf196f1db3ab56089de59985bbf5a6c3e0e6a4672cd91e01680b0fff260d1",
+						"topic": ["AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"],
+						"value": "START"
+					}
+				],
+				"cursor": "page_3_cursor"
+			}
+		}),
+		// Page 3: Multiple sparse empty pages
+		json!({
+			"result": {
+				"events": [],
+				"cursor": "page_4_cursor"
+			}
+		}),
+		json!({
+			"result": {
+				"events": [],
+				"cursor": "page_5_cursor"
+			}
+		}),
+		json!({
+			"result": {
+				"events": [],
+				"cursor": "page_6_cursor"
+			}
+		}),
+		// Page 6: Multiple events in one page (dense region)
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 45,
+						"ledgerClosedAt": "2024-12-29T02:50:20Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291391-0000000001",
+						"pagingToken": "0001364073023291391-0000000001",
+						"inSuccessfulContractCall": true,
+						"txHash": "2b2bf196f1db3ab56089de59985bbf5a6c3e0e6a4672cd91e01680b0fff260d2",
+						"topic": ["AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"],
+						"value": "MID1"
+					},
+					{
+						"type": "contract",
+						"ledger": 47,
+						"ledgerClosedAt": "2024-12-29T02:50:22Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291392-0000000002",
+						"pagingToken": "0001364073023291392-0000000002",
+						"inSuccessfulContractCall": true,
+						"txHash": "3c3bf196f1db3ab56089de59985bbf5a6c3e0e6a4672cd91e01680b0fff260d3",
+						"topic": ["AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"],
+						"value": "MID2"
+					}
+				],
+				"cursor": "page_7_cursor"
+			}
+		}),
+		// Page 7: Another sparse region
+		json!({
+			"result": {
+				"events": [],
+				"cursor": "page_8_cursor"
+			}
+		}),
+		json!({
+			"result": {
+				"events": [],
+				"cursor": "page_9_cursor"
+			}
+		}),
+		// Page 9: Event exactly at end_sequence (should be included)
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 100, // Exactly at end_sequence
+						"ledgerClosedAt": "2024-12-29T02:50:30Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291393-0000000001",
+						"pagingToken": "0001364073023291393-0000000001",
+						"inSuccessfulContractCall": true,
+						"txHash": "4d4bf196f1db3ab56089de59985bbf5a6c3e0e6a4672cd91e01680b0fff260d4",
+						"topic": ["AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"],
+						"value": "END"
+					}
+				],
+				"cursor": "page_10_cursor"
+			}
+		}),
+		// Page 10: Event beyond end_sequence (should be filtered out and stop pagination)
+		json!({
+			"result": {
+				"events": [
+					{
+						"type": "contract",
+						"ledger": 105, // Beyond end_sequence, should trigger early return
+						"ledgerClosedAt": "2024-12-29T02:50:35Z",
+						"contractId": "CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK",
+						"id": "0001364073023291394-0000000001",
+						"pagingToken": "0001364073023291394-0000000001",
+						"inSuccessfulContractCall": true,
+						"txHash": "5e5bf196f1db3ab56089de59985bbf5a6c3e0e6a4672cd91e01680b0fff260d5",
+						"topic": ["AAAADwAAAA9jb250cmFjdF9jYWxsZWQA"],
+						"value": "BEYOND"
+					}
+				],
+				"cursor": null // This shouldn't matter as we should return early
+			}
+		}),
+	];
+
+	// Create mocks using a loop
+	let mut mocks = Vec::new();
+	for response in &responses {
+		let mock = server
+			.mock("POST", "/")
+			.with_status(200)
+			.with_body(response.to_string())
+			.create_async()
+			.await;
+		mocks.push(mock);
+	}
+
+	let client = StellarClient::new(&network).await.unwrap();
+	// Query range: ledger 10 to 100 (inclusive)
+	let result = client.get_events(10, Some(100)).await.unwrap();
+
+	// Should find 4 events: at ledger 10, 45, 47, and 100
+	// Event at ledger 105 should be excluded (beyond range)
+	assert_eq!(result.len(), 4);
+
+	// Verify events are in order and within range
+	assert_eq!(result[0].ledger, 10);
+	assert_eq!(result[1].ledger, 45);
+	assert_eq!(result[2].ledger, 47);
+	assert_eq!(result[3].ledger, 100);
+
+	// Verify all events are from the expected contract
+	for event in &result {
+		assert_eq!(
+			event.contract_id,
+			"CC5WP4L2CXUBZXZY3ZHK2XURV4H7VS6GKYF7K7WIHQSMEUDJYQ2E5TLK"
+		);
+		// Ensure all events are within the requested range
+		assert!(event.ledger >= 10 && event.ledger <= 100);
+	}
+
+	mock.assert_async().await;
+	for mock in mocks {
+		mock.assert_async().await;
+	}
+}

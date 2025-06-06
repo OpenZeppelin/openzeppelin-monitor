@@ -145,7 +145,7 @@ async fn test_notification_service_slack_execution_success() {
 
 	// Execute the notification
 	let result = notification_service
-		.execute(&trigger, variables, &monitor_match, &trigger_scripts)
+		.execute(&trigger, &variables, &monitor_match, &trigger_scripts)
 		.await;
 
 	assert!(result.is_ok());
@@ -181,7 +181,7 @@ async fn test_notification_service_slack_execution_failure() {
 
 	// Execute the notification
 	let result = notification_service
-		.execute(&trigger, variables, &monitor_match, &trigger_scripts)
+		.execute(&trigger, &variables, &monitor_match, &trigger_scripts)
 		.await;
 
 	assert!(result.is_err());

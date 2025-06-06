@@ -97,7 +97,7 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 				.ok_or_else(|| TriggerError::not_found(trigger_slug.to_string(), None, None))?;
 
 			self.notification_service
-				.execute(&trigger, variables.clone(), monitor_match, trigger_scripts)
+				.execute(&trigger, &variables, monitor_match, trigger_scripts)
 				.await
 				// We remove logging capability here since we're logging it further down
 				.map_err(|e| TriggerError::execution_error_without_log(e.to_string(), None, None))

@@ -6,30 +6,29 @@
 use crate::utils::logging::error::{ErrorContext, TraceableError};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
-use uuid::Uuid;
 
 /// Represents errors that can occur during notification operations
 #[derive(ThisError, Debug)]
 pub enum NotificationError {
 	/// Errors related to network connectivity issues
 	#[error("Network error: {0}")]
-	NetworkError(ErrorContext),
+	NetworkError(Box<ErrorContext>),
 
 	/// Errors related to malformed requests or invalid responses
 	#[error("Config error: {0}")]
-	ConfigError(ErrorContext),
+	ConfigError(Box<ErrorContext>),
 
 	/// Errors related to internal processing errors
 	#[error("Internal error: {0}")]
-	InternalError(ErrorContext),
+	InternalError(Box<ErrorContext>),
 
 	/// Errors related to script execution
 	#[error("Script execution error: {0}")]
-	ExecutionError(ErrorContext),
+	ExecutionError(Box<ErrorContext>),
 
-	/// Other errors that don't fit into the categories above
-	#[error(transparent)]
-	Other(#[from] anyhow::Error),
+	/// Error when Notifier `notify`` method fails (e.g., webhook failure, parsing error, invalid signature)
+	#[error("Notification failed: {0}")]
+	NotifyFailed(Box<ErrorContext>),
 }
 
 impl NotificationError {
@@ -39,7 +38,7 @@ impl NotificationError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::NetworkError(ErrorContext::new_with_log(msg, source, metadata))
+		Self::NetworkError(Box::new(ErrorContext::new_with_log(msg, source, metadata)))
 	}
 
 	// Config error
@@ -48,7 +47,7 @@ impl NotificationError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ConfigError(ErrorContext::new_with_log(msg, source, metadata))
+		Self::ConfigError(Box::new(ErrorContext::new_with_log(msg, source, metadata)))
 	}
 
 	// Internal error
@@ -57,7 +56,7 @@ impl NotificationError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::InternalError(ErrorContext::new_with_log(msg, source, metadata))
+		Self::InternalError(Box::new(ErrorContext::new_with_log(msg, source, metadata)))
 	}
 
 	// Execution error
@@ -66,7 +65,16 @@ impl NotificationError {
 		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 		metadata: Option<HashMap<String, String>>,
 	) -> Self {
-		Self::ExecutionError(ErrorContext::new_with_log(msg, source, metadata))
+		Self::ExecutionError(Box::new(ErrorContext::new_with_log(msg, source, metadata)))
+	}
+
+	// Notify failed error
+	pub fn notify_failed(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::NotifyFailed(Box::new(ErrorContext::new_with_log(msg, source, metadata)))
 	}
 }
 
@@ -77,7 +85,7 @@ impl TraceableError for NotificationError {
 			Self::ConfigError(ctx) => ctx.trace_id.clone(),
 			Self::InternalError(ctx) => ctx.trace_id.clone(),
 			Self::ExecutionError(ctx) => ctx.trace_id.clone(),
-			Self::Other(_) => Uuid::new_v4().to_string(),
+			Self::NotifyFailed(ctx) => ctx.trace_id.clone(),
 		}
 	}
 }
@@ -150,11 +158,20 @@ mod tests {
 	}
 
 	#[test]
-	fn test_from_anyhow_error() {
-		let anyhow_error = anyhow::anyhow!("test anyhow error");
-		let notification_error: NotificationError = anyhow_error.into();
-		assert!(matches!(notification_error, NotificationError::Other(_)));
-		assert_eq!(notification_error.to_string(), "test anyhow error");
+	fn test_notify_failed_error_formatting() {
+		let error = NotificationError::notify_failed("test error", None, None);
+		assert_eq!(error.to_string(), "Notification failed: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = NotificationError::notify_failed(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Notification failed: test error [key1=value1]"
+		);
 	}
 
 	#[test]
@@ -187,30 +204,48 @@ mod tests {
 	}
 
 	#[test]
-	fn test_trace_id_propagation() {
-		// Create an error context with a known trace ID
-		let error_context = ErrorContext::new("Inner error", None, None);
-		let original_trace_id = error_context.trace_id.clone();
+	fn test_all_error_variants_have_and_propagate_consistent_trace_id() {
+		let create_context_with_id = || {
+			let context = ErrorContext::new("test message", None, None);
+			let original_id = context.trace_id.clone();
+			(Box::new(context), original_id)
+		};
 
-		// Wrap it in a NotificationError
-		let notification_error = NotificationError::NetworkError(error_context);
+		let errors_with_ids: Vec<(NotificationError, String)> = vec![
+			{
+				let (ctx, id) = create_context_with_id();
+				(NotificationError::NetworkError(ctx), id)
+			},
+			{
+				let (ctx, id) = create_context_with_id();
+				(NotificationError::ConfigError(ctx), id)
+			},
+			{
+				let (ctx, id) = create_context_with_id();
+				(NotificationError::InternalError(ctx), id)
+			},
+			{
+				let (ctx, id) = create_context_with_id();
+				(NotificationError::ExecutionError(ctx), id)
+			},
+			{
+				let (ctx, id) = create_context_with_id();
+				(NotificationError::NotifyFailed(ctx), id)
+			},
+		];
 
-		// Verify the trace ID is preserved
-		assert_eq!(notification_error.trace_id(), original_trace_id);
-
-		// Test trace ID propagation through error chain
-		let source_error = IoError::new(ErrorKind::Other, "Source error");
-		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
-		let original_trace_id = error_context.trace_id.clone();
-
-		let notification_error = NotificationError::NetworkError(error_context);
-		assert_eq!(notification_error.trace_id(), original_trace_id);
-
-		// Test Other variant
-		let anyhow_error = anyhow::anyhow!("Test anyhow error");
-		let notification_error: NotificationError = anyhow_error.into();
-
-		// Other variant should generate a new UUID
-		assert!(!notification_error.trace_id().is_empty());
+		for (error, original_id) in errors_with_ids {
+			let propagated_id = error.trace_id();
+			assert!(
+				!propagated_id.is_empty(),
+				"Error {:?} should have a non-empty trace_id",
+				error
+			);
+			assert_eq!(
+				propagated_id, original_id,
+				"Trace ID for {:?} was not propagated consistently. Expected: {}, Got: {}",
+				error, original_id, propagated_id
+			);
+		}
 	}
 }

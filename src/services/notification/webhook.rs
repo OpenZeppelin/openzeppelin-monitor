@@ -43,6 +43,7 @@ pub struct WebhookConfig {
 }
 
 /// Implementation of webhook notifications via webhooks
+#[derive(Debug)]
 pub struct WebhookNotifier {
 	/// Webhook URL for message delivery
 	pub url: String,
@@ -79,8 +80,8 @@ impl WebhookNotifier {
 	/// * `config` - Webhook configuration
 	///
 	/// # Returns
-	/// * `Result<Self, Box<NotificationError>>` - Notifier instance if config is valid
-	pub fn new(config: WebhookConfig) -> Result<Self, Box<NotificationError>> {
+	/// * `Result<Self, NotificationError>` - Notifier instance if config is valid
+	pub fn new(config: WebhookConfig) -> Result<Self, NotificationError> {
 		let mut headers = config.headers.unwrap_or_default();
 		if !headers.contains_key("Content-Type") {
 			headers.insert("Content-Type".to_string(), "application/json".to_string());
@@ -119,27 +120,31 @@ impl WebhookNotifier {
 	/// * `config` - Trigger configuration containing Webhook parameters
 	///
 	/// # Returns
-	/// * `Option<Self>` - Notifier instance if config is Webhook type
-	pub fn from_config(config: &TriggerTypeConfig) -> Option<Self> {
-		match config {
-			TriggerTypeConfig::Webhook {
-				url,
-				message,
-				method,
-				secret,
-				headers,
-			} => Some(Self {
+	/// * `Result<Self>` - Notifier instance if config is Webhook type
+	pub fn from_config(config: &TriggerTypeConfig) -> Result<Self, NotificationError> {
+		if let TriggerTypeConfig::Webhook {
+			url,
+			message,
+			method,
+			secret,
+			headers,
+		} = config
+		{
+			let webhook_config = WebhookConfig {
 				url: url.as_ref().to_string(),
 				url_params: None,
 				title: message.title.clone(),
 				body_template: message.body.clone(),
-				client: Client::new(),
 				method: method.clone(),
 				secret: secret.as_ref().map(|s| s.as_ref().to_string()),
 				headers: headers.clone(),
 				payload_fields: None,
-			}),
-			_ => None,
+			};
+
+			WebhookNotifier::new(webhook_config)
+		} else {
+			let msg = format!("Invalid webhook configuration: {:?}", config);
+			Err(NotificationError::config_error(msg, None, None))
 		}
 	}
 
@@ -147,7 +152,16 @@ impl WebhookNotifier {
 		&self,
 		secret: &str,
 		payload: &WebhookMessage,
-	) -> Result<(String, String), Box<NotificationError>> {
+	) -> Result<(String, String), NotificationError> {
+		// Explicitly reject empty secret, because `HmacSha256::new_from_slice` currently allows empty secrets
+		if secret.is_empty() {
+			return Err(NotificationError::notify_failed(
+				"Invalid secret: cannot be empty.".to_string(),
+				None,
+				None,
+			));
+		}
+
 		let timestamp = Utc::now().timestamp_millis();
 
 		// Create HMAC instance
@@ -174,8 +188,8 @@ impl Notifier for WebhookNotifier {
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), anyhow::Error>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		// Default payload with title and body
 		let mut payload_fields = HashMap::new();
 		payload_fields.insert("title".to_string(), serde_json::json!(self.title));
@@ -191,12 +205,12 @@ impl Notifier for WebhookNotifier {
 	/// * `payload_fields` - Additional fields to include in the payload
 	///
 	/// # Returns
-	/// * `Result<(), anyhow::Error>` - Success or error
+	/// * `Result<(), NotificationError>` - Success or error
 	async fn notify_with_payload(
 		&self,
 		message: &str,
 		mut payload_fields: HashMap<String, serde_json::Value>,
-	) -> Result<(), anyhow::Error> {
+	) -> Result<(), NotificationError> {
 		let mut url = self.url.clone();
 		// Add URL parameters if present
 		if let Some(params) = &self.url_params {
@@ -238,30 +252,52 @@ impl Notifier for WebhookNotifier {
 				body: message.to_string(),
 			};
 
-			let (signature, timestamp) = self
-				.sign_request(secret, &payload_for_signing)
-				.map_err(|e| NotificationError::internal_error(e.to_string(), None, None))?;
+			let (signature, timestamp) =
+				self.sign_request(secret, &payload_for_signing)
+					.map_err(|e| {
+						NotificationError::internal_error(e.to_string(), Some(e.into()), None)
+					})?;
 
 			// Add signature headers
 			headers.insert(
 				HeaderName::from_static("x-signature"),
-				HeaderValue::from_str(&signature)
-					.map_err(|_| anyhow::anyhow!("Invalid signature value"))?,
+				HeaderValue::from_str(&signature).map_err(|e| {
+					NotificationError::notify_failed(
+						"Invalid signature value".to_string(),
+						Some(e.into()),
+						None,
+					)
+				})?,
 			);
 			headers.insert(
 				HeaderName::from_static("x-timestamp"),
-				HeaderValue::from_str(&timestamp)
-					.map_err(|_| anyhow::anyhow!("Invalid timestamp value"))?,
+				HeaderValue::from_str(&timestamp).map_err(|e| {
+					NotificationError::notify_failed(
+						"Invalid timestamp value".to_string(),
+						Some(e.into()),
+						None,
+					)
+				})?,
 			);
 		}
 
 		// Add custom headers
 		if let Some(headers_map) = &self.headers {
 			for (key, value) in headers_map {
-				let header_name = HeaderName::from_bytes(key.as_bytes())
-					.map_err(|_| anyhow::anyhow!("Invalid header name: {}", key))?;
-				let header_value = HeaderValue::from_str(value)
-					.map_err(|_| anyhow::anyhow!("Invalid header value for key: {}", key))?;
+				let header_name = HeaderName::from_bytes(key.as_bytes()).map_err(|e| {
+					NotificationError::notify_failed(
+						format!("Invalid header name: {}", key),
+						Some(e.into()),
+						None,
+					)
+				})?;
+				let header_value = HeaderValue::from_str(value).map_err(|e| {
+					NotificationError::notify_failed(
+						format!("Invalid header value for {}: {}", key, value),
+						Some(e.into()),
+						None,
+					)
+				})?;
 				headers.insert(header_name, header_value);
 			}
 		}
@@ -278,12 +314,22 @@ impl Notifier for WebhookNotifier {
 			.json(&payload)
 			.send()
 			.await
-			.map_err(|e| anyhow::anyhow!("Failed to send webhook notification: {}", e))?;
+			.map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to send webhook request: {}", e),
+					Some(e.into()),
+					None,
+				)
+			})?;
 
 		let status = response.status();
 
 		if !status.is_success() {
-			return Err(anyhow::anyhow!("Webhook returned error status: {}", status));
+			return Err(NotificationError::notify_failed(
+				format!("Webhook request failed with status: {}", status),
+				None,
+				None,
+			));
 		}
 
 		Ok(())
@@ -402,6 +448,23 @@ mod tests {
 		assert!(!timestamp.is_empty());
 	}
 
+	#[test]
+	fn test_sign_request_fails_empty_secret() {
+		let notifier =
+			create_test_notifier("https://webhook.example.com", "Test message", None, None);
+		let payload = WebhookMessage {
+			title: "Test Title".to_string(),
+			body: "Test message".to_string(),
+		};
+		let empty_secret = "";
+
+		let result = notifier.sign_request(empty_secret, &payload);
+		assert!(result.is_err());
+
+		let error = result.unwrap_err();
+		assert!(matches!(error, NotificationError::NotifyFailed(_)));
+	}
+
 	////////////////////////////////////////////////////////////
 	// from_config tests
 	////////////////////////////////////////////////////////////
@@ -411,12 +474,32 @@ mod tests {
 		let config = create_test_webhook_config();
 
 		let notifier = WebhookNotifier::from_config(&config);
-		assert!(notifier.is_some());
+		assert!(notifier.is_ok());
 
 		let notifier = notifier.unwrap();
 		assert_eq!(notifier.url, "https://webhook.example.com");
 		assert_eq!(notifier.title, "Test Alert");
 		assert_eq!(notifier.body_template, "Test message ${value}");
+	}
+
+	#[test]
+	fn test_from_config_invalid_type() {
+		// Create a config that is not a Telegram type
+		let config = TriggerTypeConfig::Slack {
+			slack_url: SecretValue::Plain(SecretString::new(
+				"https://slack.example.com".to_string(),
+			)),
+			message: NotificationMessage {
+				title: "Test Alert".to_string(),
+				body: "Test message ${value}".to_string(),
+			},
+		};
+
+		let notifier = WebhookNotifier::from_config(&config);
+		assert!(notifier.is_err());
+
+		let error = notifier.unwrap_err();
+		assert!(matches!(error, NotificationError::ConfigError { .. }));
 	}
 
 	////////////////////////////////////////////////////////////
@@ -771,6 +854,39 @@ mod tests {
 
 		let result = notifier.notify_with_payload("Test message", payload).await;
 		assert!(result.is_ok());
+		mock.assert();
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_invalid_url() {
+		let notifier = create_test_notifier("invalid-url", "Test message", None, None);
+
+		let result = notifier
+			.notify_with_payload("Test message", HashMap::new())
+			.await;
+		assert!(result.is_err());
+
+		let error = result.unwrap_err();
+		assert!(matches!(error, NotificationError::NotifyFailed { .. }));
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_failure() {
+		let mut server = mockito::Server::new_async().await;
+		let mock = server
+			.mock("POST", "/")
+			.with_status(500)
+			.with_body("Internal Server Error")
+			.create_async()
+			.await;
+
+		let notifier = create_test_notifier(server.url().as_str(), "Test message", None, None);
+
+		let result = notifier
+			.notify_with_payload("Test message", HashMap::new())
+			.await;
+
+		assert!(result.is_err());
 		mock.assert();
 	}
 }

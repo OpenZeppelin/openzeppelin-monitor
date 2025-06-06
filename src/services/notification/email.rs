@@ -22,6 +22,7 @@ use crate::{
 use pulldown_cmark::{html, Options, Parser};
 
 /// Implementation of email notifications via SMTP
+#[derive(Debug)]
 pub struct EmailNotifier<T: Transport + Send + Sync> {
 	/// Email subject
 	subject: String,
@@ -88,7 +89,7 @@ impl EmailNotifier<SmtpTransport> {
 	pub fn new(
 		smtp_config: SmtpConfig,
 		email_content: EmailContent,
-	) -> Result<Self, Box<NotificationError>> {
+	) -> Result<Self, NotificationError> {
 		let client = SmtpTransport::relay(&smtp_config.host)
 			.map_err(|e| {
 				NotificationError::internal_error(
@@ -144,35 +145,39 @@ impl EmailNotifier<SmtpTransport> {
 	/// * `config` - Trigger configuration containing email parameters
 	///
 	/// # Returns
-	/// * `Option<Self>` - Notifier instance if config is email type
-	pub fn from_config(config: &TriggerTypeConfig) -> Option<Self> {
-		match config {
-			TriggerTypeConfig::Email {
-				host,
-				port,
-				username,
-				password,
-				message,
-				sender,
-				recipients,
-			} => {
-				let smtp_config = SmtpConfig {
-					host: host.clone(),
-					port: port.unwrap_or(465),
-					username: username.as_ref().to_string(),
-					password: password.as_ref().to_string(),
-				};
+	/// * `Result<Self, NotificationError>` - Notifier instance if config is email type
+	pub fn from_config(config: &TriggerTypeConfig) -> Result<Self, NotificationError> {
+		if let TriggerTypeConfig::Email {
+			host,
+			port,
+			username,
+			password,
+			message,
+			sender,
+			recipients,
+		} = config
+		{
+			let smtp_config = SmtpConfig {
+				host: host.clone(),
+				port: port.unwrap_or(465),
+				username: username.as_ref().to_string(),
+				password: password.as_ref().to_string(),
+			};
 
-				let email_content = EmailContent {
-					subject: message.title.clone(),
-					body_template: message.body.clone(),
-					sender: sender.clone(),
-					recipients: recipients.clone(),
-				};
+			let email_content = EmailContent {
+				subject: message.title.clone(),
+				body_template: message.body.clone(),
+				sender: sender.clone(),
+				recipients: recipients.clone(),
+			};
 
-				Self::new(smtp_config, email_content).ok()
-			}
-			_ => None,
+			Self::new(smtp_config, email_content)
+		} else {
+			Err(NotificationError::config_error(
+				format!("Invalid email configuration: {:?}", config),
+				None,
+				None,
+			))
 		}
 	}
 }
@@ -188,8 +193,8 @@ where
 	/// * `message` - The formatted message to send
 	///
 	/// # Returns
-	/// * `Result<(), anyhow::Error>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), anyhow::Error> {
+	/// * `Result<(), NotificationError>` - Success or error
+	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
 		let recipients_str = self
 			.recipients
 			.iter()
@@ -197,33 +202,45 @@ where
 			.collect::<Vec<_>>()
 			.join(", ");
 
-		let mailboxes: Mailboxes = recipients_str
-			.parse::<Mailboxes>()
-			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+		let mailboxes: Mailboxes = recipients_str.parse::<Mailboxes>().map_err(|e| {
+			NotificationError::notify_failed(
+				format!("Failed to parse recipients: {}", e),
+				Some(e.into()),
+				None,
+			)
+		})?;
 		let recipients_header: header::To = mailboxes.into();
 
 		let email = Message::builder()
 			.mailbox(recipients_header)
-			.from(
-				self.sender
-					.to_string()
-					.parse::<Mailbox>()
-					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
-			)
-			.reply_to(
-				self.sender
-					.to_string()
-					.parse::<Mailbox>()
-					.map_err(|e| anyhow::anyhow!(e.to_string()))?,
-			)
+			.from(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to parse sender: {}", e),
+					Some(e.into()),
+					None,
+				)
+			})?)
+			.reply_to(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to parse reply-to: {}", e),
+					Some(e.into()),
+					None,
+				)
+			})?)
 			.subject(&self.subject)
 			.header(ContentType::TEXT_HTML)
 			.body(message.to_owned())
-			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+			.map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to build email message: {}", e),
+					Some(e.into()),
+					None,
+				)
+			})?;
 
-		self.client
-			.send(&email)
-			.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+		self.client.send(&email).map_err(|e| {
+			NotificationError::notify_failed(format!("Failed to send email: {}", e), None, None)
+		})?;
 
 		Ok(())
 	}
@@ -326,7 +343,7 @@ mod tests {
 		let config = create_test_email_config(Some(587));
 
 		let notifier = EmailNotifier::from_config(&config);
-		assert!(notifier.is_some());
+		assert!(notifier.is_ok());
 
 		let notifier = notifier.unwrap();
 		assert_eq!(notifier.subject, "Test Subject");
@@ -341,7 +358,25 @@ mod tests {
 		let config = create_test_email_config(None);
 
 		let notifier = EmailNotifier::from_config(&config);
-		assert!(notifier.is_some());
+		assert!(notifier.is_ok());
+	}
+
+	#[test]
+	fn test_from_config_invalid_type() {
+		// Create a Slack config instead of Email
+		let config = TriggerTypeConfig::Slack {
+			slack_url: SecretValue::Plain(SecretString::new("random.url".to_string())),
+			message: NotificationMessage {
+				title: "Test Slack".to_string(),
+				body: "This is a test message".to_string(),
+			},
+		};
+
+		let notifier = EmailNotifier::from_config(&config);
+		assert!(notifier.is_err());
+
+		let error = notifier.unwrap_err();
+		assert!(matches!(error, NotificationError::ConfigError { .. }));
 	}
 
 	////////////////////////////////////////////////////////////
@@ -354,5 +389,8 @@ mod tests {
 		let result = notifier.notify("Test message").await;
 		// Expected to fail since we're using a dummy SMTP server
 		assert!(result.is_err());
+
+		let error = result.unwrap_err();
+		assert!(matches!(error, NotificationError::NotifyFailed { .. }));
 	}
 }

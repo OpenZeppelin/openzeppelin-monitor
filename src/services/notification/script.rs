@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
-	services::notification::ScriptExecutor,
+	services::notification::{NotificationError, ScriptExecutor},
 	services::trigger::ScriptExecutorFactory,
 };
 
@@ -11,18 +11,21 @@ use crate::{
 /// This notifier takes a script configuration and executes the specified script
 /// when a monitor match occurs. It supports different script languages and
 /// allows passing arguments and setting timeouts for script execution.
+#[derive(Debug)]
 pub struct ScriptNotifier {
 	config: TriggerTypeConfig,
 }
 
 impl ScriptNotifier {
 	/// Creates a Script notifier from a trigger configuration
-	pub fn from_config(config: &TriggerTypeConfig) -> Option<Self> {
-		match config {
-			TriggerTypeConfig::Script { .. } => Some(Self {
+	pub fn from_config(config: &TriggerTypeConfig) -> Result<Self, NotificationError> {
+		if let TriggerTypeConfig::Script { .. } = config {
+			Ok(Self {
 				config: config.clone(),
-			}),
-			_ => None,
+			})
+		} else {
+			let msg = format!("Invalid script configuration: {:?}", config);
+			Err(NotificationError::config_error(msg, None, None))
 		}
 	}
 }
@@ -34,7 +37,7 @@ impl ScriptExecutor for ScriptNotifier {
 		&self,
 		monitor_match: &MonitorMatch,
 		script_content: &(ScriptLanguage, String),
-	) -> Result<(), anyhow::Error> {
+	) -> Result<(), NotificationError> {
 		match &self.config {
 			TriggerTypeConfig::Script {
 				script_path: _,
@@ -55,14 +58,24 @@ impl ScriptExecutor for ScriptNotifier {
 
 				match result {
 					Ok(true) => Ok(()),
-					Ok(false) => Err(anyhow::anyhow!("Trigger script execution failed")),
+					Ok(false) => Err(NotificationError::execution_error(
+						"Trigger script execution failed",
+						None,
+						None,
+					)),
 					Err(e) => {
-						return Err(anyhow::anyhow!("Trigger script execution error: {}", e));
+						return Err(NotificationError::execution_error(
+							format!("Trigger script execution error: {}", e),
+							Some(e.into()),
+							None,
+						));
 					}
 				}
 			}
-			_ => Err(anyhow::anyhow!(
-				"Invalid configuration type for ScriptNotifier"
+			_ => Err(NotificationError::config_error(
+				"Invalid configuration type for ScriptNotifier",
+				None,
+				None,
 			)),
 		}
 	}
@@ -72,12 +85,17 @@ impl ScriptExecutor for ScriptNotifier {
 mod tests {
 	use super::*;
 	use crate::{
-		models::{EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, Monitor, MonitorMatch},
+		models::{
+			EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, Monitor, MonitorMatch,
+			NotificationMessage, SecretString, SecretValue, TriggerType,
+		},
+		services::notification::NotificationService,
 		utils::tests::{
 			builders::evm::monitor::MonitorBuilder, evm::transaction::TransactionBuilder,
+			trigger::TriggerBuilder,
 		},
 	};
-	use std::time::Instant;
+	use std::{collections::HashMap, time::Instant};
 
 	fn create_test_script_config() -> TriggerTypeConfig {
 		TriggerTypeConfig::Script {
@@ -118,7 +136,25 @@ mod tests {
 	fn test_from_config_with_script_config() {
 		let config = create_test_script_config();
 		let notifier = ScriptNotifier::from_config(&config);
-		assert!(notifier.is_some());
+		assert!(notifier.is_ok());
+	}
+
+	#[test]
+	fn test_from_config_invalid_type() {
+		// Create a config that is not a script type
+		let config = TriggerTypeConfig::Slack {
+			slack_url: SecretValue::Plain(SecretString::new("random.url".to_string())),
+			message: NotificationMessage {
+				title: "Test Slack".to_string(),
+				body: "This is a test message".to_string(),
+			},
+		};
+
+		let notifier = ScriptNotifier::from_config(&config);
+		assert!(notifier.is_err());
+
+		let error = notifier.unwrap_err();
+		assert!(matches!(error, NotificationError::ConfigError { .. }));
 	}
 
 	#[tokio::test]
@@ -192,5 +228,53 @@ mod tests {
 			.contains("Script execution timed out"));
 		// Verify that it failed around the timeout time
 		assert!(elapsed.as_millis() >= 400 && elapsed.as_millis() < 600);
+	}
+
+	#[tokio::test]
+	async fn test_script_notify_with_invalid_script() {
+		let config = create_test_script_config();
+		let notifier = ScriptNotifier::from_config(&config).unwrap();
+		let monitor_match = create_test_monitor_match();
+		let script_content = (ScriptLanguage::Python, "invalid syntax".to_string());
+
+		let result = notifier
+			.script_notify(&monitor_match, &script_content)
+			.await;
+		assert!(result.is_err());
+
+		let error = result.unwrap_err();
+		assert!(matches!(error, NotificationError::ExecutionError { .. }));
+	}
+
+	#[tokio::test]
+	async fn test_script_notification_script_content_not_found() {
+		let service = NotificationService::new();
+		let script_config = TriggerTypeConfig::Script {
+			language: ScriptLanguage::Python,
+			script_path: "non_existent_script.py".to_string(), // This path won't be in the map
+			arguments: None,
+			timeout_ms: 1000,
+		};
+		let trigger = TriggerBuilder::new()
+        .name("test_script_missing")
+        .config(script_config) // Use the actual script config
+        .trigger_type(TriggerType::Script)
+        .build();
+
+		let variables = HashMap::new();
+		let monitor_match = create_test_monitor_match();
+		let trigger_scripts = HashMap::new(); // Empty map, so script won't be found
+
+		let result = service
+			.execute(&trigger, &variables, &monitor_match, &trigger_scripts)
+			.await;
+
+		assert!(result.is_err());
+		match result.unwrap_err() {
+			NotificationError::ConfigError(ctx) => {
+				assert!(ctx.message.contains("Script content not found"));
+			}
+			_ => panic!("Expected ConfigError for missing script content"),
+		}
 	}
 }

@@ -1,5 +1,37 @@
-use openzeppelin_monitor::services::notification::{Notifier, TelegramNotifier};
+use openzeppelin_monitor::{
+	models::{EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, TriggerType},
+	services::notification::{NotificationError, NotificationService, Notifier, TelegramNotifier},
+	utils::tests::{
+		evm::{monitor::MonitorBuilder, transaction::TransactionBuilder},
+		trigger::TriggerBuilder,
+	},
+};
 use std::collections::HashMap;
+
+use crate::integration::mocks::{create_test_evm_logs, create_test_evm_transaction_receipt};
+
+fn create_test_monitor(name: &str) -> Monitor {
+	MonitorBuilder::new()
+		.name(name)
+		.networks(vec!["ethereum_mainnet".to_string()])
+		.paused(false)
+		.triggers(vec!["test_trigger".to_string()])
+		.build()
+}
+
+fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
+	let transaction = TransactionBuilder::new().build();
+
+	MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+		monitor,
+		transaction,
+		receipt: Some(create_test_evm_transaction_receipt()),
+		logs: Some(create_test_evm_logs()),
+		network_slug: "ethereum_mainnet".to_string(),
+		matched_on: MatchConditions::default(),
+		matched_on_args: None,
+	}))
+}
 
 #[tokio::test]
 async fn test_telegram_notification_success() {
@@ -82,5 +114,34 @@ async fn test_telegram_notification_failure() {
 	let result = notifier.notify("Test message").await;
 
 	assert!(result.is_err());
+
+	let error = result.unwrap_err();
+	assert!(matches!(error, NotificationError::NotifyFailed(_)));
+
 	mock.assert();
+}
+
+#[tokio::test]
+async fn test_notification_service_telegram_execution_failure() {
+	let notification_service = NotificationService::new();
+
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.telegram("random token", "random chat_id", true) // Should fail due to invalid token
+		.trigger_type(TriggerType::Telegram)
+		.message("Test Alert", "Test message")
+		.build();
+
+	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
+
+	let result = notification_service
+		.execute(&trigger, &HashMap::new(), &monitor_match, &HashMap::new())
+		.await;
+
+	assert!(result.is_err());
+
+	match result.unwrap_err() {
+		NotificationError::NotifyFailed(_) => {}
+		_ => panic!("Expected NotificationError::NotifyFailed variant"),
+	}
 }

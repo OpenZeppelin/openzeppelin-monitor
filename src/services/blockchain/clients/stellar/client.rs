@@ -249,10 +249,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> StellarClientTrait for Stella
 				serde_json::from_value(response["result"]["events"].clone())
 					.with_context(|| "Failed to parse event response")?;
 
-			if ledger_events.is_empty() {
-				break;
-			}
-
 			for event in ledger_events {
 				let sequence = event.ledger;
 				if sequence > target_sequence {
