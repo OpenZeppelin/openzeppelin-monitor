@@ -6,10 +6,17 @@
 mod properties {
 	mod filters {
 		mod evm {
+			mod address_evaluator;
+			mod boolean_evaluator;
 			mod filter;
+			mod helpers;
+			mod map_evaluator;
+			mod numbers_evaluator;
+			mod strings_evaluator;
 		}
 		mod stellar {
 			mod filter;
+			mod helpers;
 		}
 	}
 	mod notifications {

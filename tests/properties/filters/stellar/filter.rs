@@ -1,12 +1,13 @@
 //! Property-based tests for Stellar transaction matching and filtering.
 //! Tests cover signature/address normalization, expression evaluation, and transaction matching.
 
+use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use openzeppelin_monitor::{
 	models::{
 		Monitor, StellarContractFunction, StellarContractInput, StellarDecodedTransaction,
-		StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
-		StellarTransaction, StellarTransactionInfo, TransactionStatus,
+		StellarEvent, StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
+		StellarMatchParamsMap, StellarTransaction, StellarTransactionInfo, TransactionStatus,
 	},
 	services::{
 		blockchain::{StellarClient, StellarTransportClient},
@@ -14,7 +15,7 @@ use openzeppelin_monitor::{
 			stellar_helpers::{
 				are_same_address, are_same_signature, normalize_address, normalize_signature,
 			},
-			StellarBlockFilter,
+			EventMap, StellarBlockFilter,
 		},
 	},
 	utils::tests::stellar::monitor::MonitorBuilder,
@@ -27,7 +28,7 @@ use stellar_xdr::curr::{
 	AccountId, Hash, HostFunction, Int128Parts, InvokeContractArgs, InvokeHostFunctionOp, Memo,
 	MuxedAccount, Operation, OperationBody, Preconditions, ScAddress, ScString, ScSymbol, ScVal,
 	StringM, Transaction as XdrTransaction, TransactionEnvelope, TransactionExt,
-	TransactionV1Envelope, UInt128Parts, Uint256, VecM,
+	TransactionV1Envelope, UInt128Parts, Uint256, VecM, WriteXdr,
 };
 
 prop_compose! {
@@ -253,6 +254,29 @@ prop_compose! {
 			.function(format!("{}({})", function_name, param_type).as_str(), Some(format!("param0 >= {}", min_value)))
 			.function(format!("not_{}({})", function_name, param_type).as_str(), Some(format!("param0 >= {}", min_value)))
 			.build()
+	}
+}
+
+// Generates valid JSON objects of different complexity
+prop_compose! {
+	fn valid_json_objects()(
+		num_fields in 1..5usize
+	) -> String {
+		let mut obj = serde_json::Map::new();
+		for i in 0..num_fields {
+			let key = format!("key{}", i);
+			let value = match i % 3 {
+				0 => serde_json::Value::String(format!("value{}", i)),
+				1 => serde_json::Value::Number(serde_json::Number::from(i)),
+				_ => {
+					let mut nested = serde_json::Map::new();
+					nested.insert("nested_key".into(), serde_json::Value::String(format!("nested_value{}", i)));
+					serde_json::Value::Object(nested)
+				}
+			};
+			obj.insert(key, value);
+		}
+		serde_json::Value::Object(obj).to_string()
 	}
 }
 
@@ -1529,5 +1553,187 @@ proptest! {
 
 		// Verify empty input produces empty output
 		prop_assert!(params.is_empty());
+	}
+
+	// Tests property-based matching for event functions
+	#[test]
+	fn test_find_matching_events_for_transaction_property(
+		// Generate a transaction hash
+		tx_hash in "[a-zA-Z0-9]{64}",
+		// Generate an event name
+		event_name in prop_oneof![
+			Just("Transfer"),
+			Just("Approval"),
+			Just("Mint"),
+			Just("Burn"),
+			Just("AdminChanged")
+		],
+		// Generate parameter type (only use numeric types for simplicity)
+		param_type in prop_oneof![
+			Just("I128"),
+			Just("U128"),
+		],
+		// Generate a value for expression testing
+		value in 0u128..1000000u128,
+		// Generate a threshold for expression testing
+		threshold in 0u128..1000000u128,
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create the event signature
+		let event_signature = format!("{}({})", event_name, param_type);
+
+		// Create monitor with the event condition
+		let monitor = MonitorBuilder::new()
+			.event(&event_signature, Some(format!("param0 >= {}", threshold)))
+			.build();
+
+		// Create transaction
+		let transaction = StellarTransaction::from(StellarTransactionInfo {
+			status: "SUCCESS".to_string(),
+			transaction_hash: tx_hash.clone(),
+			application_order: 1,
+			fee_bump: false,
+			envelope_xdr: None,
+			envelope_json: None,
+			result_xdr: None,
+			result_json: None,
+			result_meta_xdr: None,
+			result_meta_json: None,
+			diagnostic_events_xdr: None,
+			diagnostic_events_json: None,
+			ledger: 1234,
+			ledger_close_time: 1234567890,
+			decoded: None,
+		});
+
+		// Create event with the matching transaction hash
+		let test_event = EventMap {
+			event: StellarMatchParamsMap {
+				signature: event_signature.clone(),
+				args: Some(vec![
+					StellarMatchParamEntry {
+						name: "param0".to_string(),
+						value: value.to_string(),
+						kind: param_type.to_string(),
+						indexed: false,
+					}
+				]),
+			},
+			tx_hash: tx_hash.clone(),
+		};
+
+		let events = vec![test_event];
+		let mut matched_events = Vec::new();
+		let mut matched_args = StellarMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+
+		// Call the function under test
+		filter.find_matching_events_for_transaction(
+			&events,
+			&transaction,
+			&monitor,
+			&mut matched_events,
+			&mut matched_args,
+		);
+
+		// Determine if we should have a match based on the expression
+		let should_match = value >= threshold;
+
+		// Verify the results
+		if should_match {
+			// Should have exactly one match
+			prop_assert_eq!(matched_events.len(), 1);
+			prop_assert_eq!(&matched_events[0].signature, &event_signature);
+			prop_assert_eq!(&matched_events[0].expression, &Some(format!("param0 >= {}", threshold)));
+
+			// Verify matched arguments
+			if let Some(events) = &matched_args.events {
+				prop_assert_eq!(events.len(), 1);
+				prop_assert_eq!(&events[0].signature, &event_signature);
+				prop_assert!(events[0].args.is_some());
+			}
+		} else {
+			// Should have no matches
+			prop_assert!(matched_events.is_empty());
+			if let Some(events) = &matched_args.events {
+				prop_assert!(events.is_empty());
+			}
+		}
+	}
+
+	// Tests property-based matching for decode_events
+	#[test]
+	fn test_decode_events_property(
+		// Generate a contract address
+		contract_address in valid_address(),
+		// Generate an event name
+		event_name in prop_oneof![
+			Just("Transfer"),
+			Just("Approval"),
+			Just("Mint"),
+			Just("Burn")
+		],
+		// Generate a transaction hash
+		tx_hash in "[a-zA-Z0-9]{64}",
+		// Generate a value for expression testing
+		value in 0u64..u64::MAX,
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		// Create a buffer for event name encoding (8 byte prefix + name)
+		let mut event_name_buffer = vec![0u8; 8];
+		event_name_buffer.extend_from_slice(event_name.as_bytes());
+		let encoded_event_name = BASE64.encode(event_name_buffer);
+
+		// Create I128 value separately
+		let value_i128 = Int128Parts { hi: 0, lo: value };
+		let sc_val = ScVal::I128(value_i128);
+		let encoded_value = sc_val.to_xdr_base64(stellar_xdr::curr::Limits::none()).unwrap();
+
+		// Create test event
+		let stellar_event = StellarEvent {
+			contract_id: contract_address.clone(),
+			transaction_hash: tx_hash.clone(),
+			topic_xdr: Some(vec![encoded_event_name.clone()]),
+			value_xdr: Some(encoded_value.clone()),
+			event_type: "contract".to_string(),
+			ledger: 1234,
+			ledger_closed_at: "2023-01-01T00:00:00Z".to_string(),
+			id: "0".to_string(),
+			paging_token: "0".to_string(),
+			in_successful_contract_call: true,
+			topic_json: None,
+			value_json: None,
+		};
+
+		let monitored_addresses = vec![normalize_address(&contract_address)];
+		let events = vec![stellar_event];
+		let contract_specs = Vec::new();
+
+		// Run the function under test
+		let decoded_events = filter.decode_events(&events, &monitored_addresses, &contract_specs);
+		// Verify the results
+		prop_assert_eq!(decoded_events.len(), 1);
+		prop_assert_eq!(&decoded_events[0].tx_hash, &tx_hash);
+
+		let decoded_event = &decoded_events[0].event;
+		prop_assert!(decoded_event.signature.starts_with(event_name));
+		prop_assert!(decoded_event.signature.contains("I128"));
+
+		// Verify the args are properly decoded
+		if let Some(args) = &decoded_event.args {
+			prop_assert_eq!(args.len(), 1);
+			prop_assert_eq!(&args[0].kind, "I128");
+			prop_assert_eq!(&args[0].name, "0");
+			prop_assert!(!args[0].indexed);
+			prop_assert_eq!(&args[0].value, &value.to_string());
+		}
 	}
 }

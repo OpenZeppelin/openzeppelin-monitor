@@ -6,14 +6,14 @@
 //! - Chain-specific helper functions
 
 mod error;
-mod expression;
+pub mod expression;
 mod filter_match;
-mod filters;
+pub mod filters;
 
 pub use error::FilterError;
 pub use filter_match::handle_match;
 
 pub use filters::{
 	evm::helpers as evm_helpers, stellar::helpers as stellar_helpers, BlockFilter, EVMBlockFilter,
-	FilterService, StellarBlockFilter,
+	EventMap, FilterService, StellarBlockFilter,
 };
