@@ -488,7 +488,7 @@ impl fmt::Display for StellarType {
 ///
 /// # Returns
 /// A string representation of the combined 256-bit unsigned integer
-fn combine_u256(n: &UInt256Parts) -> String {
+pub fn combine_u256(n: &UInt256Parts) -> String {
 	let result = U256::from_limbs([n.lo_lo, n.lo_hi, n.hi_lo, n.hi_hi]);
 	result.to_string()
 }
@@ -963,41 +963,6 @@ pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_valu
 	}
 }
 
-/// Compare two JSON values with the given operator.
-///
-/// # Arguments
-/// * `param_val` - The first JSON value to compare
-/// * `operator` - The operator to use for comparison ("==", "!=", ">", ">=", "<", "<=")
-/// * `compare_val` - The second JSON value to compare
-///
-/// # Returns
-/// `true` if the comparison is true, `false` otherwise
-pub fn compare_json_values(param_val: &Value, operator: &str, compare_val: &Value) -> bool {
-	match operator {
-		"==" => param_val == compare_val,
-		"!=" => param_val != compare_val,
-		">" | ">=" | "<" | "<=" => match (param_val.as_f64(), compare_val.as_f64()) {
-			(Some(param_num), Some(compare_num)) => match operator {
-				">" => param_num > compare_num,
-				">=" => param_num >= compare_num,
-				"<" => param_num < compare_num,
-				"<=" => param_num <= compare_num,
-				_ => unreachable!(),
-			},
-			_ => {
-				tracing::debug!(
-					"Numeric comparison operator {operator} requires numeric JSON values"
-				);
-				false
-			}
-		},
-		_ => {
-			tracing::debug!("Unsupported operator for JSON-to-JSON comparison: {operator}");
-			false
-		}
-	}
-}
-
 /// Get the kind of a value from a JSON value.
 ///
 /// # Arguments
@@ -1361,45 +1326,6 @@ mod tests {
 			parse_sc_val(&ScVal::String(ScString("test".try_into().unwrap())), false).unwrap();
 		assert_eq!(string_val.kind, "String");
 		assert_eq!(string_val.value, "test");
-	}
-
-	#[test]
-	fn test_json_helper_functions() {
-		// Test parse_json_safe
-		assert!(parse_json_safe("invalid json").is_none());
-		assert_eq!(
-			parse_json_safe(r#"{"key": "value"}"#).unwrap(),
-			json!({"key": "value"})
-		);
-
-		// Test get_nested_value
-		let json_obj = json!({
-			"user": {
-				"address": {
-					"street": "123 Main St"
-				}
-			}
-		});
-		assert_eq!(
-			get_nested_value(&json_obj, "user.address.street").unwrap(),
-			&json!("123 Main St")
-		);
-		assert!(get_nested_value(&json_obj, "invalid.path").is_none());
-
-		// Test string comparison functions
-		assert!(compare_strings("test", "==", "test"));
-		assert!(compare_strings("test", "!=", "other"));
-		assert!(!compare_strings("test", "invalid", "test"));
-
-		// Test JSON value comparison functions
-		assert!(compare_json_values(&json!(42), "==", &json!(42)));
-		assert!(compare_json_values(&json!(42), ">", &json!(30)));
-		assert!(!compare_json_values(&json!(42), "<", &json!(30)));
-		assert!(!compare_json_values(
-			&json!("test"),
-			"invalid",
-			&json!("test")
-		));
 	}
 
 	#[test]
