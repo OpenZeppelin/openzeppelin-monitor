@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
 use std::str::FromStr;
 
-type EVMArgs = [EVMMatchParamEntry];
+pub type EVMArgs = [EVMMatchParamEntry];
 
 const UNSIGNED_INTEGER_KINDS: &[&str] = &[
 	"uint8", "uint16", "uint32", "uint64", "uint128", "uint256", "number",
@@ -56,7 +56,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Helper to check if a serde_json::Value matches a target string.
 	/// Used by compare_array for items within a JSON array.
-	fn check_json_value_matches_str(&self, lhs_json: &JsonValue, rhs_str: &str) -> bool {
+	pub fn check_json_value_matches_str(&self, lhs_json: &JsonValue, rhs_str: &str) -> bool {
 		match lhs_json {
 			JsonValue::String(s) => {
 				if self.get_kind_from_json_value(lhs_json) == "address" {
@@ -88,7 +88,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares an "array" type parameter.
-	fn compare_array(
+	pub fn compare_array(
 		&self,
 		lhs_json_array_str: &str,
 		operator: &ComparisonOperator,
@@ -192,7 +192,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares potential U256 LHS value with the RHS literal value
 	/// Handles decimal and hex inputs for both sides
-	fn compare_u256(
+	pub fn compare_u256(
 		&self,
 		left_str: &str,
 		operator: &ComparisonOperator,
@@ -231,7 +231,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares potential I256 LHS value with the RHS literal value
-	fn compare_i256(
+	pub fn compare_i256(
 		&self,
 		left_str: &str,
 		operator: &ComparisonOperator,
@@ -271,7 +271,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares an EVM address (string) with a literal value based on the operator.
 	/// Only supports Eq and Ne operators.
-	fn compare_address(
+	pub fn compare_address(
 		&self,
 		left: &str,
 		operator: &ComparisonOperator,
@@ -302,7 +302,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares a string value with a literal value based on the operator.
 	/// Supports Eq, Ne, StartsWith, EndsWith, and Contains operators.
-	fn compare_string(
+	pub fn compare_string(
 		&self,
 		lhs_str: &str,
 		operator: &ComparisonOperator,
@@ -343,7 +343,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares a fixed-point number (Decimal) with a literal value.
-	fn compare_fixed_point(
+	pub fn compare_fixed_point(
 		&self,
 		lhs_str: &str, // LHS value as string (needs parsing)
 		operator: &ComparisonOperator,
@@ -384,7 +384,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares a boolean value (true/false) with a literal value.
 	/// Only supports Eq and Ne operators.
-	fn compare_boolean(
+	pub fn compare_boolean(
 		&self,
 		lhs_value_str: &str,
 		operator: &ComparisonOperator,
@@ -418,7 +418,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares a map (JSON object) value with a literal value.
-	fn compare_map(
+	pub fn compare_map(
 		&self,
 		lhs_json_map_str: &str,
 		operator: &ComparisonOperator,
