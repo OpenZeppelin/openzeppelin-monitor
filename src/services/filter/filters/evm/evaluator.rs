@@ -597,7 +597,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 	/// This method is used to get the base parameter of the EVM condition evaluator.
 	///
-	/// Args:
+	/// Arguments:
 	/// - name: The name of the parameter to get.
 	///
 	/// Returns:
@@ -615,7 +615,7 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 
 	/// This method is used to compare the final values of the EVM condition evaluator.
 	///
-	/// Args:
+	/// Arguments:
 	/// - lhs_kind_str: The kind of the left-hand side value.
 	/// - lhs_value_str: The value of the left-hand side value.
 	/// - operator: The operator to use for the comparison.
@@ -673,7 +673,7 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 
 	/// This method is used to get the kind of the value from the JSON value.
 	///
-	/// Args:
+	/// Arguments:
 	/// - value: The JSON value to get the kind from.
 	///
 	/// Returns:
