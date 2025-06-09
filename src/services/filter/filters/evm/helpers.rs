@@ -57,22 +57,6 @@ pub fn h160_to_string(address: Address) -> String {
 	format!("0x{}", hex::encode(address.as_slice()))
 }
 
-/// Converts a hexadecimal string to an H160 address.
-///
-/// # Arguments
-/// * `address_string` - The string to convert, with or without "0x" prefix
-///
-/// # Returns
-/// The converted H160 address or an error if the string is invalid
-///
-/// # Errors
-/// Returns an error if the input string is not valid hexadecimal
-pub fn string_to_h160(address_string: &str) -> Result<Address, Box<dyn std::error::Error>> {
-	let address_without_prefix = address_string.strip_prefix("0x").unwrap_or(address_string);
-	let address_bytes = hex::decode(address_without_prefix)?;
-	Ok(Address::from_slice(&address_bytes))
-}
-
 /// Compares two addresses for equality, ignoring case and "0x" prefixes.
 ///
 /// # Arguments
@@ -276,28 +260,6 @@ mod tests {
 		let address = Address::from_slice(&address_bytes);
 		let result = h160_to_string(address);
 		assert_eq!(result, "0x0123456789abcdef0123456789abcdef01234567");
-	}
-
-	#[test]
-	fn test_string_to_h160() {
-		let address_str = "0x0123456789abcdef0123456789abcdef01234567";
-		let result = string_to_h160(address_str).unwrap();
-		assert_eq!(
-			h160_to_string(result),
-			"0x0123456789abcdef0123456789abcdef01234567"
-		);
-
-		// Test without 0x prefix
-		let address_str = "0123456789abcdef0123456789abcdef01234567";
-		let result = string_to_h160(address_str).unwrap();
-		assert_eq!(
-			h160_to_string(result),
-			"0x0123456789abcdef0123456789abcdef01234567"
-		);
-
-		// Test invalid hex string
-		let result = string_to_h160("invalid_hex");
-		assert!(result.is_err());
 	}
 
 	#[test]

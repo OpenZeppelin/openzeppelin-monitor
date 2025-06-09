@@ -6,7 +6,7 @@ use std::str::FromStr;
 use crate::properties::filters::evm::strings_evaluator::create_evaluator;
 use ethabi::Token;
 use openzeppelin_monitor::services::filter::{
-	evm_helpers::{format_token_value, string_to_h160, string_to_h256},
+	evm_helpers::{format_token_value, string_to_h256},
 	expression::{ComparisonOperator, ConditionEvaluator, LiteralValue},
 };
 use proptest::{prelude::*, test_runner::Config};
@@ -433,106 +433,6 @@ proptest! {
 		prop_assert!(result_with_prefix.is_ok());
 		let hash_with_prefix = result_with_prefix.unwrap();
 		prop_assert_eq!(hash_with_prefix.as_slice(), original_bytes.as_slice());
-	}
-
-	#[test]
-	fn test_string_to_h160_valid_input(
-		hex_string in generate_valid_address_hex_string()
-	) {
-		let result = string_to_h160(&hex_string);
-
-		// Valid hex strings should always succeed
-		prop_assert!(result.is_ok());
-
-		let address = result.unwrap();
-
-		// The result should be a valid Address (20 bytes)
-		prop_assert_eq!(address.len(), 20);
-
-		// Test idempotency: same input should produce same output
-		let result2 = string_to_h160(&hex_string);
-		prop_assert!(result2.is_ok());
-		prop_assert_eq!(address, result2.unwrap());
-
-		// Test prefix handling: with and without "0x" should produce same result
-		let without_prefix = hex_string.strip_prefix("0x").unwrap_or(&hex_string);
-		let with_prefix = if hex_string.starts_with("0x") {
-			hex_string.clone()
-		} else {
-			format!("0x{}", hex_string)
-		};
-
-		let result_without = string_to_h160(without_prefix);
-		let result_with = string_to_h160(&with_prefix);
-
-		prop_assert!(result_without.is_ok());
-		prop_assert!(result_with.is_ok());
-		prop_assert_eq!(result_without.unwrap(), result_with.unwrap());
-	}
-
-	#[test]
-	fn test_string_to_h160_round_trip(
-		original_bytes in prop::collection::vec(any::<u8>(), 20)
-	) {
-		// Convert bytes to hex string and back
-		let hex_string = hex::encode(&original_bytes);
-		let result = string_to_h160(&hex_string);
-
-		prop_assert!(result.is_ok());
-		let parsed_address = result.unwrap();
-
-		// Should get back the original bytes
-		prop_assert_eq!(parsed_address.as_slice(), original_bytes.as_slice());
-
-		// Test with 0x prefix too
-		let hex_with_prefix = format!("0x{}", hex_string);
-		let result_with_prefix = string_to_h160(&hex_with_prefix);
-
-		prop_assert!(result_with_prefix.is_ok());
-		let address_with_prefix = result_with_prefix.unwrap();
-		prop_assert_eq!(address_with_prefix.as_slice(), original_bytes.as_slice());
-	}
-
-	#[test]
-	fn test_string_to_h160_case_insensitive(
-		original_bytes in prop::collection::vec(any::<u8>(), 20)
-	) {
-		let hex_string = hex::encode(&original_bytes);
-
-		// Test all possible combinations of case
-		let lowercase = hex_string.to_lowercase();
-		let uppercase = hex_string.to_uppercase();
-		let mixed_case = hex_string.chars().enumerate().map(|(i, c)| {
-			if i % 2 == 0 { c.to_uppercase().collect::<String>() } else { c.to_lowercase().collect::<String>() }
-		}).collect::<String>();
-
-		let result_lower = string_to_h160(&lowercase);
-		let result_upper = string_to_h160(&uppercase);
-		let result_mixed = string_to_h160(&mixed_case);
-
-		prop_assert!(result_lower.is_ok());
-		prop_assert!(result_upper.is_ok());
-		prop_assert!(result_mixed.is_ok());
-
-		// All should produce the same address
-		let addr_lower = result_lower.unwrap();
-		let addr_upper = result_upper.unwrap();
-		let addr_mixed = result_mixed.unwrap();
-
-		prop_assert_eq!(addr_lower, addr_upper);
-		prop_assert_eq!(addr_lower, addr_mixed);
-
-		// Test with 0x prefix too
-		let prefixed_lower = format!("0x{}", lowercase);
-		let prefixed_upper = format!("0x{}", uppercase);
-
-		let result_prefixed_lower = string_to_h160(&prefixed_lower);
-		let result_prefixed_upper = string_to_h160(&prefixed_upper);
-
-		prop_assert!(result_prefixed_lower.is_ok());
-		prop_assert!(result_prefixed_upper.is_ok());
-		prop_assert_eq!(addr_lower, result_prefixed_lower.unwrap());
-		prop_assert_eq!(addr_lower, result_prefixed_upper.unwrap());
 	}
 
 	#[test]
