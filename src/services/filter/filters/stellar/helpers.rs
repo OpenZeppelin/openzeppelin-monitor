@@ -878,91 +878,6 @@ pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedPara
 	}
 }
 
-/// Safely parse a string into a `serde_json::Value`.
-///
-/// # Arguments
-/// * `input` - The string to parse as JSON
-///
-/// # Returns
-/// `Some(Value)` if successful, `None` otherwise
-pub fn parse_json_safe(input: &str) -> Option<Value> {
-	match serde_json::from_str::<Value>(input) {
-		Ok(val) => Some(val),
-		Err(e) => {
-			tracing::debug!("Failed to parse JSON: {}, error: {}", input, e);
-			None
-		}
-	}
-}
-
-/// Recursively navigate through a JSON structure using dot notation.
-///
-/// # Arguments
-/// * `json_value` - The JSON value to navigate
-/// * `path` - The dot-notation path to follow (e.g. "user.address.street")
-///
-/// # Returns
-/// `Some(&Value)` if found, `None` otherwise
-pub fn get_nested_value<'a>(json_value: &'a Value, path: &str) -> Option<&'a Value> {
-	let mut current_val = json_value;
-
-	for segment in path.split('.') {
-		let obj = current_val.as_object()?;
-		current_val = obj.get(segment)?;
-	}
-
-	Some(current_val)
-}
-
-/// Compare two plain strings with the given operator.
-///
-/// # Arguments
-/// * `param_value` - The first string to compare
-/// * `operator` - The comparison operator to use ("==" or "!=")
-/// * `compare_value` - The second string to compare
-///
-/// # Returns
-/// `true` if the comparison is true, `false` otherwise
-pub fn compare_strings(param_value: &str, operator: &str, compare_value: &str) -> bool {
-	match operator {
-		"==" => param_value.trim_matches('"') == compare_value.trim_matches('"'),
-		"!=" => param_value.trim_matches('"') != compare_value.trim_matches('"'),
-		_ => {
-			tracing::debug!("Unsupported operator for string comparison: {operator}");
-			false
-		}
-	}
-}
-
-/// Compare a JSON `Value` with a plain string using a specific operator.
-///
-/// # Arguments
-/// * `value` - The JSON value to compare
-/// * `operator` - The comparison operator to use ("==" or "!=")
-/// * `compare_value` - The string to compare against
-///
-/// # Returns
-/// `true` if the comparison is true, `false` otherwise
-pub fn compare_json_values_vs_string(value: &Value, operator: &str, compare_value: &str) -> bool {
-	let value_str = match value {
-		Value::String(s) => s.to_string(),
-		_ => value.to_string(),
-	};
-	let value_str = value_str.trim_matches('"').replace("\\\"", "\"");
-	let compare_str = compare_value.trim_matches('"').to_string();
-
-	match operator {
-		"==" => value_str == compare_str,
-		"!=" => value_str != compare_str,
-		_ => {
-			tracing::debug!(
-				"Unsupported operator for JSON-value vs. string comparison: {operator}"
-			);
-			false
-		}
-	}
-}
-
 /// Get the kind of a value from a JSON value.
 ///
 /// # Arguments
@@ -1496,41 +1411,6 @@ mod tests {
 		});
 		let result = get_contract_spec_functions(vec![unknown_func]);
 		assert!(result.is_empty());
-	}
-
-	#[test]
-	fn test_compare_json_values_vs_string() {
-		// Test string comparison
-		assert!(compare_json_values_vs_string(&json!("test"), "==", "test"));
-		assert!(!compare_json_values_vs_string(
-			&json!("test"),
-			"==",
-			"other"
-		));
-		assert!(compare_json_values_vs_string(&json!("test"), "!=", "other"));
-		assert!(!compare_json_values_vs_string(&json!("test"), "!=", "test"));
-
-		// Test with quoted strings
-		assert!(compare_json_values_vs_string(
-			&json!("\"test\""),
-			"==",
-			"test"
-		));
-		assert!(compare_json_values_vs_string(
-			&json!("test"),
-			"==",
-			"\"test\""
-		));
-
-		// Test unsupported operator
-		assert!(!compare_json_values_vs_string(&json!("test"), ">", "test"));
-
-		// Unsupported operator
-		assert!(!compare_json_values_vs_string(
-			&json!("test"),
-			"~",
-			"Unsupported operator for JSON-value vs. string comparison: ~"
-		));
 	}
 
 	#[test]
