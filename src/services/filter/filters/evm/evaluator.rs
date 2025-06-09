@@ -95,6 +95,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares an "array" type parameter.
+	///
+	/// Arguments:
+	/// - lhs_json_array_str: The left-hand side value as a JSON array string.
+	/// - operator: The operator to use for the comparison.
+	/// - rhs_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn compare_array(
 		&self,
 		lhs_json_array_str: &str,
