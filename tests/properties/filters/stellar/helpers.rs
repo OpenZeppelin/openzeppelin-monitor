@@ -1,11 +1,14 @@
 //! Property-based tests for Stellar transaction matching and filtering helpers.
 
 use alloy::primitives::U256;
-use openzeppelin_monitor::services::filter::stellar_helpers::{combine_u256, parse_sc_val};
+use openzeppelin_monitor::services::filter::stellar_helpers::{
+	combine_i128, combine_i256, combine_u128, combine_u256, is_address, parse_sc_val,
+};
 use proptest::{prelude::*, test_runner::Config};
 use std::str::FromStr;
 use stellar_xdr::curr::{
-	Hash, Int128Parts, ScAddress, ScString, ScSymbol, ScVal, StringM, UInt128Parts, UInt256Parts,
+	Hash, Int128Parts, Int256Parts, ScAddress, ScString, ScSymbol, ScVal, StringM, UInt128Parts,
+	UInt256Parts,
 };
 
 // Generator for ScVal values
@@ -210,4 +213,337 @@ proptest! {
 
 		prop_assert!(new_value > original_value);
 	}
+
+	/// Test that combine_i256 handles zero correctly
+	#[test]
+	fn test_combine_i256_zero_property(
+		_lo_lo in any::<u64>(),
+		_lo_hi in any::<u64>(),
+		_hi_lo in any::<u64>(),
+	) {
+		let zero_parts = Int256Parts {
+			lo_lo: 0,
+			lo_hi: 0,
+			hi_lo: 0,
+			hi_hi: 0,
+		};
+		let result = combine_i256(&zero_parts);
+		prop_assert_eq!(result, "0");
+	}
+
+	/// Test that combine_i256 produces negative strings when hi_hi is negative
+	#[test]
+	fn test_combine_i256_negative_sign_property(
+		lo_lo in any::<u64>(),
+		lo_hi in any::<u64>(),
+		hi_lo in any::<u64>(),
+		hi_hi in i64::MIN..0i64,
+	) {
+		let parts = Int256Parts { lo_lo, lo_hi, hi_lo, hi_hi };
+		let result = combine_i256(&parts);
+
+		// When hi_hi is negative, result should be negative (start with '-')
+		// unless all parts are zero (which would result in "0")
+		if lo_lo == 0 && lo_hi == 0 && hi_lo == 0 && hi_hi == 0 {
+			prop_assert_eq!(result, "0");
+		} else {
+			prop_assert!(result.starts_with('-'), "Expected negative result, got: {}", result);
+		}
+	}
+
+	/// Test that combine_i256 produces positive strings when hi_hi is non-negative
+	#[test]
+	fn test_combine_i256_positive_sign_property(
+		lo_lo in any::<u64>(),
+		lo_hi in any::<u64>(),
+		hi_lo in any::<u64>(),
+		hi_hi in 0i64..=i64::MAX,
+	) {
+		let parts = Int256Parts { lo_lo, lo_hi, hi_lo, hi_hi };
+		let result = combine_i256(&parts);
+
+		// When hi_hi is non-negative, result should not start with '-'
+		prop_assert!(!result.starts_with('-'), "Expected non-negative result, got: {}", result);
+	}
+
+	/// Test that combine_i256 result can be parsed back consistently
+	#[test]
+	fn test_combine_i256_parseable_property(
+		lo_lo in any::<u64>(),
+		lo_hi in any::<u64>(),
+		hi_lo in any::<u64>(),
+		hi_hi in any::<i64>(),
+	) {
+		let parts = Int256Parts { lo_lo, lo_hi, hi_lo, hi_hi };
+		let result = combine_i256(&parts);
+
+		// Result should always be a valid decimal string
+		prop_assert!(result.chars().all(|c| c.is_ascii_digit() || c == '-'));
+
+		// First character should be either digit or minus
+		if let Some(first_char) = result.chars().next() {
+			prop_assert!(first_char.is_ascii_digit() || first_char == '-');
+		}
+
+		// If it starts with minus, second character should be a digit
+		if result.starts_with('-') && result.len() > 1 {
+			if let Some(second_char) = result.chars().nth(1) {
+				prop_assert!(second_char.is_ascii_digit());
+			}
+		}
+	}
+	/// Test mathematical correctness: result should equal hi * 2^64 + lo
+	#[test]
+	fn test_combine_u128_mathematical_correctness_property(
+		hi in any::<u64>(),
+		lo in any::<u64>(),
+	) {
+		let parts = UInt128Parts { hi, lo };
+		let result = combine_u128(&parts);
+
+		// Calculate expected value: hi * 2^64 + lo
+		let expected = (hi as u128) << 64 | (lo as u128);
+
+		if let Ok(actual) = result.parse::<u128>() {
+			prop_assert_eq!(actual, expected, "Expected {}, got {}", expected, actual);
+		}
+	}
+
+	/// Test that combine_u128 is monotonic with respect to hi when lo is constant
+	#[test]
+	fn test_combine_u128_monotonic_hi_property(
+		lo in any::<u64>(),
+		hi1 in any::<u64>(),
+		hi2 in any::<u64>(),
+	) {
+		prop_assume!(hi1 != hi2);
+
+		let parts1 = UInt128Parts { hi: hi1, lo };
+		let parts2 = UInt128Parts { hi: hi2, lo };
+
+		let result1 = combine_u128(&parts1);
+		let result2 = combine_u128(&parts2);
+
+		// Parse results for numerical comparison
+		if let (Ok(val1), Ok(val2)) = (result1.parse::<u128>(), result2.parse::<u128>()) {
+			if hi1 < hi2 {
+				prop_assert!(val1 < val2, "Expected {} < {} when hi1={} < hi2={}", val1, val2, hi1, hi2);
+			} else {
+				prop_assert!(val1 > val2, "Expected {} > {} when hi1={} > hi2={}", val1, val2, hi1, hi2);
+			}
+		}
+	}
+
+	/// Test that combine_u128 is monotonic with respect to lo when hi is constant
+	#[test]
+	fn test_combine_u128_monotonic_lo_property(
+		hi in any::<u64>(),
+		lo1 in any::<u64>(),
+		lo2 in any::<u64>(),
+	) {
+		prop_assume!(lo1 != lo2);
+
+		let parts1 = UInt128Parts { hi, lo: lo1 };
+		let parts2 = UInt128Parts { hi, lo: lo2 };
+
+		let result1 = combine_u128(&parts1);
+		let result2 = combine_u128(&parts2);
+
+		// Parse results for numerical comparison
+		if let (Ok(val1), Ok(val2)) = (result1.parse::<u128>(), result2.parse::<u128>()) {
+			if lo1 < lo2 {
+				prop_assert!(val1 < val2, "Expected {} < {} when lo1={} < lo2={}", val1, val2, lo1, lo2);
+			} else {
+				prop_assert!(val1 > val2, "Expected {} > {} when lo1={} > lo2={}", val1, val2, lo1, lo2);
+			}
+		}
+	}
+
+	/// Test that combine_u128 result is always a valid unsigned decimal string
+	#[test]
+	fn test_combine_u128_output_format_property(
+		hi in any::<u64>(),
+		lo in any::<u64>(),
+	) {
+		let parts = UInt128Parts { hi, lo };
+		let result = combine_u128(&parts);
+
+		// Should never be empty
+		prop_assert!(!result.is_empty());
+
+		// Should never start with negative sign (unsigned)
+		prop_assert!(!result.starts_with('-'));
+
+		// Should contain only digits
+		prop_assert!(result.chars().all(|c| c.is_ascii_digit()), "Result '{}' contains non-digit characters", result);
+
+		// Should be parseable as u128
+		prop_assert!(result.parse::<u128>().is_ok(), "Result '{}' is not a valid u128", result);
+
+		// Should not have leading zeros (unless it's just "0")
+		if result != "0" {
+			prop_assert!(!result.starts_with('0'), "Result '{}' has leading zeros", result);
+		}
+	}
+
+	/// Test that combine_i128 is monotonic with respect to hi when lo is constant
+	#[test]
+	fn test_combine_i128_monotonic_hi_property(
+		lo in any::<i64>(),
+		hi1 in any::<i64>(),
+		hi2 in any::<i64>(),
+	) {
+		prop_assume!(hi1 != hi2);
+
+		let parts1 = Int128Parts { hi: hi1, lo: lo as u64 };
+		let parts2 = Int128Parts { hi: hi2, lo: lo as u64 };
+
+		let result1 = combine_i128(&parts1);
+		let result2 = combine_i128(&parts2);
+
+		// Parse results for numerical comparison
+		if let (Ok(val1), Ok(val2)) = (result1.parse::<i128>(), result2.parse::<i128>()) {
+			if hi1 < hi2 {
+				prop_assert!(val1 < val2, "Expected {} < {} when hi1={} < hi2={}", val1, val2, hi1, hi2);
+			} else {
+				prop_assert!(val1 > val2, "Expected {} > {} when hi1={} > hi2={}", val1, val2, hi1, hi2);
+			}
+		}
+	}
+
+	/// Test that combine_i128 result is always a valid signed decimal string
+	#[test]
+	fn test_combine_i128_output_format_property(
+		hi in any::<i64>(),
+		lo in any::<i64>(),
+	) {
+		let parts = Int128Parts { hi, lo: lo as u64 };
+		let result = combine_i128(&parts);
+
+		// Should never be empty
+		prop_assert!(!result.is_empty());
+
+		// Should contain only digits and optionally a leading minus sign
+		if let Some(stripped) = result.strip_prefix('-') {
+			prop_assert!(!stripped.is_empty(), "Negative sign should be followed by digits");
+			prop_assert!(stripped.chars().all(|c| c.is_ascii_digit()),
+				"Result '{}' contains non-digit characters after minus sign", result);
+		} else {
+			prop_assert!(result.chars().all(|c| c.is_ascii_digit()),
+				"Result '{}' contains non-digit characters", result);
+		}
+
+		// Should be parseable as i128
+		prop_assert!(result.parse::<i128>().is_ok(), "Result '{}' is not a valid i128", result);
+
+		// Should not have leading zeros (unless it's just "0" or "-0")
+		if result != "0" && result != "-0" {
+			let digits_part = result.strip_prefix('-').unwrap_or(&result);
+			prop_assert!(!digits_part.starts_with('0'), "Result '{}' has leading zeros", result);
+		}
+	}
+
+	/// Test sign consistency: negative hi should generally produce negative results
+	#[test]
+	fn test_combine_i128_sign_consistency_property(
+		hi in i64::MIN..0i64,
+		lo in any::<i64>(),
+	) {
+		let parts = Int128Parts { hi, lo: lo as u64 };
+		let result = combine_i128(&parts);
+
+		// When hi is negative, the result should typically be negative
+		// (since hi is the most significant part)
+		if let Ok(val) = result.parse::<i128>() {
+			prop_assert!(val < 0, "Expected negative result when hi={} < 0, got: {}", hi, val);
+		}
+	}
+
+	/// Test positive hi produces positive results when lo is non-negative
+	#[test]
+	fn test_combine_i128_positive_hi_property(
+		hi in 1i64..=i64::MAX,
+		lo in 0i64..=i64::MAX,
+	) {
+		let parts = Int128Parts { hi, lo: lo as u64 };
+		let result = combine_i128(&parts);
+
+		if let Ok(val) = result.parse::<i128>() {
+			prop_assert!(val > 0, "Expected positive result when hi={} > 0 and lo={} >= 0, got: {}", hi, lo, val);
+		}
+	}
+
+	/// Test that strings with invalid characters are rejected
+	#[test]
+	fn test_is_address_invalid_characters_property(
+		prefix in "[GC]", // Valid prefixes
+		invalid_chars in "[^A-Z2-7]*", // Invalid base32 characters
+		suffix in "[A-Z2-7]*" // Valid base32 characters
+	) {
+		prop_assume!(!invalid_chars.is_empty());
+		prop_assume!(invalid_chars.chars().any(|c| !matches!(c, 'A'..='Z' | '2'..='7')));
+
+		let test_string = format!("{}{}{}", prefix, invalid_chars, suffix);
+
+		// Strings with invalid characters should be rejected
+		prop_assert!(!is_address(&test_string), "String with invalid characters '{}' should not be valid", test_string);
+	}
+
+	/// Test that strings with wrong prefixes are rejected
+	#[test]
+	fn test_is_address_wrong_prefix_property(
+		wrong_prefix in "[^GC]", // Invalid prefixes (not G or C)
+		body in "[A-Z2-7]{50,60}" // Valid base32 body
+	) {
+		prop_assume!(!wrong_prefix.is_empty());
+		prop_assume!(!wrong_prefix.starts_with('G') && !wrong_prefix.starts_with('C'));
+
+		let test_string = format!("{}{}", wrong_prefix, body);
+
+		// Strings with wrong prefixes should be rejected
+		prop_assert!(!is_address(&test_string), "String with wrong prefix '{}' should not be valid", test_string);
+	}
+
+	/// Test that strings of wrong length are rejected
+	#[test]
+	fn test_is_address_wrong_length_property(
+		prefix in "[GC]",
+		body in "[A-Z2-7]*".prop_filter("Wrong length", |s| s.len() != 55) // 56 total - 1 for prefix
+	) {
+		prop_assume!(!body.is_empty() && body.len() < 100); // Reasonable bounds
+		prop_assume!(body.len() != 55); // Stellar addresses should be 56 chars total
+
+		let test_string = format!("{}{}", prefix, body);
+
+		// Most strings of wrong length should be rejected
+		// (There might be some edge cases, but the vast majority should fail)
+		if test_string.len() != 56 {
+			prop_assert!(!is_address(&test_string), "String of wrong length '{}' (len={}) should not be valid", test_string, test_string.len());
+		}
+	}
+
+	/// Test that the function is consistent (same input always gives same output)
+	#[test]
+	fn test_is_address_consistency_property(
+		test_string in ".*"
+	) {
+		let result1 = is_address(&test_string);
+		let result2 = is_address(&test_string);
+
+		prop_assert_eq!(result1, result2, "is_address should be deterministic for input '{}'", test_string);
+	}
+
+	/// Test case sensitivity (Stellar addresses should be case-sensitive)
+	#[test]
+	fn test_is_address_case_sensitivity_property(
+		prefix in "[GC]", // lowercase prefixes
+		body in "[a-z2-7]{55}" // lowercase body
+	) {
+		let lowercase_string = format!("{}{}", prefix, body);
+
+		// Lowercase versions should generally be invalid
+		// (Stellar addresses use uppercase)
+		prop_assert!(!is_address(&lowercase_string), "Lowercase address '{}' should not be valid", lowercase_string);
+	}
+
 }

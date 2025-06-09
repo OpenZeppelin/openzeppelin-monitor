@@ -501,7 +501,7 @@ pub fn combine_u256(n: &UInt256Parts) -> String {
 ///
 /// # Returns
 /// A string representation of the combined 256-bit signed integer
-fn combine_i256(n: &Int256Parts) -> String {
+pub fn combine_i256(n: &Int256Parts) -> String {
 	// First create unsigned value from the limbs
 	let unsigned = U256::from_limbs([n.lo_lo, n.lo_hi, n.hi_lo, n.hi_hi as u64]);
 
@@ -525,7 +525,7 @@ fn combine_i256(n: &Int256Parts) -> String {
 ///
 /// # Returns
 /// A string representation of the combined 128-bit unsigned integer
-fn combine_u128(n: &UInt128Parts) -> String {
+pub fn combine_u128(n: &UInt128Parts) -> String {
 	(((n.hi as u128) << 64) | (n.lo as u128)).to_string()
 }
 
@@ -536,7 +536,7 @@ fn combine_u128(n: &UInt128Parts) -> String {
 ///
 /// # Returns
 /// A string representation of the combined 128-bit signed integer
-fn combine_i128(n: &Int128Parts) -> String {
+pub fn combine_i128(n: &Int128Parts) -> String {
 	(((n.hi as i128) << 64) | (n.lo as i128)).to_string()
 }
 
