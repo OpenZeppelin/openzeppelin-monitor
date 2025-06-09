@@ -15,6 +15,7 @@ mod properties {
 			mod strings_evaluator;
 		}
 		mod stellar {
+			mod evaluator;
 			mod filter;
 			mod helpers;
 		}
