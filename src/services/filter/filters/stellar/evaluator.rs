@@ -183,7 +183,7 @@ impl<'a> StellarConditionEvaluator<'a> {
 	///
 	/// Returns:
 	/// - true if the comparison is true, false otherwise.
-	fn compare_bool(
+	pub fn compare_boolean(
 		&self,
 		lhs_str: &str,
 		operator: &ComparisonOperator,
@@ -541,7 +541,7 @@ impl ConditionEvaluator for StellarConditionEvaluator<'_> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		match lhs_kind.to_lowercase().as_str() {
-			"bool" => self.compare_bool(lhs_str, operator, rhs_literal),
+			"bool" => self.compare_boolean(lhs_str, operator, rhs_literal),
 			"u32" => self.compare_numeric::<u32>(lhs_str, operator, rhs_literal),
 			"u64" | "timepoint" | "duration" => {
 				self.compare_numeric::<u64>(lhs_str, operator, rhs_literal)
@@ -583,10 +583,10 @@ mod tests {
 		let evaluator = create_evaluator();
 
 		assert!(evaluator
-			.compare_bool("true", &ComparisonOperator::Eq, &LiteralValue::Bool(true))
+			.compare_boolean("true", &ComparisonOperator::Eq, &LiteralValue::Bool(true))
 			.unwrap());
 		assert!(!evaluator
-			.compare_bool("true", &ComparisonOperator::Eq, &LiteralValue::Bool(false))
+			.compare_boolean("true", &ComparisonOperator::Eq, &LiteralValue::Bool(false))
 			.unwrap());
 	}
 
@@ -595,10 +595,10 @@ mod tests {
 		let evaluator = create_evaluator();
 
 		assert!(!evaluator
-			.compare_bool("true", &ComparisonOperator::Ne, &LiteralValue::Bool(true))
+			.compare_boolean("true", &ComparisonOperator::Ne, &LiteralValue::Bool(true))
 			.unwrap());
 		assert!(evaluator
-			.compare_bool("true", &ComparisonOperator::Ne, &LiteralValue::Bool(false))
+			.compare_boolean("true", &ComparisonOperator::Ne, &LiteralValue::Bool(false))
 			.unwrap());
 	}
 
@@ -607,7 +607,7 @@ mod tests {
 		let evaluator = create_evaluator();
 
 		// Test TypeMismatch for RHS
-		let type_mismatch_result = evaluator.compare_bool(
+		let type_mismatch_result = evaluator.compare_boolean(
 			"true",
 			&ComparisonOperator::Eq,
 			&LiteralValue::Number("123"),
@@ -618,7 +618,7 @@ mod tests {
 		));
 
 		// Test ParseError for LHS
-		let parse_error_result = evaluator.compare_bool(
+		let parse_error_result = evaluator.compare_boolean(
 			"notabool",
 			&ComparisonOperator::Eq,
 			&LiteralValue::Bool(true),
@@ -629,7 +629,7 @@ mod tests {
 		));
 
 		// Test UnsupportedOperator
-		let unsupported_op_result = evaluator.compare_bool(
+		let unsupported_op_result = evaluator.compare_boolean(
 			"true",
 			&ComparisonOperator::Gt, // Gt is not supported for bool
 			&LiteralValue::Bool(false),
@@ -647,17 +647,17 @@ mod tests {
 
 		// Test TRUE (uppercase)
 		assert!(evaluator
-			.compare_bool("TRUE", &ComparisonOperator::Eq, &LiteralValue::Bool(true))
+			.compare_boolean("TRUE", &ComparisonOperator::Eq, &LiteralValue::Bool(true))
 			.is_err());
 
 		// Test False (mixed case)
 		assert!(evaluator
-			.compare_bool("False", &ComparisonOperator::Eq, &LiteralValue::Bool(false))
+			.compare_boolean("False", &ComparisonOperator::Eq, &LiteralValue::Bool(false))
 			.is_err());
 
 		// Test TRUE == TRUE (both uppercase)
 		assert!(evaluator
-			.compare_bool("TRUE", &ComparisonOperator::Eq, &LiteralValue::Bool(true))
+			.compare_boolean("TRUE", &ComparisonOperator::Eq, &LiteralValue::Bool(true))
 			.is_err());
 	}
 
