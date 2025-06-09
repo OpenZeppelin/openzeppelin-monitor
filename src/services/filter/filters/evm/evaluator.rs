@@ -56,6 +56,13 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Helper to check if a serde_json::Value matches a target string.
 	/// Used by compare_array for items within a JSON array.
+	///
+	/// Arguments:
+	/// - lhs_json: The left-hand side value as a JSON value.
+	/// - rhs_str: The right-hand side value as a string.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn check_json_value_matches_str(&self, lhs_json: &JsonValue, rhs_str: &str) -> bool {
 		match lhs_json {
 			JsonValue::String(s) => {
@@ -192,6 +199,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares potential U256 LHS value with the RHS literal value
 	/// Handles decimal and hex inputs for both sides
+	///
+	/// Arguments:
+	/// - left_str: The left-hand side value as a string.
+	/// - operator: The operator to use for the comparison.
+	/// - right_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn compare_u256(
 		&self,
 		left_str: &str,
@@ -231,6 +246,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares potential I256 LHS value with the RHS literal value
+	///
+	/// Arguments:
+	/// - left_str: The left-hand side value as a string.
+	/// - operator: The operator to use for the comparison.
+	/// - right_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn compare_i256(
 		&self,
 		left_str: &str,
@@ -271,6 +294,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares an EVM address (string) with a literal value based on the operator.
 	/// Only supports Eq and Ne operators.
+	///
+	/// Arguments:
+	/// - left: The left-hand side value as a string.
+	/// - operator: The operator to use for the comparison.
+	/// - right_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn compare_address(
 		&self,
 		left: &str,
@@ -302,6 +333,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares a string value with a literal value based on the operator.
 	/// Supports Eq, Ne, StartsWith, EndsWith, and Contains operators.
+	///
+	/// Arguments:
+	/// - lhs_str: The left-hand side value as a string.
+	/// - operator: The operator to use for the comparison.
+	/// - rhs_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn compare_string(
 		&self,
 		lhs_str: &str,
@@ -343,6 +382,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares a fixed-point number (Decimal) with a literal value.
+	///
+	/// Arguments:
+	/// - lhs_str: The left-hand side value as a string.
+	/// - operator: The operator to use for the comparison.
+	/// - rhs_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn compare_fixed_point(
 		&self,
 		lhs_str: &str, // LHS value as string (needs parsing)
@@ -384,6 +431,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Compares a boolean value (true/false) with a literal value.
 	/// Only supports Eq and Ne operators.
+	///
+	/// Arguments:
+	/// - lhs_value_str: The left-hand side value as a string.
+	/// - operator: The operator to use for the comparison.
+	/// - rhs_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
 	pub fn compare_boolean(
 		&self,
 		lhs_value_str: &str,
@@ -418,6 +473,15 @@ impl<'a> EVMConditionEvaluator<'a> {
 	}
 
 	/// Compares a map (JSON object) value with a literal value.
+	///
+	/// Arguments:
+	/// - lhs_json_map_str: The left-hand side value as a JSON map string.
+	/// - operator: The operator to use for the comparison.
+	/// - rhs_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
+	/// - error if the comparison is not supported.
 	pub fn compare_map(
 		&self,
 		lhs_json_map_str: &str,
@@ -523,6 +587,13 @@ impl<'a> EVMConditionEvaluator<'a> {
 }
 
 impl ConditionEvaluator for EVMConditionEvaluator<'_> {
+	/// This method is used to get the base parameter of the EVM condition evaluator.
+	///
+	/// Args:
+	/// - name: The name of the parameter to get.
+	///
+	/// Returns:
+	/// - The base parameter.
 	fn get_base_param(&self, name: &str) -> Result<(&str, &str), EvaluationError> {
 		self.args
 			.iter()
@@ -534,6 +605,17 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 			})
 	}
 
+	/// This method is used to compare the final values of the EVM condition evaluator.
+	///
+	/// Args:
+	/// - lhs_kind_str: The kind of the left-hand side value.
+	/// - lhs_value_str: The value of the left-hand side value.
+	/// - operator: The operator to use for the comparison.
+	/// - rhs_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
+	/// - error if the comparison is not supported.
 	fn compare_final_values(
 		&self,
 		lhs_kind_str: &str,
@@ -581,6 +663,13 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 		}
 	}
 
+	/// This method is used to get the kind of the value from the JSON value.
+	///
+	/// Args:
+	/// - value: The JSON value to get the kind from.
+	///
+	/// Returns:
+	/// - The kind of the value.
 	fn get_kind_from_json_value(&self, value: &serde_json::Value) -> String {
 		match value {
 			serde_json::Value::String(s) => {
