@@ -1,6 +1,6 @@
 //! Shared logic for parsing and evaluating expressions
 
-pub mod ast;
+mod ast;
 mod error;
 mod evaluation;
 mod helpers;

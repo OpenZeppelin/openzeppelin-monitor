@@ -1,10 +1,8 @@
 //! Property-based tests for EVM evaluator functionality (strings).
 //! Tests cover JSON value matching, type detection, and comparison logic.
 
-use openzeppelin_monitor::services::filter::expression::ast::{ComparisonOperator, LiteralValue};
-use openzeppelin_monitor::services::filter::expression::EvaluationError;
-use openzeppelin_monitor::services::filter::filters::evm::evaluator::{
-	EVMArgs, EVMConditionEvaluator,
+use openzeppelin_monitor::services::filter::{
+	ComparisonOperator, EVMArgs, EVMConditionEvaluator, EvaluationError, LiteralValue,
 };
 use proptest::{prelude::*, test_runner::Config};
 use rust_decimal::Decimal;

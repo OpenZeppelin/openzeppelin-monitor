@@ -1,11 +1,8 @@
 //! Property-based tests for Stellar evaluator functionality.
 //! Tests cover JSON value matching, type detection, and comparison logic.
 
-use openzeppelin_monitor::services::filter::expression::{
-	ComparisonOperator, EvaluationError, LiteralValue,
-};
-use openzeppelin_monitor::services::filter::filters::stellar::evaluator::{
-	StellarArgs, StellarConditionEvaluator,
+use openzeppelin_monitor::services::filter::{
+	ComparisonOperator, EvaluationError, LiteralValue, StellarArgs, StellarConditionEvaluator,
 };
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::{json, Value as JsonValue};

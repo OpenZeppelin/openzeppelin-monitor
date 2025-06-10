@@ -1,8 +1,7 @@
 //! Property-based tests for EVM evaluator functionality (maps).
 //! Tests cover JSON value matching, type detection, and comparison logic.
 
-use openzeppelin_monitor::services::filter::expression::ast::{ComparisonOperator, LiteralValue};
-use openzeppelin_monitor::services::filter::expression::EvaluationError;
+use openzeppelin_monitor::services::filter::{ComparisonOperator, EvaluationError, LiteralValue};
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::json;
 use serde_json::Value as JsonValue;
@@ -170,9 +169,6 @@ proptest! {
 			&ComparisonOperator::Ne,
 			&LiteralValue::Str(leaked_map)
 		).unwrap());
-
-		// A map should contain all its own values
-		// This is more complex since Contains searches values, not the whole map
 	}
 
 	/// Property: Map equality should be symmetric

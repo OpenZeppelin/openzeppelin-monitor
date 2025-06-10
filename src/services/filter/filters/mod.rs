@@ -23,9 +23,10 @@ use crate::{
 	models::{BlockType, ContractSpec, Monitor, MonitorMatch, Network},
 	services::{blockchain::BlockFilterFactory, filter::error::FilterError},
 };
+pub use evm::evaluator::{EVMArgs, EVMConditionEvaluator};
 pub use evm::filter::EVMBlockFilter;
-pub use stellar::filter::EventMap;
-pub use stellar::filter::StellarBlockFilter;
+pub use stellar::evaluator::{StellarArgs, StellarConditionEvaluator};
+pub use stellar::filter::{EventMap, StellarBlockFilter};
 
 /// Trait for filtering blockchain data
 ///

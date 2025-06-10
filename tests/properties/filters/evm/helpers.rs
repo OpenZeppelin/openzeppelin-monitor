@@ -7,7 +7,7 @@ use crate::properties::filters::evm::strings_evaluator::create_evaluator;
 use ethabi::Token;
 use openzeppelin_monitor::services::filter::{
 	evm_helpers::{format_token_value, string_to_h256},
-	expression::{ComparisonOperator, ConditionEvaluator, LiteralValue},
+	ComparisonOperator, ConditionEvaluator, LiteralValue,
 };
 use proptest::{prelude::*, test_runner::Config};
 use rust_decimal::Decimal;

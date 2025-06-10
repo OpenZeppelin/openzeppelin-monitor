@@ -2,10 +2,7 @@
 //! Tests cover JSON value matching, type detection, and comparison logic.
 
 use crate::properties::filters::evm::strings_evaluator::create_evaluator;
-use openzeppelin_monitor::services::filter::expression::{
-	ast::{ComparisonOperator, LiteralValue},
-	EvaluationError,
-};
+use openzeppelin_monitor::services::filter::{ComparisonOperator, EvaluationError, LiteralValue};
 use proptest::{prelude::*, test_runner::Config};
 
 prop_compose! {
