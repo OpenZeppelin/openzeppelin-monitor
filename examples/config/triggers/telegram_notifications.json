@@ -16,7 +16,7 @@
     }
   },
   "evm_large_transfer_usdc_telegram_markdown": {
-    "name": "Large Transfer Telegram Notification",
+    "name": "Large Transfer Telegram Notification (Markdown)",
     "trigger_type": "telegram",
     "config": {
       "token": {
