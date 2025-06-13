@@ -73,6 +73,14 @@ The endpoint manager handles
 * Connection health checks
 * Thread-safe endpoint updates
 
+Each blockchain network type has its own specialized transport client that wraps the base `HttpTransportClient`.
+The transport clients are implemented as:
+
+1. *Core HTTP Transport*: `HttpTransportClient` provides core HTTP functionality, including the integrated retryable client.
+2. *Network-Specific Transports*:
+   * `EVMTransportClient` for EVM networks
+   * `StellarTransportClient` for Stellar networks
+
 === Rotation Strategy
 
 The RPC client includes an automatic rotation strategy for handling specific types of failures:
@@ -93,148 +101,142 @@ pub const ROTATE_ON_ERROR_CODES: [u16; 1] = [429];
 
 === Retry Strategy
 
-Each transport client implements `reqwest-retry` middleware with exponential backoff to handle transient failures in network requests. This is implemented separately from the endpoint rotation mechanism.
+The transport layer uses a combination of same-endpoint retries and endpoint rotation to handle transient failures and maintain service availability.
 
-* For transient HTTP errors and network failures:
-** Retries up to 3 times (configurable via `ExponentialBackoff` builder)
-** Applies exponential backoff between retry attempts
-** Returns the final error if all retry attempts fail
-** Maintains the same URL throughout the retry process
-** Independent from the endpoint rotation mechanism
+==== Same-Endpoint Retry (via `reqwest-retry`)
 
-Each blockchain network type has its own specialized transport client that wraps the base `HttpTransportClient`.
-This architecture provides common HTTP functionality while allowing customization of network-specific behaviors like connection testing and retry policies.
-The transport clients are implemented as:
+The `HttpTransportClient` (and by extension, EVM and Stellar clients) utilizes a `reqwest_middleware::ClientWithMiddleware`. This client is configured during initialization using the `utils::http::create_retryable_http_client` utility. This utility layers `reqwest_retry::RetryTransientMiddleware` on top of a shared base `reqwest::Client`.
 
-1. *Base HTTP Transport*: `HttpTransportClient` provides core HTTP functionality
-2. *Network-Specific Transports*:
-   * `EVMTransportClient` for EVM networks
-   * `StellarTransportClient` for Stellar networks
+This middleware handles:
+
+* Automatic retries for transient HTTP errors (e.g., 5xx server errors, network timeouts) for requests made to the *currently active RPC URL*.
+* An exponential backoff policy between these retry attempts.
+* Parameters like the number of retries, backoff durations, and jitter are defined in an `HttpRetryConfig` struct (see <<Configuration Options>>).
+* This same-endpoint retry mechanism is independent of, and operates before, the endpoint rotation logic. If all same-endpoint retries fail for the current URL, the error is then processed by the `EndpointManager`.
+
+==== Endpoint Rotation (via `EndpointManager`)
+
+If all same-endpoint retries fail for the currently active RPC URL, or if certain HTTP status codes (e.g., 429 Too Many Requests, as defined in `ROTATE_ON_ERROR_CODES`) are received, the `EndpointManager` (used by `HttpTransportClient`) will attempt to rotate to a healthy fallback URL. This ensures that if one endpoint becomes persistently unavailable, the system can switch to an alternative. The health check for a fallback URL also benefits from the same-endpoint retry mechanism.
 
 ==== Configuration Options
 
-The retry policy can be customized using the `ExponentialBackoff` builder in the respective transport client. The default retry policy is:
+The same-endpoint retry behavior is configured via the `HttpRetryConfig` struct, which is used by `create_retryable_http_client` to set up the `ExponentialBackoff` policy for `reqwest-retry`.
 
+The default settings for `HttpRetryConfig` result in an `ExponentialBackoff` policy approximately equivalent to:
 [source,rust]
 ----
+// This illustrates the default policy created by HttpRetryConfig::default()
+// and create_retryable_http_client.
+let http_retry_config = HttpRetryConfig::default();
 let retry_policy = ExponentialBackoff::builder()
-  .base(2)
-  .retry_bounds(Duration::from_millis(250), Duration::from_secs(10))
-  .jitter(Jitter::Full)
-  .build_with_max_retries(3);
+  .base(http_retry_config.base_for_backoff)
+  .retry_bounds(http_retry_config.initial_backoff, http_retry_config.max_backoff)
+  .jitter(http_retry_config.jitter)
+  .build_with_max_retries(http_retry_config.max_retries);
 ----
 
-The retry policy can be customized with the following options:
-
+The configurable options are defined in the `HttpRetryConfig` struct:
 [source,rust]
 ----
-pub struct ExponentialBackoff {
-  pub max_n_retries: Option<u32>,     // Maximum number of allowed retries attempts.
-  pub min_retry_interval: Duration,   // Minimum waiting time between two retry attempts (it can end up being lower when using full jitter).
-  pub max_retry_interval: Duration,   // Maximum waiting time between two retry attempts.
-  pub jitter: Jitter,                 // How we apply jitter to the calculated backoff intervals.
-  pub base: u32,                      // Base of the exponential.
+// In utils::http
+pub struct HttpRetryConfig {
+    /// Maximum number of retries for transient errors (after the initial attempt).
+    pub max_retries: u32,
+    /// Initial backoff duration before the first retry.
+    pub initial_backoff: Duration,
+    /// Maximum backoff duration for retries.
+    pub max_backoff: Duration,
+    /// Base for the exponential backoff calculation (e.g., 2).
+    pub base_for_backoff: u64, // Added field
+    /// Jitter to apply to the backoff duration.
+    pub jitter: Jitter,
 }
 ----
 
-The retry mechanism is implemented at the transport level using a dual-client approach:
+The client architecture ensures efficient resource use and consistent retry behavior:
 
-1. A base `reqwest` HTTP client is created with optimized configurations:
-   * Connection pool settings for efficient resource usage
-   * Configurable timeouts for request and connection handling
-   * Shared across all transport operations
-
-2. A cloned instance of this client is enhanced with middleware:
-   * Wrapped with `reqwest_middleware` for retry capabilities
-   * Configured with exponential backoff and jitter
-   * Handles automatic retry logic for failed requests
-
-This architecture ensures:
-
-1. Direct requests (like health checks) use the base client for minimal overhead
-2. RPC calls benefit from the middleware's retry capabilities
-3. Both clients maintain efficiency by sharing the same connection pool
-
+1. A single base `reqwest::Client` is created by `HttpTransportClient` with optimized connection pool settings. This base client is shared.
+2. The `create_retryable_http_client` utility takes this base client and an `HttpRetryConfig` to produce a `ClientWithMiddleware`.
+3. This `ClientWithMiddleware` (the "retryable client") is then used for all HTTP operations within `HttpTransportClient`, including initial health checks, requests sent via `EndpointManager`, and `try_connect` calls during rotation. This ensures all operations benefit from the configured retry policy and the shared connection pool.
 
 Each transport client may define its own retry policy:
 
 [source,rust]
 ----
-
 // src/services/transports/http.rs
 pub struct HttpTransportClient {
-  pub client: Arc<RwLock<Client>>,
+  pub client: ClientWithMiddleware,
   endpoint_manager: EndpointManager,
   test_connection_payload: Option<String>,
 }
 
 // Example of client creation with retry mechanism
-let http_client = reqwest::ClientBuilder::new()
+// Use default retry policy
+let http_retry_config = HttpRetryConfig::default();
+
+// Create the base HTTP client
+let base_http_client = reqwest::ClientBuilder::new()
   .pool_idle_timeout(Duration::from_secs(90))
   .pool_max_idle_per_host(32)
   .timeout(Duration::from_secs(30))
   .connect_timeout(Duration::from_secs(20))
-  .build()?;
+  .build()
+  .context("Failed to create base HTTP client")?;
 
-// Create middleware client with retry policy
-let client = ClientBuilder::new(cloned_http_client)
-  .with(RetryTransientMiddleware::new_with_policy_and_strategy(
-    retry_policy,
-    RetryTransient,
-  ))
-  .build();
+// Create a retryable HTTP client with the base client and retry policy
+let retryable_client = create_retryable_http_client(
+  &http_retry_config,
+  base_http_client,
+  Some(TransientErrorRetryStrategy), // Use custom or default retry strategy
+);
 
-// src/services/transports/evm/http.rs
-pub struct EVMTransportClient {
-  http_client: HttpTransportClient,
-}
-
-// override with a custom retry policy and strategy
-pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
-  let test_connection_payload = Some(r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#.to_string());
-  let http_client = HttpTransportClient::new(network, test_connection_payload).await?;
-  http_client.set_retry_policy(
-    ExponentialBackoff::builder().build_with_total_retry_duration(Duration::from_secs(10)),
-    Some(DefaultRetryableStrategy),
-  )?;
-  Ok(Self { http_client })
-}
 ----
 
 === Implementation Details
-This retry and rotation strategies ensure optimal handling of different types of failures while maintaining service availability.
+The `EndpointManager` uses the retry-enabled `ClientWithMiddleware` provided by `HttpTransportClient` for its attempts on the primary URL. If these attempts (including internal `reqwest-retry` retries) ultimately fail with an error that warrants rotation (e.g., a 429 status code, or persistent network errors), then `EndpointManager` initiates the URL rotation sequence.
 
 [mermaid,width=100%]
 ....
 sequenceDiagram
-    participant M as Monitor
-    participant EM as Endpoint Manager
-    participant P as Primary RPC
-    participant F as Fallback RPC
+    participant User as User/Application
+    participant HTC as HttpTransportClient
+    participant EM as EndpointManager
+    participant RetryClient as ClientWithMiddleware (reqwest-retry)
+    participant RPC_Primary as Primary RPC
+    participant RPC_Fallback as Fallback RPC
 
-    rect rgb(240, 240, 240)
-        Note over M,F: Case 1: Rate Limit (429)
-        M->>EM: Send Request
-        EM->>P: Try Primary
-        P-->>EM: 429 Response
-        EM->>EM: Rotate URL
-        EM->>F: Try Fallback
-        F-->>EM: Success
-        EM-->>M: Return Response
-    end
-
-    rect rgb(240, 240, 240)
-        Note over M,F: Case 2: Other Errors
-        M->>EM: Send Request
-        EM->>P: Try Primary
-        P-->>EM: Error Response
-        Note over EM: Wait with backoff
-        EM->>P: Retry #1
-        P-->>EM: Error Response
-        Note over EM: Wait with backoff
-        EM->>P: Retry #2
-        P-->>EM: Success
-        EM-->>M: Return Response
+    User->>HTC: send_raw_request()
+    HTC->>EM: send_raw_request(self, ...)
+    EM->>RetryClient: POST to RPC_Primary
+    Note over RetryClient, RPC_Primary: RetryClient handles same-endpoint retries internally (e.g., for 5xx)
+    alt Retries on RPC_Primary succeed
+        RPC_Primary-->>RetryClient: Success
+        RetryClient-->>EM: Success
+        EM-->>HTC: Success
+        HTC-->>User: Response
+    else All retries on RPC_Primary fail (e.g. network error or 429)
+        RPC_Primary-->>RetryClient: Final Error (e.g. 429 or network error)
+        RetryClient-->>EM: Final Error from RPC_Primary
+        EM->>EM: Decide to Rotate (based on error type)
+        EM->>HTC: try_connect(Fallback_URL) (HTC uses its RetryClient for this)
+        HTC->>RetryClient: POST to RPC_Fallback (health check)
+        alt Fallback health check succeeds
+            RPC_Fallback-->>RetryClient: Success (health check)
+            RetryClient-->>HTC: Success (health check)
+            HTC-->>EM: Success (health check)
+            EM->>EM: Update active URL to RPC_Fallback
+            EM->>RetryClient: POST to RPC_Fallback (actual request)
+            RPC_Fallback-->>RetryClient: Success
+            RetryClient-->>EM: Success
+            EM-->>HTC: Success
+            HTC-->>User: Response
+        else Fallback health check fails
+            RPC_Fallback-->>RetryClient: Error (health check)
+            RetryClient-->>HTC: Error (health check)
+            HTC-->>EM: Error (health check)
+            EM-->>HTC: Final Error (all URLs failed)
+            HTC-->>User: Error Response
+        end
     end
 ....
 

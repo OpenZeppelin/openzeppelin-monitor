@@ -1,6 +1,7 @@
 use mockito::Server;
-use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, EVMTransportClient, RotatingTransport, TransientErrorRetryStrategy,
+use openzeppelin_monitor::{
+	services::blockchain::{BlockchainTransport, EVMTransportClient, RotatingTransport},
+	utils::HttpRetryConfig,
 };
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -42,11 +43,15 @@ async fn test_client_creation_with_fallback() {
 	let mut server = Server::new_async().await;
 	let mut server2 = Server::new_async().await;
 
+	// Use the default retry config to determine expected attempts
+	let expected_attempts = 1 + HttpRetryConfig::default().max_retries;
+
 	let mock = server
 		.mock("POST", "/")
 		.match_body(r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#)
 		.with_header("content-type", "application/json")
 		.with_status(500)
+		.expect(expected_attempts as usize)
 		.create();
 
 	let mock2 = create_evm_valid_server_mock_network_response(&mut server2);
@@ -162,53 +167,6 @@ async fn test_send_raw_request() {
 	let response = result.unwrap();
 	assert_eq!(response["result"]["data"], "success");
 	no_params_mock.assert();
-}
-
-#[tokio::test]
-async fn test_set_retry_policy() {
-	let mut server = Server::new_async().await;
-	let mock = create_evm_valid_server_mock_network_response(&mut server);
-
-	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let mut client = EVMTransportClient::new(&network).await.unwrap();
-
-	// Set up a sequence of responses to test retry behavior
-	let retry_mock = server
-		.mock("POST", "/")
-		.with_status(429) // Too Many Requests
-		.with_body("Rate limited")
-		.expect(2) // Expect 2 retries
-		.create_async()
-		.await;
-
-	let success_mock = server
-		.mock("POST", "/")
-		.with_status(200)
-		.with_header("content-type", "application/json")
-		.with_body(r#"{"jsonrpc": "2.0", "result": "success_after_retry", "id": 1}"#)
-		.expect(1)
-		.create_async()
-		.await;
-
-	// Set a custom retry policy with exactly 2 retries
-	let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
-	let result = client.set_retry_policy(retry_policy, Some(TransientErrorRetryStrategy));
-	assert!(result.is_ok());
-
-	// Make request that should trigger retries
-	let result = client
-		.send_raw_request("test_method", Some(json!(["param1"])))
-		.await;
-
-	// Verify success after retries
-	assert!(result.is_ok());
-	let response = result.unwrap();
-	assert_eq!(response["result"], "success_after_retry");
-
-	// Verify all mocks were called
-	mock.assert();
-	retry_mock.assert();
-	success_mock.assert();
 }
 
 #[tokio::test]

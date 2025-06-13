@@ -1,13 +1,12 @@
 use mockall::mock;
 use reqwest_middleware::ClientWithMiddleware;
-use reqwest_retry::policies::ExponentialBackoff;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, RotatingTransport, TransientErrorRetryStrategy, TransportError,
+	BlockchainTransport, RotatingTransport, TransportError,
 };
 
 // Mock implementation of a EVM transport client.
@@ -41,14 +40,6 @@ impl BlockchainTransport for MockEVMTransportClient {
 		let params_value = params.map(|p| p.into());
 		self.send_raw_request(method, params_value.and_then(|v| v.as_array().cloned()))
 			.await
-	}
-
-	fn set_retry_policy(
-		&mut self,
-		_: ExponentialBackoff,
-		_: Option<TransientErrorRetryStrategy>,
-	) -> Result<(), anyhow::Error> {
-		Ok(())
 	}
 
 	fn update_endpoint_manager_client(
@@ -102,14 +93,6 @@ impl BlockchainTransport for MockStellarTransportClient {
 			.await
 	}
 
-	fn set_retry_policy(
-		&mut self,
-		_: ExponentialBackoff,
-		_: Option<TransientErrorRetryStrategy>,
-	) -> Result<(), anyhow::Error> {
-		Ok(())
-	}
-
 	fn update_endpoint_manager_client(
 		&mut self,
 		_: ClientWithMiddleware,
@@ -160,13 +143,7 @@ impl BlockchainTransport for AlwaysFailsToUpdateClientTransport {
 			"params": params
 		})
 	}
-	fn set_retry_policy(
-		&mut self,
-		_retry_policy: ExponentialBackoff,
-		_retry_strategy: Option<TransientErrorRetryStrategy>,
-	) -> Result<(), anyhow::Error> {
-		Ok(())
-	}
+
 	fn update_endpoint_manager_client(
 		&mut self,
 		_: ClientWithMiddleware,
@@ -231,14 +208,6 @@ impl BlockchainTransport for MockTransport {
 			"method": method,
 			"params": params
 		})
-	}
-
-	fn set_retry_policy(
-		&mut self,
-		_retry_policy: ExponentialBackoff,
-		_retry_strategy: Option<TransientErrorRetryStrategy>,
-	) -> Result<(), anyhow::Error> {
-		Ok(())
 	}
 
 	fn update_endpoint_manager_client(

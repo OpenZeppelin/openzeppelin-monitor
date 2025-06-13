@@ -2,8 +2,7 @@
 //!
 //! Provides methods for rotating between multiple URLs and sending requests to the active endpoint
 //! with automatic fallback to other URLs on failure.
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware, RetryableStrategy};
+use reqwest_middleware::ClientWithMiddleware;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -70,28 +69,6 @@ impl EndpointManager {
 	/// * `client` - The new client to use for the endpoint manager
 	pub fn update_client(&mut self, client: ClientWithMiddleware) {
 		self.client = client;
-	}
-
-	/// Updates the retry policy for the client
-	///
-	/// Constructs a new client with the given retry policy and strategy
-	/// and updates the endpoint manager with the new client
-	///
-	/// # Arguments
-	/// * `retry_policy` - The new retry policy to use for the client
-	/// * `retry_strategy` - The new retry strategy to use for the client
-	pub fn set_retry_policy<R: RetryableStrategy + Send + Sync + 'static>(
-		&mut self,
-		retry_policy: ExponentialBackoff,
-		retry_strategy: R,
-	) {
-		let updated_client = ClientBuilder::from_client(self.client.clone())
-			.with(RetryTransientMiddleware::new_with_policy_and_strategy(
-				retry_policy,
-				retry_strategy,
-			))
-			.build();
-		self.update_client(updated_client);
 	}
 
 	/// Rotates to the next available URL

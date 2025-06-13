@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, EndpointManager, TransientErrorRetryStrategy, TransportError,
+	BlockchainTransport, EndpointManager, TransportError,
 };
 
 use crate::integration::mocks::{AlwaysFailsToUpdateClientTransport, MockTransport};
@@ -370,54 +370,6 @@ async fn test_update_client() {
 		.unwrap();
 	assert_eq!(updated_result["result"], "updated_client");
 	updated_mock.assert();
-}
-
-#[tokio::test]
-async fn test_set_retry_policy() {
-	let mut server = Server::new_async().await;
-
-	// Set up a sequence of responses to test retry behavior
-	let retry_mock = server
-		.mock("POST", "/")
-		.with_status(429) // Too Many Requests
-		.with_body("Rate limited")
-		.expect(2) // Expect 2 retries
-		.create_async()
-		.await;
-
-	let success_mock = server
-		.mock("POST", "/")
-		.with_status(200)
-		.with_header("content-type", "application/json")
-		.with_body(r#"{"jsonrpc": "2.0", "result": "success_after_retry", "id": 1}"#)
-		.expect(1)
-		.create_async()
-		.await;
-
-	let mut manager = EndpointManager::new(
-		get_mock_client_builder(), // Initial client with no retry policy
-		server.url().as_ref(),
-		vec![],
-	);
-
-	// Set a custom retry policy with exactly 2 retries
-	let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
-
-	manager.set_retry_policy(retry_policy, TransientErrorRetryStrategy);
-
-	// Make request that should trigger retries
-	let transport = MockTransport::new();
-	let result = manager
-		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
-		.await
-		.unwrap();
-
-	// Verify that we got the successful response after retries
-	assert_eq!(result["result"], "success_after_retry");
-
-	// Verify that both mocks were called the expected number of times
-	retry_mock.assert();
-	success_mock.assert();
 }
 
 #[tokio::test]
