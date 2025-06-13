@@ -14,7 +14,6 @@
 //! - tests: Test utilities
 
 mod cron_utils;
-mod expression;
 
 pub mod constants;
 pub mod logging;
@@ -26,6 +25,5 @@ pub mod tests;
 
 pub use constants::*;
 pub use cron_utils::*;
-pub use expression::*;
 pub use macros::*;
 pub use parsing::*;

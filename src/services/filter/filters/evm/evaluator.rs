@@ -89,7 +89,9 @@ impl<'a> EVMConditionEvaluator<'a> {
 			JsonValue::Object(nested_map) => nested_map
 				.values()
 				.any(|val_in_obj| self.check_json_value_matches_str(val_in_obj, rhs_str)),
-			JsonValue::Array(_) => false,
+			JsonValue::Array(arr) => arr
+				.iter()
+				.any(|item_in_array| self.check_json_value_matches_str(item_in_array, rhs_str)),
 			JsonValue::Null => rhs_str == "null",
 		}
 	}
@@ -649,7 +651,7 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 			return self.compare_u256(lhs_value_str, operator, rhs_literal);
 		}
 
-		if ARRAY_KINDS.contains(&lhs_kind.as_str()) {
+		if ARRAY_KINDS.contains(&lhs_kind.as_str()) || lhs_kind.as_str() == "tuple" {
 			return self.compare_array(lhs_value_str, operator, rhs_literal);
 		}
 

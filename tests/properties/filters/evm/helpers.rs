@@ -4,7 +4,8 @@
 use std::str::FromStr;
 
 use crate::properties::filters::evm::strings_evaluator::create_evaluator;
-use ethabi::Token;
+use alloy::core::dyn_abi::DynSolValue;
+use alloy::primitives::{Address, U256};
 use openzeppelin_monitor::services::filter::{
 	evm_helpers::{format_token_value, string_to_h256},
 	ComparisonOperator, ConditionEvaluator, LiteralValue,
@@ -13,7 +14,7 @@ use proptest::{prelude::*, test_runner::Config};
 use rust_decimal::Decimal;
 use serde_json::json;
 
-// Generator for ethabi Token values
+// Generator for alloy DynSolValue values
 prop_compose! {
 	fn generate_token()(
 		token_type in prop_oneof![
@@ -27,24 +28,28 @@ prop_compose! {
 		value in any::<u64>(),
 		string_value in "[a-zA-Z0-9]{1,10}",
 		bytes_len in 1..32usize
-	) -> Token {
+	) -> DynSolValue {
 		match token_type {
-			"address" => Token::Address(ethabi::Address::from_low_u64_be(value)),
+			"address" => {
+				let mut addr_bytes = [0u8; 20];
+				addr_bytes[12..20].copy_from_slice(&value.to_be_bytes());
+				DynSolValue::Address(Address::from(addr_bytes))
+			},
 			"bytes" => {
 				let bytes = (0..bytes_len).map(|i| ((i as u64 + value) % 256) as u8).collect::<Vec<u8>>();
-				Token::Bytes(bytes)
+				DynSolValue::Bytes(bytes)
 			},
-			"uint" => Token::Uint(ethabi::Uint::from(value)),
-			"bool" => Token::Bool(value % 2 == 0),
-			"string" => Token::String(string_value),
+			"uint" => DynSolValue::Uint(U256::from(value), 256),
+			"bool" => DynSolValue::Bool(value % 2 == 0),
+			"string" => DynSolValue::String(string_value),
 			"array" => {
 				let elements = vec![
-					Token::Uint(ethabi::Uint::from(value)),
-					Token::Uint(ethabi::Uint::from(value + 1)),
+					DynSolValue::Uint(U256::from(value), 256),
+					DynSolValue::Uint(U256::from(value + 1), 256),
 				];
-				Token::Array(elements)
+				DynSolValue::Array(elements)
 			},
-			_ => Token::Uint(ethabi::Uint::from(0)),
+			_ => DynSolValue::Uint(U256::from(0), 256),
 		}
 	}
 }
@@ -347,33 +352,33 @@ proptest! {
 
 		// Type-specific assertions
 		match token {
-			Token::Address(_) => prop_assert!(formatted.starts_with("0x")),
-			Token::Bytes(_) | Token::FixedBytes(_) => prop_assert!(formatted.starts_with("0x")),
-			Token::Array(_) => {
+			DynSolValue::Address(_) => prop_assert!(formatted.starts_with("0x")),
+			DynSolValue::Bytes(_) | DynSolValue::FixedBytes(_, _) => prop_assert!(formatted.starts_with("0x")),
+			DynSolValue::Array(_) | DynSolValue::FixedArray(_) => {
 				prop_assert!(formatted.starts_with('['));
 				prop_assert!(formatted.ends_with(']'));
 			}
-			Token::Tuple(_) => {
-				prop_assert!(formatted.starts_with('('));
-				prop_assert!(formatted.ends_with(')'));
+			DynSolValue::Tuple(_) => {
+				prop_assert!(formatted.starts_with('['));
+				prop_assert!(formatted.ends_with(']'));
 			}
-			_ => {} // Other types don't have specific format requirements
+			_ => {}
 		}
 
 		// The formatted string should be parseable based on the token type
 		match token {
-			Token::Uint(num) => {
+			DynSolValue::Uint(num, _) => {
 				let parsed: Result<u64, _> = formatted.parse();
 				prop_assert!(parsed.is_ok());
-				prop_assert_eq!(parsed.unwrap(), num.as_u64());
+				prop_assert_eq!(parsed.unwrap(), num.to::<u64>());
 			}
-			Token::Bool(b) => {
+			DynSolValue::Bool(b) => {
 				prop_assert_eq!(formatted, b.to_string());
 			}
-			Token::String(s) => {
+			DynSolValue::String(s) => {
 				prop_assert_eq!(formatted, s);
 			}
-			_ => {} // Other types need more complex parsing
+			_ => {}
 		}
 	}
 

@@ -7,10 +7,10 @@
 //! - Event log processing and filtering
 //! - ABI-based decoding of function calls and events
 
-use alloy::primitives::U64;
-use anyhow::Context;
+use alloy::core::dyn_abi::{DynSolType, DynSolValue};
+use alloy::core::json_abi::{AbiItem, JsonAbi};
+use alloy::primitives::{keccak256, U64};
 use async_trait::async_trait;
-use ethabi::Contract;
 use std::marker::PhantomData;
 use tracing::instrument;
 
@@ -26,7 +26,7 @@ use crate::{
 		filter::{
 			evm_helpers::{
 				are_same_address, are_same_signature, b256_to_string, format_token_value,
-				h160_to_string, h256_to_string, normalize_address,
+				h160_to_string, normalize_address,
 			},
 			expression::{self, EvaluationError},
 			filters::evm::evaluator::EVMConditionEvaluator,
@@ -219,17 +219,18 @@ impl<T> EVMBlockFilter<T> {
 					.find(|(address, _)| are_same_address(address, &monitored_addr.address))
 				{
 					// Create contract object from ABI
-					let contract = match Contract::load(abi.to_string().as_bytes()) {
-						Ok(c) => c,
-						Err(e) => {
-							FilterError::internal_error(
-								format!("Failed to parse ABI: {}", e),
-								None,
-								None,
-							);
-							return;
-						}
-					};
+					let contract =
+						match serde_json::from_slice::<JsonAbi>(abi.to_string().as_bytes()) {
+							Ok(c) => c,
+							Err(e) => {
+								FilterError::internal_error(
+									format!("Failed to parse ABI for matching function: {}", e),
+									None,
+									None,
+								);
+								return;
+							}
+						};
 
 					// Get the function selector (first 4 bytes of input data)
 					if input_data.0.len() >= 4 {
@@ -238,7 +239,7 @@ impl<T> EVMBlockFilter<T> {
 						// Try to find matching function in ABI
 						if let Some(function) = contract
 							.functions()
-							.find(|f| f.short_signature().as_slice() == selector)
+							.find(|f| f.selector().as_slice() == selector)
 						{
 							let function_signature_with_params = format!(
 								"{}({})",
@@ -246,8 +247,8 @@ impl<T> EVMBlockFilter<T> {
 								function
 									.inputs
 									.iter()
-									.map(|p| p.kind.to_string())
-									.collect::<Vec<String>>()
+									.map(|param| param.selector_type())
+									.collect::<Vec<_>>()
 									.join(",")
 							);
 
@@ -257,16 +258,38 @@ impl<T> EVMBlockFilter<T> {
 									&condition.signature,
 									&function_signature_with_params,
 								) {
-									let decoded = function
-										.decode_input(&input_data.0[4..])
-										.unwrap_or_else(|e| {
+									// Parse param types into DynSolType
+									let types: Vec<DynSolType> = function
+										.inputs
+										.iter()
+										.map(|p| p.selector_type().parse::<DynSolType>().unwrap())
+										.collect();
+
+									// Get bytes, drop selector
+									let mut raw = input_data.0.to_vec();
+									let params_blob = raw.split_off(4);
+
+									// Decode all inputs at once
+									let func_type = DynSolType::Tuple(types.clone());
+									let decoded_all = match func_type
+										.abi_decode_params(&params_blob)
+									{
+										Ok(decoded) => decoded,
+										Err(e) => {
 											FilterError::internal_error(
-												format!("Failed to decode function input: {}", e),
+												format!("Failed to decode ABI parameters: {}", e),
 												None,
 												None,
 											);
-											vec![]
-										});
+											continue;
+										}
+									};
+
+									// Unpack into individual arguments
+									let decoded: Vec<DynSolValue> = match decoded_all {
+										DynSolValue::Tuple(vals) => vals,
+										val => vec![val],
+									};
 
 									let params: Vec<EVMMatchParamEntry> = function
 										.inputs
@@ -275,7 +298,7 @@ impl<T> EVMBlockFilter<T> {
 										.map(|(input, value)| EVMMatchParamEntry {
 											name: input.name.clone(),
 											value: format_token_value(value),
-											kind: input.kind.to_string(),
+											kind: input.ty.to_string(),
 											indexed: false,
 										})
 										.collect();
@@ -297,7 +320,11 @@ impl<T> EVMBlockFilter<T> {
 														args: Some(params.clone()),
 														hex_signature: Some(format!(
 															"0x{}",
-															hex::encode(function.short_signature())
+															hex::encode(
+																&keccak256(
+																	function.signature().as_bytes()
+																)[..4]
+															)
 														)),
 													});
 												}
@@ -324,7 +351,8 @@ impl<T> EVMBlockFilter<T> {
 												signature: function_signature_with_params.clone(),
 												args: Some(params.clone()),
 												hex_signature: Some(hex::encode(
-													function.short_signature(),
+													&keccak256(function.signature().as_bytes())
+														[..4],
 												)),
 											});
 										}
@@ -493,66 +521,212 @@ impl<T> EVMBlockFilter<T> {
 	) -> Option<EVMMatchParamsMap> {
 		// Create contract object from ABI
 		let contract = match abi {
-			ContractSpec::EVM(evm_spec) => Contract::load(evm_spec.to_string().as_bytes())
-				.with_context(|| "Failed to parse ABI")
-				.ok()?,
+			ContractSpec::EVM(evm_spec) => {
+				match serde_json::from_slice::<JsonAbi>(evm_spec.to_string().as_bytes()) {
+					Ok(c) => c,
+					Err(e) => {
+						FilterError::internal_error(
+							format!("Failed to parse ABI for decoding events: {}", e),
+							None,
+							None,
+						);
+						return None;
+					}
+				}
+			}
 			_ => return None,
 		};
 
-		let decoded_log = contract
-			.events()
-			.find(|event| h256_to_string(event.signature()) == b256_to_string(log.topics[0]))
+		// Find matching event in contract ABI
+		contract
+			.items()
+			.filter_map(|item| match item {
+				AbiItem::Event(evt) => Some(evt),
+				_ => None,
+			})
+			.find(|event| event.selector() == log.topics[0]) // matching against the first topic using B256
 			.and_then(|event| {
-				event
-					.parse_log(ethabi::RawLog {
-						topics: log
-							.topics
-							.iter()
-							.map(|t| ethabi::Hash::from_slice(t.as_slice()))
-							.collect(),
-						data: log.data.0.to_vec(),
-					})
-					.ok()
-					.map(|parsed| {
-						let event_params_map = EVMMatchParamsMap {
-							signature: format!(
-								"{}({})",
-								event.name,
-								event
-									.inputs
-									.iter()
-									.map(|p| p.kind.to_string())
-									.collect::<Vec<String>>()
-									.join(",")
-							),
-							args: Some(
-								event
-									.inputs
-									.iter()
-									.filter_map(|input| {
-										parsed
-											.params
-											.iter()
-											.find(|param| param.name == input.name)
-											.map(|param| EVMMatchParamEntry {
-												name: input.name.clone(),
-												value: format_token_value(&param.value),
-												kind: input.kind.to_string(),
-												indexed: input.indexed,
-											})
-									})
-									.collect(),
-							),
-							hex_signature: Some(h256_to_string(event.signature())),
-						};
-						event_params_map
-					})
-			});
+				let mut decoded_params = Vec::new();
 
-		decoded_log
+			// Decode indexed parameters from topics (skip first topic which is event signature)
+			for (i, param) in event.inputs.iter().filter(|p| p.indexed).enumerate() {
+				let topic = log.topics.get(i + 1)?;
+				let param_type = match param.selector_type().parse::<DynSolType>() {
+					Ok(param_type) => param_type,
+					Err(e) => {
+						FilterError::internal_error(
+							format!(
+								"Failed to parse indexed parameter type '{}' for event {}: {}",
+								param.selector_type(),
+								event.name,
+								e
+							),
+							None,
+							None,
+						);
+						return None;
+					}
+				};
+				// For complex types, topics contain hashes
+				let decoded_value = match param_type {
+					DynSolType::Tuple(_) |
+					DynSolType::Array(_) |
+					DynSolType::FixedArray(_, _) |
+					DynSolType::String |
+					DynSolType::Bytes => {
+						// For complex types, the topic is a hash - store it as hex string
+						DynSolValue::FixedBytes(*topic, 32)
+					}
+					_ => {
+						// For simple types, decode normally
+						match param_type.abi_decode(&topic.0) {
+							Ok(value) => value,
+							Err(e) => {
+								FilterError::internal_error(
+									format!(
+										"Failed to decode indexed parameter '{}' (type: {}) for event {}: {}. Topic data length: {}",
+										param.name,
+										param.selector_type(),
+										event.name,
+										e,
+										topic.0.len()
+									),
+									None,
+									None,
+								);
+								return None;
+							}
+						}
+					}
+				};
+
+				decoded_params.push(EVMMatchParamEntry {
+					name: param.name.clone(),
+					value: format_token_value(&decoded_value),
+					kind: param.ty.to_string(),
+					indexed: true,
+				});
+			}
+
+				// Decode non-indexed parameters from data
+				let non_indexed: Vec<_> = event.inputs.iter().filter(|p| !p.indexed).collect();
+				if !non_indexed.is_empty() {
+					let types: Vec<DynSolType> = match non_indexed.iter()
+						.map(|p| p.selector_type().parse::<DynSolType>())
+						.collect::<Result<Vec<_>, _>>() {
+						Ok(types) => types,
+						Err(e) => {
+							FilterError::internal_error(
+								format!("Failed to parse event parameter types: {}", e),
+								None,
+								None,
+							);
+							return None;
+						}
+					};
+
+					let values = match types.len() {
+						1 => {
+							// Handle single parameter case - decode directly, not as tuple
+							match types[0].abi_decode(&log.data.0) {
+								Ok(data) => vec![data],
+								Err(e) => {
+									FilterError::internal_error(
+										format!(
+											"Failed to decode single parameter for event {}: {}. Log data length: {}, Expected type: {:?}",
+											event.name,
+											e,
+											log.data.0.len(),
+											types[0]
+										),
+										Some(Box::new(e)),
+										None,
+									);
+									return None;
+								}
+							}
+						}
+						len if len > 1 => {
+							// Handle multiple parameters case - decode as tuple
+							let decoded_data = match DynSolType::Tuple(types.clone()).abi_decode(&log.data.0) {
+								Ok(data) => data,
+								Err(e) => {
+									FilterError::internal_error(
+										format!(
+											"Failed to decode event log data for event {}: {}. Log data length: {}, Expected types: {:?}",
+											event.name,
+											e,
+											log.data.0.len(),
+											types
+										),
+										Some(Box::new(e)),
+										None,
+									);
+									return None;
+								}
+							};
+
+							match decoded_data {
+								DynSolValue::Tuple(vals) => vals,
+								_val => {
+									tracing::warn!("Expected tuple for multiple parameters but got single value");
+									return None;
+								}
+							}
+						}
+						_ => {
+							// No non-indexed parameters
+							Vec::new()
+						}
+					};
+
+					// Verify we have the expected number of values
+					if values.len() != non_indexed.len() {
+						FilterError::internal_error(
+							format!("Decoded {} values but expected {} for event {}", values.len(), non_indexed.len(), event.name),
+							None,
+							None,
+						);
+						return None;
+					}
+
+					decoded_params.extend(
+						non_indexed.iter().zip(values.iter()).map(|(param, value)| {
+							EVMMatchParamEntry {
+								name: param.name.clone(),
+								value: format_token_value(value),
+								kind: param.ty.to_string(),
+								indexed: false,
+							}
+						})
+					);
+				}
+
+				// Sort parameters by their original order in the ABI
+				decoded_params.sort_by_key(|param| {
+					event.inputs.iter().position(|input| input.name == param.name).unwrap_or(usize::MAX)
+				});
+
+				Some(EVMMatchParamsMap {
+					signature: format!(
+						"{}({})",
+						event.name,
+						event.inputs.iter().map(|p| p.selector_type()).collect::<Vec<_>>().join(",")
+					),
+					args: Some(decoded_params),
+					hex_signature: Some(format!("0x{}", hex::encode(event.selector()))),
+				})
+			})
 	}
 
 	/// Checks if a monitor has any transaction conditions that require a receipt
+	///
+	/// # Arguments
+	/// * `monitor` - Monitor to check
+	/// * `logs` - Logs to check
+	///
+	/// # Returns
+	/// `true` if the monitor has any transaction conditions that require a receipt, `false` otherwise
 	fn needs_receipt(&self, monitor: &Monitor, logs: &[EVMReceiptLog]) -> bool {
 		monitor
 			.match_conditions
@@ -843,8 +1017,9 @@ mod tests {
 	};
 
 	use super::*;
+	use alloy::core::dyn_abi::{DynSolValue, JsonAbiExt};
+	use alloy::core::json_abi::{Function, Param, StateMutability};
 	use alloy::primitives::{Address, Bytes, B256, U256};
-	use ethabi::{Function, Param, ParamType};
 	use serde_json::json;
 	use std::str::FromStr;
 
@@ -1615,32 +1790,34 @@ mod tests {
 			inputs: vec![
 				Param {
 					name: "recipient".to_string(),
-					kind: ParamType::Address,
+					ty: "address".to_string(),
+					components: vec![],
 					internal_type: None,
 				},
 				Param {
 					name: "amount".to_string(),
-					kind: ParamType::Uint(256),
+					ty: "uint256".to_string(),
+					components: vec![],
 					internal_type: None,
 				},
 			],
 			outputs: vec![Param {
 				name: "".to_string(),
-				kind: ParamType::Bool,
+				ty: "bool".to_string(),
+				components: vec![],
 				internal_type: None,
 			}],
-			constant: None,
-			state_mutability: ethabi::StateMutability::NonPayable,
+			state_mutability: StateMutability::NonPayable,
 		};
 
 		let params = vec![
-			ethabi::Token::Address(
-				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			DynSolValue::Address(
+				Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
 			),
-			ethabi::Token::Uint(ethabi::Uint::from(1000)),
+			DynSolValue::Uint(U256::from(1000), 256),
 		];
 
-		let encoded = function.encode_input(&params).unwrap();
+		let encoded = function.abi_encode_input(&params).unwrap();
 		let transaction = TransactionBuilder::new()
 			.from(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
 			.to(Address::from_str("0x0000000000000000000000000000000000004321").unwrap())
@@ -1698,33 +1875,35 @@ mod tests {
 			inputs: vec![
 				Param {
 					name: "recipient".to_string(),
-					kind: ParamType::Address,
+					ty: "address".to_string(),
+					components: vec![],
 					internal_type: None,
 				},
 				Param {
 					name: "amount".to_string(),
-					kind: ParamType::Uint(256),
+					ty: "uint256".to_string(),
+					components: vec![],
 					internal_type: None,
 				},
 			],
 			outputs: vec![Param {
 				name: "".to_string(),
-				kind: ParamType::Bool,
+				ty: "bool".to_string(),
+				components: vec![],
 				internal_type: None,
 			}],
-			constant: None,
-			state_mutability: ethabi::StateMutability::NonPayable,
+			state_mutability: StateMutability::NonPayable,
 		};
 
 		// Test with amount > 500 (should match)
 		let params = vec![
-			ethabi::Token::Address(
-				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			DynSolValue::Address(
+				Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
 			),
-			ethabi::Token::Uint(ethabi::Uint::from(1000)),
+			DynSolValue::Uint(U256::from(1000), 256),
 		];
 
-		let encoded = function.encode_input(&params).unwrap();
+		let encoded = function.abi_encode_input(&params).unwrap();
 		let transaction = TransactionBuilder::new()
 			.to(Address::from_str("0x0000000000000000000000000000000000004321").unwrap())
 			.input(Bytes(encoded.into()))
@@ -1751,13 +1930,13 @@ mod tests {
 		}
 
 		let params = vec![
-			ethabi::Token::Address(
-				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			DynSolValue::Address(
+				Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
 			),
-			ethabi::Token::Uint(ethabi::Uint::from(500)),
+			DynSolValue::Uint(U256::from(500), 256),
 		];
 
-		let encoded = function.encode_input(&params).unwrap();
+		let encoded = function.abi_encode_input(&params).unwrap();
 		let transaction = TransactionBuilder::new()
 			.to(Address::from_str("0x0000000000000000000000000000000000004321").unwrap())
 			.input(Bytes(encoded.into()))
@@ -1808,32 +1987,34 @@ mod tests {
 			inputs: vec![
 				Param {
 					name: "recipient".to_string(),
-					kind: ParamType::Address,
+					ty: "address".to_string(),
+					components: vec![],
 					internal_type: None,
 				},
 				Param {
 					name: "amount".to_string(),
-					kind: ParamType::Uint(256),
+					ty: "uint256".to_string(),
+					components: vec![],
 					internal_type: None,
 				},
 			],
 			outputs: vec![Param {
 				name: "".to_string(),
-				kind: ParamType::Bool,
+				ty: "bool".to_string(),
+				components: vec![],
 				internal_type: None,
 			}],
-			constant: None,
-			state_mutability: ethabi::StateMutability::NonPayable,
+			state_mutability: StateMutability::NonPayable,
 		};
 
 		let params = vec![
-			ethabi::Token::Address(
-				ethabi::Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			DynSolValue::Address(
+				Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
 			),
-			ethabi::Token::Uint(ethabi::Uint::from(1000)),
+			DynSolValue::Uint(U256::from(1000), 256),
 		];
 
-		let encoded = function.encode_input(&params).unwrap();
+		let encoded = function.abi_encode_input(&params).unwrap();
 		let transaction = TransactionBuilder::new()
 			.to(Address::from_str("0x0000000000000000000000000000000000001234").unwrap())
 			.input(Bytes(encoded.into()))
@@ -2782,5 +2963,537 @@ mod tests {
 		let result = filter.decode_events(&abi, &log);
 
 		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_missing_topics_for_indexed_params() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create log with only the event signature topic but missing topics for indexed parameters
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![
+				B256::from_str(
+					"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+				)
+				.unwrap(), // Only event signature
+				           // Missing topics for 'from' and 'to' indexed parameters
+			],
+			data: Bytes(
+				hex::decode("0000000000000000000000000000000000000000000000000000000000000064")
+					.unwrap()
+					.into(),
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let abi = create_test_abi("event");
+		let result = filter.decode_events(&abi, &log);
+
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_invalid_non_indexed_parameter_type() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an ABI with an invalid non-indexed parameter type
+		let invalid_abi = json!([{
+			"type": "event",
+			"name": "InvalidEvent",
+			"inputs": [
+				{
+					"name": "param1",
+					"type": "invalid_type", // Invalid Solidity type
+					"indexed": false
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector for the invalid event
+		let event_name = "InvalidEvent(invalid_type)";
+		let selector = keccak256(event_name.as_bytes());
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![selector],
+			data: Bytes(
+				hex::decode("0000000000000000000000000000000000000000000000000000000000000064")
+					.unwrap()
+					.into(),
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result =
+			filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(invalid_abi)), &log);
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_invalid_indexed_parameter_type() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an ABI with an invalid parameter type
+		let invalid_abi = json!([{
+			"type": "event",
+			"name": "InvalidEvent",
+			"inputs": [
+				{
+					"name": "param1",
+					"type": "invalid_type", // Invalid Solidity type
+					"indexed": true
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector for the invalid event
+		let event_name = "InvalidEvent(invalid_type)";
+		let selector = keccak256(event_name.as_bytes());
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![
+				selector,
+				B256::from_slice(&[0u8; 32]), // dummy topic for indexed param
+			],
+			data: Bytes(vec![].into()),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result =
+			filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(invalid_abi)), &log);
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_non_evm_contract_spec() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		let log = create_test_log(
+			contract_address,
+			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+
+		let malformed_abi = ContractSpec::EVM(EVMContractSpec::from(json!({})));
+
+		let result = filter.decode_events(&malformed_abi, &log);
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_insufficient_log_data_for_single_param() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an event ABI with one non-indexed uint256 parameter
+		let abi = json!([{
+			"type": "event",
+			"name": "SimpleEvent",
+			"inputs": [
+				{
+					"name": "value",
+					"type": "uint256",
+					"indexed": false
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector
+		let event_name = "SimpleEvent(uint256)";
+		let selector = keccak256(event_name.as_bytes());
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![selector],
+			data: Bytes(vec![0x12].into()), // Insufficient data for uint256 (needs 32 bytes)
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result = filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log);
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_insufficient_log_data_for_multiple_params() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an event ABI with two non-indexed uint256 parameters
+		let abi = json!([{
+			"type": "event",
+			"name": "MultiParamEvent",
+			"inputs": [
+				{
+					"name": "value1",
+					"type": "uint256",
+					"indexed": false
+				},
+				{
+					"name": "value2",
+					"type": "uint256",
+					"indexed": false
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector
+		let event_name = "MultiParamEvent(uint256,uint256)";
+		let selector = keccak256(event_name.as_bytes());
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![selector],
+			data: Bytes(vec![0x12; 32].into()), // Only 32 bytes, but need 64 for two uint256s
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result = filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log);
+		assert!(result.is_none());
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_complex_indexed_types() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an event ABI with complex indexed types (string, bytes, array, tuple)
+		let abi = json!([{
+			"type": "event",
+			"name": "ComplexEvent",
+			"inputs": [
+				{
+					"name": "data",
+					"type": "string",
+					"indexed": true
+				},
+				{
+					"name": "bytes_data",
+					"type": "bytes",
+					"indexed": true
+				},
+				{
+					"name": "simple_value",
+					"type": "uint256",
+					"indexed": false
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector
+		let event_name = "ComplexEvent(string,bytes,uint256)";
+		let selector = keccak256(event_name.as_bytes());
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![
+				selector,
+				keccak256(b"test string"), // Hash of string data
+				keccak256(b"test bytes"),  // Hash of bytes data
+			],
+			data: Bytes(
+				hex::decode("0000000000000000000000000000000000000000000000000000000000000064")
+					.unwrap()
+					.into(),
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result = filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log);
+
+		// This should succeed - complex indexed types are handled as FixedBytes
+		assert!(result.is_some());
+		let decoded = result.unwrap();
+		assert_eq!(decoded.signature, "ComplexEvent(string,bytes,uint256)");
+
+		let args = decoded.args.unwrap();
+		assert_eq!(args.len(), 3);
+
+		// Complex indexed types should be stored as hex strings of their hashes
+		let data_param = args.iter().find(|p| p.name == "data").unwrap();
+		assert!(data_param.indexed);
+		assert!(data_param.value.starts_with("0x"));
+
+		let bytes_param = args.iter().find(|p| p.name == "bytes_data").unwrap();
+		assert!(bytes_param.indexed);
+		assert!(bytes_param.value.starts_with("0x"));
+
+		let value_param = args.iter().find(|p| p.name == "simple_value").unwrap();
+		assert!(!value_param.indexed);
+		assert_eq!(value_param.value, "100");
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_tuple_indexed_type() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an event ABI with tuple indexed type
+		let abi = json!([{
+			"type": "event",
+			"name": "TupleEvent",
+			"inputs": [
+				{
+					"name": "tuple_data",
+					"type": "tuple",
+					"indexed": true,
+					"components": [
+						{
+							"name": "field1",
+							"type": "uint256"
+						},
+						{
+							"name": "field2",
+							"type": "address"
+						}
+					]
+				},
+				{
+					"name": "simple_value",
+					"type": "uint256",
+					"indexed": false
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector
+		let event_name = "TupleEvent((uint256,address),uint256)";
+		let selector = keccak256(event_name.as_bytes());
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![
+				selector,
+				B256::from_slice(&[0u8; 32]), // Hash of tuple data
+			],
+			data: Bytes(
+				hex::decode("0000000000000000000000000000000000000000000000000000000000000064")
+					.unwrap()
+					.into(),
+			),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result = filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log);
+
+		// This should succeed - tuple indexed types are handled as FixedBytes
+		assert!(result.is_some());
+		let decoded = result.unwrap();
+		assert_eq!(decoded.signature, "TupleEvent((uint256,address),uint256)");
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_only_indexed_parameters() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an event ABI with only indexed parameters
+		let abi = json!([{
+			"type": "event",
+			"name": "IndexedOnlyEvent",
+			"inputs": [
+				{
+					"name": "addr1",
+					"type": "address",
+					"indexed": true
+				},
+				{
+					"name": "addr2",
+					"type": "address",
+					"indexed": true
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector
+		let event_name = "IndexedOnlyEvent(address,address)";
+		let selector = keccak256(event_name.as_bytes());
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![
+				selector,
+				B256::from_slice(
+					&[
+						&[0u8; 12],
+						Address::from_str("0x0000000000000000000000000000000000001234")
+							.unwrap()
+							.as_slice(),
+					]
+					.concat(),
+				),
+				B256::from_slice(
+					&[
+						&[0u8; 12],
+						Address::from_str("0x0000000000000000000000000000000000005678")
+							.unwrap()
+							.as_slice(),
+					]
+					.concat(),
+				),
+			],
+			data: Bytes(vec![].into()), // No data for non-indexed parameters
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result = filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log);
+
+		assert!(result.is_some());
+		let decoded = result.unwrap();
+		assert_eq!(decoded.signature, "IndexedOnlyEvent(address,address)");
+
+		let args = decoded.args.unwrap();
+		assert_eq!(args.len(), 2);
+
+		// All parameters should be indexed
+		assert!(args.iter().all(|p| p.indexed));
+	}
+
+	#[tokio::test]
+	async fn test_decode_events_only_non_indexed_parameters() {
+		let filter = create_test_filter();
+		let contract_address =
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap();
+
+		// Create an event ABI with only non-indexed parameters
+		let abi = json!([{
+			"type": "event",
+			"name": "NonIndexedOnlyEvent",
+			"inputs": [
+				{
+					"name": "value1",
+					"type": "uint256",
+					"indexed": false
+				},
+				{
+					"name": "value2",
+					"type": "uint256",
+					"indexed": false
+				}
+			],
+			"anonymous": false,
+		}]);
+
+		// Calculate the selector
+		let event_name = "NonIndexedOnlyEvent(uint256,uint256)";
+		let selector = keccak256(event_name.as_bytes());
+
+		// Encode two uint256 values
+		let mut data = Vec::new();
+		data.extend_from_slice(&[0u8; 31]);
+		data.push(100u8); // First uint256 = 100
+		data.extend_from_slice(&[0u8; 31]);
+		data.push(200u8); // Second uint256 = 200
+
+		let log = EVMReceiptLog {
+			address: contract_address,
+			topics: vec![selector], // Only event signature
+			data: Bytes(data.into()),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let result = filter.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log);
+
+		assert!(result.is_some());
+		let decoded = result.unwrap();
+		assert_eq!(decoded.signature, "NonIndexedOnlyEvent(uint256,uint256)");
+
+		let args = decoded.args.unwrap();
+		assert_eq!(args.len(), 2);
+
+		// All parameters should be non-indexed
+		assert!(args.iter().all(|p| !p.indexed));
+
+		let value1_param = args.iter().find(|p| p.name == "value1").unwrap();
+		assert_eq!(value1_param.value, "100");
+
+		let value2_param = args.iter().find(|p| p.name == "value2").unwrap();
+		assert_eq!(value2_param.value, "200");
 	}
 }
