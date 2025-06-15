@@ -10,9 +10,7 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use reqwest::Client;
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_retry::{policies::ExponentialBackoff, Jitter, RetryTransientMiddleware};
+use reqwest_middleware::ClientWithMiddleware;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
@@ -24,6 +22,7 @@ use crate::{
 		BlockchainTransport, EndpointManager, RotatingTransport, TransientErrorRetryStrategy,
 		TransportError,
 	},
+	utils::http::{create_retryable_http_client, HttpRetryConfig},
 };
 
 /// Basic HTTP transport client for blockchain interactions
@@ -37,8 +36,8 @@ use crate::{
 /// The client is thread-safe and can be shared across multiple tasks.
 #[derive(Clone, Debug)]
 pub struct HttpTransportClient {
-	/// HTTP client for making requests, wrapped in Arc for thread-safety
-	pub client: Arc<Client>,
+	/// Retryable HTTP client for making requests
+	pub client: ClientWithMiddleware,
 	/// Manages RPC endpoint rotation and request handling for high availability
 	endpoint_manager: EndpointManager,
 	/// The stringified JSON RPC payload to use for testing the connection
@@ -70,30 +69,30 @@ impl HttpTransportClient {
 
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
 
-		// Default retry policy
-		let retry_policy = ExponentialBackoff::builder()
-			.base(2)
-			.retry_bounds(Duration::from_millis(250), Duration::from_secs(10))
-			.jitter(Jitter::Full)
-			.build_with_max_retries(3);
+		// Create a retry policy with default settings
+		// Shared config for endpoint manager and test connection
+		let http_retry_config = HttpRetryConfig::default();
 
-		let http_client = reqwest::ClientBuilder::new()
-			.pool_idle_timeout(Duration::from_secs(90))
-			.pool_max_idle_per_host(32)
-			.timeout(Duration::from_secs(30))
-			.connect_timeout(Duration::from_secs(20))
-			.build()
-			.context("Failed to create HTTP client")?;
+		// Create the base HTTP client
+		let base_http_client = Arc::new(
+			reqwest::ClientBuilder::new()
+				.pool_idle_timeout(Duration::from_secs(90))
+				.pool_max_idle_per_host(32)
+				.timeout(Duration::from_secs(30))
+				.connect_timeout(Duration::from_secs(20))
+				.build()
+				.context("Failed to create base HTTP client")?,
+		);
 
-		// Clone it before using it to create the middleware client
-		let cloned_http_client = http_client.clone();
-
-		let client = ClientBuilder::new(cloned_http_client)
-			.with(RetryTransientMiddleware::new_with_policy_and_strategy(
-				retry_policy,
-				TransientErrorRetryStrategy,
-			))
-			.build();
+		// Create a retryable HTTP client with the base client and retry policy
+		// Shared across:
+		// - EndpointManager for handling endpoint rotation
+		// - Connection testing for verifying endpoint availability
+		let retryable_client = create_retryable_http_client(
+			&http_retry_config,
+			(*base_http_client).clone(),
+			Some(TransientErrorRetryStrategy),
+		);
 
 		for rpc_url in rpc_urls.iter() {
 			let url = match Url::parse(rpc_url.url.as_ref()) {
@@ -113,9 +112,14 @@ impl HttpTransportClient {
 				})
 			};
 
-			let request = http_client.post(url.clone()).json(&test_request);
 			// Attempt to connect to the endpoint
-			match request.send().await {
+			let request_result = retryable_client
+				.post(url.clone())
+				.json(&test_request)
+				.send()
+				.await;
+
+			match request_result {
 				Ok(response) => {
 					// Check if the response indicates an error status (4xx or 5xx)
 					if !response.status().is_success() {
@@ -132,9 +136,9 @@ impl HttpTransportClient {
 
 					// Successfully connected - create and return the client
 					return Ok(Self {
-						client: Arc::new(http_client),
+						client: retryable_client.clone(),
 						endpoint_manager: EndpointManager::new(
-							client,
+							retryable_client,
 							rpc_url.url.as_ref(),
 							fallback_urls,
 						),
@@ -196,26 +200,6 @@ impl BlockchainTransport for HttpTransportClient {
 			.await?;
 
 		Ok(response)
-	}
-
-	/// Updates the retry policy configuration
-	///
-	/// # Arguments
-	/// * `retry_policy` - New retry policy to use for subsequent requests
-	/// * `retry_strategy` - Optional retry strategy to use for subsequent requests
-	///
-	/// # Returns
-	/// * `Result<(), anyhow::Error>` - Success or error status
-	fn set_retry_policy(
-		&mut self,
-		retry_policy: ExponentialBackoff,
-		retry_strategy: Option<TransientErrorRetryStrategy>,
-	) -> Result<(), anyhow::Error> {
-		self.endpoint_manager.set_retry_policy(
-			retry_policy,
-			retry_strategy.unwrap_or(TransientErrorRetryStrategy),
-		);
-		Ok(())
 	}
 
 	/// Update endpoint manager with a new client
