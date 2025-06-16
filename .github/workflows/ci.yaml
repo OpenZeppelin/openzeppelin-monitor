@@ -228,7 +228,7 @@ jobs:
           file: Dockerfile.development
           platforms: linux/amd64
       - name: Scan image
-        uses: anchore/scan-action@7c05671ae9be166aeb155bad2d7df9121823df32  # v6.1.0
+        uses: anchore/scan-action@be7a22da4f22dde446c4c4c099887ff5b256526c  # v6.3.0
         with:
           image: openzeppelin-monitor-dev:${{ github.sha }}
           fail-build: true
