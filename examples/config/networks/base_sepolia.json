@@ -1,6 +1,6 @@
 {
   "network_type": "EVM",
-  "slug": "base-sepolia",
+  "slug": "base_sepolia",
   "name": "Base Sepolia",
   "rpc_urls": [
     {
