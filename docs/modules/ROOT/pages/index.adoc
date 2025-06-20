@@ -1477,6 +1477,11 @@ Expressions allow for condition checking of function arguments, event parameters
 | `contains`, `==`, `!=`
 | Behavior of `contains` and `==` differs based on whether the value is CSV or a JSON array string. See "Operations on Complex Types" for details.
 
+| Tuple (EVM)
+| Ordered list represented as a JSON array string (e.g., `'["Alice", 0x1234..., 25, true, [12,34]]'`).
+| `contains`
+| Only the `contains` operator is supported for tuple filtering. The `contains` operation performs a case-insensitive deep search through all tuple elements.
+
 |===
 
 
@@ -1571,6 +1576,12 @@ When an EVM parameter is an array (often represented internally or configured wi
 - `array_param == '["raw_json_array_string"]'` string comparison of the array's entire JSON string representation against the provided string
 - `array_param != '["raw_json_array_string"]'` the negation of the above
 - `array_param[0]` indexed access
+
+*Tuple Operations (`kind: "tuple"`)*
+
+- `tuple_param contains 'value'` checks if the string `'value'` exists within the tuple.
+
+Where `tuple_param` is the name of tuple param (we should have only one param for tuples).
 
 ===== Stellar Specifics
 

@@ -42,6 +42,7 @@ const ARRAY_KINDS: &[&str] = &[
 	"ufixed[]",
 	"bytes[]",
 	"bytes32[]",
+	"tuple",
 	"tuple[]",
 ];
 
@@ -89,7 +90,9 @@ impl<'a> EVMConditionEvaluator<'a> {
 			JsonValue::Object(nested_map) => nested_map
 				.values()
 				.any(|val_in_obj| self.check_json_value_matches_str(val_in_obj, rhs_str)),
-			JsonValue::Array(_) => false,
+			JsonValue::Array(arr) => arr
+				.iter()
+				.any(|item_in_array| self.check_json_value_matches_str(item_in_array, rhs_str)),
 			JsonValue::Null => rhs_str == "null",
 		}
 	}
