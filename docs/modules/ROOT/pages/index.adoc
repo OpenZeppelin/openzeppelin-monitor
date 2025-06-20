@@ -5,153 +5,53 @@
 
 CAUTION: This software is in alpha stage. Use in production environments at your own risk.
 
+== Overview
+
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
-**Features:**
+=== Key Capabilities
 
-- Multi-chain support
-- Configurable monitoring schedules
-- Flexible trigger conditions
-- Extensible architecture for adding new chains
+* **Real-time Monitoring**: Watch blockchain networks in real-time for specific events and transactions
+* **Smart Filtering**: Use flexible expressions to define exactly what you want to monitor
+* **Multi-notification Support**: Send alerts via Slack, Discord, Email, Telegram, Webhooks, or custom scripts
+* **Configurable Scheduling**: Set custom monitoring schedules using cron expressions
+* **Data Persistence**: Store monitoring data and resume from checkpoints
+* **Extensible Architecture**: Easy to add support for new blockchains and notification types
 
-**Supported Networks (OOTB):**
+=== Supported Networks
 
-- EVM
-- Stellar
+**EVM-Compatible Networks:**
+- Ethereum (Mainnet, Sepolia)
+- Polygon (Mainnet, Amoy)
+- Arbitrum (One, Nova, Sepolia)
+- Optimism (Mainnet, Sepolia)
+- Base (Mainnet, Sepolia)
+- BSC (Mainnet, Testnet)
+- zkSync Era (Mainnet, Sepolia)
+- Unichain (Sepolia)
 
-**Supported Triggers (OOTB):**
+**Stellar Networks:**
+- Stellar (Mainnet, Testnet)
 
-- Slack notifications
-- Email notifications
-- Discord notifications
-- Telegram notifications
-- Webhook notifications
-- Script notifications
+=== Notification Channels
 
-[NOTE]
-====
-To get started immediately, see xref:quickstart.adoc[Quickstart].
-====
-
-== Technical Overview
-
-[mermaid,width=100%]
-....
-%%{init: {
-    'theme': 'base',
-    'themeVariables': {
-        'background': '#ffffff',
-        'mainBkg': '#ffffff',
-        'primaryBorderColor': '#cccccc'
-    }
-}}%%
-graph TD
-    subgraph Blockchain Networks
-        ETH[Ethereum RPC]
-        POL[Polygon RPC]
-        BSC[BSC RPC]
-    end
-
-    subgraph Block Processing
-        BW[BlockWatcherService]
-        BS[(BlockStorage)]
-        JS[JobScheduler]
-    end
-
-    subgraph Client Layer
-        BC[BlockchainClient]
-        EVM[EVMClient]
-        STL[StellarClient]
-    end
-
-    subgraph Processing Pipeline
-        FS[FilterService]
-        TS[TriggerService]
-        NS[NotificationService]
-    end
-
-    subgraph Notifications
-        Slack
-        Email
-        Discord
-        Telegram
-        Webhook
-        Script
-    end
-
-    %% Block Processing Flow
-    JS -->|Schedule Block Fetch| BW
-    BW -->|Store Last Block| BS
-    BW -->|Read Last Block| BS
-    BW -->|Get New Blocks| BC
-
-    %% Client Connections
-    BC --> EVM
-    BC --> STL
-    EVM -->|RPC Calls| ETH
-    EVM -->|RPC Calls| POL
-    EVM -->|RPC Calls| BSC
-
-    %% Processing Flow
-    BW -->|New Block| FS
-    FS -->|Matches| TS
-    TS -->|Execute| NS
-    NS --> Slack
-    NS --> Email
-    NS --> Discord
-    NS --> Telegram
-    NS --> Webhook
-    NS --> Script
-
-    style STL fill:#f0f0f0
-
-    classDef rpc fill:#e1f5fe,stroke:#01579b
-    classDef storage fill:#fff3e0,stroke:#ef6c00
-    classDef service fill:#e8f5e9,stroke:#2e7d32
-    classDef notification fill:#f3e5f5,stroke:#7b1fa2
-
-    class ETH,POL,BSC rpc
-    class BS storage
-    class BW,FS,TS,NS service
-    class Slack,Email,Discord,Telegram,Webhook,Script notification
-....
-
-== Project Structure
-
-The project follows a standard Rust project layout:
-
-```
-openzeppelin-monitor/
-├── src/                # Source code
-│   ├── bootstrap/      # Bootstrap functions for the application
-│   ├── models/         # Data structures and types
-│   ├── repositories/   # Configuration storage
-│   ├── services/       # Core business logic
-│   ├── utils/          # Helper functions
-│
-├── config/             # Configuration files
-├── tests/              # Integration and property-based tests
-├── data/               # Runtime data storage
-├── docs/               # Documentation
-├── scripts/            # Utility scripts
-├── cmd/                # Metrics and monitoring
-├── examples/           # Example configuration files
-└── ... other root files (Cargo.toml, README.md, etc.)
-```
-
-For detailed information about each directory and its contents, see xref:structure.adoc[Project Structure Details].
-
-== Getting Started
-
-=== Prerequisites
-
-* Rust 2021 edition
-* Docker (optional, for containerized deployment)
+- **Slack** - Send formatted messages to Slack channels
+- **Discord** - Post alerts to Discord channels via webhooks
+- **Email** - Send email notifications with SMTP support
+- **Telegram** - Send messages to Telegram chats via bot API
+- **Webhooks** - Send HTTP requests to custom endpoints
+- **Custom Scripts** - Execute Python, JavaScript, or Bash scripts
 
 == Installation
 
-=== Run Locally
-. Clone the repository:
+=== Prerequisites
+
+* **Rust** 2021 edition or later
+* **Docker** (optional, for containerized deployment)
+
+=== Local Installation
+
+. **Clone the repository:**
 +
 [source,bash]
 ----
@@ -159,21 +59,28 @@ git clone https://github.com/openzeppelin/openzeppelin-monitor
 cd openzeppelin-monitor
 ----
 
-. Install dependencies:
+. **Build the application:**
 +
 [source,bash]
 ----
 cargo build --release
 ----
 
-. Move the binary to the project root (so that it can access the `./config` folder)
+. **Move binary to project root:**
 +
 [source,bash]
 ----
 mv ./target/release/openzeppelin-monitor .
 ----
 
-. View available options:
+. **Verify installation:**
++
+[source,bash]
+----
+./openzeppelin-monitor --help
+----
+
+. **View available options:**
 +
 [source,bash]
 ----
@@ -189,72 +96,83 @@ mv ./target/release/openzeppelin-monitor .
 ./openzeppelin-monitor --check
 ----
 
-=== Run with Docker
+=== Docker Installation
 
-==== Basic Setup
+. **Clone the repository:**
++
+[source,bash]
+----
+git clone https://github.com/openzeppelin/openzeppelin-monitor
+cd openzeppelin-monitor
+----
 
-. Start the services using the make target:
+. **Set up environment:**
++
+[source,bash]
+----
+cp .env.example .env
+# Edit .env file with your configuration
+----
+
+. **Start with Docker Compose:**
 +
 [source,bash]
 ----
 cargo make docker-compose-up
 ----
 
-[NOTE]
+== Quick Setup Script
+
+For users who want to get started quickly without manually configuring files, we provide an automated setup script that handles the entire installation and configuration process.
+
+=== Automated Setup
+
+The `setup_and_run.sh` script provides a one-command solution to:
+
+* **Build the monitor application** from source
+* **Copy example configurations** from the `examples/` directory to `config/`
+  ** Network configurations for major blockchains
+  ** Pre-configured monitor examples (USDC transfers, Stellar DEX swaps)
+  ** Required filter scripts and basic trigger notifications
+* **Validate all configurations** to ensure they're properly set up
+* **Run the monitor** (optional)
+
+=== Using the Setup Script
+
+. **Make the script executable:**
++
+[source,bash]
+----
+chmod +x setup_and_run.sh
+----
+
+. **Run the automated setup:**
++
+[source,bash]
+----
+./setup_and_run.sh
+----
+
+The script will guide you through the setup process with colored output and provide clear instructions for next steps.
+
+=== After Running the Script
+
+Once the setup script completes successfully, you'll have:
+
+* A fully built and configured OpenZeppelin Monitor
+* Example configurations ready for customization
+* Clear guidance on setting up RPC URLs and notification channels
+
+You can then:
+
+. **Edit your `.env` file** with your specific RPC URLs and notification settings
+. **Customize the copied configurations** in the `config/` directories
+. **Run the monitor** with `./openzeppelin-monitor`
+
+[TIP]
 ====
-By default, Docker Compose uses `Dockerfile.development`. To use production settings, set:
-`DOCKERFILE=Dockerfile.production` before running the command.
+The setup script creates working configurations with placeholder values. Remember to update your `.env` file with actual RPC endpoints and notification credentials before starting real monitoring.
 ====
-
-==== Metrics Configuration
-
-The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
-
-You can start services directly with Docker Compose:
-
-[source,bash]
-----
-# without metrics profile ( METRICS_ENABLED=false by default )
-docker compose up -d
-
-# With metrics enabled
-docker compose --profile metrics up -d
-----
-
-You can access the monitoring interfaces through your browser:
-
-* Prometheus UI: `http://localhost:9090`
-* Grafana Dashboard: `http://localhost:3000`
-
-Grafana comes pre-configured with default dashboards and metrics visualizations.
-
-==== Management Commands
-
-. Verify container status:
-+
-[source,bash]
-----
-docker ps -a
-----
-
-. Stop services:
-+
-[source,bash]
-----
-cargo make docker-compose-down
-# or using docker compose directly:
-# without metrics profile
-docker compose down
-# or with metrics profile
-docker compose --profile metrics down
-----
-
-. View logs (stdout):
-+
-[source,bash]
-----
-docker compose logs -f
-----
 
 === Configuration Guidelines
 
@@ -300,7 +218,6 @@ docker compose logs -f
   "triggers": ["large_transfer_slack"],
   ...
 }
-
 
 ----
 
@@ -519,7 +436,6 @@ This table lists the environment variables and their default values.
 | `<string>`
 | Hashicorp Cloud Vault application name for secret management.
 |===
-
 * Copy and configure some example files:
 
 [source,bash]
@@ -540,7 +456,6 @@ cp examples/config/triggers/email_notifications.json config/triggers/email_notif
 cp examples/config/filters/evm_filter_block_number.sh config/filters/evm_filter_block_number.sh
 cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar_filter_block_number.sh
 ----
-
 === Command Line Options
 
 The monitor supports several command-line options for configuration and control:
@@ -562,7 +477,7 @@ The monitor supports several command-line options for configuration and control:
 
 == Data Storage Configuration
 
-The monitor uses file-based storage by default, with an extensible interface (`BlockStorage`) for custom storage implementations.
+The monitor uses file-based storage by default.
 
 === File Storage
 
@@ -1232,7 +1147,7 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
     "events": [
       {
         "signature": "Transfer(address,address,uint256)",
-        "expression": "amount > 1000000"
+        "expression": "value > 1000000"
       }
     ],
     "transactions": [
@@ -1253,6 +1168,41 @@ A Monitor defines what blockchain activity to watch and what actions to take whe
   "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
 }
 ----
+
+==== Available Fields
+
+[cols="1,1,2"]
+|===
+|Field |Type |Description
+
+|name
+|String
+|**Unique** identifier for this monitor
+
+|networks
+|Array[String]
+|List of network slugs this monitor should watch
+
+|paused
+|Boolean
+|Whether this monitor is currently paused
+
+|addresses
+|Array[Object]
+|Contract addresses to monitor with optional ABIs
+
+|match_conditions
+|Object
+|Collection of conditions that can trigger the monitor
+
+|trigger_conditions
+|Array[Object]
+|Collection of filters to apply to monitor matches before executing triggers
+
+|triggers
+|Array[String]
+|IDs of triggers to execute when conditions match
+|===
 
 ==== Match Conditions
 
@@ -1282,7 +1232,7 @@ Match events emitted by monitored contracts:
   "events": [
     {
       "signature": "Transfer(address,address,uint256)",
-      "expression": "amount > 1000000"
+      "expression": "value > 1000000"
     }
   ]
 }
@@ -1381,41 +1331,6 @@ Match transaction properties. The available fields and expression syntax depend 
 | to
 | address
 | Destination account address of the *first* relevant operation (e.g., payment recipient or invoked contract). Case-insensitive comparison.
-|===
-
-==== Available Fields
-
-[cols="1,1,2"]
-|===
-|Field |Type |Description
-
-|name
-|String
-|**Unique** identifier for this monitor
-
-|networks
-|Array[String]
-|List of network slugs this monitor should watch
-
-|paused
-|Boolean
-|Whether this monitor is currently paused
-
-|addresses
-|Array[Object]
-|Contract addresses to monitor with optional ABIs
-
-|match_conditions
-|Object
-|Collection of conditions that can trigger the monitor
-
-|trigger_conditions
-|Array[Object]
-|Collection of filters to apply to monitor matches before executing triggers
-
-|triggers
-|Array[String]
-|IDs of triggers to execute when conditions match
 |===
 
 ==== Matching Rules
@@ -1800,6 +1715,82 @@ For more information about custom scripts, see xref:scripts.adoc[Custom Scripts 
 * Each monitor can watch multiple networks and addresses simultaneously.
 * Monitors can be paused without removing their configuration.
 
+
+== Running the Monitor
+
+=== Local Execution
+
+. **Basic startup:**
++
+[source,bash]
+----
+./openzeppelin-monitor
+----
+
+. **With logging to file:**
++
+[source,bash]
+----
+./openzeppelin-monitor --log-file
+----
+
+. **With metrics enabled:**
++
+[source,bash]
+----
+./openzeppelin-monitor --metrics
+----
+
+. **Validate configuration without starting:**
++
+[source,bash]
+----
+./openzeppelin-monitor --check
+----
+
+=== Docker Execution
+
+. **Start all services:**
++
+[source,bash]
+----
+cargo make docker-compose-up
+----
+
+. **With metrics and monitoring (Prometheus + Grafana):**
++
+[source,bash]
+----
+# Set METRICS_ENABLED=true in .env file, then:
+docker compose --profile metrics up -d
+----
+
+. **View logs:**
++
+[source,bash]
+----
+docker compose logs -f monitor
+----
+
+. **Stop services:**
++
+[source,bash]
+----
+cargo make docker-compose-down
+----
+
+=== Command Line Options
+
+[cols="2,1,3", options="header"]
+|===
+| Option | Default | Description
+| `--log-file` | `false` | Write logs to file instead of stdout
+| `--log-level` | `info` | Set log level (trace, debug, info, warn, error)
+| `--metrics` | `false` | Enable metrics server on port 8081
+| `--check` | `false` | Validate configuration files only
+| `--help` | - | Show all available options
+|===
+
 === Testing your configuration
 
 ==== Network Configuration
@@ -1884,89 +1875,6 @@ Specific Block Mode requires both parameters:
 * `--block`: The block number to process
 ====
 
-== Running the Monitor
-
-=== Local Execution
-
-[source,bash]
-----
-./openzeppelin-monitor
-----
-
-=== Docker Deployment
-
-The monitor can be run as either a development or production container using the corresponding Dockerfile (`Dockerfile.development` or `Dockerfile.production`).
-
-==== Environment Configuration
-
-* Copy .env.example to .env and change values according to your needs.
-
-==== Build Image and Run Containers
-
-You can build and run containers using single command:
-
-[source,bash]
-----
-cargo make docker-compose-up
-----
-
-[NOTE]
-====
-By default, Docker Compose uses `Dockerfile.development`. To use production settings, set:
-`DOCKERFILE=Dockerfile.production` before running the command.
-====
-
-==== Metrics Configuration
-
-The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
-
-You can start services directly with Docker Compose:
-
-[source,bash]
-----
-# without metrics profile ( METRICS_ENABLED=false by default )
-docker compose up -d
-
-# With metrics enabled
-docker compose --profile metrics up -d
-----
-
-==== Management Commands
-
-. Verify container status:
-+
-[source,bash]
-----
-docker ps -a
-----
-
-. Stop services:
-+
-[source,bash]
-----
-cargo make docker-compose-down
-# or using docker compose directly:
-# without metrics profile
-docker compose down
-# or with metrics profile
-docker compose --profile metrics down
-----
-
-
-The build process will include:
-
-* The appropriate .env file
-* Configurations from the ./config folder
-
-To modify configurations without rebuilding:
-
-* Restart the container
-
-[source,bash]
-----
-docker compose restart monitor
-----
-
 ==== Data Persistence (Optional)
 
 * Set `LOG_MODE` as file will persist the log data in `logs/` on host. To change it to a different directory use `LOG_DATA_DIR`.
@@ -2003,32 +1911,48 @@ The monitor implements a comprehensive error handling system with rich context a
 ** Script modifications require monitor restart to take effect
 ** Supported languages are limited to Python, JavaScript, and Bash
 
-== Testing
+== Real Demos
 
-=== Running Tests
+TO BE DISCUSSED
 
-[source,bash]
-----
-RUST_TEST_THREADS=1 cargo test
-RUST_TEST_THREADS=1 cargo test properties
-RUST_TEST_THREADS=1 cargo test integration
-----
+=== Video Tutorials
 
-=== Coverage Reports
+[NOTE]
+====
+Video demonstrations are coming soon! We're preparing comprehensive tutorials covering:
 
-Generate an HTML coverage report:
+* Setting up your first monitor
+* Configuring multi-chain monitoring
+* Creating custom notification scripts
+* Monitoring DeFi protocols
+* Advanced filtering techniques
+====
 
-[source,bash]
-----
-RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
-----
+=== Live Examples
 
-Generate a coverage report in the terminal:
+**Monitoring USDC Transfers**
+Watch for large USDC transfers across multiple networks with real-time Slack notifications.
 
-[source,bash]
-----
-RUST_TEST_THREADS=1 cargo +stable llvm-cov
-----
+**DeFi Protocol Monitoring**
+Track liquidity changes, large swaps, and governance events on popular DeFi protocols.
+
+**Smart Contract Security**
+Monitor for suspicious activities, large withdrawals, and unusual contract interactions.
+
+**Cross-Chain Activity**
+Track bridge transactions and cross-chain token movements in real-time.
+
+== What's Coming Next
+
+=== Upcoming Features
+
+TO BE ADDED
+
+=== Roadmap Timeline
+
+TO BE ADDED
+
+Have feature requests or want to contribute? Join our community discussions on link:https://github.com/OpenZeppelin/openzeppelin-monitor/discussions[GitHub Discussions] or link:https://t.me/openzeppelin_tg/4[Telegram].
 
 == Support
 
