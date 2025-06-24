@@ -22,7 +22,7 @@
     }
   },
   "evm_large_transfer_usdc_webhook_markdown": {
-    "name": "Large Transfer Webhook Notification",
+    "name": "Large Transfer Webhook Notification Markdown",
     "trigger_type": "webhook",
     "config": {
       "url": {

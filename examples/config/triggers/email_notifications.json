@@ -25,7 +25,7 @@
         }
     },
     "evm_large_transfer_usdc_email_markdown": {
-        "name": "Large Transfer Email Notification",
+        "name": "Large Transfer Email Notification Markdown",
         "trigger_type": "email",
         "config": {
             "host": "smtp.gmail.com",
