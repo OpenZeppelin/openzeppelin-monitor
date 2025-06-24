@@ -1,9 +1,15 @@
 = Architecture Guide
 :description: Detailed information about the OpenZeppelin Monitor project structure.
 
-This document explains the technical architecture and directory organization of the OpenZeppelin Monitor project.
+This document describes the high-level architecture and project structure of OpenZeppelin Monitor, including the core components, their interactions, and the overall system design. It provides a technical overview of how the service processes blockchain data and triggers notifications based on configurable conditions.
 
-== Technical Overview
+== System Overview
+
+OpenZeppelin Monitor is organized as a data processing pipeline that spans from blockchain data collection to notification delivery. The system follows a modular architecture with distinct components for each step in the monitoring process.
+
+=== High-Level Architecture
+
+The diagram below shows the core components of OpenZeppelin Monitor and their interactions:
 
 [mermaid,width=100%]
 ....
@@ -78,10 +84,9 @@ graph TD
 
 == Component Architecture
 
-=== Service Initialization Flow
-
 The system consists of several services that are initialized at startup and work together to process blockchain data and trigger notifications. The service initialization and dependencies are managed through the bootstrap module.
 
+=== Service Initialization Flow
 
 [mermaid,width=100%]
 ....
@@ -168,9 +173,49 @@ graph TD
     class CP,EVMC,SC clients
 ....
 
+=== Service Responsibilities
+
+The following table describes the key responsibilities of each service in the OpenZeppelin Monitor architecture:
+
+[cols="1,3"]
+|===
+|Service |Responsibility
+
+|*MonitorService*
+|Manages monitor configurations and provides access to active monitors
+
+|*NetworkService*
+|Manages network configurations and provides network details
+
+|*TriggerService*
+|Manages trigger configurations and provides trigger details
+
+|*FilterService*
+|Filters blockchain data based on monitor conditions and match expressions
+
+|*TriggerExecutionService*
+|Executes triggers based on matched monitor conditions
+
+|*NotificationService*
+|Delivers notifications through configured channels
+
+|*BlockWatcherService*
+|Polls blockchain networks for new blocks and coordinates processing
+
+|*BlockTracker*
+|Tracks processed block numbers to prevent duplicate processing
+
+|*BlockStorage*
+|Persists block processing state for recovery
+
+|*ClientPool*
+|Manages blockchain client instances and provides network connectivity
+|===
+
+
 === Block processing workflow
 
-This sequence diagram shows the detailed flow of operations during block processing, from retrieving the last processed block to executing notifications.
+The following _runtime flow_ illustrates how data moves through the system, from blockchain networks to notification channels. This sequence represents the core monitoring loop that executes for each configured network.
 
 [mermaid,width=100%]
 ....
@@ -230,9 +275,9 @@ sequenceDiagram
 
 For detailed information about RPC logic, see the RPC xref:rpc.adoc[section].
 
-== Directory Layout
+== Project Structure
 
-The project follows a standard Rust project layout:
+The project follows a _standard_ Rust project layout:
 
 ```
 openzeppelin-monitor/
