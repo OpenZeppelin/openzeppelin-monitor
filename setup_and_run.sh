@@ -63,12 +63,23 @@ mkdir -p config/{networks,monitors,triggers,filters}
 # Copy network configurations
 print_status "Copying network configurations..."
 if [ -d "examples/config/networks" ]; then
-    cp examples/config/networks/*.json config/networks/ 2>/dev/null
-    network_count=$(ls config/networks/*.json 2>/dev/null | wc -l)
+    network_count=0
+
+    # Copy specific network files
+    for network_file in "ethereum_mainnet.json" "stellar_mainnet.json"; do
+        if [ -f "examples/config/networks/$network_file" ]; then
+            cp "examples/config/networks/$network_file" "config/networks/"
+            print_success "Copied $network_file"
+            network_count=$((network_count + 1))
+        else
+            print_warning "$network_file not found in examples/config/networks/"
+        fi
+    done
+
     if [ "$network_count" -gt 0 ]; then
         print_success "Copied $network_count network configuration(s)"
     else
-        print_warning "No network configurations found to copy"
+        print_warning "No target network configurations found to copy"
     fi
 else
     print_warning "examples/config/networks directory not found"
@@ -105,14 +116,19 @@ fi
 # Copy filter scripts
 print_status "Copying filter scripts..."
 if [ -d "examples/config/filters" ]; then
-    cp examples/config/filters/* config/filters/ 2>/dev/null
-    # Make scripts executable
-    chmod +x config/filters/*.sh 2>/dev/null
-    filter_count=$(ls config/filters/ 2>/dev/null | wc -l)
-    if [ "$filter_count" -gt 0 ]; then
-        print_success "Copied $filter_count filter script(s) and made them executable"
+    # Only copy .sh files
+    if ls examples/config/filters/*.sh 1> /dev/null 2>&1; then
+        cp examples/config/filters/*.sh config/filters/
+        # Make scripts executable
+        chmod +x config/filters/*.sh 2>/dev/null
+        filter_count=$(ls config/filters/*.sh 2>/dev/null | wc -l)
+        if [ "$filter_count" -gt 0 ]; then
+            print_success "Copied $filter_count shell script(s) and made them executable"
+        else
+            print_warning "No shell scripts found after copying"
+        fi
     else
-        print_warning "No filter scripts found to copy"
+        print_warning "No .sh filter scripts found to copy"
     fi
 else
     print_warning "examples/config/filters directory not found"
@@ -147,7 +163,7 @@ if ./openzeppelin-monitor --check; then
     print_status "🔧 Next steps to enable notifications:"
     echo "1. Modify monitor configurations to add triggers:"
     echo "   - Edit files in config/monitors/"
-    echo "   - Change 'triggers': [] to 'triggers': [\"example_slack_notification\"] to enable notifications"
+    echo "   - Change 'triggers': [] to 'triggers': [\"your_notification_file_name\"] to enable notifications"
     echo ""
     echo "2. Customize trigger configurations in config/triggers/notifications.json"
     echo ""
