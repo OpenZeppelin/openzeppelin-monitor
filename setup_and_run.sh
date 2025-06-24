@@ -7,6 +7,30 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Configuration to copy
+NETWORKS=(
+    "ethereum_mainnet.json"
+    "stellar_mainnet.json"
+)
+
+MONITORS=(
+    "evm_transfer_usdc.json"
+    "stellar_swap_dex.json"
+)
+
+FILTERS=(
+    "evm_filter_block_number.sh"
+    "stellar_filter_block_number.sh"
+)
+
+TRIGGERS=(
+    "discord_notifications.json"
+    "email_notifications.json"
+    "script_notifications.json"
+    "slack_notifications.json"
+    "webhook_notifications.json"
+)
+
 # Function to print colored output
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -65,8 +89,7 @@ print_status "Copying network configurations..."
 if [ -d "examples/config/networks" ]; then
     network_count=0
 
-    # Copy specific network files
-    for network_file in "ethereum_mainnet.json" "stellar_mainnet.json"; do
+    for network_file in "${NETWORKS[@]}"; do
         if [ -f "examples/config/networks/$network_file" ]; then
             cp "examples/config/networks/$network_file" "config/networks/"
             print_success "Copied $network_file"
@@ -88,22 +111,24 @@ fi
 # Copy monitor configurations
 print_status "Copying monitor configurations..."
 if [ -d "examples/config/monitors" ]; then
-    # Copy monitors but modify them to set triggers to empty array
-    for monitor_file in examples/config/monitors/*.json; do
-        if [ -f "$monitor_file" ]; then
-            filename=$(basename "$monitor_file")
+    monitor_count=0
+
+    for monitor_file in "${MONITORS[@]}"; do
+        if [ -f "examples/config/monitors/$monitor_file" ]; then
             # Use jq if available to set triggers to empty array, otherwise just copy
             if command_exists jq; then
-                jq '.triggers = []' "$monitor_file" > "config/monitors/$filename"
-                print_success "Copied and modified $filename (triggers set to empty array for initial setup)"
+                jq '.triggers = []' "examples/config/monitors/$monitor_file" > "config/monitors/$monitor_file"
+                print_success "Copied and modified $monitor_file (triggers set to empty array for initial setup)"
             else
-                cp "$monitor_file" "config/monitors/"
-                print_warning "Copied $filename (jq not available - triggers not modified automatically)"
+                cp "examples/config/monitors/$monitor_file" "config/monitors/"
+                print_warning "Copied $monitor_file (jq not available - triggers not modified automatically)"
             fi
+            monitor_count=$((monitor_count + 1))
+        else
+            print_warning "$monitor_file not found in examples/config/monitors/"
         fi
     done
 
-    monitor_count=$(ls config/monitors/*.json 2>/dev/null | wc -l)
     if [ "$monitor_count" -gt 0 ]; then
         print_success "Copied $monitor_count monitor configuration(s)"
     else
@@ -116,22 +141,50 @@ fi
 # Copy filter scripts
 print_status "Copying filter scripts..."
 if [ -d "examples/config/filters" ]; then
-    # Only copy .sh files
-    if ls examples/config/filters/*.sh 1> /dev/null 2>&1; then
-        cp examples/config/filters/*.sh config/filters/
-        # Make scripts executable
-        chmod +x config/filters/*.sh 2>/dev/null
-        filter_count=$(ls config/filters/*.sh 2>/dev/null | wc -l)
-        if [ "$filter_count" -gt 0 ]; then
-            print_success "Copied $filter_count shell script(s) and made them executable"
+    filter_count=0
+
+    for filter_file in "${FILTERS[@]}"; do
+        if [ -f "examples/config/filters/$filter_file" ]; then
+            cp "examples/config/filters/$filter_file" "config/filters/"
+            chmod +x "config/filters/$filter_file"
+            print_success "Copied $filter_file and made it executable"
+            filter_count=$((filter_count + 1))
         else
-            print_warning "No shell scripts found after copying"
+            print_warning "$filter_file not found in examples/config/filters/"
         fi
+    done
+
+    if [ "$filter_count" -gt 0 ]; then
+        print_success "Copied $filter_count filter script(s)"
     else
-        print_warning "No .sh filter scripts found to copy"
+        print_warning "No filter scripts found to copy"
     fi
 else
     print_warning "examples/config/filters directory not found"
+fi
+
+# Copy trigger configurations
+print_status "Copying trigger configurations..."
+if [ -d "examples/config/triggers" ]; then
+    trigger_count=0
+
+    for trigger_file in "${TRIGGERS[@]}"; do
+        if [ -f "examples/config/triggers/$trigger_file" ]; then
+            cp "examples/config/triggers/$trigger_file" "config/triggers/"
+            print_success "Copied $trigger_file"
+            trigger_count=$((trigger_count + 1))
+        else
+            print_warning "$trigger_file not found in examples/config/triggers/"
+        fi
+    done
+
+    if [ "$trigger_count" -gt 0 ]; then
+        print_success "Copied $trigger_count trigger configuration(s)"
+    else
+        print_warning "No trigger configurations found to copy"
+    fi
+else
+    print_warning "examples/config/triggers directory not found"
 fi
 
 # Set up environment file if it doesn't exist
@@ -165,7 +218,7 @@ if ./openzeppelin-monitor --check; then
     echo "   - Edit files in config/monitors/"
     echo "   - Change 'triggers': [] to 'triggers': [\"your_notification_file_name\"] to enable notifications"
     echo ""
-    echo "2. Customize trigger configurations in config/triggers/notifications.json"
+    echo "2. Customize trigger configurations in config/triggers/"
     echo ""
 
     # Ask if user wants to run the monitor
