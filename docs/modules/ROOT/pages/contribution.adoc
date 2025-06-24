@@ -1,0 +1,114 @@
+= Contribution Guidelines
+:description: Guidelines for contributing to OpenZeppelin Monitor
+
+Welcome to the OpenZeppelin Monitor project! We appreciate your interest in contributing. This guide outlines the requirements and processes for contributing to the project.
+
+== Getting Started
+
+The OpenZeppelin Monitor project has comprehensive contribution guidelines documented in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/CONTRIBUTING.md[`CONTRIBUTING.md`] file and related documentation.
+
+== Key Requirements
+
+=== Contributor License Agreement (CLA)
+
+**You must sign the CLA before contributing.** The CLA process is automated through GitHub workflows that check and label PRs accordingly.
+
+* All contributors must complete the CLA process
+* The CLA bot will automatically check your PR status
+* PRs cannot be merged without a signed CLA
+
+=== Signed Commits
+
+**All commits must be GPG-signed** as a security requirement.
+
+* Configure GPG signing for your commits
+* Unsigned commits will not be accepted
+* This helps ensure code integrity and authenticity
+
+== Development Workflow
+
+=== 1. Pre-commit Hooks
+
+**Required for code quality checks** including `rustfmt`, `clippy`, and commit message validation.
+
+* Install and configure pre-commit hooks
+* Automatic formatting and linting checks
+* Commit message format validation
+
+=== 2. Branch Management
+
+* Create feature branches from an up-to-date main branch
+* Regularly sync with upstream
+* Use descriptive branch names
+
+[source,bash]
+----
+# Create feature branch
+git checkout -b feature/your-feature-name
+
+# Keep branch updated
+git fetch upstream
+git rebase upstream/main
+----
+
+== Code Standards
+
+=== Rust Standards
+
+Rust API Guidelines:
+
+* Format code with `rustfmt`
+* Pass all `clippy` linting checks
+* Follow Rust naming conventions
+
+[source,bash]
+----
+# Format code
+cargo fmt
+
+# Check linting
+cargo clippy -- -D warnings
+
+# Run tests
+cargo test
+----
+
+=== Testing Requirements
+
+**All contributions must pass existing tests** and include new tests when applicable:
+
+* Write unit tests for new functionality
+* Add integration tests for complex features
+* Ensure all tests pass before submitting
+* Maintain or improve code coverage
+
+For detailed testing information, see the xref:testing.adoc[Testing Guide].
+
+=== Commit Message Format
+
+**Follow conventional commit format** with types like:
+
+* `feat:` - New features
+* `fix:` - Bug fixes
+* `docs:` - Documentation changes
+* `test:` - Test additions or modifications
+* `refactor:` - Code refactoring
+* `chore:` - Maintenance tasks
+
+== Community Guidelines
+
+=== Code of Conduct
+
+Contributors must follow the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/CODE_OF_CONDUCT.md[Code of Conduct], which:
+
+* Establishes standards for respectful collaboration
+* Outlines enforcement procedures
+* Promotes an inclusive environment
+
+== Getting Help
+
+=== Community Support
+
+* **GitHub Discussions**: For questions and community interaction
+* **Issues**: For bug reports and feature requests
+* **Telegram**: link:https://t.me/openzeppelin_tg/4[Join our community chat]
