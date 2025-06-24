@@ -1,0 +1,132 @@
+= Testing Guide
+:description: Comprehensive guide for testing OpenZeppelin Monitor
+
+This document provides information about testing OpenZeppelin Monitor, including running tests, generating coverage reports, and understanding the test structure.
+
+== Test Organization
+
+The project includes comprehensive test suites organized into different categories:
+
+=== Test Types
+
+* **Unit Tests**: Located within `src/` modules alongside the code they test
+* **Integration Tests**: Located in `tests/integration/` directory
+* **Property-based Tests**: Located in `tests/properties/` directory
+* **Mock Implementations**: Located in `tests/integration/mocks/`
+
+=== Test Structure
+
+```
+tests/
+├── integration/        # Integration tests
+│   ├── blockchain/     # Blockchain client tests
+│   ├── blockwatcher/   # Block monitoring tests
+│   ├── filters/        # Filter logic tests
+│   ├── fixtures/       # Test data and configurations
+│   ├── mocks/          # Mock implementations
+│   └── ...
+├── properties/         # Property-based tests
+│   ├── filters/        # Filter property tests
+│   ├── notifications/  # Notification property tests
+│   └── ...
+└── integration.rs      # Integration test entry point
+```
+
+== Running Tests
+
+=== All Tests
+
+Run the complete test suite:
+
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo test
+----
+
+[NOTE]
+====
+`RUST_TEST_THREADS=1` is required to prevent test conflicts when accessing shared resources like configuration files or network connections.
+====
+
+=== Specific Test Categories
+
+**Property-based Tests:**
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo test properties
+----
+
+**Integration Tests:**
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo test integration
+----
+
+**Unit Tests Only:**
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo test --lib
+----
+
+== Coverage Reports
+
+=== Prerequisites
+
+Install the coverage tool:
+[source,bash]
+----
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov
+----
+
+=== Generating Coverage
+
+**HTML Coverage Report:**
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
+----
+
+This generates an HTML report in `target/llvm-cov/html/` and opens it in your browser.
+
+**Terminal Coverage Report:**
+[source,bash]
+----
+RUST_TEST_THREADS=1 cargo +stable llvm-cov
+----
+
+== Troubleshooting
+
+=== Common Issues
+
+**Tests hanging or timing out:**
+- Ensure `RUST_TEST_THREADS=1` is set
+- Verify mock setups are correct
+
+**Coverage tool not found:**
+- Install with `cargo install cargo-llvm-cov`
+- Add component with `rustup component add llvm-tools-preview`
+
+**Permission errors:**
+- Ensure test directories are writable
+- Check file permissions on test fixtures
+
+=== Debug Output
+
+Enable debug logging for tests:
+[source,bash]
+----
+RUST_LOG=debug RUST_TEST_THREADS=1 cargo test -- --nocapture
+----
+
+== Contributing Tests
+
+When contributing new features:
+
+1. **Add comprehensive tests** for new functionality
+2. **Ensure all tests pass** locally before submitting
+3. **Include both unit and integration tests** where appropriate
+4. **Update test documentation** if adding new test patterns
+5. **Maintain or improve code coverage**
+
+For more information about contributing, see the project's contributing guidelines.
