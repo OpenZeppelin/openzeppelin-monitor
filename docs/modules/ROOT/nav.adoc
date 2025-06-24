@@ -1,7 +1,7 @@
 * xref:index.adoc[User Documentation]
 ** xref:quickstart.adoc[Quickstart]
 * Developer Documentation
-** xref:structure.adoc[Architecture Guide]
+** xref:architecture.adoc[Architecture Guide]
 ** xref:rpc.adoc[RPC Client]
 ** xref:scripts.adoc[Custom scripts]
 ** xref:error.adoc[Error Handling]
