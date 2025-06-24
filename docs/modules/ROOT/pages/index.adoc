@@ -20,18 +20,8 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 === Supported Networks
 
-**EVM-Compatible Networks:**
-- Ethereum (Mainnet, Sepolia)
-- Polygon (Mainnet, Amoy)
-- Arbitrum (One, Nova, Sepolia)
-- Optimism (Mainnet, Sepolia)
-- Base (Mainnet, Sepolia)
-- BSC (Mainnet, Testnet)
-- zkSync Era (Mainnet, Sepolia)
-- Unichain (Sepolia)
-
-**Stellar Networks:**
-- Stellar (Mainnet, Testnet)
+- **EVM-Compatible Networks**
+- **Stellar**
 
 === Notification Channels
 
@@ -1911,52 +1901,11 @@ The monitor implements a comprehensive error handling system with rich context a
 ** Script modifications require monitor restart to take effect
 ** Supported languages are limited to Python, JavaScript, and Bash
 
-== Real Demos
-
-TO BE DISCUSSED
-
-=== Video Tutorials
-
-[NOTE]
-====
-Video demonstrations are coming soon! We're preparing comprehensive tutorials covering:
-
-* Setting up your first monitor
-* Configuring multi-chain monitoring
-* Creating custom notification scripts
-* Monitoring DeFi protocols
-* Advanced filtering techniques
-====
-
-=== Live Examples
-
-**Monitoring USDC Transfers**
-Watch for large USDC transfers across multiple networks with real-time Slack notifications.
-
-**DeFi Protocol Monitoring**
-Track liquidity changes, large swaps, and governance events on popular DeFi protocols.
-
-**Smart Contract Security**
-Monitor for suspicious activities, large withdrawals, and unusual contract interactions.
-
-**Cross-Chain Activity**
-Track bridge transactions and cross-chain token movements in real-time.
-
-== What's Coming Next
-
-=== Upcoming Features
-
-TO BE ADDED
-
-=== Roadmap Timeline
-
-TO BE ADDED
-
-Have feature requests or want to contribute? Join our community discussions on link:https://github.com/OpenZeppelin/openzeppelin-monitor/discussions[GitHub Discussions] or link:https://t.me/openzeppelin_tg/4[Telegram].
-
 == Support
 
 For support or inquiries, contact us on link:https://t.me/openzeppelin_tg/4[Telegram].
+
+Have feature requests or want to contribute? Join our community on link:https://github.com/OpenZeppelin/openzeppelin-monitor/[GitHub]
 
 == License
 This project is licensed under the GNU Affero General Public License v3.0 - see the LICENSE file for details.
