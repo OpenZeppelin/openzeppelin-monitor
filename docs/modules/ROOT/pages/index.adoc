@@ -111,58 +111,26 @@ cp .env.example .env
 cargo make docker-compose-up
 ----
 
-== Quick Setup Script
+==== Metrics Configuration
 
-For users who want to get started quickly without manually configuring files, we provide an automated setup script that handles the entire installation and configuration process.
+The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
 
-=== Automated Setup
+You can start services directly with Docker Compose:
 
-The `setup_and_run.sh` script provides a one-command solution to:
-
-* **Build the monitor application** from source
-* **Copy example configurations** from the `examples/` directory to `config/`
-  ** Network configurations for major blockchains
-  ** Pre-configured monitor examples (USDC transfers, Stellar DEX swaps)
-  ** Required filter scripts and basic trigger notifications
-* **Validate all configurations** to ensure they're properly set up
-* **Run the monitor** (optional)
-
-=== Using the Setup Script
-
-. **Make the script executable:**
-+
 [source,bash]
 ----
-chmod +x setup_and_run.sh
+# without metrics profile ( METRICS_ENABLED=false by default )
+docker compose up -d
+
+# With metrics enabled
+docker compose --profile metrics up -d
 ----
 
-. **Run the automated setup:**
-+
-[source,bash]
-----
-./setup_and_run.sh
-----
+To view prometheus metrics in a UI, you can use `http://localhost:9090` on your browser.
 
-The script will guide you through the setup process with colored output and provide clear instructions for next steps.
+To view grafana dashboard, you can use `http://localhost:3000` on your browser.
 
-=== After Running the Script
-
-Once the setup script completes successfully, you'll have:
-
-* A fully built and configured OpenZeppelin Monitor
-* Example configurations ready for customization
-* Clear guidance on setting up RPC URLs and notification channels
-
-You can then:
-
-. **Edit your `.env` file** with your specific RPC URLs and notification settings
-. **Customize the copied configurations** in the `config/` directories
-. **Run the monitor** with `./openzeppelin-monitor`
-
-[TIP]
-====
-The setup script creates working configurations with placeholder values. Remember to update your `.env` file with actual RPC endpoints and notification credentials before starting real monitoring.
-====
+By default, predefined metrics within a dashboard is populated in grafana.
 
 === Configuration Guidelines
 

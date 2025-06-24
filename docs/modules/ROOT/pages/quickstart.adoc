@@ -48,6 +48,58 @@ git clone https://github.com/openzeppelin/openzeppelin-monitor
 cd openzeppelin-monitor
 ----
 
+=== Option 1: Automated Setup (recommended for quick start)
+
+For users who want to get started quickly without manually configuring files, we provide an automated setup script that handles the entire installation and configuration process.
+
+The `setup_and_run.sh` script provides a one-command solution to:
+
+* **Build the monitor application** from source
+* **Copy example configurations** from the `examples/` directory to `config/`
+  ** Network configurations for major blockchains
+  ** Pre-configured monitor examples (USDC transfers, Stellar DEX swaps)
+  ** Required filter scripts and basic trigger notifications
+* **Validate all configurations** to ensure they're properly set up
+* **Run the monitor** (optional)
+
+=== Using the Setup Script
+
+. **Make the script executable:**
++
+[source,bash]
+----
+chmod +x setup_and_run.sh
+----
+
+. **Run the automated setup:**
++
+[source,bash]
+----
+./setup_and_run.sh
+----
+
+The script will guide you through the setup process with colored output and provide clear instructions for next steps.
+
+=== After Running the Script
+
+Once the setup script completes successfully, you'll have:
+
+* A fully built and configured OpenZeppelin Monitor
+* Example configurations ready for customization
+* Clear guidance on setting up RPC URLs and notification channels
+
+You can then:
+
+. **Customize the copied configurations** in the `config/` directories
+. **Run the monitor** with `./openzeppelin-monitor`
+
+[TIP]
+====
+The setup script creates working configurations with placeholder values. Remember to update your files with actual RPC endpoints and notification credentials before starting real monitoring.
+====
+
+=== Option 2: Manual Setup
+
 . Install dependencies:
 +
 [source,bash]
@@ -60,22 +112,6 @@ cargo build --release
 [source,bash]
 ----
 mv ./target/release/openzeppelin-monitor .
-----
-
-. View available options:
-+
-[source,bash]
-----
-./openzeppelin-monitor --help
-
-# Enable logging to file
-./openzeppelin-monitor --log-file
-
-# Enable metrics server
-./openzeppelin-monitor --metrics
-
-# Validate configuration files without starting the service
-./openzeppelin-monitor --check
 ----
 
 === Run with Docker
@@ -94,27 +130,6 @@ docker compose up
 By default, Docker Compose uses `Dockerfile.development`. To use production settings, set:
 `DOCKERFILE=Dockerfile.production` before running the command.
 ====
-
-==== Metrics Configuration
-
-The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
-
-You can start services directly with Docker Compose:
-
-[source,bash]
-----
-# without metrics profile ( METRICS_ENABLED=false by default )
-docker compose up -d
-
-# With metrics enabled
-docker compose --profile metrics up -d
-----
-
-To view prometheus metrics in a UI, you can use `http://localhost:9090` on your browser.
-
-To view grafana dashboard, you can use `http://localhost:3000` on your browser.
-
-By default, predefined metrics within a dashboard is populated in grafana.
 
 ==== Management Commands
 
