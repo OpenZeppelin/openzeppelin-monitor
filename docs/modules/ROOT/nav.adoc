@@ -1,7 +1,8 @@
 * xref:index.adoc[User Documentation]
-* xref:quickstart.adoc[Quickstart]
-* xref:structure.adoc[Project Structure]
-* xref:rpc.adoc[RPC Client]
-* xref:scripts.adoc[Custom scripts]
-* xref:error.adoc[Error Handling]
+** xref:quickstart.adoc[Quickstart]
+* Developer Documentation
+** xref:structure.adoc[Project Structure]
+** xref:rpc.adoc[RPC Client]
+** xref:scripts.adoc[Custom scripts]
+** xref:error.adoc[Error Handling]
 * link:https://release-v0-2-0%2D%2Dopenzeppelin-monitor.netlify.app/openzeppelin_monitor/[Technical Rust Documentation^]
