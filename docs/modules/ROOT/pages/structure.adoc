@@ -1,7 +1,103 @@
 = Project Structure
 :description: Detailed information about the OpenZeppelin Monitor project structure.
 
-This document provides detailed information about each directory in the OpenZeppelin Monitor project.
+This document explains the technical architecture and directory organization of the OpenZeppelin Monitor project.
+
+== Technical Overview
+
+[mermaid,width=100%]
+....
+%%{init: {
+    'theme': 'base',
+    'themeVariables': {
+        'background': '#ffffff',
+        'mainBkg': '#ffffff',
+        'primaryBorderColor': '#cccccc'
+    }
+}}%%
+graph TD
+    subgraph Blockchain Networks
+        ETH[Ethereum RPC]
+        POL[Polygon RPC]
+        BSC[BSC RPC]
+    end
+    subgraph Block Processing
+        BW[BlockWatcherService]
+        BS[(BlockStorage)]
+        JS[JobScheduler]
+    end
+    subgraph Client Layer
+        BC[BlockchainClient]
+        EVM[EVMClient]
+        STL[StellarClient]
+    end
+    subgraph Processing Pipeline
+        FS[FilterService]
+        TS[TriggerService]
+        NS[NotificationService]
+    end
+    subgraph Notifications
+        Slack
+        Email
+        Discord
+        Telegram
+        Webhook
+        Script
+    end
+    %% Block Processing Flow
+    JS -->|Schedule Block Fetch| BW
+    BW -->|Store Last Block| BS
+    BW -->|Read Last Block| BS
+    BW -->|Get New Blocks| BC
+    %% Client Connections
+    BC --> EVM
+    BC --> STL
+    EVM -->|RPC Calls| ETH
+    EVM -->|RPC Calls| POL
+    EVM -->|RPC Calls| BSC
+    %% Processing Flow
+    BW -->|New Block| FS
+    FS -->|Matches| TS
+    TS -->|Execute| NS
+    NS --> Slack
+    NS --> Email
+    NS --> Discord
+    NS --> Telegram
+    NS --> Webhook
+    NS --> Script
+    style STL fill:#f0f0f0
+    classDef rpc fill:#e1f5fe,stroke:#01579b
+    classDef storage fill:#fff3e0,stroke:#ef6c00
+    classDef service fill:#e8f5e9,stroke:#2e7d32
+    classDef notification fill:#f3e5f5,stroke:#7b1fa2
+    class ETH,POL,BSC rpc
+    class BS storage
+    class BW,FS,TS,NS service
+    class Slack,Email,Discord,Telegram,Webhook,Script notification
+....
+
+== Directory Layout
+
+The project follows a standard Rust project layout:
+
+```
+openzeppelin-monitor/
+├── src/                # Source code
+│   ├── bootstrap/      # Bootstrap functions for the application
+│   ├── models/         # Data structures and types
+│   ├── repositories/   # Configuration storage
+│   ├── services/       # Core business logic
+│   ├── utils/          # Helper functions
+│
+├── config/             # Configuration files
+├── tests/              # Integration and property-based tests
+├── data/               # Runtime data storage
+├── docs/               # Documentation
+├── scripts/            # Utility scripts
+├── cmd/                # Metrics and monitoring
+├── examples/           # Example configuration files
+└── ... other root files (Cargo.toml, README.md, etc.)
+```
 
 == Source Code Organization
 
@@ -161,5 +257,5 @@ The project includes Docker configurations for different environments:
 
 [TIP]
 ====
-For detailed information about running the monitor in containers, see the Docker deployment section in the main documentation.
+For detailed information about running the monitor in containers, see the Docker deployment xref:index.adoc#docker_installation[section] in the user documentation.
 ====
