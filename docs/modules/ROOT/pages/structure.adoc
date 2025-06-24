@@ -1,4 +1,4 @@
-= Project Structure
+= Architecture Guide
 :description: Detailed information about the OpenZeppelin Monitor project structure.
 
 This document explains the technical architecture and directory organization of the OpenZeppelin Monitor project.
@@ -75,6 +75,160 @@ graph TD
     class BW,FS,TS,NS service
     class Slack,Email,Discord,Telegram,Webhook,Script notification
 ....
+
+== Component Architecture
+
+=== Service Initialization Flow
+
+The system consists of several services that are initialized at startup and work together to process blockchain data and trigger notifications. The service initialization and dependencies are managed through the bootstrap module.
+
+
+[mermaid,width=100%]
+....
+%%{init: {
+    'theme': 'base',
+    'themeVariables': {
+        'background': '#ffffff',
+        'mainBkg': '#ffffff',
+        'primaryBorderColor': '#cccccc'
+    }
+}}%%
+graph TD
+    subgraph Entry Point
+        MAIN[main.rs]
+    end
+
+    subgraph Bootstrap
+        BOOTSTRAP[Bootstrap::initialize_service]
+    end
+
+    subgraph Block Processing
+        BT[BlockTracker]
+        BS[BlockStorage]
+        BWS[BlockWatcherService]
+        BH[create_block_handler]
+    end
+
+    subgraph Core Services
+        MS[MonitorService]
+        NS[NetworkService]
+        TS[TriggerService]
+        FS[FilterService]
+        TES[TriggerExecutionService]
+        NOTS[NotificationService]
+    end
+
+    subgraph Client Layer
+        CP[ClientPool]
+        EVMC[EVMClient]
+        SC[StellarClient]
+    end
+
+    %% Initialization Flow
+    MAIN --> BOOTSTRAP
+    BOOTSTRAP --> CP
+    BOOTSTRAP --> NS
+    BOOTSTRAP --> MS
+    BOOTSTRAP --> TS
+    BOOTSTRAP --> FS
+    BOOTSTRAP --> TES
+    BOOTSTRAP --> NOTS
+
+    %% Block Processing Setup
+    BOOTSTRAP --> BT
+    BOOTSTRAP --> BS
+    BOOTSTRAP --> BWS
+    BOOTSTRAP --> BH
+
+    %% Client Dependencies
+    CP --> EVMC
+    CP --> SC
+    BWS --> CP
+
+    %% Service Dependencies
+    BWS --> BS
+    BWS --> BT
+    MS --> NS
+    MS --> TS
+    FS --> TES
+    TES --> NOTS
+
+    %% Block Handler Connection
+    BH --> FS
+    BWS --> BH
+
+    style MAIN fill:#e1f5fe,stroke:#01579b
+    style BOOTSTRAP fill:#fff3e0,stroke:#ef6c00
+    classDef blockProcessing fill:#e8f5e9,stroke:#2e7d32
+    classDef coreServices fill:#f3e5f5,stroke:#7b1fa2
+    classDef clients fill:#fce4ec,stroke:#c2185b
+
+    class BT,BS,BWS,BH blockProcessing
+    class MS,NS,TS,FS,TES,NOTS coreServices
+    class CP,EVMC,SC clients
+....
+
+=== Block processing workflow
+
+This sequence diagram shows the detailed flow of operations during block processing, from retrieving the last processed block to executing notifications.
+
+[mermaid,width=100%]
+....
+%%{init: {
+    'theme': 'base',
+    'themeVariables': {
+        'background': '#ffffff',
+        'mainBkg': '#ffffff',
+        'primaryBorderColor': '#cccccc'
+    }
+}}%%
+sequenceDiagram
+    participant BWS as BlockWatcherService
+    participant BS as BlockStorage
+    participant BC as BlockchainClient
+    participant FS as FilterService
+    participant TES as TriggerExecutionService
+    participant NS as NotificationService
+
+    rect rgb(232, 245, 233)
+        Note over BWS: Orchestrates block processing
+        BWS->>BS: Get last processed block
+    end
+
+    rect rgb(225, 245, 254)
+        Note over BC: Blockchain interface
+        BWS->>BC: Get latest block number
+        BWS->>BC: Get blocks (last+1 to latest)
+    end
+
+    loop For each block
+        rect rgb(243, 229, 245)
+            Note over FS: Applies monitor filters
+            BWS->>FS: filter_block(block)
+            FS->>FS: Apply monitor filters
+            FS-->>BWS: Monitor matches
+        end
+
+        rect rgb(255, 248, 225)
+            Note over TES: Evaluates trigger conditions
+            BWS->>TES: Process monitor matches
+            TES->>TES: Run trigger conditions
+        end
+
+        rect rgb(252, 228, 236)
+            Note over NS: Delivers notifications
+            TES->>NS: Execute notifications
+        end
+    end
+
+    rect rgb(255, 243, 224)
+        Note over BS: Persists processing state
+        BWS->>BS: Store latest processed block
+    end
+....
+
+
+For detailed information about RPC logic, see the RPC xref:rpc.adoc[section].
 
 == Directory Layout
 

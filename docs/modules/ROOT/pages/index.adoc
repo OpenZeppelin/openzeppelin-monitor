@@ -32,6 +32,11 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 - **Webhooks** - Send HTTP requests to custom endpoints
 - **Custom Scripts** - Execute Python, JavaScript, or Bash scripts
 
+[NOTE]
+====
+To get started immediately, see xref:quickstart.adoc[Quickstart].
+====
+
 == Installation
 
 === Prerequisites
