@@ -158,7 +158,7 @@ Use `git rebase` instead of `git pull` to avoid merge commits and maintain a cle
 ==== Creating a Pull Request
 
 1. **Push your changes** to your fork:
-
++
 [source,bash]
 ----
 git push -f origin feature/your-feature-name
