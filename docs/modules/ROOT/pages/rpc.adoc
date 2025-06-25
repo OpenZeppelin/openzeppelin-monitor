@@ -47,20 +47,20 @@ For high-availability setups, configure at least 3 (private) RPC endpoints with 
 |===
 |Field |Type |Description
 
-|type_
-|String
+|`*type_*`
+|`String`
 |Type of endpoint (currently only "rpc" is supported)
 
-|url.type
-|String
+|`*url.type*`
+|`String`
 |Secret type ("Plain", "Environment", or "HashicorpCloudVault")
 
-|url.value
-|String
+|`*url.value*`
+|`String`
 |The RPC endpoint URL
 
-|weight
-|Number
+|`*weight*`
+|`Number`
 |Load balancing weight (0-100)
 |===
 

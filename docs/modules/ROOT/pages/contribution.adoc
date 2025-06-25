@@ -70,7 +70,7 @@ cargo fmt
 cargo clippy -- -D warnings
 
 # Run tests
-cargo test
+RUST_TEST_THREADS=1 cargo test
 ----
 
 === Testing Requirements

@@ -98,21 +98,21 @@ pub struct ErrorContext {
 |===
 |Module |Error Type |Description
 
-|Configuration
+|`*Configuration*`
 |`ConfigError`
 a|* `ValidationError` - Configuration validation failures
 * `ParseError` - Configuration parsing issues
 * `FileError` - File system related errors
 * `Other` - Unclassified errors
 
-|Security
+|`*Security*`
 |`SecurityError`
 a|* `ValidationError` - Security validation failures
 * `ParseError` - Security data parsing issues
 * `NetworkError` - Security service connectivity issues
 * `Other` - Unclassified security-related errors
 
-|Blockchain Service
+|`*Blockchain Service*`
 |`BlockChainError`
 a|* `ConnectionError` - Network connectivity issues
 * `RequestError` - Malformed requests or invalid responses
@@ -122,7 +122,7 @@ a|* `ConnectionError` - Network connectivity issues
 * `ClientPoolError` - Client pool related issues
 * `Other` - Unclassified errors
 
-|Block Watcher Service
+|`*Block Watcher Service*`
 |`BlockWatcherError`
 a|* `SchedulerError` - Block watching scheduling issues
 * `NetworkError` - Network connectivity problems
@@ -131,14 +131,14 @@ a|* `SchedulerError` - Block watching scheduling issues
 * `BlockTrackerError` - Block tracking issues
 * `Other` - Unclassified errors
 
-|Filter Service
+|`*Filter Service*`
 |`FilterError`
 a|* `BlockTypeMismatch` - Block type validation failures
 * `NetworkError` - Network connectivity issues
 * `InternalError` - Internal processing errors
 * `Other` - Unclassified errors
 
-|Notification Service
+|`*Notification Service*`
 |`NotificationError`
 a|* `NetworkError` - Network connectivity issues
 * `ConfigError` - Configuration problems
@@ -146,14 +146,14 @@ a|* `NetworkError` - Network connectivity issues
 * `ExecutionError` - Script execution failures
 * `Other` - Unclassified errors
 
-|Repository
+|`*Repository*`
 |`RepositoryError`
 a|* `ValidationError` - Data validation failures
 * `LoadError` - Data loading issues
 * `InternalError` - Internal processing errors
 * `Other` - Unclassified errors
 
-|Script Utils
+|`*Script Utils*`
 |`ScriptError`
 a|* `NotFound` - Resource not found errors
 * `ExecutionError` - Script execution failures
@@ -161,14 +161,14 @@ a|* `NotFound` - Resource not found errors
 * `SystemError` - System-level errors
 * `Other` - Unclassified errors
 
-|Trigger Service
+|`*Trigger Service*`
 |`TriggerError`
 a|* `NotFound` - Resource not found errors
 * `ExecutionError` - Trigger execution failures
 * `ConfigurationError` - Trigger configuration issues
 * `Other` - Unclassified errors
 
-|Monitor Executor
+|`*Monitor Executor*`
 |`MonitorExecutionError`
 a|* `NotFound` - Resource not found errors
 * `ExecutionError` - Monitor execution failures
