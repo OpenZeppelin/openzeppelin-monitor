@@ -23,14 +23,6 @@ FILTERS=(
     "stellar_filter_block_number.sh"
 )
 
-TRIGGERS=(
-    "discord_notifications.json"
-    "email_notifications.json"
-    "script_notifications.json"
-    "slack_notifications.json"
-    "webhook_notifications.json"
-)
-
 # Function to print colored output
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -163,30 +155,6 @@ else
     print_warning "examples/config/filters directory not found"
 fi
 
-# Copy trigger configurations
-print_status "Copying trigger configurations..."
-if [ -d "examples/config/triggers" ]; then
-    trigger_count=0
-
-    for trigger_file in "${TRIGGERS[@]}"; do
-        if [ -f "examples/config/triggers/$trigger_file" ]; then
-            cp "examples/config/triggers/$trigger_file" "config/triggers/"
-            print_success "Copied $trigger_file"
-            trigger_count=$((trigger_count + 1))
-        else
-            print_warning "$trigger_file not found in examples/config/triggers/"
-        fi
-    done
-
-    if [ "$trigger_count" -gt 0 ]; then
-        print_success "Copied $trigger_count trigger configuration(s)"
-    else
-        print_warning "No trigger configurations found to copy"
-    fi
-else
-    print_warning "examples/config/triggers directory not found"
-fi
-
 # Set up environment file if it doesn't exist
 if [ ! -f ".env" ]; then
     if [ -f ".env.example" ]; then
@@ -210,15 +178,13 @@ if ./openzeppelin-monitor --check; then
     echo "📁 Networks: $(ls config/networks/*.json 2>/dev/null | wc -l) configuration(s)"
     echo "📊 Monitors: $(ls config/monitors/*.json 2>/dev/null | wc -l) configuration(s)"
     echo "🔧 Filters: $(ls config/filters/ 2>/dev/null | wc -l) script(s)"
-    echo "📢 Triggers: Template created (requires your credentials)"
+    echo "📢 Triggers: Requires your credentials for notifications"
     echo ""
 
     print_status "🔧 Next steps to enable notifications:"
     echo "1. Modify monitor configurations to add triggers:"
-    echo "   - Edit files in config/monitors/"
+    echo "   - Create trigger files (or copy from examples/config/triggers/) in config/triggers/ with your credentials"
     echo "   - Change 'triggers': [] to 'triggers': [\"your_notification_file_name\"] to enable notifications"
-    echo ""
-    echo "2. Customize trigger configurations in config/triggers/"
     echo ""
 
     # Ask if user wants to run the monitor
