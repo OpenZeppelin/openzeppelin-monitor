@@ -1,15 +1,15 @@
 = Architecture Guide
-:description: Detailed information about the OpenZeppelin Monitor project structure.
+:description: Detailed information about the OpenZeppelin Monitor system architecture and component interactions.
 
-This document describes the high-level architecture and project structure of OpenZeppelin Monitor, including the core components, their interactions, and the overall system design. It provides a technical overview of how the service processes blockchain data and triggers notifications based on configurable conditions.
+This document describes the high-level architecture of OpenZeppelin Monitor, including the core components, their interactions, and the overall system design. It provides a technical overview of how the service processes blockchain data and triggers notifications based on configurable conditions.
 
 == System Overview
 
-OpenZeppelin Monitor is organized as a data processing pipeline that spans from blockchain data collection to notification delivery. The system follows a modular architecture with distinct components for each step in the monitoring process.
+OpenZeppelin Monitor is organized as a data processing pipeline that spans from blockchain data collection to notification delivery. The system follows a modular architecture with distinct components for each step in the monitoring process, designed for scalability and extensibility.
 
 === High-Level Architecture
 
-The diagram below shows the core components of OpenZeppelin Monitor and their interactions:
+The diagram below shows the core processing pipeline of OpenZeppelin Monitor, from blockchain networks and configuration through to notification channels:
 
 [mermaid,width=100%]
 ....
@@ -21,70 +21,61 @@ The diagram below shows the core components of OpenZeppelin Monitor and their in
         'primaryBorderColor': '#cccccc'
     }
 }}%%
-graph TD
-    subgraph Blockchain Networks
-        ETH[Ethereum RPC]
-        POL[Polygon RPC]
-        BSC[BSC RPC]
+flowchart LR
+    subgraph "Blockchain Networks"
+        EVMN["EVM Networks"]
+        STLN["Stellar Networks"]
     end
-    subgraph Block Processing
-        BW[BlockWatcherService]
-        BS[(BlockStorage)]
-        JS[JobScheduler]
+    subgraph "Configuration"
+        NETCFG["Network Configs"]
+        MONCFG["Monitor Configs"]
+        TRICFG["Trigger Configs"]
     end
-    subgraph Client Layer
-        BC[BlockchainClient]
-        EVM[EVMClient]
-        STL[StellarClient]
+    subgraph "Core Processing Pipeline"
+        BWS["BlockWatcherService"]
+        FS["FilterService"]
+        TS["TriggerService"]
+        NS["NotificationService"]
     end
-    subgraph Processing Pipeline
-        FS[FilterService]
-        TS[TriggerService]
-        NS[NotificationService]
-    end
-    subgraph Notifications
+    subgraph "Notification Channels"
         Slack
         Email
         Discord
         Telegram
         Webhook
-        Script
+        Scripts["Custom Scripts"]
     end
-    %% Block Processing Flow
-    JS -->|Schedule Block Fetch| BW
-    BW -->|Store Last Block| BS
-    BW -->|Read Last Block| BS
-    BW -->|Get New Blocks| BC
-    %% Client Connections
-    BC --> EVM
-    BC --> STL
-    EVM -->|RPC Calls| ETH
-    EVM -->|RPC Calls| POL
-    EVM -->|RPC Calls| BSC
-    %% Processing Flow
-    BW -->|New Block| FS
-    FS -->|Matches| TS
-    TS -->|Execute| NS
+
+    %% Data and config flow
+    EVMN --> BWS
+    STLN --> BWS
+    NETCFG --> BWS
+    MONCFG --> FS
+    TRICFG --> TS
+    BWS --> FS
+    FS --> TS
+    TS --> NS
     NS --> Slack
     NS --> Email
     NS --> Discord
     NS --> Telegram
     NS --> Webhook
-    NS --> Script
-    style STL fill:#f0f0f0
-    classDef rpc fill:#e1f5fe,stroke:#01579b
-    classDef storage fill:#fff3e0,stroke:#ef6c00
-    classDef service fill:#e8f5e9,stroke:#2e7d32
-    classDef notification fill:#f3e5f5,stroke:#7b1fa2
-    class ETH,POL,BSC rpc
-    class BS storage
-    class BW,FS,TS,NS service
-    class Slack,Email,Discord,Telegram,Webhook,Script notification
+    NS --> Scripts
+
+    %% Styling for major blocks and notification channels
+    classDef blockchain fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef config fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef mainBlock fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef notification fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+    class EVMN,STLN blockchain;
+    class NETCFG,MONCFG,TRICFG config;
+    class BWS,FS,TS,NS mainBlock;
+    class Slack,Email,Discord,Telegram,Webhook,Scripts notification;
 ....
 
 == Component Architecture
 
-The system consists of several services that are initialized at startup and work together to process blockchain data and trigger notifications. The service initialization and dependencies are managed through the bootstrap module.
+The system consists of several core services that are initialized at startup and work together to process blockchain data and trigger notifications. The service initialization and dependencies are managed through the bootstrap module.
 
 === Service Initialization Flow
 
@@ -173,6 +164,40 @@ graph TD
     class CP,EVMC,SC clients
 ....
 
+=== Core Components
+
+==== Block Processing Components
+
+* **BlockWatcherService**: Orchestrates the block monitoring process by polling blockchain networks for new blocks and coordinating the processing pipeline.
+
+* **BlockTracker**: Tracks processed block numbers to prevent duplicate processing and ensure data consistency across service restarts.
+
+* **BlockStorage**: Persists block processing state for recovery and maintains the last processed block number for each network.
+
+==== Client Layer Components
+
+* **ClientPool**: Manages blockchain client instances and provides network connectivity with connection pooling and failover capabilities.
+
+* **EVMClient**: Handles communication with Ethereum Virtual Machine compatible networks (Ethereum, Polygon, BSC, etc.).
+
+* **StellarClient**: Manages connections to Stellar blockchain networks with protocol-specific optimizations.
+
+==== Processing Pipeline Components
+
+* **FilterService**: Applies monitor filters to blockchain data, evaluating conditions and match expressions to identify relevant transactions and events.
+
+* **TriggerExecutionService**: Executes triggers based on matched monitor conditions, evaluating trigger logic and preparing notification payloads.
+
+* **NotificationService**: Delivers notifications through configured channels (Slack, Email, Discord, Telegram, Webhooks, Scripts).
+
+==== Configuration Management Components
+
+* **MonitorService**: Manages monitor configurations and provides access to active monitors with validation and lifecycle management.
+
+* **NetworkService**: Manages network configurations and provides network details for client connections and monitoring operations.
+
+* **TriggerService**: Manages trigger configurations and provides trigger details for notification execution.
+
 === Service Responsibilities
 
 The following table describes the key responsibilities of each service in the OpenZeppelin Monitor architecture:
@@ -213,7 +238,7 @@ The following table describes the key responsibilities of each service in the Op
 |===
 
 
-=== Block processing workflow
+=== Block Processing Workflow
 
 The following _runtime flow_ illustrates how data moves through the system, from blockchain networks to notification channels. This sequence represents the core monitoring loop that executes for each configured network.
 
@@ -272,189 +297,123 @@ sequenceDiagram
     end
 ....
 
+=== Data Flow Architecture
 
-For detailed information about RPC logic, see the RPC xref:rpc.adoc[section].
+==== 1. Block Discovery Phase
+The `BlockWatcherService` initiates the monitoring cycle by:
 
-== Project Structure
+* Retrieving the last processed block number from `BlockStorage`
+* Querying the blockchain for the latest block number
+* Calculating the range of new blocks to process
 
-The project follows a _standard_ Rust project layout:
+==== 2. Data Retrieval Phase
+The `BlockchainClient` fetches block data:
 
-```
-openzeppelin-monitor/
-├── src/                # Source code
-│   ├── bootstrap/      # Bootstrap functions for the application
-│   ├── models/         # Data structures and types
-│   ├── repositories/   # Configuration storage
-│   ├── services/       # Core business logic
-│   ├── utils/          # Helper functions
-│
-├── config/             # Configuration files
-├── tests/              # Integration and property-based tests
-├── data/               # Runtime data storage
-├── docs/               # Documentation
-├── scripts/            # Utility scripts
-├── cmd/                # Metrics and monitoring
-├── examples/           # Example configuration files
-└── ... other root files (Cargo.toml, README.md, etc.)
-```
+* Connects to the appropriate blockchain network via RPC
+* Retrieves full block data including transactions and events
+* Handles network-specific data formats and protocols
 
-== Source Code Organization
+==== 3. Filtering Phase
+The `FilterService` processes each block:
 
-=== `src/` Directory
-The main source code directory contains the core implementation files organized into several modules:
+* Applies monitor-specific filters to transactions and events
+* Evaluates match expressions and conditions
+* Identifies relevant data that matches monitoring criteria
 
-* `bootstrap/`: Application initialization and setup for `main.rs`
-** Handles service initialization and dependency injection
+==== 4. Trigger Evaluation Phase
+The `TriggerExecutionService` processes matches:
 
-* `models/`: Core data structures and types
-** `blockchain/`: Platform-specific implementations
-*** `evm/`: Ethereum Virtual Machine specific types
-*** `stellar/`: Stellar blockchain specific types
-** `config/`: Configuration loading and validation
-** `core/`: Core domain models
-** `security/`: Security and secret management
+* Evaluates trigger conditions for matched data
+* Prepares notification payloads with relevant context
+* Determines which notification channels to activate
 
-* `repositories/`: Configuration storage
-** Handles loading and validating configuration files
-** Provides storage interfaces for monitors, networks, and triggers
-** Implements validation of configuration references
+==== 5. Notification Delivery Phase
+The `NotificationService` delivers alerts:
 
-* `services/`: Core business logic
-** `blockchain/`: Blockchain client interfaces
-*** `transports/`: Transport clients
-**** `evm/`: Ethereum Virtual Machine transport client
-**** `stellar/`: Stellar transport client
-*** `clients/`: Client implementations
-**** `evm/`: Ethereum Virtual Machine client
-**** `stellar/`: Stellar client
-** `blockwatcher/`: Block monitoring and processing
-** `filter/`: Transaction and event filtering
-*** `filters/`: Filter implementations
-**** `evm/`: Ethereum Virtual Machine filter
-**** `stellar/`: Stellar filter
-** `notification/`: Alert handling
-** `trigger/`: Trigger evaluation and execution
-**** `script/`: Script execution utilities
+* Formats messages for each notification channel
+* Handles channel-specific delivery protocols
+* Manages delivery retries and error handling
 
+==== 6. State Persistence Phase
+The `BlockStorage` updates processing state:
 
-* `utils/`: Helper functions
-** `cron_utils`: Cron schedule utilities
-** `expression`: Expression evaluation
-** `logging/`: Logging utilities
-** `macros/`: Macros for common functionality
-** `metrics/`: Metrics utilities
-** `monitor/`: Monitor configuration test utilities
-** `tests/`: Contains test utilities and helper functions
-*** `builders/`: Test builder patterns implementing fluent interfaces for creating test fixtures
-**** `evm/`: Builder implementations specific to Ethereum Virtual Machine (EVM) testing
-**** `stellar/`: Builder implementations specific to Stellar blockchain testing
+* Records the latest processed block number
+* Ensures data consistency for recovery scenarios
+* Maintains processing history for debugging
 
-== Configuration and Data
+=== Error Handling and Resilience
 
-=== `config/` Directory
-Contains JSON configuration files for:
+The architecture includes several resilience mechanisms:
 
-* Network configurations (`networks/`)
-** Connection details for blockchain networks
-** RPC endpoints and network parameters
+* **Connection Pooling**: The `ClientPool` manages multiple connections to prevent single points of failure
+* **State Recovery**: `BlockStorage` enables the service to resume from the last known good state after restarts
+* **Retry Logic**: Notification delivery includes configurable retry mechanisms for transient failures
+* **Graceful Degradation**: Individual component failures don't cascade to the entire system
 
-* Monitor configurations (`monitors/`)
-** Monitoring rules and conditions
-** Network and trigger references
+For detailed information about RPC logic and network communication, see the xref:rpc.adoc[RPC section].
 
-* Trigger configurations (`triggers/`)
-** Notification settings
-** Script definitions
+== Configuration Architecture
 
-* Filter configurations (`filters/`)
-** Match filter scripts
+The system uses a JSON-based configuration system organized into distinct categories:
+
+=== Configuration Categories
+
+* **Network Configurations**: Define blockchain network connections, RPC endpoints, and network parameters
+* **Monitor Configurations**: Specify monitoring rules, conditions, and network/trigger references
+* **Trigger Configurations**: Define notification settings and script definitions
+* **Filter Configurations**: Contain match filter scripts for data filtering
+
+=== Configuration Validation
+
+The system implements comprehensive validation:
+
+* Cross-reference validation between monitors, networks, and triggers
+* Schema validation for all configuration files
+* Runtime validation of configuration references during service startup
 
 [TIP]
 ====
-The `examples/config/` directory contains example JSON configuration files for each (network, monitor, trigger and filters).
+For configuration examples and best practices, see the xref:index.adoc#configuration_guidelines[Configuration Guidelines] section in the user documentation.
 ====
 
-=== `data/` Directory
-Runtime data storage:
+== Extensibility Points
 
-* Block processing state
-* Operational data
-* Temporary files
+The architecture is designed for extensibility in several key areas:
 
-[NOTE]
-====
-The `data/`, `logs/` and `config/` directories are gitignored except for example files. These directories mounted to persist the configs and runtime data.
-====
+=== Blockchain Support
+* **Client Layer**: New blockchain protocols can be added by implementing the `BlockchainClient` trait
+* **Transport Layer**: Protocol-specific transport clients handle network communication details
+* **Filter Layer**: Chain-specific filters process protocol-dependent data formats
 
-== Examples
-=== `examples/` Directory
-Provides practical examples and sample configurations to help users get started:
+=== Notification Channels
+* **Channel Plugins**: New notification channels can be added by implementing the notification interface
+* **Script Support**: Custom notification logic can be implemented using Python, JavaScript, or Bash scripts
 
-* Demonstrates typical service configurations for various networks
-* Acts as a quick-start guide for customizing the monitor
-* Serves as a reference for best practices in configuration
+=== Monitoring Logic
+* **Expression Engine**: Flexible expression evaluation for complex monitoring conditions
+* **Script Triggers**: Custom trigger logic can be implemented using supported scripting languages
 
-== Metrics and Monitoring
+== Performance Considerations
 
-=== `cmd/prometheus/` Directory
-Prometheus exporters:
+The architecture is optimized for:
 
-* `dashboards/`: Grafana dashboards
-* `datasources/`: Prometheus datasources
-* `prometheus.yml`: Prometheus configuration
-* `grafana.ini`: Grafana configuration
+* **Concurrent Processing**: Multiple networks can be monitored simultaneously
+* **Efficient Block Processing**: Batch processing of blocks to minimize RPC calls
+* **Memory Management**: Streaming processing of large blocks to prevent memory issues
+* **Connection Reuse**: Client pooling reduces connection overhead
 
-== Testing and Documentation
+== Security Architecture
 
-=== `tests/` Directory
-Contains comprehensive test suites:
+The system implements several security measures:
 
-* Integration tests
-* Property-based tests
-* Mock implementations
-* Test utilities and helpers
+* **Secure Protocols**: Support for HTTPS/WSS
+* **Secret Management**: Secure handling of API keys and sensitive configuration data
+* **Input Validation**: Comprehensive validation of all external inputs and configurations
 
-=== `docs/` Directory
-Project documentation:
+== Related Documentation
 
-* User guides
-* API documentation
-* Configuration examples
-* Architecture diagrams
+For detailed information about the project structure, source code organization, and development resources, see the xref:project-structure.adoc[Project Structure] guide.
 
-=== `scripts/` Directory
-Utility scripts for:
+For information about RPC logic and network communication, see the xref:rpc.adoc[RPC section].
 
-* Development workflows
-* Documentation generation
-* Build processes
-* Deployment helpers
-
-== Development Tools
-
-=== Pre-commit Hooks
-Located in the project root:
-
-* Code formatting checks
-* Linting rules
-* Commit message validation
-
-=== Build Configuration
-Core build files:
-
-* `Cargo.toml`: Project dependencies and metadata
-* `rustfmt.toml`: Code formatting rules
-* `rust-toolchain.toml`: Rust version and components
-
-== Docker Support
-
-The project includes Docker configurations for different environments:
-
-* `Dockerfile.development`: Development container setup.
-* `Dockerfile.production`: Production-ready container.
-* Before running the docker compose set your env variables in `.env` according to your needs.
-
-[TIP]
-====
-For detailed information about running the monitor in containers, see the Docker deployment xref:index.adoc#docker_installation[section] in the user documentation.
-====
+For configuration examples and best practices, see the xref:index.adoc#configuration_guidelines[Configuration Guidelines] section in the user documentation.

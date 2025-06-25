@@ -1,0 +1,209 @@
+= Project Structure
+:description: Detailed information about the OpenZeppelin Monitor project organization and file structure.
+
+This document describes the project structure and organization of the OpenZeppelin Monitor codebase, including the source code layout, configuration files, and development resources.
+
+== Project Layout
+
+The project follows a standard Rust project layout with additional directories for configuration, documentation, and operational resources:
+
+```
+openzeppelin-monitor/
+├── src/                # Source code
+│   ├── bootstrap/      # Bootstrap functions for the application
+│   ├── models/         # Data structures and types
+│   ├── repositories/   # Configuration storage
+│   ├── services/       # Core business logic
+│   ├── utils/          # Helper functions
+│
+├── config/             # Configuration files
+├── tests/              # Integration and property-based tests
+├── data/               # Runtime data storage
+├── docs/               # Documentation
+├── scripts/            # Utility scripts
+├── cmd/                # Metrics and monitoring
+├── examples/           # Example configuration files
+└── ... other root files (Cargo.toml, README.md, etc.)
+```
+
+== Source Code Organization
+
+=== `src/` Directory
+
+The main source code directory contains the core implementation files organized into several modules:
+
+==== `bootstrap/`
+Application initialization and setup for `main.rs`:
+
+* Handles service initialization and dependency injection
+* Manages the startup sequence and service lifecycle
+
+==== `models/`
+Core data structures and types:
+
+* `blockchain/`: Platform-specific implementations
+** `evm/`: Ethereum Virtual Machine specific types
+** `stellar/`: Stellar blockchain specific types
+* `config/`: Configuration loading and validation
+* `core/`: Core domain models
+* `security/`: Security and secret management
+
+==== `repositories/`
+Configuration storage:
+
+* Handles loading and validating configuration files
+* Provides storage interfaces for monitors, networks, and triggers
+* Implements validation of configuration references
+
+==== `services/`
+Core business logic:
+
+* `blockchain/`: Blockchain client interfaces
+** `transports/`: Transport clients
+*** `evm/`: Ethereum Virtual Machine transport client
+*** `stellar/`: Stellar transport client
+** `clients/`: Client implementations
+*** `evm/`: Ethereum Virtual Machine client
+*** `stellar/`: Stellar client
+* `blockwatcher/`: Block monitoring and processing
+* `filter/`: Transaction and event filtering
+** `filters/`: Filter implementations
+*** `evm/`: Ethereum Virtual Machine filter
+*** `stellar/`: Stellar filter
+* `notification/`: Alert handling
+* `trigger/`: Trigger evaluation and execution
+** `script/`: Script execution utilities
+
+==== `utils/`
+Helper functions:
+
+* `cron_utils`: Cron schedule utilities
+* `expression`: Expression evaluation
+* `logging/`: Logging utilities
+* `macros/`: Macros for common functionality
+* `metrics/`: Metrics utilities
+* `monitor/`: Monitor configuration test utilities
+* `tests/`: Contains test utilities and helper functions
+** `builders/`: Test builder patterns implementing fluent interfaces for creating test fixtures
+*** `evm/`: Builder implementations specific to Ethereum Virtual Machine (EVM) testing
+*** `stellar/`: Builder implementations specific to Stellar blockchain testing
+
+== Configuration and Data
+
+=== `config/` Directory
+
+Contains JSON configuration files for:
+
+* **Network configurations** (`networks/`)
+** Connection details for blockchain networks
+** RPC endpoints and network parameters
+
+* **Monitor configurations** (`monitors/`)
+** Monitoring rules and conditions
+** Network and trigger references
+
+* **Trigger configurations** (`triggers/`)
+** Notification settings
+** Script definitions
+
+* **Filter configurations** (`filters/`)
+** Match filter scripts
+
+[TIP]
+====
+The `examples/config/` directory contains example JSON configuration files for each (network, monitor, trigger and filters).
+====
+
+=== `data/` Directory
+
+Runtime data storage:
+
+* Block processing state
+* Operational data
+* Temporary files
+
+[NOTE]
+====
+The `data/`, `logs/` and `config/` directories are gitignored except for example files. These directories are mounted to persist the configs and runtime data.
+====
+
+== Examples and Resources
+
+=== `examples/` Directory
+
+Provides practical examples and sample configurations to help users get started:
+
+* Demonstrates typical service configurations for various networks
+* Acts as a quick-start guide for customizing the monitor
+* Serves as a reference for best practices in configuration
+
+== Metrics and Monitoring
+
+=== `cmd/prometheus/` Directory
+
+Prometheus exporters and monitoring infrastructure:
+
+* `dashboards/`: Grafana dashboards
+* `datasources/`: Prometheus datasources
+* `prometheus.yml`: Prometheus configuration
+* `grafana.ini`: Grafana configuration
+
+== Testing and Documentation
+
+=== `tests/` Directory
+
+Contains comprehensive test suites:
+
+* Integration tests
+* Property-based tests
+* Mock implementations
+* Test utilities and helpers
+
+=== `docs/` Directory
+
+Project documentation:
+
+* User guides
+* API documentation
+* Configuration examples
+* Architecture diagrams
+
+=== `scripts/` Directory
+
+Utility scripts for:
+
+* Development workflows
+* Documentation generation
+* Build processes
+* Deployment helpers
+
+== Development Tools
+
+=== Pre-commit Hooks
+
+Located in the project root:
+
+* Code formatting checks
+* Linting rules
+* Commit message validation
+
+=== Build Configuration
+
+Core build files:
+
+* `Cargo.toml`: Project dependencies and metadata
+* `rustfmt.toml`: Code formatting rules
+* `rust-toolchain.toml`: Rust version and components
+
+== Docker Support
+
+The project includes Docker configurations for different environments:
+
+* `Dockerfile.development`: Development container setup
+* `Dockerfile.production`: Production-ready container
+* Before running the docker compose set your env variables in `.env` according to your needs
+
+[TIP]
+====
+For detailed information about running the monitor in containers, see the Docker deployment xref:index.adoc#docker_installation[section] in the user documentation.
+====
