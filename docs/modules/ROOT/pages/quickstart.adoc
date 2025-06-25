@@ -1,68 +1,58 @@
 = Quick Start Guide
-:description: This guide provides step-by-step instructions for setting up OpenZeppelin Monitor, including prerequisites, installation, and configuration examples.
+:description: Get started with OpenZeppelin Monitor in minutes. This guide provides step-by-step instructions for setting up monitoring for blockchain events, including prerequisites, installation, and practical examples.
 
-This guide provides step-by-step instructions for setting up OpenZeppelin Monitor. It includes prerequisites, installation, and configuration examples.
+[.lead]
+OpenZeppelin Monitor is a powerful tool for monitoring blockchain events and transactions. This guide will help you get up and running quickly with practical examples for both EVM and Stellar networks.
+
+== What You'll Learn
+
+* How to set up OpenZeppelin Monitor locally or with Docker
+* How to configure monitoring for USDC transfers on Ethereum
+* How to monitor DEX swaps on Stellar
+* How to set up notifications via Slack and email
 
 == Prerequisites
 
-* Rust 2021 edition
-* Docker (optional, for containerized deployment)
+Before you begin, ensure you have the following installed:
 
-== Environment Configuration
+* **Rust 2021 edition** - Required for building from source
+* **Docker** - Optional, for containerized deployment
+* **Git** - For cloning the repository
 
-=== Logging Configuration
+[TIP]
+====
+If you don't have Rust installed, visit https://rustup.rs/ to install it.
+====
 
-Configure the logging verbosity level:
+== Quick Setup Options
 
-1. Error
-2. Warn
-3. Info
-4. Debug
-5. Trace
+We provide two setup paths to get you started:
 
-[source,bash]
-----
-RUST_LOG=info
-----
+=== Option 1: Automated Setup (Recommended)
 
-=== Local Configuration
+For the fastest setup experience, use our automated script that handles everything for you.
 
-Copy the example environment file and update values according to your needs
+==== What the Automated Setup Does
 
-[source,bash]
-----
-cp .env.example .env
-----
+The `setup_and_run.sh` script provides a complete solution that:
 
-For details on the supported values see xref:index.adoc#basic_configuration[User Documentation - Basic Configuration]
+* **Builds the monitor application** from source
+* **Copies example configurations** from `examples/` to `config/`
+  ** Network configurations for major blockchains
+  ** Pre-configured monitor examples (USDC transfers, Stellar DEX swaps)
+  ** Required filter scripts and basic trigger notifications
+* **Validates all configurations** to ensure proper setup
+* **Optionally runs the monitor** to verify everything works
 
-== Installation
+==== Running the Automated Setup
 
-=== Run Locally
-
-. Clone the repository:
+. **Clone the repository:**
 +
 [source,bash]
 ----
 git clone https://github.com/openzeppelin/openzeppelin-monitor
 cd openzeppelin-monitor
 ----
-
-=== Option 1: Automated Setup (recommended for quick start)
-
-For users who want to get started quickly without manually configuring files, we provide an automated setup script that handles the entire installation and configuration process.
-
-The `setup_and_run.sh` script provides a one-command solution to:
-
-* **Build the monitor application** from source
-* **Copy example configurations** from the `examples/` directory to `config/`
-  ** Network configurations for major blockchains
-  ** Pre-configured monitor examples (USDC transfers, Stellar DEX swaps)
-  ** Required filter scripts and basic trigger notifications
-* **Validate all configurations** to ensure they're properly set up
-* **Run the monitor** (optional)
-
-=== Using the Setup Script
 
 . **Make the script executable:**
 +
@@ -78,47 +68,53 @@ chmod +x setup_and_run.sh
 ./setup_and_run.sh
 ----
 
-The script will guide you through the setup process with colored output and provide clear instructions for next steps.
+The script provides colored output and clear guidance throughout the process.
 
-=== After Running the Script
+==== After Automated Setup
 
-Once the setup script completes successfully, you'll have:
+Once complete, you'll have:
 
-* A fully built and configured OpenZeppelin Monitor
+* A fully built OpenZeppelin Monitor
 * Example configurations ready for customization
-* Clear guidance on setting up RPC URLs and notification channels
+* Clear guidance on next steps
 
-You can then:
+**Next Steps:**
+. Customize the copied configurations in `config/` directories
+. Update RPC URLs and notification credentials
+. Run the monitor with `./openzeppelin-monitor`
 
-. **Customize the copied configurations** in the `config/` directories
-. **Run the monitor** with `./openzeppelin-monitor`
-
-[TIP]
+[WARNING]
 ====
-The setup script creates working configurations with placeholder values. Remember to update your files with actual RPC endpoints and notification credentials before starting real monitoring.
+The setup script creates working configurations with placeholder values. **Remember to update your files with actual RPC endpoints and notification credentials** before starting real monitoring.
 ====
 
 === Option 2: Manual Setup
 
-. Install dependencies:
+For users who prefer more control over the setup process.
+
+==== Building from Source
+
+. **Clone and build:**
 +
 [source,bash]
 ----
+git clone https://github.com/openzeppelin/openzeppelin-monitor
+cd openzeppelin-monitor
 cargo build --release
 ----
 
-. Move the binary to the project root (so that it can access the `./config` folder)
+. **Move the binary to project root:**
 +
 [source,bash]
 ----
 mv ./target/release/openzeppelin-monitor .
 ----
 
-=== Run with Docker
+==== Docker Setup
 
-==== Basic Setup
+For containerized deployment:
 
-. Start the services using docker compose:
+. **Start services:**
 +
 [source,bash]
 ----
@@ -127,51 +123,90 @@ docker compose up
 
 [NOTE]
 ====
-By default, Docker Compose uses `Dockerfile.development`. To use production settings, set:
+By default, Docker Compose uses `Dockerfile.development`. For production, set:
 `DOCKERFILE=Dockerfile.production` before running the command.
 ====
 
-==== Management Commands
+==== Docker Management Commands
 
-. Verify container status:
-+
+[cols="1,2"]
+|===
+|Command |Description
+
+|`docker ps -a`
+|Verify container status
+
+|`docker compose down`
+|Stop services (without metrics)
+
+|`docker compose --profile metrics down`
+|Stop services (with metrics)
+
+|`docker compose logs -f`
+|View logs (follow mode)
+|===
+
+== Environment Configuration
+
+=== Logging Configuration
+
+Configure logging verbosity by setting the `RUST_LOG` environment variable:
+
+[cols="1,2"]
+|===
+|Level |Description
+
+|`error`
+|Only error messages
+
+|`warn`
+|Warnings and errors
+
+|`info`
+|General information (recommended)
+
+|`debug`
+|Detailed debugging information
+
+|`trace`
+|Very detailed trace information
+|===
+
 [source,bash]
 ----
-docker ps -a
+export RUST_LOG=info
 ----
 
-. Stop services:
-+
-[source,bash]
-----
-# without metrics profile
-docker compose down
+=== Local Configuration
 
-# or with metrics profile
-docker compose --profile metrics down
-----
-
-. View logs (stdout):
-+
-[source,bash]
-----
-docker compose logs -f
-----
-
-== Examples
-
-=== Monitoring USDC transfers (EVM)
-
-==== 1. Network Configuration
-
-Create the Ethereum mainnet network configuration:
+Copy the example environment file and customize it:
 
 [source,bash]
 ----
+cp .env.example .env
+----
+
+For detailed configuration options, see xref:index.adoc#basic_configuration[Basic Configuration].
+
+== Practical Examples
+
+Now let's set up real monitoring scenarios. Choose the example that matches your needs:
+
+=== Example 1: Monitor USDC Transfers (Ethereum)
+
+This example monitors large USDC transfers on Ethereum mainnet and sends notifications when transfers exceed 10,000 USDC.
+
+==== Step 1: Network Configuration
+
+Create the Ethereum mainnet configuration:
+
+[source,bash]
+----
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
 cp examples/config/networks/ethereum_mainnet.json config/networks/ethereum_mainnet.json
 ----
 
-The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/networks/ethereum_mainnet.json[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
+**Key Configuration Details:**
 
 [source,json]
 ----
@@ -198,17 +233,23 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
 }
 ----
 
-==== 2. Monitor Configuration
+[NOTE]
+====
+**Important:** Replace `YOUR_RPC_URL_HERE` with your actual Ethereum RPC endpoint. You can use providers like Infura, Alchemy, or run your own node.
+====
 
-Create the USDC transfer monitor configuration:
+==== Step 2: Monitor Configuration
+
+Set up the USDC transfer monitor:
 
 [source,bash]
 ----
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
 cp examples/config/monitors/evm_transfer_usdc.json config/monitors/evm_transfer_usdc.json
 cp examples/config/filters/evm_filter_block_number.sh config/filters/evm_filter_block_number.sh
 ----
 
-This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/monitors/evm_transfer_usdc.json[configuration^] monitors USDC transfers over 10,000 USDC. You can customize the notification channels by modifying the `triggers` array.
+**Monitor Configuration Overview:**
 
 [source,json]
 ----
@@ -277,19 +318,22 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
 
 [NOTE]
 ====
-Remove the `trigger_conditions` array to disable additional filtering.
+* The `expression: "value > 10000000000"` monitors transfers over 10,000 USDC (USDC has 6 decimals)
+* Remove the `trigger_conditions` array to disable additional filtering
+* The USDC contract address `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` is the official USDC contract on Ethereum mainnet
 ====
 
-==== 3. Notification Configuration
+==== Step 3: Notification Setup
 
-===== For Slack Notifications:
+===== Slack Notifications
 
 [source,bash]
 ----
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
 cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
 ----
 
-Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/triggers/slack_notifications.json[configuration^].
+**Slack Configuration:**
 
 [source,json]
 ----
@@ -311,14 +355,25 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
 }
 ----
 
-===== For Email Notifications
+[TIP]
+====
+To get a Slack webhook URL:
+
+1. Go to https://api.slack.com/apps
+2. Create a new app or select existing one
+3. Enable "Incoming Webhooks"
+4. Create a webhook for your channel
+====
+
+===== Email Notifications
 
 [source,bash]
 ----
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
 cp examples/config/triggers/email_notifications.json config/triggers/email_notifications.json
 ----
 
-Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/triggers/email_notifications.json[configuration^].
+**Email Configuration:**
 
 [source,json]
 ----
@@ -351,48 +406,56 @@ Update the SMTP settings in the link:https://github.com/OpenZeppelin/openzeppeli
 }
 ----
 
-==== 4. Run the Monitor
+[TIP]
+====
+For Gmail, you'll need to use an "App Password" instead of your regular password. Enable 2FA and generate an app password in your Google Account settings.
+====
 
-**Local Deployment**
+==== Step 4: Run the Monitor
+
+**Local Deployment:**
 
 [source,bash]
 ----
 ./openzeppelin-monitor
 ----
 
-**Docker Deployment**
+**Docker Deployment:**
 
 [source,bash]
 ----
 cargo make docker-compose-up
 ----
 
-The monitor will now:
+==== What Happens Next
 
-1. Check for new Ethereum blocks every minute.
-2. Watch for USDC transfers over 10,000 USDC.
-3. Send notifications via Slack and email when large transfers occur.
+Once running, the monitor will:
 
-==== 5. Next Steps:
+1. Check for new Ethereum blocks every minute
+2. Watch for USDC transfers over 10,000 USDC
+3. Send notifications via Slack and email when large transfers occur
 
-* Adjust the transfer threshold by modifying the `expression` value.
-* Monitor additional ERC20 tokens by creating new monitor configurations.
-* xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
-* xref:index.adoc#secret_management[Configure secure secret management] for sensitive data using environment variables or Hashicorp Cloud Vault
-* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].
+==== Customization Options
 
-=== Monitoring Dex Swaps (Stellar)
+* **Adjust threshold:** Modify `"value > 10000000000"` to change the minimum transfer amount
+* **Monitor other tokens:** Create new monitor configurations for different ERC20 tokens
+* **Add more networks:** Configure additional EVM networks (Polygon, BSC, etc.)
 
-==== 1. Network Configuration:
+=== Example 2: Monitor DEX Swaps (Stellar)
 
-Create the Stellar mainnet network configuration:
+This example monitors large DEX swaps on Stellar mainnet.
+
+==== Step 1: Network Configuration
+
+Create the Stellar mainnet configuration:
 
 [source,bash]
 ----
-cp examples/config/networks/examples/stellar_mainnet.json config/networks/stellar_mainnet.json
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/networks/stellar_mainnet.json config/networks/stellar_mainnet.json
 ----
 
-The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/networks/stellar_mainnet.json[default configuration^] should work, but you may want to update the RPC URL to your preferred provider.
+**Key Configuration Details:**
 
 [source,json]
 ----
@@ -419,26 +482,25 @@ The link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples
 }
 ----
 
-==== 2. Monitor Configuration:
+==== Step 2: Monitor Configuration
 
-Create the large swap monitor configuration:
+Set up the DEX swap monitor:
 
 [source,bash]
 ----
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
 cp examples/config/monitors/stellar_swap_dex.json config/monitors/stellar_swap_dex.json
 cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar_filter_block_number.sh
 ----
 
-This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/monitors/stellar_swap_dex.json[configuration^] monitors large swaps of over 1,000,000,000 tokens. You can customize the notification channels by modifying the `triggers` array.
+**Monitor Configuration Overview:**
 
 [source,json]
 ----
 {
   "name": "Large Swap By Dex",
   "paused": false,
-  "networks": [
-    "stellar_mainnet"
-  ],
+  "networks": ["stellar_mainnet"],
   "addresses": [
     {
      "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
@@ -474,9 +536,7 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
                 "type_": "u128"
               }
             ],
-            "outputs": [
-              "u128"
-            ]
+            "outputs": ["u128"]
           }
         }
       ]
@@ -505,33 +565,28 @@ This link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/example
       "timeout_ms": 1000
     }
   ],
-  "triggers": [
-    "stellar_large_swap_by_dex_slack"
-  ]
+  "triggers": ["stellar_large_swap_by_dex_slack"]
 }
 ----
 
 [NOTE]
 ====
-* The `abi` field is optional for Stellar contracts. If not provided, the monitor will automatically fetch the contract's SEP-48 interface from the chain.
-* You can find the contract specification through Stellar contract explorer tool. For example: link:https://lab.stellar.org/smart-contracts/contract-explorer?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=https:////mainnet.sorobanrpc.com&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;&smartContracts$explorer$contractId=CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE;;[Stellar DEX Contract Interface^]
+* The `contract_spec` field is optional for Stellar contracts. If not provided, the monitor automatically fetches the contract's SEP-48 interface from the chain
+* You can explore Stellar contract interfaces using the link:https://lab.stellar.org/smart-contracts/contract-explorer[Stellar Contract Explorer^]
+* The expression `"out_min > 1000000000"` monitors swaps with minimum output over 1 billion tokens
 ====
 
-[NOTE]
-====
-Remove the `trigger_conditions` array to disable additional filtering.
-====
+==== Step 3: Notification Setup
 
-==== 3. Notification Configuration
-
-===== For Slack Notifications:
+Set up Slack notifications for Stellar swaps:
 
 [source,bash]
 ----
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
 cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
 ----
 
-Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/examples/config/triggers/slack_notifications.json[configuration^].
+**Slack Configuration:**
 
 [source,json]
 ----
@@ -553,32 +608,59 @@ Update the webhook URL in the link:https://github.com/OpenZeppelin/openzeppelin-
 }
 ----
 
-==== 4. Run the Monitor
+==== Step 4: Run the Monitor
 
-**Local Deployment**
+**Local Deployment:**
 
 [source,bash]
 ----
 ./openzeppelin-monitor
 ----
 
-**Docker Deployment**
+**Docker Deployment:**
 
 [source,bash]
 ----
 cargo make docker-compose-up
 ----
 
-The monitor will now:
+==== What Happens Next
 
-1. Check for new Stellar blocks every minute.
-2. Watch for large dex swaps.
-3. Send notifications via Slack when large swaps occur.
+Once running, the monitor will:
 
-==== 5. Next Steps
+1. Check for new Stellar blocks every minute
+2. Watch for large DEX swaps
+3. Send notifications via Slack when large swaps occur
 
-* Adjust the swap threshold by modifying the `expression` value.
-* Monitor additional dex swaps by creating new monitor configurations.
-* xref:index.adoc#testing_your_configuration[Test the Monitor] configuration against a block number
-* xref:index.adoc#secret_management[Configure secure secret management] for sensitive data using environment variables or Hashicorp Cloud Vault
-* Explore other examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory].
+== Next Steps
+
+Now that you have OpenZeppelin Monitor running, here are some suggestions for what to do next:
+
+=== Testing and Validation
+
+* xref:index.adoc#testing_your_configuration[Test your configuration] against specific block numbers
+* Verify your RPC endpoints are working correctly
+* Test notification channels with small transactions
+
+=== Security and Best Practices
+
+* xref:index.adoc#secret_management[Configure secure secret management] for sensitive data
+* Use environment variables or Hashicorp Cloud Vault for credentials
+* Regularly update your RPC endpoints and monitor configurations
+
+=== Advanced Configuration
+
+* Explore additional examples in the link:https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors[`examples/config/monitors` directory]
+* Set up monitoring for multiple networks simultaneously
+* Configure custom filter scripts for complex conditions
+
+=== Getting Help
+
+* Check the link:https://github.com/OpenZeppelin/openzeppelin-monitor/issues[GitHub Issues] for known problems
+* Review the xref:index.adoc[User Documentation] for detailed configuration options
+* Join the OpenZeppelin community for support
+
+[TIP]
+====
+Start with simple monitoring scenarios and gradually add complexity. This helps you understand how the system works and makes troubleshooting easier.
+====
