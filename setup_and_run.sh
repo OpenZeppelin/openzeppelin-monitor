@@ -23,6 +23,11 @@ FILTERS=(
     "stellar_filter_block_number.sh"
 )
 
+TRIGGERS=(
+    "email_notifications.json"
+    "slack_notifications.json"
+)
+
 # Function to print colored output
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -107,14 +112,8 @@ if [ -d "examples/config/monitors" ]; then
 
     for monitor_file in "${MONITORS[@]}"; do
         if [ -f "examples/config/monitors/$monitor_file" ]; then
-            # Use jq if available to set triggers to empty array, otherwise just copy
-            if command_exists jq; then
-                jq '.triggers = []' "examples/config/monitors/$monitor_file" > "config/monitors/$monitor_file"
-                print_success "Copied and modified $monitor_file (triggers set to empty array for initial setup)"
-            else
-                cp "examples/config/monitors/$monitor_file" "config/monitors/"
-                print_warning "Copied $monitor_file (jq not available - triggers not modified automatically)"
-            fi
+            cp "examples/config/monitors/$monitor_file" "config/monitors/"
+            print_success "Copied $monitor_file"
             monitor_count=$((monitor_count + 1))
         else
             print_warning "$monitor_file not found in examples/config/monitors/"
@@ -155,6 +154,30 @@ else
     print_warning "examples/config/filters directory not found"
 fi
 
+# Copy trigger configurations
+print_status "Copying trigger configurations..."
+if [ -d "examples/config/triggers" ]; then
+    trigger_count=0
+
+    for trigger_file in "${TRIGGERS[@]}"; do
+        if [ -f "examples/config/triggers/$trigger_file" ]; then
+            cp "examples/config/triggers/$trigger_file" "config/triggers/"
+            print_success "Copied $trigger_file"
+            trigger_count=$((trigger_count + 1))
+        else
+            print_warning "$trigger_file not found in examples/config/triggers/"
+        fi
+    done
+
+    if [ "$trigger_count" -gt 0 ]; then
+        print_success "Copied $trigger_count trigger configuration(s)"
+    else
+        print_warning "No trigger configurations found to copy"
+    fi
+else
+    print_warning "examples/config/triggers directory not found"
+fi
+
 # Set up environment file if it doesn't exist
 if [ ! -f ".env" ]; then
     if [ -f ".env.example" ]; then
@@ -175,16 +198,14 @@ if ./openzeppelin-monitor --check; then
     echo ""
     print_status "📋 Setup completed successfully! Here's what was configured:"
     echo ""
-    echo "📁 Networks: $(ls config/networks/*.json 2>/dev/null | wc -l) configuration(s)"
-    echo "📊 Monitors: $(ls config/monitors/*.json 2>/dev/null | wc -l) configuration(s)"
-    echo "🔧 Filters: $(ls config/filters/ 2>/dev/null | wc -l) script(s)"
-    echo "📢 Triggers: Requires your credentials for notifications"
+    echo "📁 Networks: ${#NETWORKS[@]} configuration(s)"
+    echo "📊 Monitors: ${#MONITORS[@]} configuration(s)"
+    echo "🔧 Filters: ${#FILTERS[@]} script(s)"
+    echo "📢 Triggers: ${#TRIGGERS[@]} configuration(s)"
     echo ""
 
     print_status "🔧 Next steps to enable notifications:"
-    echo "1. Modify monitor configurations to add triggers:"
-    echo "   - Create trigger files (or copy from examples/config/triggers/) in config/triggers/ with your credentials"
-    echo "   - Change 'triggers': [] to 'triggers': [\"your_notification_file_name\"] to enable notifications"
+    echo "1. Customize trigger configurations in config/triggers/ by adding your credentials"
     echo ""
 
     # Ask if user wants to run the monitor
