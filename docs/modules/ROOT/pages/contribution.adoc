@@ -265,6 +265,7 @@ For complete labeling guidelines and all available labels, see the link:https://
 === Review Guidelines
 
 Reviewers should focus on:
+
 1. **Soundness** - Is the idea behind the contribution sound?
 2. **Architecture** - Is the contribution architected correctly?
 3. **Polish** - Is the contribution polished and ready?
@@ -272,6 +273,7 @@ Reviewers should focus on:
 === Getting Reviews
 
 If your PR isn't getting attention:
+
 * Contact the team on link:https://t.me/openzeppelin_tg/4[Telegram]
 * Ensure your PR has appropriate labels
 * Keep PRs focused and reasonably sized
