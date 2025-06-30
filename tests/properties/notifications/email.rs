@@ -6,7 +6,10 @@
 //! and produces consistent, well-formed output across various input combinations.
 
 use lettre::{transport::smtp::authentication::Credentials, SmtpTransport};
-use openzeppelin_monitor::services::notification::{EmailContent, EmailNotifier, SmtpConfig};
+use openzeppelin_monitor::{
+	services::notification::{EmailContent, EmailNotifier, SmtpConfig},
+	utils::RetryConfig,
+};
 use proptest::{prelude::*, test_runner::Config};
 use std::{collections::HashMap, sync::Arc};
 
@@ -55,6 +58,7 @@ proptest! {
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
 			},
+			RetryConfig::default(),
 		).unwrap();
 
 		let first_pass = notifier.format_message(&vars);
@@ -95,6 +99,7 @@ proptest! {
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
 			},
+			RetryConfig::default(),
 		).unwrap();
 
 		let formatted = notifier.format_message(&vars);
@@ -134,6 +139,7 @@ proptest! {
 				sender: "test@test.com".parse().unwrap(),
 				recipients: vec!["recipient@test.com".parse().unwrap()],
 			},
+			RetryConfig::default(),
 		).unwrap();
 
 		let empty_vars = HashMap::new();

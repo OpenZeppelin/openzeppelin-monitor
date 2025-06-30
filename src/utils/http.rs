@@ -25,7 +25,7 @@ fn default_base_for_backoff() -> u32 {
 /// Serializable setting for jitter in retry policies
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
-enum JitterSetting {
+pub enum JitterSetting {
 	/// No jitter applied to the backoff duration
 	None,
 	/// Full jitter applied, randomizing the backoff duration
@@ -33,9 +33,9 @@ enum JitterSetting {
 	Full,
 }
 
-/// Configuration for HTTP retry policies
+/// Configuration for HTTP (RPC and Webhook notifiers) and SMTP (Email notifier) retry policies
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct HttpRetryConfig {
+pub struct RetryConfig {
 	/// Maximum number of retries for transient errors
 	#[serde(default = "default_max_attempts")]
 	pub max_retries: u32,
@@ -50,10 +50,10 @@ pub struct HttpRetryConfig {
 	pub max_backoff: Duration,
 	/// Jitter to apply to the backoff duration
 	#[serde(default)]
-	jitter: JitterSetting,
+	pub jitter: JitterSetting,
 }
 
-impl Default for HttpRetryConfig {
+impl Default for RetryConfig {
 	/// Creates a default configuration with reasonable retry settings
 	fn default() -> Self {
 		Self {
@@ -77,7 +77,7 @@ impl Default for HttpRetryConfig {
 /// A `ClientWithMiddleware` that includes retry capabilities
 ///
 pub fn create_retryable_http_client<S>(
-	config: &HttpRetryConfig,
+	config: &RetryConfig,
 	base_client: reqwest::Client,
 	custom_strategy: Option<S>,
 ) -> ClientWithMiddleware

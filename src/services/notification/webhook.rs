@@ -339,7 +339,7 @@ impl Notifier for WebhookNotifier {
 mod tests {
 	use crate::{
 		models::{NotificationMessage, SecretString, SecretValue},
-		utils::{tests::create_test_http_client, HttpRetryConfig},
+		utils::{tests::create_test_http_client, RetryConfig},
 	};
 
 	use super::*;
@@ -376,7 +376,7 @@ mod tests {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		}
 	}
 
@@ -497,7 +497,7 @@ mod tests {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		};
 
 		let http_client = create_test_http_client();
@@ -883,7 +883,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_notify_with_payload_failure_with_retryable_error() {
 		let mut server = mockito::Server::new_async().await;
-		let default_retries_count = HttpRetryConfig::default().max_retries as usize;
+		let default_retries_count = RetryConfig::default().max_retries as usize;
 		let mock = server
 			.mock("POST", "/")
 			.with_status(500)
