@@ -234,7 +234,7 @@ impl Notifier for TelegramNotifier {
 
 		// Send the notification using the inner Webhook notifier
 		self.inner
-			// TODO: The `message` parameter is required by the Notifier trait for generic 
+			// TODO: The `message` parameter is required by the Notifier trait for generic
 			// webhook signing, but it's duplicated in this specific payload
 			.notify_with_payload(message, payload_fields)
 			.await
