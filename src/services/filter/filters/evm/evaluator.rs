@@ -395,9 +395,9 @@ impl<'a> EVMConditionEvaluator<'a> {
 						in_quotes = true;
 						quote_char = Some(ch);
 					} else if quote_char == Some(ch) {
-						// Check if it's escaped - fix the indexing bug
+						// Check if it's escaped - check the character before the quote
 						let prev_is_escape =
-							current.len() >= 2 && current.chars().rev().nth(0) == Some('\\');
+							current.len() >= 2 && current.chars().rev().nth(1) == Some('\\');
 						if !prev_is_escape {
 							in_quotes = false;
 							quote_char = None;
