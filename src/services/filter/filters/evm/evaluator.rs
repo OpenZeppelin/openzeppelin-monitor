@@ -294,7 +294,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 			}
 			_ => {
 				let msg = format!(
-				"Operator {:?} not supported for EVM 'tuple' type. Only 'Contains' is supported.",
+				"Operator {:?} not supported for EVM 'tuple' type. Only 'Contains', 'Eq/Ne' are supported.",
 				operator
 			);
 				Err(EvaluationError::unsupported_operator(msg, None, None))
