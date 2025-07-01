@@ -117,8 +117,8 @@ impl<'a> EVMConditionEvaluator<'a> {
 				} else {
 					// For Eq/Ne, a number literal cannot be equal to a JSON array string.
 					let msg = format!(
-							"Expected string literal (representing a JSON array) for EVM 'array' Eq/Ne comparison, found number: {:?}",
-							rhs_literal
+						"Expected string literal (representing a JSON array) for EVM 'array' Eq/Ne comparison, found number: {:?}",
+						rhs_literal
 					);
 					return Err(EvaluationError::type_mismatch(msg, None, None));
 				}
@@ -167,8 +167,8 @@ impl<'a> EVMConditionEvaluator<'a> {
 				// Ensure both parsed values are actually arrays
 				if !lhs_json_value.is_array() || !rhs_json_value.is_array() {
 					let msg = format!(
-							"For 'array' Eq/Ne comparison, both LHS ('{}') and RHS ('{}') must resolve to JSON arrays.",
-							lhs_json_array_str, rhs_target_str
+						"For 'array' Eq/Ne comparison, both LHS ('{}') and RHS ('{}') must resolve to JSON arrays.",
+						lhs_json_array_str, rhs_target_str
 					);
 					return Err(EvaluationError::type_mismatch(msg, None, None));
 				}
@@ -572,9 +572,9 @@ impl<'a> EVMConditionEvaluator<'a> {
 					serde_json::from_str::<serde_json::Map<String, JsonValue>>(lhs_json_map_str)
 						.map_err(|e| {
 							let msg = format!(
-						"Failed to parse LHS value '{}' as JSON map for 'contains' operator",
-						lhs_json_map_str
-					);
+								"Failed to parse LHS value '{}' as JSON map for 'contains' operator",
+								lhs_json_map_str
+							);
 							EvaluationError::parse_error(msg, Some(e.into()), None)
 						})?;
 

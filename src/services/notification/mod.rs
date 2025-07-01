@@ -188,7 +188,7 @@ impl NotificationService {
 							"Invalid email configuration".to_string(),
 							None,
 							None,
-						))
+						));
 					}
 				};
 
@@ -222,7 +222,7 @@ impl NotificationService {
 							"Invalid script configuration".to_string(),
 							None,
 							None,
-						))
+						));
 					}
 				};
 				let script = trigger_scripts
@@ -241,7 +241,7 @@ impl NotificationService {
 				let script_content = match &script {
 					Ok(content) => content,
 					Err(e) => {
-						return Err(NotificationError::config_error(e.to_string(), None, None))
+						return Err(NotificationError::config_error(e.to_string(), None, None));
 					}
 				};
 

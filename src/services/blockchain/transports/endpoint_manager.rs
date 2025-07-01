@@ -292,7 +292,8 @@ impl EndpointManager {
 						if ROTATE_ON_ERROR_CODES.contains(&status.as_u16()) {
 							tracing::debug!(
 								"send_raw_request: HTTP status {} on '{}' triggers URL rotation attempt",
-								status, current_url_snapshot
+								status,
+								current_url_snapshot
 							);
 
 							match self.try_rotate_url(transport).await {
@@ -338,7 +339,10 @@ impl EndpointManager {
 					// Always attempt rotation on network errors
 					match self.try_rotate_url(transport).await {
 						Ok(new_url) => {
-							tracing::debug!("Rotation successful after network error, retrying request on new URL: '{}'", new_url);
+							tracing::debug!(
+								"Rotation successful after network error, retrying request on new URL: '{}'",
+								new_url
+							);
 							continue; // Retry on the new active URL
 						}
 						Err(rotation_error) => {

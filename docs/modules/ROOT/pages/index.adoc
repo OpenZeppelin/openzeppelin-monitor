@@ -240,7 +240,7 @@ The monitor implements protocol security validations across different components
 * *Warning*: Using other ports will trigger security warnings
 * *Valid Format*: Email addresses must follow RFC 5322 format
 
-====== Notifcations Retry Policy
+====== Notifications Retry Policy
 
 Following notification protocols support retry policies:
 

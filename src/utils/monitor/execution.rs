@@ -260,14 +260,14 @@ pub async fn execute_monitor<
 					"Midnight network not supported",
 					None,
 					None,
-				))
+				));
 			}
 			BlockChainType::Solana => {
 				return Err(MonitorExecutionError::execution_error(
 					"Solana network not supported",
 					None,
 					None,
-				))
+				));
 			}
 		};
 

@@ -234,7 +234,7 @@ impl Notifier for TelegramNotifier {
 
 		// Send the notification using the inner Webhook notifier
 		self.inner
-			// TODO: The `message` parameter is required by the Notifier trait for generic 
+			// TODO: The `message` parameter is required by the Notifier trait for generic
 			// webhook signing, but it's duplicated in this specific payload
 			.notify_with_payload(message, payload_fields)
 			.await
@@ -383,7 +383,9 @@ mod tests {
 	fn test_escape_markdown_v2() {
 		// Test for real life examples
 		assert_eq!(
-			TelegramNotifier::escape_markdown_v2("*Transaction Alert*\n*Network:* Base Sepolia\n*From:* 0x00001\n*To:* 0x00002\n*Transaction:* [View on Blockscout](https://base-sepolia.blockscout.com/tx/0x00003)"),
+			TelegramNotifier::escape_markdown_v2(
+				"*Transaction Alert*\n*Network:* Base Sepolia\n*From:* 0x00001\n*To:* 0x00002\n*Transaction:* [View on Blockscout](https://base-sepolia.blockscout.com/tx/0x00003)"
+			),
 			"*Transaction Alert*\n*Network:* Base Sepolia\n*From:* 0x00001\n*To:* 0x00002\n*Transaction:* [View on Blockscout](https://base\\-sepolia\\.blockscout\\.com/tx/0x00003)"
 		);
 
