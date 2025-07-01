@@ -413,9 +413,39 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 	/// Normalize whitespace in tuple strings for consistent comparison
 	fn normalize_tuple_whitespace(&self, tuple_str: &str) -> String {
-		// This would remove unnecessary whitespace while preserving whitespace within quoted strings
-		// For now, a simple implementation:
-		tuple_str.split_whitespace().collect::<Vec<&str>>().join("")
+		// Normalize whitespace while preserving spaces within quoted strings
+		let mut result = String::new();
+		let chars = tuple_str.chars().peekable();
+		let mut in_quotes = false;
+		let mut quote_char = None;
+
+		for ch in chars {
+			match ch {
+				'"' | '\'' if !in_quotes => {
+					in_quotes = true;
+					quote_char = Some(ch);
+					result.push(ch);
+				}
+				ch if in_quotes && Some(ch) == quote_char => {
+					in_quotes = false;
+					quote_char = None;
+					result.push(ch);
+				}
+				ch if in_quotes => {
+					// Preserve all characters within quotes, including whitespace
+					result.push(ch);
+				}
+				ch if ch.is_whitespace() => {
+					// Skip whitespace outside of quotes
+					continue;
+				}
+				_ => {
+					result.push(ch);
+				}
+			}
+		}
+
+		result
 	}
 
 	/// Compares potential U256 LHS value with the RHS literal value
@@ -2616,11 +2646,17 @@ mod tests {
 			"(123,\"title\",[testing,value],14)"
 		);
 
-		// Note: Current implementation doesn't preserve whitespace within quoted strings
-		// This test documents the current behavior
 		assert_eq!(
 			evaluator.normalize_tuple_whitespace("(\"hello world\", \"test string\")"),
-			"(\"helloworld\",\"teststring\")"
+			"(\"hello world\",\"test string\")"
+		);
+
+		//Edge case with nested tuples
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace(
+				"(123, (456, \"test string\", \"hello world 2\"), 789)"
+			),
+			"(123,(456,\"test string\",\"hello world 2\"),789)"
 		);
 	}
 }
