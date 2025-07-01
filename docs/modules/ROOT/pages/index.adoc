@@ -202,22 +202,6 @@ The monitor implements protocol security validations across different components
 
 ===== Notification Protocols
 
-====== Slack Notifications
-* *HTTPS Recommended*: Webhook URLs should start with `https://hooks.slack.com/`
-* *Warning*: Non-HTTPS URLs will trigger security warnings
-
-====== Discord Notifications
-* *HTTPS Recommended*: Webhook URLs should start with `https://discord.com/api/webhooks/`
-* *Warning*: Non-HTTPS URLs will trigger security warnings
-
-====== Email Notifications
-* *Secure Ports Recommended*: The following ports are considered secure:
-** 465: SMTPS (SMTP over SSL)
-** 587: SMTP with STARTTLS
-** 993: IMAPS (IMAP over SSL)
-* *Warning*: Using other ports will trigger security warnings
-* *Valid Format*: Email addresses must follow RFC 5322 format
-
 ====== Webhook Notifications
 * *HTTPS Recommended*: URLs should use HTTPS protocol
 * *Authentication Recommended*: Including either:
@@ -231,6 +215,52 @@ The monitor implements protocol security validations across different components
 *** Add the timestamp in the `X-Timestamp` header
 ** The signature is computed as: `HMAC-SHA256(secret, payload + timestamp)`
 * *Warning*: Non-HTTPS URLs or missing authentication headers will trigger security warnings
+
+====== Slack Notifications
+* *HTTPS Recommended*: Webhook URLs should start with `https://hooks.slack.com/`
+* *Warning*: Non-HTTPS URLs will trigger security warnings
+
+====== Discord Notifications
+* *HTTPS Recommended*: Webhook URLs should start with `https://discord.com/api/webhooks/`
+* *Warning*: Non-HTTPS URLs will trigger security warnings
+
+====== Telegram Notifications
+*   **Protocol:** `POST` request with a `application/json` payload to the `sendMessage` method.
+*   **Endpoint:** `https://api.telegram.org/bot<token>/sendMessage`
+*   **Security:**
+** **HTTPS Required:** The API endpoint uses HTTPS.
+**   Authentication is handled via the **Bot Token** in the URL. Keep this token secure.
+*   **Formatting:** Messages are sent with `parse_mode` set to `MarkdownV2`. Special characters in the message title and body are automatically escaped to prevent formatting errors.
+
+====== Email Notifications
+* *Secure Ports Recommended*: The following ports are considered secure:
+** 465: SMTPS (SMTP over SSL)
+** 587: SMTP with STARTTLS
+** 993: IMAPS (IMAP over SSL)
+* *Warning*: Using other ports will trigger security warnings
+* *Valid Format*: Email addresses must follow RFC 5322 format
+
+====== Notifications Retry Policy
+
+Following notification protocols support retry policies:
+
+* Slack
+* Discord
+* Telegram
+* Webhook
+
+Default retry policy is using exponential backoff with the following parameters:
+[cols="1,1,1"]
+|===
+| Parameter | Default Value | Description
+| `max_retries` | `3` | Maximum number of retries before giving up
+| `base_for_backoff` | `2` | Base duration for exponential backoff calculations in seconds
+| `initial_backoff` | `250` | Initial backoff duration in milliseconds
+| `max_backoff` | `10` | Maximum backoff duration in seconds
+| `jitter` | `Full` | Jitter strategy to apply to the backoff duration, currently supports `Full` and `None`
+|===
+
+These parameters can be overridden by providing custom `HttpRetryConfig` struct in `retry_policy` field in trigger configuration.
 
 ===== Script Security
 

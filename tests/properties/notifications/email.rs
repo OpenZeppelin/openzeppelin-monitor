@@ -5,9 +5,10 @@
 //! The tests ensure that the email notification system handles template variables correctly
 //! and produces consistent, well-formed output across various input combinations.
 
+use lettre::{transport::smtp::authentication::Credentials, SmtpTransport};
 use openzeppelin_monitor::services::notification::{EmailContent, EmailNotifier, SmtpConfig};
 use proptest::{prelude::*, test_runner::Config};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 /// Generates a strategy for creating HashMaps containing template variable key-value pairs.
 /// Keys are alphanumeric strings of length 1-10, values are alphanumeric strings (with spaces) of
@@ -33,13 +34,21 @@ proptest! {
 		template in "[a-zA-Z0-9 ${}_]{1,100}",
 		vars in template_variables_strategy()
 	) {
+		let smtp_config = SmtpConfig {
+			host: "dummy.smtp.com".to_string(),
+			port: 465,
+			username: "test".to_string(),
+			password: "test".to_string(),
+		};
+
+		let smtp_client = SmtpTransport::relay(&smtp_config.host)
+			.unwrap()
+			.port(smtp_config.port)
+			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
+			.build();
+
 		let notifier = EmailNotifier::new(
-			SmtpConfig {
-				host: "smtp.test.com".to_string(),
-				port: 465,
-				username: "test".to_string(),
-				password: "test".to_string(),
-			},
+			Arc::new(smtp_client),
 			EmailContent {
 				subject: "Test".to_string(),
 				body_template: template.clone(),
@@ -65,13 +74,21 @@ proptest! {
 		template in "[a-zA-Z0-9 ]{0,50}\\$\\{[a-z_]+\\}[a-zA-Z0-9 ]{0,50}",
 		vars in template_variables_strategy()
 	) {
+		let smtp_config = SmtpConfig {
+			host: "dummy.smtp.com".to_string(),
+			port: 465,
+			username: "test".to_string(),
+			password: "test".to_string(),
+		};
+
+		let smtp_client = SmtpTransport::relay(&smtp_config.host)
+			.unwrap()
+			.port(smtp_config.port)
+			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
+			.build();
+
 		let notifier = EmailNotifier::new(
-			SmtpConfig {
-				host: "smtp.test.com".to_string(),
-				port: 465,
-				username: "test".to_string(),
-				password: "test".to_string(),
-			},
+			Arc::new(smtp_client),
 			EmailContent {
 				subject: "Test".to_string(),
 				body_template: template.clone(),
@@ -96,13 +113,21 @@ proptest! {
 	fn test_notification_empty_variables(
 		template in "[a-zA-Z0-9 ${}_]{1,100}"
 	) {
+		let smtp_config = SmtpConfig {
+			host: "dummy.smtp.com".to_string(),
+			port: 465,
+			username: "test".to_string(),
+			password: "test".to_string(),
+		};
+
+		let smtp_client = SmtpTransport::relay(&smtp_config.host)
+			.unwrap()
+			.port(smtp_config.port)
+			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
+			.build();
+
 		let notifier = EmailNotifier::new(
-			SmtpConfig {
-				host: "smtp.test.com".to_string(),
-				port: 465,
-				username: "test".to_string(),
-				password: "test".to_string(),
-			},
+			Arc::new(smtp_client),
 			EmailContent {
 				subject: "Test".to_string(),
 				body_template: template.clone(),

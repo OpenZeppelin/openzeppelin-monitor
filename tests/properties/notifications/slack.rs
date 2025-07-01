@@ -5,7 +5,9 @@
 //! The tests ensure that the Slack notification system handles template variables correctly
 //! and produces consistent, well-formed output across various input combinations.
 
-use openzeppelin_monitor::services::notification::SlackNotifier;
+use openzeppelin_monitor::{
+	services::notification::SlackNotifier, utils::tests::create_test_http_client,
+};
 use proptest::{prelude::*, test_runner::Config};
 use std::collections::HashMap;
 
@@ -36,7 +38,8 @@ proptest! {
 		let notifier = SlackNotifier::new(
 			"https://hooks.slack.com/test".to_string(),
 			"Test".to_string(),
-			template.clone()
+			template.clone(),
+			create_test_http_client(),
 		).unwrap();
 
 		let first_pass = notifier.format_message(&vars);
@@ -59,7 +62,8 @@ proptest! {
 		let notifier = SlackNotifier::new(
 			"https://hooks.slack.com/test".to_string(),
 			"Test".to_string(),
-			template.clone()
+			template.clone(),
+			create_test_http_client(),
 		).unwrap();
 
 		let formatted = notifier.format_message(&vars);
@@ -81,7 +85,8 @@ proptest! {
 		let notifier = SlackNotifier::new(
 			"https://hooks.slack.com/test".to_string(),
 			"Test".to_string(),
-			template.clone()
+			template.clone(),
+			create_test_http_client(),
 		).unwrap();
 
 		let empty_vars = HashMap::new();

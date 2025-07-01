@@ -254,7 +254,12 @@ impl ConfigLoader for Trigger {
 
 		match &self.trigger_type {
 			TriggerType::Slack => {
-				if let TriggerTypeConfig::Slack { slack_url, message } = &self.config {
+				if let TriggerTypeConfig::Slack {
+					slack_url,
+					message,
+					retry_policy: _,
+				} = &self.config
+				{
 					// Validate webhook URL
 					if !slack_url.starts_with("https://hooks.slack.com/") {
 						return Err(ConfigError::validation_error(
@@ -698,6 +703,7 @@ mod tests {
 	use crate::models::NotificationMessage;
 	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
+	use crate::utils::HttpRetryConfig;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
 	use tracing_test::traced_test;
@@ -1440,6 +1446,7 @@ mod tests {
 					title: "Test".to_string(),
 					body: "x".repeat(TELEGRAM_MAX_BODY_LENGTH + 1), // Exceeds max length
 				},
+				retry_policy: HttpRetryConfig::default(),
 			},
 		};
 		assert!(max_body_length.validate().is_err());
@@ -1458,6 +1465,7 @@ mod tests {
 					title: "Test".to_string(),
 					body: "z".repeat(DISCORD_MAX_BODY_LENGTH + 1), // Exceeds max length
 				},
+				retry_policy: HttpRetryConfig::default(),
 			},
 		};
 		assert!(max_body_length.validate().is_err());

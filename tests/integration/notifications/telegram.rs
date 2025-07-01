@@ -1,11 +1,16 @@
 use openzeppelin_monitor::{
 	models::{EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, TriggerType},
 	services::notification::{NotificationError, NotificationService, Notifier, TelegramNotifier},
-	utils::tests::{
-		evm::{monitor::MonitorBuilder, transaction::TransactionBuilder},
-		trigger::TriggerBuilder,
+	utils::{
+		tests::{
+			evm::{monitor::MonitorBuilder, transaction::TransactionBuilder},
+			get_http_client_from_notification_pool,
+			trigger::TriggerBuilder,
+		},
+		HttpRetryConfig,
 	},
 };
+use serde_json::json;
 use std::collections::HashMap;
 
 use crate::integration::mocks::{create_test_evm_logs, create_test_evm_transaction_receipt};
@@ -37,25 +42,19 @@ fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
 async fn test_telegram_notification_success() {
 	// Setup async mock server
 	let mut server = mockito::Server::new_async().await;
+
+	let expected_payload = json!({
+		"text": "*Test Alert* \n\nTest message with value 42",
+		"chat_id": "test_chat_id",
+		"parse_mode": "MarkdownV2",
+		"disable_web_page_preview": false,
+	});
+
 	// Mock the Telegram API endpoint
 	let mock = server
-		.mock("GET", "/bottest_token/sendMessage")
-		.match_query(mockito::Matcher::UrlEncoded(
-			"text".to_string(),
-			"*Test Alert* \n\nTest message with value 42".to_string(),
-		))
-		.match_query(mockito::Matcher::UrlEncoded(
-			"chat_id".to_string(),
-			"test_chat_id".to_string(),
-		))
-		.match_query(mockito::Matcher::UrlEncoded(
-			"parse_mode".to_string(),
-			"markdown".to_string(),
-		))
-		.match_query(mockito::Matcher::UrlEncoded(
-			"disable_web_page_preview".to_string(),
-			"false".to_string(),
-		))
+		.mock("POST", "/bottest_token/sendMessage")
+		.match_header("content-type", "application/json")
+		.match_body(mockito::Matcher::Json(expected_payload))
 		.with_status(200)
 		.with_body(r#"{"ok": true, "result": {}}"#)
 		.create_async()
@@ -68,6 +67,7 @@ async fn test_telegram_notification_success() {
 		None,
 		"Test Alert".to_string(),
 		"Test message with value ${value}".to_string(),
+		get_http_client_from_notification_pool().await,
 	)
 	.unwrap();
 
@@ -83,20 +83,14 @@ async fn test_telegram_notification_success() {
 }
 
 #[tokio::test]
-async fn test_telegram_notification_failure() {
+async fn test_telegram_notification_failure_retryable_error() {
 	// Setup async mock server to simulate failure
 	let mut server = mockito::Server::new_async().await;
+	let default_retries_count = HttpRetryConfig::default().max_retries as usize;
 	let mock = server
-		.mock("GET", "/bottest_token/sendMessage")
-		.match_query(mockito::Matcher::UrlEncoded(
-			"text".to_string(),
-			"*Test Alert* \n\nTest message with value 42".to_string(),
-		))
-		.match_query(mockito::Matcher::UrlEncoded(
-			"chat_id".to_string(),
-			"test_chat_id".to_string(),
-		))
+		.mock("POST", "/bottest_token/sendMessage")
 		.with_status(500)
+		.expect(1 + default_retries_count)
 		.with_body("Internal Server Error")
 		.create_async()
 		.await;
@@ -108,6 +102,40 @@ async fn test_telegram_notification_failure() {
 		None,
 		"Test Alert".to_string(),
 		"Test message with value ${value}".to_string(),
+		get_http_client_from_notification_pool().await,
+	)
+	.unwrap();
+
+	let result = notifier.notify("Test message").await;
+
+	assert!(result.is_err());
+
+	let error = result.unwrap_err();
+	assert!(matches!(error, NotificationError::NotifyFailed(_)));
+
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_telegram_notification_failure_non_retryable_error() {
+	// Setup async mock server to simulate failure
+	let mut server = mockito::Server::new_async().await;
+	let mock = server
+		.mock("POST", "/bottest_token/sendMessage")
+		.with_status(400)
+		.expect(1) // 1 initial call, no retries for non-retryable status codes
+		.with_body("Bad Request")
+		.create_async()
+		.await;
+
+	let notifier = TelegramNotifier::new(
+		Some(server.url()),
+		"test_token".to_string(),
+		"test_chat_id".to_string(),
+		None,
+		"Test Alert".to_string(),
+		"Test message with value ${value}".to_string(),
+		get_http_client_from_notification_pool().await,
 	)
 	.unwrap();
 

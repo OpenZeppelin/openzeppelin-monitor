@@ -147,7 +147,7 @@ pub struct HttpRetryConfig {
     /// Maximum backoff duration for retries.
     pub max_backoff: Duration,
     /// Base for the exponential backoff calculation (e.g., 2).
-    pub base_for_backoff: u64, // Added field
+    pub base_for_backoff: u64,
     /// Jitter to apply to the backoff duration.
     pub jitter: Jitter,
 }

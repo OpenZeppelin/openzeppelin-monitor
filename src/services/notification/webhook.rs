@@ -8,11 +8,12 @@ use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::{
 	header::{HeaderMap, HeaderName, HeaderValue},
-	Client, Method,
+	Method,
 };
+use reqwest_middleware::ClientWithMiddleware;
 use serde::Serialize;
 use sha2::Sha256;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
 	models::TriggerTypeConfig,
@@ -21,13 +22,6 @@ use crate::{
 
 /// HMAC SHA256 type alias
 type HmacSha256 = Hmac<Sha256>;
-
-/// Represents a webhook payload with additional fields
-#[derive(Serialize, Debug)]
-pub struct WebhookPayload {
-	#[serde(flatten)]
-	fields: HashMap<String, serde_json::Value>,
-}
 
 /// Represents a webhook configuration
 #[derive(Clone)]
@@ -53,8 +47,8 @@ pub struct WebhookNotifier {
 	pub title: String,
 	/// Message template with variable placeholders
 	pub body_template: String,
-	/// HTTP client for webhook requests
-	pub client: Client,
+	/// Configured HTTP client for webhook requests with retry capabilities
+	pub client: Arc<ClientWithMiddleware>,
 	/// HTTP method to use for the webhook request
 	pub method: Option<String>,
 	/// Secret to use for the webhook request
@@ -78,10 +72,14 @@ impl WebhookNotifier {
 	///
 	/// # Arguments
 	/// * `config` - Webhook configuration
+	/// * `http_client` - HTTP client with middleware for retries
 	///
 	/// # Returns
 	/// * `Result<Self, NotificationError>` - Notifier instance if config is valid
-	pub fn new(config: WebhookConfig) -> Result<Self, NotificationError> {
+	pub fn new(
+		config: WebhookConfig,
+		http_client: Arc<ClientWithMiddleware>,
+	) -> Result<Self, NotificationError> {
 		let mut headers = config.headers.unwrap_or_default();
 		if !headers.contains_key("Content-Type") {
 			headers.insert("Content-Type".to_string(), "application/json".to_string());
@@ -91,7 +89,7 @@ impl WebhookNotifier {
 			url_params: config.url_params,
 			title: config.title,
 			body_template: config.body_template,
-			client: Client::new(),
+			client: http_client,
 			method: Some(config.method.unwrap_or("POST".to_string())),
 			secret: config.secret,
 			headers: Some(headers),
@@ -118,16 +116,21 @@ impl WebhookNotifier {
 	///
 	/// # Arguments
 	/// * `config` - Trigger configuration containing Webhook parameters
+	/// * `http_client` - HTTP client with middleware for retries
 	///
 	/// # Returns
 	/// * `Result<Self>` - Notifier instance if config is Webhook type
-	pub fn from_config(config: &TriggerTypeConfig) -> Result<Self, NotificationError> {
+	pub fn from_config(
+		config: &TriggerTypeConfig,
+		http_client: Arc<ClientWithMiddleware>,
+	) -> Result<Self, NotificationError> {
 		if let TriggerTypeConfig::Webhook {
 			url,
 			message,
 			method,
 			secret,
 			headers,
+			..
 		} = config
 		{
 			let webhook_config = WebhookConfig {
@@ -141,7 +144,7 @@ impl WebhookNotifier {
 				payload_fields: None,
 			};
 
-			WebhookNotifier::new(webhook_config)
+			WebhookNotifier::new(webhook_config, http_client)
 		} else {
 			let msg = format!("Invalid webhook configuration: {:?}", config);
 			Err(NotificationError::config_error(msg, None, None))
@@ -302,16 +305,12 @@ impl Notifier for WebhookNotifier {
 			}
 		}
 
-		let payload = WebhookPayload {
-			fields: payload_fields,
-		};
-
 		// Send request with custom payload
 		let response = self
 			.client
 			.request(method, url.as_str())
 			.headers(headers)
-			.json(&payload)
+			.json(&payload_fields)
 			.send()
 			.await
 			.map_err(|e| {
@@ -338,7 +337,10 @@ impl Notifier for WebhookNotifier {
 
 #[cfg(test)]
 mod tests {
-	use crate::models::{NotificationMessage, SecretString, SecretValue};
+	use crate::{
+		models::{NotificationMessage, SecretString, SecretValue},
+		utils::{tests::create_test_http_client, HttpRetryConfig},
+	};
 
 	use super::*;
 	use mockito::{Matcher, Mock};
@@ -350,7 +352,8 @@ mod tests {
 		secret: Option<&str>,
 		headers: Option<HashMap<String, String>>,
 	) -> WebhookNotifier {
-		WebhookNotifier::new(WebhookConfig {
+		let http_client = create_test_http_client();
+		let config = WebhookConfig {
 			url: url.to_string(),
 			url_params: None,
 			title: "Alert".to_string(),
@@ -359,8 +362,8 @@ mod tests {
 			secret: secret.map(|s| s.to_string()),
 			headers,
 			payload_fields: None,
-		})
-		.unwrap()
+		};
+		WebhookNotifier::new(config, http_client).unwrap()
 	}
 
 	fn create_test_webhook_config() -> TriggerTypeConfig {
@@ -373,6 +376,7 @@ mod tests {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
 			},
+			retry_policy: HttpRetryConfig::default(),
 		}
 	}
 
@@ -472,8 +476,8 @@ mod tests {
 	#[test]
 	fn test_from_config_with_webhook_config() {
 		let config = create_test_webhook_config();
-
-		let notifier = WebhookNotifier::from_config(&config);
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::from_config(&config, http_client);
 		assert!(notifier.is_ok());
 
 		let notifier = notifier.unwrap();
@@ -493,9 +497,11 @@ mod tests {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
 			},
+			retry_policy: HttpRetryConfig::default(),
 		};
 
-		let notifier = WebhookNotifier::from_config(&config);
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::from_config(&config, http_client);
 		assert!(notifier.is_err());
 
 		let error = notifier.unwrap_err();
@@ -721,7 +727,7 @@ mod tests {
 		url_params.insert("param1".to_string(), "value1".to_string());
 		url_params.insert("param2".to_string(), "value2".to_string());
 
-		let notifier = WebhookNotifier::new(WebhookConfig {
+		let config = WebhookConfig {
 			url: server.url(),
 			url_params: Some(url_params),
 			title: "Alert".to_string(),
@@ -730,8 +736,9 @@ mod tests {
 			secret: None,
 			headers: None,
 			payload_fields: None,
-		})
-		.unwrap();
+		};
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::new(config, http_client).unwrap();
 
 		let result = notifier
 			.notify_with_payload("Test message", HashMap::new())
@@ -749,7 +756,7 @@ mod tests {
 			.create_async()
 			.await;
 
-		let notifier = WebhookNotifier::new(WebhookConfig {
+		let config = WebhookConfig {
 			url: server.url(),
 			url_params: None,
 			title: "Alert".to_string(),
@@ -758,8 +765,9 @@ mod tests {
 			secret: None,
 			headers: None,
 			payload_fields: None,
-		})
-		.unwrap();
+		};
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::new(config, http_client).unwrap();
 
 		let result = notifier
 			.notify_with_payload("Test message", HashMap::new())
@@ -790,7 +798,7 @@ mod tests {
 			serde_json::json!("default_value"),
 		);
 
-		let notifier = WebhookNotifier::new(WebhookConfig {
+		let config = WebhookConfig {
 			url: server.url(),
 			url_params: None,
 			title: "Alert".to_string(),
@@ -799,8 +807,9 @@ mod tests {
 			secret: None,
 			headers: None,
 			payload_fields: Some(default_fields),
-		})
-		.unwrap();
+		};
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::new(config, http_client).unwrap();
 
 		let mut payload = HashMap::new();
 		payload.insert(
@@ -834,7 +843,7 @@ mod tests {
 			serde_json::json!("default_value"),
 		);
 
-		let notifier = WebhookNotifier::new(WebhookConfig {
+		let config = WebhookConfig {
 			url: server.url(),
 			url_params: None,
 			title: "Alert".to_string(),
@@ -843,8 +852,9 @@ mod tests {
 			secret: None,
 			headers: None,
 			payload_fields: Some(default_fields),
-		})
-		.unwrap();
+		};
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::new(config, http_client).unwrap();
 
 		let mut payload = HashMap::new();
 		payload.insert(
@@ -871,12 +881,35 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn test_notify_with_payload_failure() {
+	async fn test_notify_with_payload_failure_with_retryable_error() {
 		let mut server = mockito::Server::new_async().await;
+		let default_retries_count = HttpRetryConfig::default().max_retries as usize;
 		let mock = server
 			.mock("POST", "/")
 			.with_status(500)
 			.with_body("Internal Server Error")
+			.expect(1 + default_retries_count)
+			.create_async()
+			.await;
+
+		let notifier = create_test_notifier(server.url().as_str(), "Test message", None, None);
+
+		let result = notifier
+			.notify_with_payload("Test message", HashMap::new())
+			.await;
+
+		assert!(result.is_err());
+		mock.assert();
+	}
+
+	#[tokio::test]
+	async fn test_notify_with_payload_failure_with_non_retryable_error() {
+		let mut server = mockito::Server::new_async().await;
+		let mock = server
+			.mock("POST", "/")
+			.with_status(400)
+			.with_body("Bad Request")
+			.expect(1)
 			.create_async()
 			.await;
 

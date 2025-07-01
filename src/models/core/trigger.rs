@@ -1,4 +1,7 @@
-use crate::models::{core::ScriptLanguage, SecretValue};
+use crate::{
+	models::{core::ScriptLanguage, SecretValue},
+	utils::HttpRetryConfig,
+};
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +59,9 @@ pub enum TriggerTypeConfig {
 		slack_url: SecretValue,
 		/// Notification message
 		message: NotificationMessage,
+		/// Retry policy for HTTP requests
+		#[serde(default)]
+		retry_policy: HttpRetryConfig,
 	},
 	/// Email notification configuration
 	Email {
@@ -86,6 +92,9 @@ pub enum TriggerTypeConfig {
 		headers: Option<std::collections::HashMap<String, String>>,
 		/// Notification message
 		message: NotificationMessage,
+		/// Retry policy for HTTP requests
+		#[serde(default)]
+		retry_policy: HttpRetryConfig,
 	},
 	/// Telegram notification configuration
 	Telegram {
@@ -97,6 +106,9 @@ pub enum TriggerTypeConfig {
 		disable_web_preview: Option<bool>,
 		/// Notification message
 		message: NotificationMessage,
+		/// Retry policy for HTTP requests
+		#[serde(default)]
+		retry_policy: HttpRetryConfig,
 	},
 	/// Discord notification configuration
 	Discord {
@@ -104,6 +116,9 @@ pub enum TriggerTypeConfig {
 		discord_url: SecretValue,
 		/// Notification message
 		message: NotificationMessage,
+		/// Retry policy for HTTP requests
+		#[serde(default)]
+		retry_policy: HttpRetryConfig,
 	},
 	/// Script execution configuration
 	Script {
@@ -117,4 +132,17 @@ pub enum TriggerTypeConfig {
 		/// Timeout in milliseconds
 		timeout_ms: u32,
 	},
+}
+
+impl TriggerTypeConfig {
+	/// Get the retry policy for the trigger type, if applicable.
+	pub fn get_retry_policy(&self) -> Option<HttpRetryConfig> {
+		match self {
+			Self::Slack { retry_policy, .. } => Some(retry_policy.clone()),
+			Self::Discord { retry_policy, .. } => Some(retry_policy.clone()),
+			Self::Webhook { retry_policy, .. } => Some(retry_policy.clone()),
+			Self::Telegram { retry_policy, .. } => Some(retry_policy.clone()),
+			_ => None,
+		}
+	}
 }

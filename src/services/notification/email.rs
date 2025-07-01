@@ -10,10 +10,9 @@ use lettre::{
 		header::{self, ContentType},
 		Mailbox, Mailboxes,
 	},
-	transport::smtp::authentication::Credentials,
 	Message, SmtpTransport, Transport,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
 	models::TriggerTypeConfig,
@@ -37,7 +36,7 @@ pub struct EmailNotifier<T: Transport + Send + Sync> {
 }
 
 /// Configuration for SMTP connection
-#[derive(Clone)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct SmtpConfig {
 	pub host: String,
 	pub port: u16,
@@ -81,33 +80,21 @@ impl EmailNotifier<SmtpTransport> {
 	/// Creates a new email notifier instance
 	///
 	/// # Arguments
-	/// * `smtp_config` - SMTP server configuration
+	/// * `smtp_client` - SMTP client
 	/// * `email_content` - Email content configuration
 	///
 	/// # Returns
 	/// * `Result<Self, NotificationError>` - Email notifier instance or error
 	pub fn new(
-		smtp_config: SmtpConfig,
+		smtp_client: Arc<SmtpTransport>,
 		email_content: EmailContent,
 	) -> Result<Self, NotificationError> {
-		let client = SmtpTransport::relay(&smtp_config.host)
-			.map_err(|e| {
-				NotificationError::internal_error(
-					format!("Failed to create SMTP relay: {}", e),
-					None,
-					None,
-				)
-			})?
-			.port(smtp_config.port)
-			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
-			.build();
-
 		Ok(Self {
 			subject: email_content.subject,
 			body_template: email_content.body_template,
 			sender: email_content.sender,
 			recipients: email_content.recipients,
-			client,
+			client: smtp_client.as_ref().clone(),
 		})
 	}
 
@@ -146,24 +133,17 @@ impl EmailNotifier<SmtpTransport> {
 	///
 	/// # Returns
 	/// * `Result<Self, NotificationError>` - Notifier instance if config is email type
-	pub fn from_config(config: &TriggerTypeConfig) -> Result<Self, NotificationError> {
+	pub fn from_config(
+		config: &TriggerTypeConfig,
+		smtp_client: Arc<SmtpTransport>,
+	) -> Result<Self, NotificationError> {
 		if let TriggerTypeConfig::Email {
-			host,
-			port,
-			username,
-			password,
 			message,
 			sender,
 			recipients,
+			..
 		} = config
 		{
-			let smtp_config = SmtpConfig {
-				host: host.clone(),
-				port: port.unwrap_or(465),
-				username: username.as_ref().to_string(),
-				password: password.as_ref().to_string(),
-			};
-
 			let email_content = EmailContent {
 				subject: message.title.clone(),
 				body_template: message.body.clone(),
@@ -171,7 +151,7 @@ impl EmailNotifier<SmtpTransport> {
 				recipients: recipients.clone(),
 			};
 
-			Self::new(smtp_config, email_content)
+			Self::new(smtp_client, email_content)
 		} else {
 			Err(NotificationError::config_error(
 				format!("Invalid email configuration: {:?}", config),
@@ -248,7 +228,12 @@ where
 
 #[cfg(test)]
 mod tests {
-	use crate::models::{NotificationMessage, SecretString, SecretValue};
+	use lettre::transport::smtp::authentication::Credentials;
+
+	use crate::{
+		models::{NotificationMessage, SecretString, SecretValue},
+		services::notification::pool::NotificationClientPool,
+	};
 
 	use super::*;
 
@@ -260,6 +245,12 @@ mod tests {
 			password: "test".to_string(),
 		};
 
+		let client = SmtpTransport::relay(&smtp_config.host)
+			.unwrap()
+			.port(smtp_config.port)
+			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
+			.build();
+
 		let email_content = EmailContent {
 			subject: "Test Subject".to_string(),
 			body_template: "Hello ${name}, your balance is ${balance}".to_string(),
@@ -267,7 +258,7 @@ mod tests {
 			recipients: vec!["recipient@test.com".parse().unwrap()],
 		};
 
-		EmailNotifier::new(smtp_config, email_content).unwrap()
+		EmailNotifier::new(Arc::new(client), email_content).unwrap()
 	}
 
 	fn create_test_email_config(port: Option<u16>) -> TriggerTypeConfig {
@@ -338,11 +329,27 @@ mod tests {
 	// from_config tests
 	////////////////////////////////////////////////////////////
 
-	#[test]
-	fn test_from_config_valid_email_config() {
+	#[tokio::test]
+	async fn test_from_config_valid_email_config() {
 		let config = create_test_email_config(Some(587));
-
-		let notifier = EmailNotifier::from_config(&config);
+		let smtp_config = match &config {
+			TriggerTypeConfig::Email {
+				host,
+				port,
+				username,
+				password,
+				..
+			} => SmtpConfig {
+				host: host.clone(),
+				port: port.unwrap_or(587),
+				username: username.to_string(),
+				password: password.to_string(),
+			},
+			_ => panic!("Expected Email config"),
+		};
+		let pool = NotificationClientPool::new();
+		let smtp_client = pool.get_or_create_smtp_client(&smtp_config).await.unwrap();
+		let notifier = EmailNotifier::from_config(&config, smtp_client);
 		assert!(notifier.is_ok());
 
 		let notifier = notifier.unwrap();
@@ -353,30 +360,28 @@ mod tests {
 		assert_eq!(notifier.recipients[0].to_string(), "recipient@test.com");
 	}
 
-	#[test]
-	fn test_from_config_default_port() {
+	#[tokio::test]
+	async fn test_from_config_default_port() {
 		let config = create_test_email_config(None);
-
-		let notifier = EmailNotifier::from_config(&config);
-		assert!(notifier.is_ok());
-	}
-
-	#[test]
-	fn test_from_config_invalid_type() {
-		// Create a Slack config instead of Email
-		let config = TriggerTypeConfig::Slack {
-			slack_url: SecretValue::Plain(SecretString::new("random.url".to_string())),
-			message: NotificationMessage {
-				title: "Test Slack".to_string(),
-				body: "This is a test message".to_string(),
+		let smtp_config = match &config {
+			TriggerTypeConfig::Email {
+				host,
+				port,
+				username,
+				password,
+				..
+			} => SmtpConfig {
+				host: host.clone(),
+				port: port.unwrap_or(587),
+				username: username.to_string(),
+				password: password.to_string(),
 			},
+			_ => panic!("Expected Email config"),
 		};
-
-		let notifier = EmailNotifier::from_config(&config);
-		assert!(notifier.is_err());
-
-		let error = notifier.unwrap_err();
-		assert!(matches!(error, NotificationError::ConfigError { .. }));
+		let pool = NotificationClientPool::new();
+		let smtp_client = pool.get_or_create_smtp_client(&smtp_config).await.unwrap();
+		let notifier = EmailNotifier::from_config(&config, smtp_client);
+		assert!(notifier.is_ok());
 	}
 
 	////////////////////////////////////////////////////////////

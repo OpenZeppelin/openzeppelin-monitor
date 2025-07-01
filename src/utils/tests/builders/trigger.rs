@@ -2,9 +2,12 @@
 //!
 //! - `TriggerBuilder`: Builder for creating test Trigger instances
 
-use crate::models::{
-	NotificationMessage, ScriptLanguage, SecretString, SecretValue, Trigger, TriggerType,
-	TriggerTypeConfig,
+use crate::{
+	models::{
+		NotificationMessage, ScriptLanguage, SecretString, SecretValue, Trigger, TriggerType,
+		TriggerTypeConfig,
+	},
+	utils::HttpRetryConfig,
 };
 use email_address::EmailAddress;
 
@@ -31,6 +34,7 @@ impl Default for TriggerBuilder {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
 				},
+				retry_policy: HttpRetryConfig::default(),
 			},
 		}
 	}
@@ -62,6 +66,7 @@ impl TriggerBuilder {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
 			},
+			retry_policy: HttpRetryConfig::default(),
 		};
 		self
 	}
@@ -74,6 +79,7 @@ impl TriggerBuilder {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
 			},
+			retry_policy: HttpRetryConfig::default(),
 		};
 		self
 	}
@@ -86,6 +92,7 @@ impl TriggerBuilder {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
 			},
+			retry_policy: HttpRetryConfig::default(),
 		};
 		self
 	}
@@ -100,6 +107,7 @@ impl TriggerBuilder {
 				title: "Test title".to_string(),
 				body: "Test message".to_string(),
 			},
+			retry_policy: HttpRetryConfig::default(),
 		};
 		self
 	}
@@ -240,26 +248,32 @@ impl TriggerBuilder {
 				headers,
 				secret,
 				message,
+				retry_policy,
 			} => TriggerTypeConfig::Webhook {
 				url,
 				method,
 				headers,
 				secret,
 				message,
+				retry_policy,
 			},
 			TriggerTypeConfig::Discord {
 				discord_url: _,
 				message,
+				retry_policy,
 			} => TriggerTypeConfig::Discord {
 				discord_url: url,
 				message,
+				retry_policy,
 			},
 			TriggerTypeConfig::Slack {
 				slack_url: _,
 				message,
+				retry_policy,
 			} => TriggerTypeConfig::Slack {
 				slack_url: url,
 				message,
+				retry_policy,
 			},
 			config => config,
 		};
@@ -310,6 +324,7 @@ mod tests {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
 				},
+				retry_policy: HttpRetryConfig::default(),
 			})
 			.build();
 
@@ -372,6 +387,7 @@ mod tests {
 				secret,
 				headers: h,
 				message,
+				retry_policy: _,
 			} => {
 				assert_eq!(url.as_ref().to_string(), "https://webhook.example.com");
 				assert_eq!(method, Some("POST".to_string()));
@@ -397,7 +413,11 @@ mod tests {
 
 		assert_eq!(trigger.trigger_type, TriggerType::Slack);
 		match trigger.config {
-			TriggerTypeConfig::Slack { slack_url, message } => {
+			TriggerTypeConfig::Slack {
+				slack_url,
+				message,
+				retry_policy: _,
+			} => {
 				assert_eq!(slack_url.as_ref().to_string(), "https://slack.webhook.com");
 				assert_eq!(message.title, "Alert");
 				assert_eq!(message.body, "Test message");
@@ -419,6 +439,7 @@ mod tests {
 			TriggerTypeConfig::Discord {
 				discord_url,
 				message,
+				retry_policy: _,
 			} => {
 				assert_eq!(
 					discord_url.as_ref().to_string(),

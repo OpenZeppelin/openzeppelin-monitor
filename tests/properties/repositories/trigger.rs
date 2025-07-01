@@ -93,7 +93,7 @@ proptest! {
 			// Test invalid cases
 			match &trigger.trigger_type {
 				TriggerType::Slack => {
-					if let TriggerTypeConfig::Slack { slack_url: _, message: _ } = &trigger.config {
+					if let TriggerTypeConfig::Slack { slack_url: _, message: _, retry_policy: _ } = &trigger.config {
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Slack { slack_url, .. } = &mut invalid_trigger.config {
 							*slack_url = SecretValue::Plain(SecretString::new("not-a-url".to_string())); // Invalid URL format
@@ -150,7 +150,7 @@ proptest! {
 					}
 				}
 				TriggerType::Webhook => {
-					if let TriggerTypeConfig::Webhook { url: _, method: _, headers: _, secret: _, message: _ } = &trigger.config {
+					if let TriggerTypeConfig::Webhook { url: _, method: _, headers: _, secret: _, message: _, retry_policy: _ } = &trigger.config {
 						// Test invalid method
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Webhook { method: m, .. } = &mut invalid_trigger.config {
@@ -187,7 +187,7 @@ proptest! {
 					}
 				}
 				TriggerType::Discord => {
-					if let TriggerTypeConfig::Discord { discord_url: _, message: _ } = &trigger.config {
+					if let TriggerTypeConfig::Discord { discord_url: _, message: _, retry_policy: _ } = &trigger.config {
 						// Test invalid URL
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Discord { discord_url: u, .. } = &mut invalid_trigger.config {
@@ -217,7 +217,7 @@ proptest! {
 					}
 				}
 				TriggerType::Telegram => {
-					if let TriggerTypeConfig::Telegram { token: _, chat_id: _, disable_web_preview: _, message: _ } = &trigger.config {
+					if let TriggerTypeConfig::Telegram { token: _, chat_id: _, disable_web_preview: _, message: _, retry_policy: _ } = &trigger.config {
 						// Test invalid token
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Telegram { token: t, .. } = &mut invalid_trigger.config {

@@ -5,7 +5,10 @@
 //! The tests ensure that the Webhook notification system handles template variables correctly
 //! and produces consistent, well-formed output across various input combinations.
 
-use openzeppelin_monitor::services::notification::{WebhookConfig, WebhookNotifier};
+use openzeppelin_monitor::{
+	services::notification::{WebhookConfig, WebhookNotifier},
+	utils::tests::create_test_http_client,
+};
 use proptest::{prelude::*, test_runner::Config};
 use std::collections::HashMap;
 
@@ -33,7 +36,7 @@ proptest! {
 		template in "[a-zA-Z0-9 ${}_]{1,100}",
 		vars in template_variables_strategy()
 	) {
-		let notifier = WebhookNotifier::new(WebhookConfig {
+		let config = WebhookConfig {
 			url: "https://webhook.com/test".to_string(),
 			url_params: None,
 			title: "Test".to_string(),
@@ -42,7 +45,9 @@ proptest! {
 			secret: None,
 			headers: None,
 			payload_fields: None,
-		})
+		};
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::new(config, http_client)
 		.unwrap();
 
 		let first_pass = notifier.format_message(&vars);
@@ -62,7 +67,7 @@ proptest! {
 		template in "[a-zA-Z0-9 ]{0,50}\\$\\{[a-z_]+\\}[a-zA-Z0-9 ]{0,50}",
 		vars in template_variables_strategy()
 	) {
-		let notifier = WebhookNotifier::new(WebhookConfig {
+		let config = WebhookConfig {
 			url: "https://webhook.com/test".to_string(),
 			url_params: None,
 			title: "Test".to_string(),
@@ -71,7 +76,9 @@ proptest! {
 			secret: None,
 			headers: None,
 			payload_fields: None,
-		})
+		};
+		let http_client =create_test_http_client();
+		let notifier = WebhookNotifier::new(config, http_client)
 		.unwrap();
 
 		let formatted = notifier.format_message(&vars);
@@ -90,7 +97,7 @@ proptest! {
 	fn test_notification_empty_variables(
 		template in "[a-zA-Z0-9 ${}_]{1,100}"
 	) {
-		let notifier = WebhookNotifier::new(WebhookConfig {
+		let config = WebhookConfig {
 			url: "https://webhook.com/test".to_string(),
 			url_params: None,
 			title: "Test".to_string(),
@@ -99,7 +106,9 @@ proptest! {
 			secret: None,
 			headers: None,
 			payload_fields: None,
-		})
+		};
+		let http_client = create_test_http_client();
+		let notifier = WebhookNotifier::new(config, http_client)
 		.unwrap();
 
 		let empty_vars = HashMap::new();

@@ -10,6 +10,7 @@
 //! The pool uses a fast path for existing clients and a slow path for
 //! creating new ones, optimizing performance while maintaining safety.
 
+use crate::utils::client_storage::ClientStorage;
 use crate::{
 	models::{BlockChainType, Network},
 	services::blockchain::{
@@ -21,7 +22,6 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use std::{any::Any, collections::HashMap, sync::Arc};
-use tokio::sync::RwLock;
 
 /// Trait for the client pool.
 #[async_trait]
@@ -39,22 +39,6 @@ pub trait ClientPoolTrait: Send + Sync {
 		&self,
 		network: &Network,
 	) -> Result<Arc<Self::StellarClient>, anyhow::Error>;
-}
-
-/// Generic client storage that can hold any type of blockchain client
-///
-/// Clients are stored in a thread-safe way using a HashMap and an RwLock.
-/// The HashMap is indexed by the network slug and the value is an Arc of the client.
-pub struct ClientStorage<T> {
-	clients: Arc<RwLock<HashMap<String, Arc<T>>>>,
-}
-
-impl<T> ClientStorage<T> {
-	pub fn new() -> Self {
-		Self {
-			clients: Arc::new(RwLock::new(HashMap::new())),
-		}
-	}
 }
 
 /// Main client pool manager that handles multiple blockchain types.

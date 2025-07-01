@@ -6,8 +6,9 @@ use openzeppelin_monitor::{
 		TransactionCondition, TransactionStatus, Trigger, TriggerConditions, TriggerType,
 		TriggerTypeConfig,
 	},
-	utils::tests::{
-		evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder,
+	utils::{
+		tests::{evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder},
+		HttpRetryConfig,
 	},
 };
 use proptest::{option, prelude::*};
@@ -96,6 +97,7 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 				.prop_map(|(slack_url, message)| TriggerTypeConfig::Slack {
 					slack_url: SecretValue::Plain(SecretString::new(slack_url)),
 					message,
+					retry_policy: HttpRetryConfig::default(),
 				})
 		)
 			.prop_map(|(name, trigger_type, config)| TriggerBuilder::new()
@@ -160,6 +162,7 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 						headers,
 						secret: secret.map(|s| SecretValue::Plain(SecretString::new(s))),
 						message,
+						retry_policy: HttpRetryConfig::default(),
 					}
 				})
 		)
