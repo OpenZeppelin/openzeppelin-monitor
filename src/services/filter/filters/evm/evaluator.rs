@@ -148,23 +148,27 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 		match operator {
 			ComparisonOperator::Eq | ComparisonOperator::Ne => {
-				let lhs_json_value = serde_json::from_str::<JsonValue>(lhs_json_array_str)
-					.map_err(|e| {
-						let msg = format!(
-							"Failed to parse LHS value '{}' as JSON array for 'Eq/Ne' operator",
-							lhs_json_array_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
+				let lhs_json_value = serde_json::from_str::<JsonValue>(
+					&lhs_json_array_str.to_lowercase(),
+				)
+				.map_err(|e| {
+					let msg = format!(
+						"Failed to parse LHS value '{}' as JSON array for 'Eq/Ne' operator",
+						lhs_json_array_str
+					);
+					EvaluationError::parse_error(msg, Some(e.into()), None)
+				})?;
 
-				let rhs_json_value =
-					serde_json::from_str::<JsonValue>(rhs_target_str).map_err(|e| {
-						let msg = format!(
-							"Failed to parse RHS value '{}' as JSON array for 'Eq/Ne' operator",
-							rhs_target_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
+				let rhs_json_value = serde_json::from_str::<JsonValue>(
+					&rhs_target_str.to_lowercase(),
+				)
+				.map_err(|e| {
+					let msg = format!(
+						"Failed to parse RHS value '{}' as JSON array for 'Eq/Ne' operator",
+						rhs_target_str
+					);
+					EvaluationError::parse_error(msg, Some(e.into()), None)
+				})?;
 
 				// Ensure both parsed values are actually arrays
 				if !lhs_json_value.is_array() || !rhs_json_value.is_array() {
@@ -1802,8 +1806,8 @@ mod tests {
 			)
 			.unwrap());
 
-		// Case sensitivity for string elements (serde_json::Value default behavior)
-		assert!(!evaluator
+		// Case insensitive for string elements
+		assert!(evaluator
 			.compare_array(
 				r#"["Alice"]"#,
 				&ComparisonOperator::Eq,
@@ -1846,13 +1850,15 @@ mod tests {
 				&LiteralValue::Str(r#"[1,2,3]"#)
 			)
 			.unwrap());
+
 		assert!(evaluator
 			.compare_array(
-				r#"["Alice"]"#,
+				r#"["Alice_2"]"#,
 				&ComparisonOperator::Ne,
 				&LiteralValue::Str(r#"["alice"]"#)
 			)
 			.unwrap());
+
 		assert!(evaluator
 			.compare_array(
 				r#"[1, 2]"#,
