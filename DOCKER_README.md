@@ -1,6 +1,6 @@
 # OpenZeppelin Monitor
 
-> :warning: This software is in alpha. Use in production environments at your own risk.
+> ⚠️ This software is in alpha. Use in production environments at your own risk.
 
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
