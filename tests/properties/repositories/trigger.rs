@@ -123,7 +123,7 @@ proptest! {
 					}
 				}
 				TriggerType::Email => {
-					if let TriggerTypeConfig::Email { host: _, port: _, username: _, password: _, message: _, sender: _, recipients: _ } = &trigger.config {
+					if let TriggerTypeConfig::Email { host: _, port: _, username: _, password: _, message: _, sender: _, recipients: _, retry_policy: _ } = &trigger.config {
 						// Test empty recipients
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Email { recipients: r, .. } = &mut invalid_trigger.config {

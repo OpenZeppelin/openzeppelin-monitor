@@ -4,21 +4,24 @@
 //! via SMTP, supporting message templates with variable substitution.
 
 use async_trait::async_trait;
+use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use email_address::EmailAddress;
 use lettre::{
 	message::{
 		header::{self, ContentType},
 		Mailbox, Mailboxes,
 	},
+	transport::smtp::Error as SmtpError,
 	Message, SmtpTransport, Transport,
 };
-use std::{collections::HashMap, sync::Arc};
+use pulldown_cmark::{html, Options, Parser};
+use std::{collections::HashMap, error::Error as StdError, sync::Arc};
 
 use crate::{
 	models::TriggerTypeConfig,
 	services::notification::{NotificationError, Notifier},
+	utils::{JitterSetting, RetryConfig},
 };
-use pulldown_cmark::{html, Options, Parser};
 
 /// Implementation of email notifications via SMTP
 #[derive(Debug)]
@@ -28,11 +31,13 @@ pub struct EmailNotifier<T: Transport + Send + Sync> {
 	/// Message template with variable placeholders
 	body_template: String,
 	/// SMTP client for email delivery
-	client: T,
+	client: Arc<T>,
 	/// Email sender
 	sender: EmailAddress,
 	/// Email recipients
 	recipients: Vec<EmailAddress>,
+	/// Retry policy for SMTP requests
+	retry_policy: RetryConfig,
 }
 
 /// Configuration for SMTP connection
@@ -53,25 +58,33 @@ pub struct EmailContent {
 	pub recipients: Vec<EmailAddress>,
 }
 
+// This implementation is only for testing purposes
 impl<T: Transport + Send + Sync> EmailNotifier<T>
 where
-	T::Error: std::fmt::Display,
+	T::Ok: Send + Sync,
+	T::Error: StdError + Send + Sync + 'static,
 {
 	/// Creates a new email notifier instance with a custom transport
 	///
 	/// # Arguments
 	/// * `email_content` - Email content configuration
 	/// * `transport` - SMTP transport
+	/// * `retry_policy` - Retry policy for SMTP requests
 	///
 	/// # Returns
 	/// * `Self` - Email notifier instance
-	pub fn with_transport(email_content: EmailContent, transport: T) -> Self {
+	pub fn with_transport(
+		email_content: EmailContent,
+		transport: T,
+		retry_policy: RetryConfig,
+	) -> Self {
 		Self {
 			subject: email_content.subject,
 			body_template: email_content.body_template,
 			sender: email_content.sender,
 			recipients: email_content.recipients,
-			client: transport,
+			client: Arc::new(transport),
+			retry_policy,
 		}
 	}
 }
@@ -88,13 +101,15 @@ impl EmailNotifier<SmtpTransport> {
 	pub fn new(
 		smtp_client: Arc<SmtpTransport>,
 		email_content: EmailContent,
+		retry_policy: RetryConfig,
 	) -> Result<Self, NotificationError> {
 		Ok(Self {
 			subject: email_content.subject,
 			body_template: email_content.body_template,
 			sender: email_content.sender,
 			recipients: email_content.recipients,
-			client: smtp_client.as_ref().clone(),
+			client: smtp_client,
+			retry_policy,
 		})
 	}
 
@@ -141,6 +156,7 @@ impl EmailNotifier<SmtpTransport> {
 			message,
 			sender,
 			recipients,
+			retry_policy,
 			..
 		} = config
 		{
@@ -151,7 +167,7 @@ impl EmailNotifier<SmtpTransport> {
 				recipients: recipients.clone(),
 			};
 
-			Self::new(smtp_client, email_content)
+			Self::new(smtp_client, email_content, retry_policy.clone())
 		} else {
 			Err(NotificationError::config_error(
 				format!("Invalid email configuration: {:?}", config),
@@ -163,9 +179,11 @@ impl EmailNotifier<SmtpTransport> {
 }
 
 #[async_trait]
-impl<T: Transport + Send + Sync> Notifier for EmailNotifier<T>
+impl<T> Notifier for EmailNotifier<T>
 where
-	T::Error: std::fmt::Display,
+	T: Transport + Clone + Send + Sync + 'static,
+	T::Ok: Send + Sync,
+	T::Error: StdError + Send + Sync + 'static,
 {
 	/// Sends a formatted message to email
 	///
@@ -218,24 +236,82 @@ where
 				)
 			})?;
 
-		self.client.send(&email).map_err(|e| {
-			NotificationError::notify_failed(format!("Failed to send email: {}", e), None, None)
-		})?;
+		let operation = || async {
+			let client = self.client.clone();
+			let email_clone = email.clone();
 
-		Ok(())
+			tokio::task::spawn_blocking(move || client.send(&email_clone))
+				.await
+				.map_err(|e| {
+					NotificationError::internal_error(
+						format!("Task execution failed: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?
+				.map_err(|e| {
+					NotificationError::notify_failed(
+						format!("Failed to send email: {}", e),
+						Some(Box::new(e)),
+						None,
+					)
+				})?;
+
+			Ok(())
+		};
+
+		let backoff = ExponentialBuilder::default()
+			.with_min_delay(self.retry_policy.initial_backoff)
+			.with_max_delay(self.retry_policy.max_backoff);
+
+		let backoff_with_jitter = match self.retry_policy.jitter {
+			JitterSetting::Full => backoff.with_jitter(),
+			JitterSetting::None => backoff,
+		};
+
+		// Retry if the error is SmtpError and not permanent
+		let should_retry = |e: &NotificationError| -> bool {
+			if let NotificationError::NotifyFailed(context) = e {
+				if let Some(source) = context.source() {
+					if let Some(smtp_error) = source.downcast_ref::<SmtpError>() {
+						return !smtp_error.is_permanent();
+					}
+				}
+			}
+			true
+		};
+
+		operation
+			.retry(
+				backoff_with_jitter
+					.build()
+					.take(self.retry_policy.max_retries as usize),
+			)
+			.when(should_retry)
+			.await
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use lettre::transport::smtp::authentication::Credentials;
+	use lettre::transport::{smtp::authentication::Credentials, stub::StubTransport};
 
 	use crate::{
 		models::{NotificationMessage, SecretString, SecretValue},
 		services::notification::pool::NotificationClientPool,
+		utils::RetryConfig,
 	};
 
 	use super::*;
+
+	fn create_test_email_content() -> EmailContent {
+		EmailContent {
+			subject: "Test Subject".to_string(),
+			body_template: "Hello ${name}, your balance is ${balance}".to_string(),
+			sender: "sender@test.com".parse().unwrap(),
+			recipients: vec!["recipient@test.com".parse().unwrap()],
+		}
+	}
 
 	fn create_test_notifier() -> EmailNotifier<SmtpTransport> {
 		let smtp_config = SmtpConfig {
@@ -251,14 +327,9 @@ mod tests {
 			.credentials(Credentials::new(smtp_config.username, smtp_config.password))
 			.build();
 
-		let email_content = EmailContent {
-			subject: "Test Subject".to_string(),
-			body_template: "Hello ${name}, your balance is ${balance}".to_string(),
-			sender: "sender@test.com".parse().unwrap(),
-			recipients: vec!["recipient@test.com".parse().unwrap()],
-		};
+		let email_content = create_test_email_content();
 
-		EmailNotifier::new(Arc::new(client), email_content).unwrap()
+		EmailNotifier::new(Arc::new(client), email_content, RetryConfig::default()).unwrap()
 	}
 
 	fn create_test_email_config(port: Option<u16>) -> TriggerTypeConfig {
@@ -273,6 +344,7 @@ mod tests {
 			},
 			sender: "sender@test.com".parse().unwrap(),
 			recipients: vec!["recipient@test.com".parse().unwrap()],
+			retry_policy: RetryConfig::default(),
 		}
 	}
 
@@ -361,6 +433,44 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn test_from_config_invalid_type() {
+		// Create a config that is not Email type
+		let wrong_config = TriggerTypeConfig::Slack {
+			slack_url: SecretValue::Plain(SecretString::new(
+				"https://slack.com/api/chat.postMessage".to_string(),
+			)),
+			message: NotificationMessage {
+				title: "Test Slack".to_string(),
+				body: "Hello ${name}".to_string(),
+			},
+			retry_policy: RetryConfig::default(),
+		};
+
+		// Correct config to create SmtpTransport
+		let smtp_config = SmtpConfig {
+			host: "dummy.smtp.com".to_string(),
+			port: 465,
+			username: "test".to_string(),
+			password: "test".to_string(),
+		};
+
+		let smtp_client = Arc::new(
+			SmtpTransport::relay(&smtp_config.host)
+				.unwrap()
+				.port(smtp_config.port)
+				.credentials(Credentials::new(smtp_config.username, smtp_config.password))
+				.build(),
+		);
+
+		let result = EmailNotifier::from_config(&wrong_config, smtp_client);
+		assert!(result.is_err());
+		assert!(matches!(
+			result.unwrap_err(),
+			NotificationError::ConfigError(_)
+		));
+	}
+
+	#[tokio::test]
 	async fn test_from_config_default_port() {
 		let config = create_test_email_config(None);
 		let smtp_config = match &config {
@@ -387,15 +497,36 @@ mod tests {
 	////////////////////////////////////////////////////////////
 	// notify tests
 	////////////////////////////////////////////////////////////
+	#[tokio::test]
+	async fn test_notify_succeeds_on_first_try() {
+		let transport = StubTransport::new_ok();
+		let notifier = EmailNotifier::with_transport(
+			create_test_email_content(),
+			transport.clone(),
+			RetryConfig::default(),
+		);
+
+		notifier.notify("test message").await.unwrap();
+		assert_eq!(transport.messages().len(), 1);
+	}
 
 	#[tokio::test]
-	async fn test_notify_failure() {
-		let notifier = create_test_notifier();
-		let result = notifier.notify("Test message").await;
-		// Expected to fail since we're using a dummy SMTP server
-		assert!(result.is_err());
+	async fn test_notify_fails_after_all_retries() {
+		let transport = StubTransport::new_error();
+		let retry_policy = RetryConfig::default();
+		let default_max_retries = retry_policy.max_retries as usize;
+		let notifier = EmailNotifier::with_transport(
+			create_test_email_content(),
+			transport.clone(),
+			retry_policy,
+		);
 
-		let error = result.unwrap_err();
-		assert!(matches!(error, NotificationError::NotifyFailed { .. }));
+		let result = notifier.notify("test message").await;
+		assert!(result.is_err());
+		assert_eq!(
+			transport.messages().len(),
+			1 + default_max_retries,
+			"Should be called 1 time + default max retries"
+		);
 	}
 }

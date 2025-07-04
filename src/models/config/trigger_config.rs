@@ -295,6 +295,7 @@ impl ConfigLoader for Trigger {
 					message,
 					sender,
 					recipients,
+					retry_policy: _,
 				} = &self.config
 				{
 					// Validate host
@@ -703,7 +704,7 @@ mod tests {
 	use crate::models::NotificationMessage;
 	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
-	use crate::utils::HttpRetryConfig;
+	use crate::utils::RetryConfig;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
 	use tracing_test::traced_test;
@@ -1446,7 +1447,7 @@ mod tests {
 					title: "Test".to_string(),
 					body: "x".repeat(TELEGRAM_MAX_BODY_LENGTH + 1), // Exceeds max length
 				},
-				retry_policy: HttpRetryConfig::default(),
+				retry_policy: RetryConfig::default(),
 			},
 		};
 		assert!(max_body_length.validate().is_err());
@@ -1465,7 +1466,7 @@ mod tests {
 					title: "Test".to_string(),
 					body: "z".repeat(DISCORD_MAX_BODY_LENGTH + 1), // Exceeds max length
 				},
-				retry_policy: HttpRetryConfig::default(),
+				retry_policy: RetryConfig::default(),
 			},
 		};
 		assert!(max_body_length.validate().is_err());

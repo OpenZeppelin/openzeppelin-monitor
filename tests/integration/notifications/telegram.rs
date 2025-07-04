@@ -7,7 +7,7 @@ use openzeppelin_monitor::{
 			get_http_client_from_notification_pool,
 			trigger::TriggerBuilder,
 		},
-		HttpRetryConfig,
+		RetryConfig,
 	},
 };
 use serde_json::json;
@@ -86,7 +86,7 @@ async fn test_telegram_notification_success() {
 async fn test_telegram_notification_failure_retryable_error() {
 	// Setup async mock server to simulate failure
 	let mut server = mockito::Server::new_async().await;
-	let default_retries_count = HttpRetryConfig::default().max_retries as usize;
+	let default_retries_count = RetryConfig::default().max_retries as usize;
 	let mock = server
 		.mock("POST", "/bottest_token/sendMessage")
 		.with_status(500)

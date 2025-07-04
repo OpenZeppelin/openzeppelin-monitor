@@ -7,7 +7,7 @@ use crate::{
 		NotificationMessage, ScriptLanguage, SecretString, SecretValue, Trigger, TriggerType,
 		TriggerTypeConfig,
 	},
-	utils::HttpRetryConfig,
+	utils::RetryConfig,
 };
 use email_address::EmailAddress;
 
@@ -34,7 +34,7 @@ impl Default for TriggerBuilder {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
 				},
-				retry_policy: HttpRetryConfig::default(),
+				retry_policy: RetryConfig::default(),
 			},
 		}
 	}
@@ -66,7 +66,7 @@ impl TriggerBuilder {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		};
 		self
 	}
@@ -79,7 +79,7 @@ impl TriggerBuilder {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		};
 		self
 	}
@@ -92,7 +92,7 @@ impl TriggerBuilder {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		};
 		self
 	}
@@ -107,7 +107,7 @@ impl TriggerBuilder {
 				title: "Test title".to_string(),
 				body: "Test message".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		};
 		self
 	}
@@ -187,6 +187,7 @@ impl TriggerBuilder {
 				.into_iter()
 				.map(EmailAddress::new_unchecked)
 				.collect(),
+			retry_policy: RetryConfig::default(),
 		};
 		self
 	}
@@ -324,7 +325,7 @@ mod tests {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
 				},
-				retry_policy: HttpRetryConfig::default(),
+				retry_policy: RetryConfig::default(),
 			})
 			.build();
 

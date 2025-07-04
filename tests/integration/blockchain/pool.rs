@@ -4,7 +4,7 @@ use openzeppelin_monitor::{
 		ClientPool, ClientPoolTrait, EVMTransportClient, EvmClient, StellarClient,
 		StellarTransportClient,
 	},
-	utils::{tests::network::NetworkBuilder, HttpRetryConfig},
+	utils::{tests::network::NetworkBuilder, RetryConfig},
 };
 
 use std::sync::Arc;
@@ -230,7 +230,7 @@ async fn test_get_evm_client_handles_errors() {
 	let mut mock_server = mockito::Server::new_async().await;
 
 	// Use the default retry config to determine expected attempts
-	let expected_attempts = 1 + HttpRetryConfig::default().max_retries;
+	let expected_attempts = 1 + RetryConfig::default().max_retries;
 
 	// Setup mock to return an error response
 	let mock = mock_server
@@ -278,7 +278,7 @@ async fn test_get_stellar_client_handles_errors() {
 	let mut mock_server = mockito::Server::new_async().await;
 
 	// Use the default retry config to determine expected attempts
-	let expected_attempts = 1 + HttpRetryConfig::default().max_retries;
+	let expected_attempts = 1 + RetryConfig::default().max_retries;
 
 	// Setup mock to return an error response
 	let mock = mock_server

@@ -21,6 +21,7 @@ actix-web = "4"
 alloy = { version = "0.15.6", features = ["full"] }
 anyhow = { version = "1.0.97", features = ["std"] }
 async-trait = "0.1"
+backon = "1.5.1"
 base64 = "0.22"
 byte-unit = "5.1.6"
 chrono = "0.4"
