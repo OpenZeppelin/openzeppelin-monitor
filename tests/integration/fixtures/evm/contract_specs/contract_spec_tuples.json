@@ -1,0 +1,854 @@
+[
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "address",
+            "name": "addr",
+            "type": "address"
+        }
+        ],
+        "name": "AddressInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "bool",
+            "name": "bl",
+            "type": "bool"
+        }
+        ],
+        "name": "BoolInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "bytes",
+            "name": "data",
+            "type": "bytes"
+        }
+        ],
+        "name": "BytesInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "enum InputTester.Status",
+            "name": "status",
+            "type": "uint8"
+        }
+        ],
+        "name": "EnumStatusInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "string",
+            "name": "key",
+            "type": "string"
+        },
+        {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+        }
+        ],
+        "name": "MappingValueRetrieved",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "string",
+            "name": "key",
+            "type": "string"
+        },
+        {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+        }
+        ],
+        "name": "MappingValueSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "bool",
+                "name": "isToggled",
+                "type": "bool"
+            },
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "author",
+                "type": "string"
+            },
+            {
+                "internalType": "uint256",
+                "name": "book_id",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "addr",
+                "type": "address"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            },
+            {
+                "components": [
+                {
+                    "internalType": "string",
+                    "name": "subtitle",
+                    "type": "string"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "pages",
+                    "type": "uint256"
+                }
+                ],
+                "internalType": "struct InputTester.TheStruct2",
+                "name": "meta",
+                "type": "tuple"
+            }
+            ],
+            "indexed": false,
+            "internalType": "struct InputTester.NestedStruct",
+            "name": "nestedStruct",
+            "type": "tuple"
+        }
+        ],
+        "name": "NestedStructInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "bool",
+                "name": "isToggled",
+                "type": "bool"
+            },
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "author",
+                "type": "string"
+            },
+            {
+                "internalType": "uint256",
+                "name": "book_id",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "addr",
+                "type": "address"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            },
+            {
+                "components": [
+                {
+                    "internalType": "string",
+                    "name": "subtitle",
+                    "type": "string"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "pages",
+                    "type": "uint256"
+                }
+                ],
+                "internalType": "struct InputTester.TheStruct2",
+                "name": "meta",
+                "type": "tuple"
+            }
+            ],
+            "indexed": false,
+            "internalType": "struct InputTester.NestedStruct[]",
+            "name": "nestedStructs",
+            "type": "tuple[]"
+        }
+        ],
+        "name": "NestedStructsArrayInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "string",
+            "name": "str",
+            "type": "string"
+        }
+        ],
+        "name": "StringInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            }
+            ],
+            "indexed": false,
+            "internalType": "struct InputTester.StructWithArray",
+            "name": "structWithArray",
+            "type": "tuple"
+        }
+        ],
+        "name": "StructWithArrayInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "num",
+            "type": "uint256"
+        }
+        ],
+        "name": "Uint256Inputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "string[]",
+            "name": "strings",
+            "type": "string[]"
+        }
+        ],
+        "name": "UnlimitedStringsInputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "indexed": false,
+            "internalType": "uint256[]",
+            "name": "nums",
+            "type": "uint256[]"
+        }
+        ],
+        "name": "UnlimitedUint256Inputted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            }
+            ],
+            "indexed": false,
+            "internalType": "struct InputTester.StructWithArray",
+            "name": "items",
+            "type": "tuple"
+        }
+        ],
+        "name": "WrapperWithArrayOfStructsInputted",
+        "type": "event"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "string",
+            "name": "key",
+            "type": "string"
+        }
+        ],
+        "name": "getMappingValue",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "address",
+            "name": "addr",
+            "type": "address"
+        }
+        ],
+        "name": "inputAddress",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "bool",
+                "name": "isToggled",
+                "type": "bool"
+            },
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "author",
+                "type": "string"
+            },
+            {
+                "internalType": "uint256",
+                "name": "book_id",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "addr",
+                "type": "address"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            },
+            {
+                "components": [
+                {
+                    "internalType": "string",
+                    "name": "subtitle",
+                    "type": "string"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "pages",
+                    "type": "uint256"
+                }
+                ],
+                "internalType": "struct InputTester.TheStruct2",
+                "name": "meta",
+                "type": "tuple"
+            }
+            ],
+            "internalType": "struct InputTester.NestedStruct[]",
+            "name": "nestedStructs",
+            "type": "tuple[]"
+        }
+        ],
+        "name": "inputArrayOfNestedStructs",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "bool",
+            "name": "bl",
+            "type": "bool"
+        }
+        ],
+        "name": "inputBool",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "bytes",
+            "name": "data",
+            "type": "bytes"
+        }
+        ],
+        "name": "inputBytes",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "bool",
+                "name": "isToggled",
+                "type": "bool"
+            },
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "author",
+                "type": "string"
+            },
+            {
+                "internalType": "uint256",
+                "name": "book_id",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "addr",
+                "type": "address"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            },
+            {
+                "components": [
+                {
+                    "internalType": "string",
+                    "name": "subtitle",
+                    "type": "string"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "pages",
+                    "type": "uint256"
+                }
+                ],
+                "internalType": "struct InputTester.TheStruct2",
+                "name": "meta",
+                "type": "tuple"
+            }
+            ],
+            "internalType": "struct InputTester.NestedStruct",
+            "name": "nestedStruct",
+            "type": "tuple"
+        }
+        ],
+        "name": "inputNestedStruct",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "enum InputTester.Status",
+            "name": "status",
+            "type": "uint8"
+        }
+        ],
+        "name": "inputStatus",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "string",
+            "name": "str",
+            "type": "string"
+        }
+        ],
+        "name": "inputString",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            }
+            ],
+            "internalType": "struct InputTester.StructWithArray",
+            "name": "structWithArray",
+            "type": "tuple"
+        }
+        ],
+        "name": "inputStructWithArray",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "uint256",
+            "name": "num",
+            "type": "uint256"
+        }
+        ],
+        "name": "inputUint256",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "string[]",
+            "name": "strings",
+            "type": "string[]"
+        }
+        ],
+        "name": "inputUnlimitedStrings",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "uint256[]",
+            "name": "nums",
+            "type": "uint256[]"
+        }
+        ],
+        "name": "inputUnlimitedUints",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            }
+            ],
+            "internalType": "struct InputTester.StructWithArray",
+            "name": "items",
+            "type": "tuple"
+        }
+        ],
+        "name": "inputWrapperWithArrayOfStructs",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "uint256",
+                "name": "uintInput",
+                "type": "uint256"
+            },
+            {
+                "internalType": "int256",
+                "name": "intInput",
+                "type": "int256"
+            },
+            {
+                "internalType": "bool",
+                "name": "boolInput",
+                "type": "bool"
+            },
+            {
+                "internalType": "address",
+                "name": "addressInput",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes",
+                "name": "bytesInput",
+                "type": "bytes"
+            },
+            {
+                "internalType": "string",
+                "name": "stringInput",
+                "type": "string"
+            }
+            ],
+            "internalType": "struct InputTester.ComplexInput",
+            "name": "complexInput",
+            "type": "tuple"
+        },
+        {
+            "internalType": "uint256[]",
+            "name": "uintArrayInput",
+            "type": "uint256[]"
+        },
+        {
+            "internalType": "string[]",
+            "name": "stringArrayInput",
+            "type": "string[]"
+        },
+        {
+            "internalType": "enum InputTester.Status",
+            "name": "enumInput",
+            "type": "uint8"
+        },
+        {
+            "components": [
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            }
+            ],
+            "internalType": "struct InputTester.StructWithArray",
+            "name": "structWithArrayInput",
+            "type": "tuple"
+        }
+        ],
+        "name": "multiInputFunction",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "components": [
+            {
+                "internalType": "uint256",
+                "name": "uintInput",
+                "type": "uint256"
+            },
+            {
+                "internalType": "int256",
+                "name": "intInput",
+                "type": "int256"
+            },
+            {
+                "internalType": "bool",
+                "name": "boolInput",
+                "type": "bool"
+            },
+            {
+                "internalType": "address",
+                "name": "addressInput",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes",
+                "name": "bytesInput",
+                "type": "bytes"
+            },
+            {
+                "internalType": "string",
+                "name": "stringInput",
+                "type": "string"
+            }
+            ],
+            "internalType": "struct InputTester.ComplexInput",
+            "name": "complexInput",
+            "type": "tuple"
+        },
+        {
+            "internalType": "uint256[]",
+            "name": "uintArrayInput",
+            "type": "uint256[]"
+        },
+        {
+            "internalType": "string[]",
+            "name": "stringArrayInput",
+            "type": "string[]"
+        },
+        {
+            "internalType": "enum InputTester.Status",
+            "name": "enumInput",
+            "type": "uint8"
+        },
+        {
+            "components": [
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            }
+            ],
+            "internalType": "struct InputTester.StructWithArray",
+            "name": "structWithArrayInput",
+            "type": "tuple"
+        },
+        {
+            "components": [
+            {
+                "internalType": "bool",
+                "name": "isToggled",
+                "type": "bool"
+            },
+            {
+                "internalType": "string",
+                "name": "title",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "author",
+                "type": "string"
+            },
+            {
+                "internalType": "uint256",
+                "name": "book_id",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "addr",
+                "type": "address"
+            },
+            {
+                "internalType": "string[]",
+                "name": "tags",
+                "type": "string[]"
+            },
+            {
+                "components": [
+                {
+                    "internalType": "string",
+                    "name": "subtitle",
+                    "type": "string"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "pages",
+                    "type": "uint256"
+                }
+                ],
+                "internalType": "struct InputTester.TheStruct2",
+                "name": "meta",
+                "type": "tuple"
+            }
+            ],
+            "internalType": "struct InputTester.NestedStruct[]",
+            "name": "nestedStructsArrayInput",
+            "type": "tuple[]"
+        }
+        ],
+        "name": "multiInputFunctionWithNestedStruct",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "string",
+            "name": "key",
+            "type": "string"
+        },
+        {
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+        }
+        ],
+        "name": "setMappingValue",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+        {
+            "internalType": "string",
+            "name": "",
+            "type": "string"
+        }
+        ],
+        "name": "testMapping",
+        "outputs": [
+        {
+            "internalType": "uint256",
+            "name": "",
+            "type": "uint256"
+        }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]

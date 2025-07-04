@@ -17,7 +17,7 @@ use openzeppelin_monitor::{
 };
 
 use crate::integration::{
-	filters::common::{load_test_data, read_and_parse_json, setup_trigger_execution_service},
+	filters::common::{read_and_parse_json, setup_trigger_execution_service, TestDataBuilder},
 	mocks::{
 		create_test_block, create_test_transaction, MockStellarClientTrait,
 		MockStellarTransportClient,
@@ -78,7 +78,7 @@ fn make_monitor_with_transactions(mut monitor: Monitor, include_expression: bool
 
 #[tokio::test]
 async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	let monitor = make_monitor_with_events(test_data.monitor, false);
@@ -151,7 +151,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 #[tokio::test]
 async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	let monitor = make_monitor_with_events(test_data.monitor, true);
@@ -256,7 +256,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 #[tokio::test]
 async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	let monitor = make_monitor_with_functions(test_data.monitor, false);
@@ -336,7 +336,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 
 #[tokio::test]
 async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	let monitor = make_monitor_with_functions(test_data.monitor, true);
@@ -435,7 +435,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 
 #[tokio::test]
 async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	let monitor = make_monitor_with_transactions(test_data.monitor, true);
@@ -506,7 +506,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 
 #[tokio::test]
 async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	let monitor = make_monitor_with_transactions(test_data.monitor, false);
@@ -574,7 +574,7 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 
 #[tokio::test]
 async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	// Load Stellar-specific test data
@@ -687,7 +687,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 
 #[tokio::test]
 async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 	let mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
 
@@ -715,7 +715,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 
 #[tokio::test]
 async fn test_handle_match() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 	let trigger_scripts = HashMap::new();
 
@@ -829,7 +829,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 
 #[tokio::test]
 async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	let mut monitor = test_data.monitor;
@@ -935,7 +935,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 #[tokio::test]
 async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 
 	// Setup trigger execution service and capture the data structure
 	let data_capture = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
@@ -1071,7 +1071,7 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 
 #[tokio::test]
 async fn test_filter_with_contract_spec() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	// Load Stellar-specific test data
@@ -1147,7 +1147,7 @@ async fn test_filter_with_contract_spec() -> Result<(), Box<FilterError>> {
 
 #[tokio::test]
 async fn test_filter_with_invalid_contract_spec() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	// Load Stellar-specific test data
@@ -1207,7 +1207,7 @@ async fn test_filter_with_invalid_contract_spec() -> Result<(), Box<FilterError>
 
 #[tokio::test]
 async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	// Load Stellar-specific test data
@@ -1286,7 +1286,7 @@ async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
 
 #[tokio::test]
 async fn test_filter_with_udt_expression() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let filter_service = FilterService::new();
 
 	// Load Stellar-specific test data
