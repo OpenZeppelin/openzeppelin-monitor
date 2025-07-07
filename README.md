@@ -6,33 +6,32 @@
 [![CI](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/ci.yaml/badge.svg)](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/ci.yaml)
 [![Release Workflow](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/release-please.yml/badge.svg)](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/release-please.yml)
 
-
-> :warning: This software is in alpha. Use in production environments at your own risk.
-
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
 [Install](https://docs.openzeppelin.com/monitor#getting_started) | [User Docs](https://docs.openzeppelin.com/monitor) | [Quickstart](https://docs.openzeppelin.com/monitor/quickstart) | [Crate Docs](https://docs.openzeppelin.com/monitor/rust_docs/doc/openzeppelin_monitor/)
 
 ## Features
 
-- Multi-chain support
-- Configurable monitoring schedules
-- Flexible trigger conditions
-- Extensible architecture for adding new chains
+- **Real-time Monitoring**: Watch blockchain networks in real-time for specific events and transactions
+- **Smart Filtering**: Use flexible expressions to define exactly what you want to monitor
+- **Multi-notification Support**: Send alerts via Slack, Discord, Email, Telegram, Webhooks, or custom scripts
+- **Configurable Scheduling**: Set custom monitoring schedules using cron expressions
+- **Data Persistence**: Store monitoring data and resume from checkpoints
+- **Extensible Architecture**: Easy to add support for new blockchains and notification types
 
 ## Supported Networks
 
-- EVM
-- Stellar
+- **EVM-Compatible Networks**
+- **Stellar**
 
-## Supported Triggers
+## Notification Channels
 
-- Slack notifications
-- Email notifications
-- Discord notifications
-- Telegram notifications
-- Webhook notifications
-- Script notifications
+- **Slack** - Send formatted messages to Slack channels
+- **Discord** - Post alerts to Discord channels via webhooks
+- **Email** - Send email notifications with SMTP support
+- **Telegram** - Send messages to Telegram chats via bot API
+- **Webhooks** - Send HTTP requests to custom endpoints
+- **Custom Scripts** - Execute Python, JavaScript, or Bash scripts
 
 ## For Users
 
@@ -53,83 +52,79 @@ View the [Usage](https://docs.openzeppelin.com/monitor#running_the_monitor) docu
 The following diagram illustrates the architecture of the monitoring service, highlighting key components and their interactions.
 
 ```mermaid
-%%{init: {
-    'theme': 'base',
-    'themeVariables': {
-        'background': '#ffffff',
-        'mainBkg': '#ffffff',
-        'primaryBorderColor': '#cccccc'
-    }
-}}%%
 graph TD
-    subgraph Blockchain Networks
-        ETH[Ethereum RPC]
-        POL[Polygon RPC]
-        BSC[BSC RPC]
+subgraph Entry Point
+MAIN[main.rs]
+end
+
+    subgraph Bootstrap
+        BOOTSTRAP[Bootstrap::initialize_service]
     end
 
     subgraph Block Processing
-        BW[BlockWatcherService]
-        BS[(BlockStorage)]
-        JS[JobScheduler]
+        BT[BlockTracker]
+        BS[BlockStorage]
+        BWS[BlockWatcherService]
+        BH[create_block_handler]
+    end
+
+    subgraph Core Services
+        MS[MonitorService]
+        NS[NetworkService]
+        TS[TriggerService]
+        FS[FilterService]
+        TES[TriggerExecutionService]
+        NOTS[NotificationService]
     end
 
     subgraph Client Layer
-        BC[BlockchainClient]
-        EVM[EVMClient]
-        STL[StellarClient]
+        CP[ClientPool]
+        EVMC[EVMClient]
+        SC[StellarClient]
     end
 
-    subgraph Processing Pipeline
-        FS[FilterService]
-        TS[TriggerService]
-        NS[NotificationService]
-    end
+    %% Initialization Flow
+    MAIN --> BOOTSTRAP
+    BOOTSTRAP --> CP
+    BOOTSTRAP --> NS
+    BOOTSTRAP --> MS
+    BOOTSTRAP --> TS
+    BOOTSTRAP --> FS
+    BOOTSTRAP --> TES
+    BOOTSTRAP --> NOTS
 
-    subgraph Notifications
-        Slack
-        Email
-        Discord
-        Telegram
-        Webhook
-        Script
-    end
+    %% Block Processing Setup
+    BOOTSTRAP --> BT
+    BOOTSTRAP --> BS
+    BOOTSTRAP --> BWS
+    BOOTSTRAP --> BH
 
-    %% Block Processing Flow
-    JS -->|Schedule Block Fetch| BW
-    BW -->|Store Last Block| BS
-    BW -->|Read Last Block| BS
-    BW -->|Get New Blocks| BC
+    %% Client Dependencies
+    CP --> EVMC
+    CP --> SC
+    BWS --> CP
 
-    %% Client Connections
-    BC --> EVM
-    BC --> STL
-    EVM -->|RPC Calls| ETH
-    EVM -->|RPC Calls| POL
-    EVM -->|RPC Calls| BSC
+    %% Service Dependencies
+    BWS --> BS
+    BWS --> BT
+    MS --> NS
+    MS --> TS
+    FS --> TES
+    TES --> NOTS
 
-    %% Processing Flow
-    BW -->|New Block| FS
-    FS -->|Matches| TS
-    TS -->|Execute| NS
-    NS --> Slack
-    NS --> Email
-    NS --> Discord
-    NS --> Telegram
-    NS --> Webhook
-    NS --> Script
+    %% Block Handler Connection
+    BH --> FS
+    BWS --> BH
 
-    style STL fill:#f0f0f0
+    style MAIN fill:#e1f5fe,stroke:#01579b,color:#333333
+    style BOOTSTRAP fill:#fff3e0,stroke:#ef6c00,color:#333333
+    classDef blockProcessing fill:#e8f5e9,stroke:#2e7d32,color:#333333
+    classDef coreServices fill:#f3e5f5,stroke:#7b1fa2,color:#333333
+    classDef clients fill:#fce4ec,stroke:#c2185b,color:#333333
 
-    classDef rpc fill:#e1f5fe,stroke:#01579b
-    classDef storage fill:#fff3e0,stroke:#ef6c00
-    classDef service fill:#e8f5e9,stroke:#2e7d32
-    classDef notification fill:#f3e5f5,stroke:#7b1fa2
-
-    class ETH,POL,BSC rpc
-    class BS storage
-    class BW,FS,TS,NS service
-    class Slack,Email,Discord,Telegram,Webhook,Script notification
+    class BT,BS,BWS,BH blockProcessing
+    class MS,NS,TS,FS,TES,NOTS coreServices
+    class CP,EVMC,SC clients
 ```
 
 ### Project Structure
@@ -153,24 +148,47 @@ openzeppelin-monitor/
 └── ... other root files (Cargo.toml, README.md, etc.)
 ```
 
-### Setup
+### Development Environment Setup
 
-To get started, run the following commands to install pre-commit hooks:
+#### Prerequisites
 
-- Install pre-commit hooks:
+- **Rust MSRV: 1.86** or later
+- **Git** for version control
+- **Python/pip** for pre-commit hooks
 
-  ```bash
-  pip install pre-commit
-  pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
-  ```
+#### Initial Setup
 
-  > :warning: If you encounter issues with pip, consider using [pipx](https://pipx.pypa.io/stable/installation/) for a global installation.
+```bash
+# Clone the repository
+git clone https://github.com/openzeppelin/openzeppelin-monitor
+cd openzeppelin-monitor
 
-- Install the toolchain:
+# Build the project
+cargo build
 
-  ```bash
-  rustup component add rustfmt
-  ```
+# Set up environment variables
+cp .env.example .env
+```
+
+#### Install Pre-commit Hooks
+
+**Required for code quality checks** including `rustfmt`, `clippy`, and commit message validation.
+
+```bash
+# Install pre-commit (use pipx for global installation if preferred)
+pip install pre-commit
+
+# Install and configure hooks for commit-msg, pre-commit, and pre-push
+pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+```
+
+> :warning: If you encounter issues with pip, consider using [pipx](https://pipx.pypa.io/stable/installation/) for a global installation.
+
+#### Install Rust Toolchain Components
+
+```bash
+rustup component add rustfmt
+```
 
 ### Run Tests
 
@@ -219,19 +237,28 @@ RUST_TEST_THREADS=1 cargo +stable llvm-cov
 
 ## Contributing
 
-We welcome contributions from the community! Here's how you can get involved:
+We welcome contributions from the community! Before contributing, please note these requirements:
+
+### Key Requirements
+
+- **Contributor License Agreement (CLA)**: All contributors must sign the CLA before contributing
+- **GPG-signed commits**: All commits must be GPG-signed for security
+- **Pre-commit hooks**: Required for code quality checks including `rustfmt`, `clippy`, and commit message validation
+
+### Getting Started
 
 1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+2. Clone your fork and set up development environment
+3. Install pre-commit hooks
+4. Create your feature branch
+5. Make your changes with proper testing
+6. Submit a Pull Request
 
 If you are looking for a good place to start, find a good first issue [here](https://github.com/openzeppelin/openzeppelin-monitor/issues?q=is%3Aissue%20is%3Aopen%20label%3Agood-first-issue).
 
 You can open an issue for a [bug report](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml), [feature request](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-feature%2CS-needs-triage&projects=&template=feature.yml), or [documentation request](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-documentation%2CS-needs-triage&projects=&template=docs.yml).
 
-You can find more details in our [Contributing](CONTRIBUTING.md) guide.
+For complete details including GitHub workflow, labeling guidelines, and advanced topics, see our [Contributing](CONTRIBUTING.md) guide.
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and check the [Security Policy](SECURITY.md) for reporting vulnerabilities.
 
@@ -247,10 +274,12 @@ For security concerns, please refer to our [Security Policy](SECURITY.md).
 
 If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor).
 
-If the answer is not there:
+### Community Support
 
-- Join the [Telegram](https://t.me/openzeppelin_tg/4) to get help, or
-- Open an issue with [the bug](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml)
+- **Telegram**: [Join our community chat](https://t.me/openzeppelin_tg/4) for help and discussions
+- **GitHub Issues**: Open a [bug report](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml) or [feature request](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-feature%2CS-needs-triage&projects=&template=feature.yml)
+- **Good First Issues**: [Find beginner-friendly issues](https://github.com/openzeppelin/openzeppelin-monitor/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-issue)
+- **GitHub Discussions**: For questions and community interaction
 
 We encourage you to reach out with any questions or feedback.
 
