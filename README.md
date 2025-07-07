@@ -6,8 +6,6 @@
 [![CI](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/ci.yaml/badge.svg)](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/ci.yaml)
 [![Release Workflow](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/release-please.yml/badge.svg)](https://github.com/OpenZeppelin/openzeppelin-monitor/actions/workflows/release-please.yml)
 
-> :warning: This software is in alpha. Use in production environments at your own risk.
-
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
 
 [Install](https://docs.openzeppelin.com/monitor#getting_started) | [User Docs](https://docs.openzeppelin.com/monitor) | [Quickstart](https://docs.openzeppelin.com/monitor/quickstart) | [Crate Docs](https://docs.openzeppelin.com/monitor/rust_docs/doc/openzeppelin_monitor/)
