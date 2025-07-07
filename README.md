@@ -53,15 +53,14 @@ View the [Usage](https://docs.openzeppelin.com/monitor#running_the_monitor) docu
 
 The following diagram illustrates the architecture of the monitoring service, highlighting key components and their interactions.
 
-[mermaid,width=100%]
-....
+```mermaid
 %%{init: {
-'theme': 'base',
-'themeVariables': {
-'background': '#ffffff',
-'mainBkg': '#ffffff',
-'primaryBorderColor': '#cccccc'
-}
+    'theme': 'base',
+    'themeVariables': {
+    'background': '#ffffff',
+    'mainBkg': '#ffffff',
+    'primaryBorderColor': '#cccccc'
+  }
 }}%%
 graph TD
 subgraph Entry Point
@@ -136,8 +135,7 @@ end
     class BT,BS,BWS,BH blockProcessing
     class MS,NS,TS,FS,TES,NOTS coreServices
     class CP,EVMC,SC clients
-
-....
+```
 
 ### Project Structure
 
