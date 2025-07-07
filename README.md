@@ -54,17 +54,6 @@ View the [Usage](https://docs.openzeppelin.com/monitor#running_the_monitor) docu
 The following diagram illustrates the architecture of the monitoring service, highlighting key components and their interactions.
 
 ```mermaid
-%%{init: {
-    'theme': 'base',
-    'themeVariables': {
-    'background': '#ffffff',
-    'mainBkg': '#ffffff',
-    'primaryBorderColor': '#cccccc',
-    'lineColor': '#333333',
-    'arrowheadColor': '#333333',
-    'edgeLabelBackground': '#ffffff'
-  }
-}}%%
 graph TD
 subgraph Entry Point
 MAIN[main.rs]
