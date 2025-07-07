@@ -59,7 +59,10 @@ The following diagram illustrates the architecture of the monitoring service, hi
     'themeVariables': {
     'background': '#ffffff',
     'mainBkg': '#ffffff',
-    'primaryBorderColor': '#cccccc'
+    'primaryBorderColor': '#cccccc',
+    'lineColor': '#333333',
+    'arrowheadColor': '#333333',
+    'edgeLabelBackground': '#ffffff'
   }
 }}%%
 graph TD
