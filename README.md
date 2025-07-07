@@ -118,11 +118,11 @@ end
     BH --> FS
     BWS --> BH
 
-    style MAIN fill:#e1f5fe,stroke:#01579b
-    style BOOTSTRAP fill:#fff3e0,stroke:#ef6c00
-    classDef blockProcessing fill:#e8f5e9,stroke:#2e7d32
-    classDef coreServices fill:#f3e5f5,stroke:#7b1fa2
-    classDef clients fill:#fce4ec,stroke:#c2185b
+    style MAIN fill:#e1f5fe,stroke:#01579b,color:#333333
+    style BOOTSTRAP fill:#fff3e0,stroke:#ef6c00,color:#333333
+    classDef blockProcessing fill:#e8f5e9,stroke:#2e7d32,color:#333333
+    classDef coreServices fill:#f3e5f5,stroke:#7b1fa2,color:#333333
+    classDef clients fill:#fce4ec,stroke:#c2185b,color:#333333
 
     class BT,BS,BWS,BH blockProcessing
     class MS,NS,TS,FS,TES,NOTS coreServices
