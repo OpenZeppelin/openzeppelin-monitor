@@ -152,7 +152,7 @@ openzeppelin-monitor/
 
 #### Prerequisites
 
-- **Rust MSRV: 1.86** or later
+- **Rust 2021 edition**, version `1.86` or later.
 - **Git** for version control
 - **Python/pip** for pre-commit hooks
 

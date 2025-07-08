@@ -39,7 +39,7 @@ To get started immediately, see xref:quickstart.adoc[Quickstart].
 
 === Prerequisites
 
-* **Rust** 2021 edition or later
+* Use **Rust 2021 edition**, version `1.86` or later.
 * **Docker** (optional, for containerized deployment)
 
 === Local Installation
