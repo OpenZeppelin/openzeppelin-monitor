@@ -4,20 +4,9 @@
 //! and formatting, including address and hash conversions, signature normalization,
 //! and token value formatting.
 
+use alloy::core::dyn_abi::DynSolValue;
 use alloy::primitives::{Address, B256, I256, U256};
-use ethabi::{Hash, Token};
 use std::str::FromStr;
-
-/// Converts an H256 hash to its hexadecimal string representation.
-///
-/// # Arguments
-/// * `hash` - The H256 hash to convert
-///
-/// # Returns
-/// A string in the format "0x..." representing the hash
-pub fn h256_to_string(hash: Hash) -> String {
-	format!("0x{}", hex::encode(hash.as_bytes()))
-}
 
 /// Converts an B256 hash to its hexadecimal string representation.
 ///
@@ -107,49 +96,94 @@ pub fn normalize_signature(signature: &str) -> String {
 	signature.replace(" ", "").to_lowercase()
 }
 
-/// Formats an ethabi Token into a consistent string representation.
+/// Formats a DynSolValue into a consistent string representation.
 ///
 /// # Arguments
-/// * `token` - The Token to format
+/// * `token` - The DynSolValue to format
 ///
 /// # Returns
 /// A string representation of the token value, with appropriate formatting
 /// based on the token type
-pub fn format_token_value(token: &Token) -> String {
+pub fn format_token_value(token: &DynSolValue) -> String {
 	match token {
-		Token::Address(addr) => format!("0x{:x}", addr),
-		Token::FixedBytes(bytes) | Token::Bytes(bytes) => format!("0x{}", hex::encode(bytes)),
-		Token::Int(num) | Token::Uint(num) => num.to_string(),
-		Token::Bool(b) => b.to_string(),
-		Token::String(s) => s.clone(),
-		Token::Array(arr) => {
+		DynSolValue::Address(addr) => format!("0x{:x}", addr),
+		DynSolValue::FixedBytes(bytes, _) => format!("0x{}", hex::encode(bytes)),
+		DynSolValue::Bytes(bytes) => format!("0x{}", hex::encode(bytes)),
+		DynSolValue::Int(num, _) => num.to_string(),
+		DynSolValue::Uint(num, _) => num.to_string(),
+		DynSolValue::Bool(b) => b.to_string(),
+		DynSolValue::String(s) => s.clone(),
+		DynSolValue::Array(arr) => {
 			format!(
 				"[{}]",
 				arr.iter()
-					.map(format_token_value)
+					.map(dyn_value_to_string)
 					.collect::<Vec<String>>()
 					.join(",")
 			)
 		}
-		Token::FixedArray(arr) => {
+		DynSolValue::FixedArray(arr) => {
 			format!(
 				"[{}]",
 				arr.iter()
-					.map(format_token_value)
+					.map(dyn_value_to_string)
 					.collect::<Vec<String>>()
 					.join(",")
 			)
 		}
-		Token::Tuple(tuple) => {
+		DynSolValue::Tuple(tuple) => {
 			format!(
 				"({})",
 				tuple
 					.iter()
-					.map(format_token_value)
+					.map(dyn_value_to_string)
 					.collect::<Vec<String>>()
 					.join(",")
 			)
 		}
+		DynSolValue::Function(selector) => format!("0x{}", hex::encode(selector)),
+	}
+}
+
+/// Convert a DynSolValue into serde_json::Value for structured JSON output
+///
+/// # Arguments
+/// * `val` - The DynSolValue to convert
+///
+/// # Returns
+/// A String representing the DynSolValue
+pub fn dyn_value_to_string(val: &DynSolValue) -> String {
+	match val {
+		DynSolValue::Bool(b) => b.to_string(),
+		DynSolValue::String(s) => format!("\"{}\"", s),
+		DynSolValue::Address(addr) => format!("\"0x{:x}\"", addr),
+		DynSolValue::Uint(u, _) => u.to_string(),
+		DynSolValue::Int(i, _) => i.to_string(),
+		DynSolValue::FixedBytes(bytes, _) => format!("\"0x{}\"", hex::encode(bytes)),
+		DynSolValue::Bytes(bytes) => format!("\"0x{}\"", hex::encode(bytes)),
+		DynSolValue::Array(arr) => format!(
+			"[{}]",
+			arr.iter()
+				.map(dyn_value_to_string)
+				.collect::<Vec<String>>()
+				.join(",")
+		),
+		DynSolValue::FixedArray(arr) => format!(
+			"[{}]",
+			arr.iter()
+				.map(dyn_value_to_string)
+				.collect::<Vec<String>>()
+				.join(",")
+		),
+		DynSolValue::Tuple(fields) => format!(
+			"({})",
+			fields
+				.iter()
+				.map(dyn_value_to_string)
+				.collect::<Vec<String>>()
+				.join(",")
+		),
+		DynSolValue::Function(selector) => format!("\"0x{}\"", hex::encode(selector)),
 	}
 }
 
@@ -204,20 +238,6 @@ pub fn string_to_i256(value_str: &str) -> Result<I256, String> {
 mod tests {
 	use super::*;
 	use alloy::primitives::{hex, Address, B256};
-	use ethabi::Token;
-
-	#[test]
-	fn test_h256_to_string() {
-		let hash_bytes =
-			hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
-				.unwrap();
-		let hash = Hash::from_slice(&hash_bytes);
-		let result = h256_to_string(hash);
-		assert_eq!(
-			result,
-			"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-		);
-	}
 
 	#[test]
 	fn test_b256_to_string() {
@@ -332,7 +352,7 @@ mod tests {
 		assert_eq!(string_to_i256("123"), Ok(I256::from_str("123").unwrap()));
 		assert_eq!(string_to_i256(I256_MAX_STR), Ok(I256::MAX));
 		assert_eq!(string_to_i256(I256_MIN_STR), Ok(I256::MIN));
-		assert_eq!(string_to_i256("-123"), Ok(I256::from_str("-123").unwrap()));
+		assert_eq!(string_to_i256("-123"), Ok(I256::try_from(-123).unwrap()));
 		assert_eq!(string_to_i256("-0"), Ok(I256::ZERO));
 
 		// --- Valid hex cases ---
@@ -419,58 +439,266 @@ mod tests {
 	#[test]
 	fn test_format_token_value() {
 		// Test Address
-		let address = ethabi::Address::from_slice(
-			&hex::decode("0123456789abcdef0123456789abcdef01234567").unwrap(),
-		);
+		let address =
+			Address::from_slice(&hex::decode("0123456789abcdef0123456789abcdef01234567").unwrap());
 		assert_eq!(
-			format_token_value(&Token::Address(address)),
-			"0x0123456789abcdef0123456789abcdef01234567"
+			format_token_value(&DynSolValue::Address(address)),
+			format!("0x{:x}", address)
 		);
 
 		// Test Bytes
 		let bytes = hex::decode("0123456789").unwrap();
 		assert_eq!(
-			format_token_value(&Token::Bytes(bytes.clone())),
-			"0x0123456789"
+			format_token_value(&DynSolValue::Bytes(bytes.clone())),
+			format!("0x{}", hex::encode(bytes.clone()))
 		);
+
+		// Test FixedBytes with 32-byte hash
+		let hash_bytes =
+			hex::decode("abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345678a")
+				.unwrap();
+		let mut fixed_bytes = [0u8; 32];
+		fixed_bytes[..hash_bytes.len()].copy_from_slice(&hash_bytes);
 		assert_eq!(
-			format_token_value(&Token::FixedBytes(bytes)),
-			"0x0123456789"
+			format_token_value(&DynSolValue::FixedBytes(
+				alloy::primitives::FixedBytes::<32>::from(fixed_bytes),
+				32
+			)),
+			format!("0x{}", hex::encode(hash_bytes))
 		);
 
 		// Test Numbers
 		assert_eq!(
-			format_token_value(&Token::Int(ethabi::Int::from(123))),
-			"123"
+			format_token_value(&DynSolValue::Int(I256::try_from(-123).unwrap(), 256)),
+			"-123"
 		);
 		assert_eq!(
-			format_token_value(&Token::Uint(ethabi::Uint::from(456))),
+			format_token_value(&DynSolValue::Uint(U256::from(456), 256)),
 			"456"
 		);
 
+		// Test formatting unsigned int with Int type
+		assert_eq!(
+			format_token_value(&DynSolValue::Int(I256::try_from(456).unwrap(), 256)),
+			"456"
+		);
+
+		// Test formatting -1 as Uint (should show U256::MAX)
+		let negative_one_as_uint = DynSolValue::Uint(U256::MAX, 256);
+		assert_eq!(
+			format_token_value(&negative_one_as_uint),
+			"115792089237316195423570985008687907853269984665640564039457584007913129639935" // U256::MAX instead of -1
+		);
+
+		// Test formatting large unsigned value (>INT256_MAX) as Int type
+		// This should appear negative due to sign bit interpretation
+		let large_uint_as_int = DynSolValue::Int(
+			I256::from_raw(U256::from(2).pow(U256::from(255))), // 2^255 (just over INT256_MAX)
+			256,
+		);
+		assert_eq!(
+			format_token_value(&large_uint_as_int),
+			"-57896044618658097711785492504343953926634992332820282019728792003956564819968" // Shows as negative!
+		);
+
 		// Test Bool
-		assert_eq!(format_token_value(&Token::Bool(true)), "true");
-		assert_eq!(format_token_value(&Token::Bool(false)), "false");
+		assert_eq!(format_token_value(&DynSolValue::Bool(true)), "true");
+		assert_eq!(format_token_value(&DynSolValue::Bool(false)), "false");
 
 		// Test String
 		assert_eq!(
-			format_token_value(&Token::String("test".to_string())),
-			"test"
+			format_token_value(&DynSolValue::String("hello world".to_string())),
+			"hello world"
 		);
 
-		// Test Array
+		// Test Array (empty and non-empty)
+		assert_eq!(format_token_value(&DynSolValue::Array(vec![])), "[]");
 		let arr = vec![
-			Token::Uint(ethabi::Uint::from(1)),
-			Token::Uint(ethabi::Uint::from(2)),
+			DynSolValue::Uint(U256::from(1), 256),
+			DynSolValue::Uint(U256::from(2), 256),
 		];
-		assert_eq!(format_token_value(&Token::Array(arr.clone())), "[1,2]");
-		assert_eq!(format_token_value(&Token::FixedArray(arr)), "[1,2]");
+		assert_eq!(
+			format_token_value(&DynSolValue::Array(arr.clone())),
+			"[1,2]"
+		);
+		assert_eq!(format_token_value(&DynSolValue::FixedArray(arr)), "[1,2]");
 
-		// Test Tuple
-		let tuple = vec![
-			Token::String("test".to_string()),
-			Token::Uint(ethabi::Uint::from(123)),
+		// Test nested structures
+		let nested_tuple = vec![
+			DynSolValue::String("transfer".to_string()),
+			DynSolValue::Address(Address::from_slice(
+				&hex::decode("0123456789abcdef0123456789abcdef01234567").unwrap(),
+			)),
+			DynSolValue::Uint(U256::from(1000), 256),
 		];
-		assert_eq!(format_token_value(&Token::Tuple(tuple)), "(test,123)");
+		assert_eq!(
+			format_token_value(&DynSolValue::Tuple(nested_tuple)),
+			"(\"transfer\",\"0x0123456789abcdef0123456789abcdef01234567\",1000)"
+		);
+
+		// Test Function - represents function selector (4 bytes) + address (20 bytes)
+		// This is a more realistic function pointer with actual function selector and address
+		let transfer_selector = [0xa9, 0x05, 0x9c, 0xbb]; // transfer(address,uint256) selector
+		let contract_address = hex::decode("0123456789abcdef0123456789abcdef01234567").unwrap();
+		let mut function_bytes = [0u8; 24];
+		function_bytes[..4].copy_from_slice(&transfer_selector);
+		function_bytes[4..24].copy_from_slice(&contract_address);
+
+		assert_eq!(
+			format_token_value(&DynSolValue::Function(alloy::primitives::Function::from(
+				function_bytes
+			))),
+			format!("0x{}", hex::encode(function_bytes))
+		);
+	}
+
+	#[test]
+	fn test_dyn_value_to_string() {
+		// Test Bool values
+		assert_eq!(dyn_value_to_string(&DynSolValue::Bool(true)), "true");
+		assert_eq!(dyn_value_to_string(&DynSolValue::Bool(false)), "false");
+
+		// Test String values
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::String("hello world".to_string())),
+			"\"hello world\""
+		);
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::String("".to_string())),
+			"\"\""
+		);
+
+		// Test Address values
+		let address =
+			Address::from_slice(&hex::decode("0123456789abcdef0123456789abcdef01234567").unwrap());
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Address(address)),
+			"\"0x0123456789abcdef0123456789abcdef01234567\""
+		);
+
+		// Test Uint values
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Uint(U256::from(0), 256)),
+			"0"
+		);
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Uint(U256::from(123), 256)),
+			"123"
+		);
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Uint(U256::from(u64::MAX), 256)),
+			u64::MAX.to_string()
+		);
+
+		// Test large Uint values
+		let large_uint = U256::MAX;
+		let result = dyn_value_to_string(&DynSolValue::Uint(large_uint, 256));
+		assert_eq!(result, large_uint.to_string());
+
+		// Test Int values
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Int(I256::try_from(0).unwrap(), 256)),
+			"0"
+		);
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Int(I256::try_from(-123).unwrap(), 256)),
+			"-123"
+		);
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Int(I256::try_from(456).unwrap(), 256)),
+			"456"
+		);
+
+		// Test Array values
+		assert_eq!(dyn_value_to_string(&DynSolValue::Array(vec![])), "[]");
+
+		let simple_array = vec![
+			DynSolValue::Bool(true),
+			DynSolValue::Uint(U256::from(42), 256),
+			DynSolValue::String("test".to_string()),
+		];
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Array(simple_array)),
+			"[true,42,\"test\"]"
+		);
+
+		// Test Tuple values
+		let simple_tuple = vec![
+			DynSolValue::Address(address),
+			DynSolValue::Uint(U256::from(1000), 256),
+			DynSolValue::Bool(false),
+		];
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Tuple(simple_tuple)),
+			"(\"0x0123456789abcdef0123456789abcdef01234567\",1000,false)"
+		);
+
+		// Test nested structures
+		let nested_array = vec![
+			DynSolValue::Array(vec![
+				DynSolValue::Uint(U256::from(1), 256),
+				DynSolValue::Uint(U256::from(2), 256),
+			]),
+			DynSolValue::Tuple(vec![
+				DynSolValue::String("nested".to_string()),
+				DynSolValue::Bool(true),
+			]),
+		];
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Array(nested_array)),
+			"[[1,2],(\"nested\",true)]"
+		);
+
+		// Test that FixedArray behaves identically to Array
+		let test_data = vec![
+			DynSolValue::Address(address),
+			DynSolValue::Uint(U256::from(999), 256),
+		];
+		let array_result = dyn_value_to_string(&DynSolValue::Array(test_data.clone()));
+		let fixed_array_result = dyn_value_to_string(&DynSolValue::FixedArray(test_data));
+		assert_eq!(array_result, fixed_array_result);
+		assert_eq!(
+			array_result,
+			"[\"0x0123456789abcdef0123456789abcdef01234567\",999]"
+		);
+
+		// Test Bytes values
+		let empty_bytes = vec![];
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Bytes(empty_bytes)),
+			"\"0x\""
+		);
+
+		let some_bytes = vec![0xde, 0xad, 0xbe, 0xef];
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Bytes(some_bytes)),
+			"\"0xdeadbeef\""
+		);
+
+		let longer_bytes = vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::Bytes(longer_bytes)),
+			"\"0x0123456789abcdef\""
+		);
+
+		// Test FixedBytes
+		let mut fixed_bytes = [0u8; 32];
+		fixed_bytes[0..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+		let fixed_bytes_val =
+			DynSolValue::FixedBytes(alloy::primitives::FixedBytes::<32>::from(fixed_bytes), 4);
+		let fixed_bytes_result = dyn_value_to_string(&fixed_bytes_val);
+		assert!(fixed_bytes_result.starts_with("\"0x"));
+		assert!(fixed_bytes_result.ends_with("\""));
+
+		// Test Function
+		let function_bytes = [
+			0xa9, 0x05, 0x9c, 0xbb, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23,
+			0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67,
+		];
+		let function_val = DynSolValue::Function(alloy::primitives::Function::from(function_bytes));
+		let function_result = dyn_value_to_string(&function_val);
+		assert!(function_result.starts_with("\"0x"));
+		assert!(function_result.ends_with("\""));
+		assert_eq!(function_result.len(), 52); // "0x" + 48 hex chars + 2 quotes
 	}
 }

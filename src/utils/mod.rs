@@ -5,7 +5,6 @@
 //!
 //! - constants: Constants for the application
 //! - cron_utils: Utilities for working with cron schedules and time intervals
-//! - expression: Utilities for working with cron expressions
 //! - logging: Logging utilities
 //! - macros: Macros for common functionality
 //! - metrics: Metrics utilities
@@ -15,7 +14,6 @@
 //! - http: HTTP client utilities (i.e. creation retryable HTTP clients)
 
 mod cron_utils;
-mod expression;
 
 pub mod client_storage;
 pub mod constants;
@@ -30,7 +28,6 @@ pub mod tests;
 pub use client_storage::ClientStorage;
 pub use constants::*;
 pub use cron_utils::*;
-pub use expression::*;
 pub use http::*;
 pub use macros::*;
 pub use parsing::*;
