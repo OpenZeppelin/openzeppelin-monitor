@@ -111,7 +111,7 @@ This middleware handles:
 
 * Automatic retries for transient HTTP errors (e.g., 5xx server errors, network timeouts) for requests made to the *currently active RPC URL*.
 * An exponential backoff policy between these retry attempts.
-* Parameters like the number of retries, backoff durations, and jitter are defined in an `HttpRetryConfig` struct (see <<Configuration Options>>).
+* Parameters like the number of retries, backoff durations, and jitter are defined in an `RetryConfig` struct (see <<Configuration Options>>).
 * This same-endpoint retry mechanism is independent of, and operates before, the endpoint rotation logic. If all same-endpoint retries fail for the current URL, the error is then processed by the `EndpointManager`.
 
 ==== Endpoint Rotation (via `EndpointManager`)
@@ -120,14 +120,14 @@ If all same-endpoint retries fail for the currently active RPC URL, or if certai
 
 ==== Configuration Options
 
-The same-endpoint retry behavior is configured via the `HttpRetryConfig` struct, which is used by `create_retryable_http_client` to set up the `ExponentialBackoff` policy for `reqwest-retry`.
+The same-endpoint retry behavior is configured via the `RetryConfig` struct, which is used by `create_retryable_http_client` to set up the `ExponentialBackoff` policy for `reqwest-retry`.
 
-The default settings for `HttpRetryConfig` result in an `ExponentialBackoff` policy approximately equivalent to:
+The default settings for `RetryConfig` result in an `ExponentialBackoff` policy approximately equivalent to:
 [source,rust]
 ----
-// This illustrates the default policy created by HttpRetryConfig::default()
+// This illustrates the default policy created by RetryConfig::default()
 // and create_retryable_http_client.
-let http_retry_config = HttpRetryConfig::default();
+let http_retry_config = RetryConfig::default();
 let retry_policy = ExponentialBackoff::builder()
   .base(http_retry_config.base_for_backoff)
   .retry_bounds(http_retry_config.initial_backoff, http_retry_config.max_backoff)
@@ -135,11 +135,11 @@ let retry_policy = ExponentialBackoff::builder()
   .build_with_max_retries(http_retry_config.max_retries);
 ----
 
-The configurable options are defined in the `HttpRetryConfig` struct:
+The configurable options are defined in the `RetryConfig` struct:
 [source,rust]
 ----
 // In utils::http
-pub struct HttpRetryConfig {
+pub struct RetryConfig {
     /// Maximum number of retries for transient errors (after the initial attempt).
     pub max_retries: u32,
     /// Initial backoff duration before the first retry.
@@ -156,7 +156,7 @@ pub struct HttpRetryConfig {
 The client architecture ensures efficient resource use and consistent retry behavior:
 
 1. A single base `reqwest::Client` is created by `HttpTransportClient` with optimized connection pool settings. This base client is shared.
-2. The `create_retryable_http_client` utility takes this base client and an `HttpRetryConfig` to produce a `ClientWithMiddleware`.
+2. The `create_retryable_http_client` utility takes this base client and an `RetryConfig` to produce a `ClientWithMiddleware`.
 3. This `ClientWithMiddleware` (the "retryable client") is then used for all HTTP operations within `HttpTransportClient`, including initial health checks, requests sent via `EndpointManager`, and `try_connect` calls during rotation. This ensures all operations benefit from the configured retry policy and the shared connection pool.
 
 Each transport client may define its own retry policy:
@@ -172,7 +172,7 @@ pub struct HttpTransportClient {
 
 // Example of client creation with retry mechanism
 // Use default retry policy
-let http_retry_config = HttpRetryConfig::default();
+let http_retry_config = RetryConfig::default();
 
 // Create the base HTTP client
 let base_http_client = reqwest::ClientBuilder::new()

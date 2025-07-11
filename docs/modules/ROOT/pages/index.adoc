@@ -246,6 +246,7 @@ Following notification protocols support retry policies:
 * Discord
 * Telegram
 * Webhook
+* Email
 
 Default retry policy is using exponential backoff with the following parameters:
 [cols="1,1,1"]
@@ -258,7 +259,7 @@ Default retry policy is using exponential backoff with the following parameters:
 | `jitter` | `Full` | Jitter strategy to apply to the backoff duration, currently supports `Full` and `None`
 |===
 
-These parameters can be overridden by providing custom `HttpRetryConfig` struct in `retry_policy` field in trigger configuration.
+These parameters can be overridden by providing custom `RetryConfig` struct in `retry_policy` field in trigger configuration.
 
 ===== Script Security
 

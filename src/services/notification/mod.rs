@@ -206,7 +206,7 @@ impl NotificationService {
 					})?;
 
 				let notifier = EmailNotifier::from_config(&trigger.config, smtp_client)?;
-				let message = notifier.format_message(variables);
+				let message = EmailNotifier::format_message(notifier.body_template(), variables);
 				notifier.notify(&message).await?;
 			}
 			TriggerType::Script => {

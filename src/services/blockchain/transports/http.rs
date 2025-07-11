@@ -22,7 +22,7 @@ use crate::{
 		BlockchainTransport, EndpointManager, RotatingTransport, TransientErrorRetryStrategy,
 		TransportError,
 	},
-	utils::http::{create_retryable_http_client, HttpRetryConfig},
+	utils::http::{create_retryable_http_client, RetryConfig},
 };
 
 /// Basic HTTP transport client for blockchain interactions
@@ -71,7 +71,7 @@ impl HttpTransportClient {
 
 		// Create a retry policy with default settings
 		// Shared config for endpoint manager and test connection
-		let http_retry_config = HttpRetryConfig::default();
+		let http_retry_config = RetryConfig::default();
 
 		// Create the base HTTP client
 		let base_http_client = Arc::new(
