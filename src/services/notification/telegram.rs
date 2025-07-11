@@ -330,7 +330,7 @@ mod tests {
 		let notifier = notifier.unwrap();
 		assert_eq!(
 			notifier.inner.url,
-			"https://api.telegram.org/bottest-token/sendMessage"
+			"https://api.telegram.org/bot<secret string>/sendMessage"
 		);
 		assert!(notifier.disable_web_preview);
 		assert_eq!(notifier.inner.body_template, "Test message ${value}");

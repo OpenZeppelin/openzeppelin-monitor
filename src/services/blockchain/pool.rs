@@ -3,7 +3,7 @@
 //! This module provides a thread-safe client pooling system that:
 //! - Caches blockchain clients by network
 //! - Creates clients lazily on first use
-//! - Handles both EVM and Stellar clients
+//! - Handles EVM, Stellar, and Midnight clients
 //! - Provides type-safe access to clients
 //! - Manages client lifecycles automatically
 //!
@@ -15,7 +15,8 @@ use crate::{
 	models::{BlockChainType, Network},
 	services::blockchain::{
 		BlockChainClient, BlockFilterFactory, EVMTransportClient, EvmClient, EvmClientTrait,
-		StellarClient, StellarClientTrait, StellarTransportClient,
+		MidnightClient, MidnightClientTrait, MidnightWsTransportClient, StellarClient,
+		StellarClientTrait, StellarTransportClient,
 	},
 };
 use anyhow::Context;
@@ -30,6 +31,9 @@ pub trait ClientPoolTrait: Send + Sync {
 	type StellarClient: StellarClientTrait
 		+ BlockChainClient
 		+ BlockFilterFactory<Self::StellarClient>;
+	type MidnightClient: MidnightClientTrait
+		+ BlockChainClient
+		+ BlockFilterFactory<Self::MidnightClient>;
 
 	async fn get_evm_client(
 		&self,
@@ -39,6 +43,10 @@ pub trait ClientPoolTrait: Send + Sync {
 		&self,
 		network: &Network,
 	) -> Result<Arc<Self::StellarClient>, anyhow::Error>;
+	async fn get_midnight_client(
+		&self,
+		network: &Network,
+	) -> Result<Arc<Self::MidnightClient>, anyhow::Error>;
 }
 
 /// Main client pool manager that handles multiple blockchain types.
@@ -54,7 +62,7 @@ pub struct ClientPool {
 impl ClientPool {
 	/// Creates a new empty client pool.
 	///
-	/// Initializes empty hashmaps for both EVM and Stellar clients.
+	/// Initializes empty hashmaps for all supported clients types.
 	pub fn new() -> Self {
 		let mut pool = Self {
 			storages: HashMap::new(),
@@ -63,6 +71,9 @@ impl ClientPool {
 		// Register client types
 		pool.register_client_type::<EvmClient<EVMTransportClient>>(BlockChainType::EVM);
 		pool.register_client_type::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar);
+		pool.register_client_type::<MidnightClient<MidnightWsTransportClient>>(
+			BlockChainType::Midnight,
+		);
 
 		pool
 	}
@@ -121,6 +132,7 @@ impl ClientPool {
 impl ClientPoolTrait for ClientPool {
 	type EvmClient = EvmClient<EVMTransportClient>;
 	type StellarClient = StellarClient<StellarTransportClient>;
+	type MidnightClient = MidnightClient<MidnightWsTransportClient>;
 
 	/// Gets or creates an EVM client for the given network.
 	///
@@ -152,6 +164,22 @@ impl ClientPoolTrait for ClientPool {
 		})
 		.await
 		.with_context(|| "Failed to get or create Stellar client")
+	}
+
+	/// Gets or creates a Midnight client for the given network.
+	///
+	/// First checks the cache for an existing client. If none exists,
+	/// creates a new client under a write lock.
+	async fn get_midnight_client(
+		&self,
+		network: &Network,
+	) -> Result<Arc<Self::MidnightClient>, anyhow::Error> {
+		self.get_or_create_client(BlockChainType::Midnight, network, |n| {
+			let network = n.clone();
+			Box::pin(async move { Self::MidnightClient::new(&network).await })
+		})
+		.await
+		.with_context(|| "Failed to get or create Midnight client")
 	}
 }
 

@@ -1206,7 +1206,7 @@ async fn test_filter_with_invalid_contract_spec() -> Result<(), Box<FilterError>
 }
 
 #[tokio::test]
-async fn test_filter_with_abi_in_config() -> Result<(), Box<FilterError>> {
+async fn test_filter_with_contract_spec_in_config() -> Result<(), Box<FilterError>> {
 	let test_data = load_test_data("stellar");
 	let filter_service = FilterService::new();
 

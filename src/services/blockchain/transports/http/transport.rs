@@ -19,8 +19,8 @@ use url::Url;
 use crate::{
 	models::Network,
 	services::blockchain::transports::{
-		BlockchainTransport, EndpointManager, RotatingTransport, TransientErrorRetryStrategy,
-		TransportError,
+		http::endpoint_manager::EndpointManager, BlockchainTransport, RotatingTransport,
+		TransientErrorRetryStrategy, TransportError,
 	},
 	utils::http::{create_retryable_http_client, HttpRetryConfig},
 };
@@ -100,6 +100,7 @@ impl HttpTransportClient {
 				Err(_) => continue,
 			};
 
+			// TODO: At some point we should re-use `try_connect` to test connectivity
 			let test_request = if let Some(test_payload) = &test_connection_payload {
 				serde_json::from_str(test_payload)
 					.context("Failed to parse test payload as JSON")?
@@ -194,12 +195,9 @@ impl BlockchainTransport for HttpTransportClient {
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		let response = self
-			.endpoint_manager
+		self.endpoint_manager
 			.send_raw_request(self, method, params)
-			.await?;
-
-		Ok(response)
+			.await
 	}
 
 	/// Update endpoint manager with a new client
