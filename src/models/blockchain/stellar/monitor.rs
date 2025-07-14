@@ -233,6 +233,13 @@ pub struct ContractInput {
 	pub kind: String,
 }
 
+/// Stellar-specific configuration
+///
+/// This configuration is used to for additional fields in the monitor configuration
+/// that are specific to Stellar.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct MonitorConfig {}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

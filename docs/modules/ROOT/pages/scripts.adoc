@@ -122,17 +122,17 @@ Custom filter scripts allow you to apply additional conditions to matches detect
       },
       "logs": [
          {
-            "address": "0xd1f2586790a5bd6da1e443441df53af6ec213d83",
+            "address": "0x...",
             "topics": [
-                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-                "0x00000000000000000000000060af8cf92e5aa9ead4a592d657cd6debecfbc616",
-                "0x000000000000000000000000d1f2586790a5bd6da1e443441df53af6ec213d83"
+                "0x...",
+                "0x...",
+                "0x..."
             ],
-            "data": "0x00000000000000000000000000000000000000000000106015728793d21f77ac",
-            "blockNumber": "0x1451aca",
-            "transactionHash": "0xa39d1b9b3edda74414bd6ffaf6596f8ea12cf0012fd9a930f71ed69df6ff34d0",
+            "data": "0x...",
+            "blockNumber": "0x...",
+            "transactionHash": "0x...",
             "transactionIndex": "0x0",
-            "blockHash": "0x9432868b7fc57e85f0435ca3047f6a76add86f804b3c1af85647520061e30f80",
+            "blockHash": "0x...",
             "logIndex": "0x2",
             "removed": false
           },
@@ -248,6 +248,89 @@ Custom filter scripts allow you to apply additional conditions to matches detect
   }
 }
 ----
+
+  * Midnight
++
+[source,json]
+----
+{
+  "args": [
+    "--verbose"
+  ],
+  "monitor_match": {
+    "Midnight": {
+      "matched_on": {
+        "events": [],
+        "functions": [
+          {
+            "expression": null,
+            "signature": "post"
+          }
+        ],
+        "transactions": []
+      },
+      "matched_on_args": {
+        "events": null,
+        "functions": [
+          {
+            "args": null,
+            "hex_signature": "post",
+            "signature": "post"
+          }
+        ]
+      },
+      "monitor": {
+        "addresses": [
+          {
+            "address": "020200048...",
+            "contract_spec": null
+          }
+        ],
+        "match_conditions": {
+          "events": [],
+          "functions": [
+            {
+              "expression": null,
+              "signature": "post()"
+            }
+          ],
+          "transactions": []
+        },
+        "name": "Bulletin post",
+        "networks": [
+          "midnight_testnet"
+        ],
+        "paused": false,
+        "trigger_conditions": [],
+        "triggers": [
+          "midnight_post_slack",
+          "midnight_post_script"
+        ]
+      },
+      "network_slug": "midnight_testnet",
+      "transaction": {
+        "identifiers": [
+          "00000000cef...",
+          "00000000cf2...",
+          "00000000b3e..."
+        ],
+        "operations": [
+          {
+            "Call": {
+              "address": "020200048...",
+              "entry_point": "706f7374"
+            }
+          },
+          "GuaranteedCoins"
+        ],
+        "status": true,
+        "tx_hash": "e3c56..."
+      }
+    }
+  }
+}
+----
+
 
 === Script Output Requirements
 

@@ -4,7 +4,7 @@
 //! different blockchain networks. Includes:
 //!
 //! - Generic blockchain client trait
-//! - EVM and Stellar specific clients
+//! - Chain specific clients
 //! - Network transport implementations
 //! - Error handling for blockchain operations
 //! - Client pool for managing multiple clients
@@ -17,11 +17,13 @@ mod transports;
 
 pub use client::{BlockChainClient, BlockFilterFactory};
 pub use clients::{
-	EvmClient, EvmClientTrait, StellarClient, StellarClientError, StellarClientTrait,
+	EvmClient, EvmClientTrait, MidnightClient, MidnightClientTrait, MidnightSubstrateClientTrait,
+	StellarClient, StellarClientError, StellarClientTrait,
 };
 pub use error::BlockChainError;
 pub use pool::{ClientPool, ClientPoolTrait};
 pub use transports::{
-	BlockchainTransport, EVMTransportClient, EndpointManager, HttpTransportClient,
-	RotatingTransport, StellarTransportClient, TransientErrorRetryStrategy, TransportError,
+	BlockchainTransport, EVMTransportClient, HttpEndpointManager, HttpTransportClient,
+	MidnightWsTransportClient, RotatingTransport, StellarTransportClient,
+	TransientErrorRetryStrategy, TransportError, WsConfig, WsEndpointManager, WsTransportClient,
 };

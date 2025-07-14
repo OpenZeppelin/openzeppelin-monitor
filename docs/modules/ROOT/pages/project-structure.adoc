@@ -44,6 +44,7 @@ Core data structures and types:
 * `blockchain/`: Platform-specific implementations
 ** `evm/`: Ethereum Virtual Machine specific types
 ** `stellar/`: Stellar blockchain specific types
+** `midnight/`: Midnight blockchain specific types
 * `config/`: Configuration loading and validation
 * `core/`: Core domain models
 * `security/`: Security and secret management
@@ -62,14 +63,17 @@ Core business logic:
 ** `transports/`: Transport clients
 *** `evm/`: Ethereum Virtual Machine transport client
 *** `stellar/`: Stellar transport client
+*** `midnight/`: Midnight transport client
 ** `clients/`: Client implementations
 *** `evm/`: Ethereum Virtual Machine client
 *** `stellar/`: Stellar client
+*** `midnight/`: Midnight client
 * `blockwatcher/`: Block monitoring and processing
 * `filter/`: Transaction and event filtering
 ** `filters/`: Filter implementations
 *** `evm/`: Ethereum Virtual Machine filter
 *** `stellar/`: Stellar filter
+*** `midnight/`: Midnight filter
 * `notification/`: Alert handling
 * `trigger/`: Trigger evaluation and execution
 ** `script/`: Script execution utilities
@@ -87,6 +91,7 @@ Helper functions:
 ** `builders/`: Test builder patterns implementing fluent interfaces for creating test fixtures
 *** `evm/`: Builder implementations specific to Ethereum Virtual Machine (EVM) testing
 *** `stellar/`: Builder implementations specific to Stellar blockchain testing
+*** `midnight/`: Builder implementations specific to Midnight blockchain testing
 
 == Configuration and Data
 

@@ -4,8 +4,7 @@ use crate::models::{BlockChainType, SecretValue};
 
 /// Configuration for connecting to and interacting with a blockchain network.
 ///
-/// Defines connection details and operational parameters for a specific blockchain network,
-/// supporting both EVM and Stellar-based chains.
+/// Defines connection details and operational parameters for a specific blockchain network.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Network {
