@@ -1,20 +1,20 @@
 {
   "network_type": "EVM",
-  "slug": "zksync_era_mainnet",
-  "name": "ZkSync Era",
+  "slug": "linea_mainnet",
+  "name": "Linea Mainnet",
   "rpc_urls": [
     {
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://mainnet.era.zksync.io"
+        "value": "https://rpc.linea.build"
       },
       "weight": 100
     }
   ],
-  "chain_id": 324,
-  "block_time_ms": 5000,
+  "chain_id": 59144,
+  "block_time_ms": 2000,
   "confirmation_blocks": 12,
   "cron_schedule": "0 */1 * * * *",
   "store_blocks": false
-}
+} 

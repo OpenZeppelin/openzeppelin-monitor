@@ -1,20 +1,21 @@
 {
   "network_type": "EVM",
-  "slug": "zksync_era_mainnet",
-  "name": "ZkSync Era",
+  "slug": "scroll_mainnet",
+  "name": "Scroll Mainnet",
   "rpc_urls": [
     {
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://mainnet.era.zksync.io"
+        "value": "https://rpc.scroll.io"
       },
       "weight": 100
     }
   ],
-  "chain_id": 324,
-  "block_time_ms": 5000,
+  "chain_id": 534352,
+  "block_time_ms": 2000,
   "confirmation_blocks": 12,
   "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 43,
   "store_blocks": false
-}
+} 
