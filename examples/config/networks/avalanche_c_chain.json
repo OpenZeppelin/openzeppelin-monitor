@@ -1,20 +1,21 @@
 {
   "network_type": "EVM",
-  "slug": "zksync_era_mainnet",
-  "name": "ZkSync Era",
+  "slug": "avalanche_c_chain",
+  "name": "Avalanche C-Chain",
   "rpc_urls": [
     {
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://mainnet.era.zksync.io"
+        "value": "https://api.avax.network/ext/bc/C/rpc"
       },
       "weight": 100
     }
   ],
-  "chain_id": 324,
-  "block_time_ms": 5000,
+  "chain_id": 43114,
+  "block_time_ms": 2000,
   "confirmation_blocks": 12,
   "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 43,
   "store_blocks": false
-}
+} 
