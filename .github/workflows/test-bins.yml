@@ -23,6 +23,7 @@ permissions:
 jobs:
   build:
     name: Build binaries
+    # for list of arch `rustup target list | grep -iE 'apple|linux'`
     strategy:
       matrix:
         include:
@@ -95,13 +96,18 @@ jobs:
         with:
           pattern: openzeppelin-monitor-*
           path: artifacts
+      - name: Binaries attestation
+        uses: actions/attest-build-provenance@d3b713ade6128010830a9be91a036ed11e065550  # main
+        with:
+          subject-path: artifacts/**/openzeppelin-monitor*.tar.gz
+          github-token: ${{ steps.gh-app-token.outputs.token }}
       # Validate the artifacts path
       - name: Validate artifacts
         run: |-
-          echo "Validating artifacts path..."
-          ls -al artifacts
           # Check if the artifacts exist
-          if [ ! -f artifacts/openzeppelin-monitor-*.tar.gz ]; then
+          if ls artifacts/*/openzeppelin-monitor-*.tar.gz >/dev/null 2>&1; then
+            echo "Artifacts found"
+          else
             echo "No artifacts found"
             exit 1
           fi
