@@ -1,15 +1,10 @@
 ---
 name: Test binaries
 on:
-  #  # Run nightly on the main branch
-  # schedule:
-  #   - cron: 0 0 * * *  # Every day at midnight UTC
-  push:
-    branches: [plat-6797-run-nightly-workflows-to-create-binary-artifacts-and-images]
-    # paths-ignore:
-    #   - docs/**
-    #   - '**.md'
-    #   - .github/**
+  workflow_dispatch: {}
+  # Run nightly on the main branch
+  schedule:
+    - cron: 0 0 * * *  # Every day at midnight UTC
 # run concurrency group for the workflow
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,6 +19,8 @@ jobs:
   build:
     name: Build binaries
     # for list of arch `rustup target list | grep -iE 'apple|linux'`
+
+    # TODO: Change https://github.com/actions/runner-images/issues/12520 `macos-latest` to `macos-15` when available
     strategy:
       matrix:
         include:

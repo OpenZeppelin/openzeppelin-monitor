@@ -15,10 +15,11 @@ on:
         required: true
 jobs:
   build:
+    # for list of arch `rustup target list | grep -iE 'apple|linux'`
+
+    # TODO: Change https://github.com/actions/runner-images/issues/12520 `macos-latest` to `macos-15` when available
     name: Build binaries
     environment: release
-    env:
-      TAG: ${{ inputs.tag || github.event.inputs.tag }}
     outputs:
       release_tag: ${{ env.TAG }}
     strategy:
@@ -33,6 +34,9 @@ jobs:
           - arch: aarch64-apple-darwin
             platform: macos-latest
     runs-on: ${{ matrix.platform }}
+    env:
+      TAG: ${{ inputs.tag || github.event.inputs.tag }}
+      RUSTUP_TOOLCHAIN: stable-${{ matrix.arch }}
     steps:
       - name: Get github app token
         uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5  # v2.0.2
@@ -100,7 +104,7 @@ jobs:
         with:
           subject-path: artifacts/**/openzeppelin-monitor*.tar.gz
           github-token: ${{ steps.gh-app-token.outputs.token }}
-      - name: Update release please artifacts
+      - name: Update released binaries artifacts
         uses: softprops/action-gh-release@ab50eebb6488051c6788d97fa95232267c6a4e23  # main
         with:
           tag_name: ${{ env.TAG }}
