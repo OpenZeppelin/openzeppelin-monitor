@@ -7,7 +7,7 @@
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "ttps://bsc-testnet-rpc.publicnode.com"
+        "value": "https://bsc-testnet-rpc.publicnode.com"
       },
       "weight": 100
     }
