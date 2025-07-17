@@ -13,7 +13,7 @@
     }
   ],
   "chain_id": 5000,
-  "block_time_ms": 14300,
+  "block_time_ms": 2000,
   "confirmation_blocks": 12,
   "cron_schedule": "0 */1 * * * *",
   "store_blocks": false
