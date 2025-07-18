@@ -1,6 +1,6 @@
 {
   "network_type": "EVM",
-  "slug": "zksync",
+  "slug": "zksync_era_mainnet",
   "name": "ZkSync Era",
   "rpc_urls": [
     {
@@ -13,8 +13,8 @@
     }
   ],
   "chain_id": 324,
-  "block_time_ms": 5000,
-  "confirmation_blocks": 12,
+  "block_time_ms": 2000,
+  "confirmation_blocks": 3,
   "cron_schedule": "0 */1 * * * *",
   "store_blocks": false
 }

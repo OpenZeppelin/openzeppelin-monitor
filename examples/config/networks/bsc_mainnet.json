@@ -1,13 +1,13 @@
 {
   "network_type": "EVM",
-  "slug": "bsc",
+  "slug": "bsc_mainnet",
   "name": "Binance BSC",
   "rpc_urls": [
     {
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://bsc-dataseed.bnbchain.org"
+        "value": "https://bsc-dataseed1.bnbchain.org"
       },
       "weight": 100
     }
