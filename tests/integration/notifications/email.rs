@@ -1,5 +1,7 @@
+use mockall::mock;
+
 use email_address::EmailAddress;
-use lettre::transport::stub::AsyncStubTransport;
+use lettre::{address::Envelope, transport::stub::AsyncStubTransport, Message, Transport};
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
@@ -8,7 +10,7 @@ use openzeppelin_monitor::{
 		SecretValue, TriggerType, TriggerTypeConfig,
 	},
 	services::notification::{
-		EmailContent, EmailNotifier, NotificationError, NotificationService, Notifier,
+		EmailContent, EmailNotifier, NotificationError, NotificationService, SmtpConfig,
 	},
 	utils::{
 		tests::{
@@ -42,6 +44,31 @@ fn create_test_evm_match(monitor: Monitor) -> MonitorMatch {
 		matched_on: MatchConditions::default(),
 		matched_on_args: None,
 	}))
+}
+
+mock! {
+	pub EmailNotifier {
+		pub fn new(smtp_config: SmtpConfig, email_content: EmailContent) -> Result<Self, NotificationError>;
+		pub fn format_message(&self, variables: &HashMap<String, String>) -> String;
+		pub async fn notify(&self, message: &str) -> Result<(), NotificationError>;
+	}
+}
+
+mock! {
+	pub SmtpTransport {}
+
+	impl Transport for SmtpTransport {
+		type Ok = String;
+		type Error = String;
+
+		fn send_raw(&self, envelope: &Envelope, email: &[u8]) -> Result<String, String> {
+			Ok("250 OK".to_string())
+		}
+
+		fn send(&self, message: &Message) -> Result<String, String> {
+			Ok("250 OK".to_string())
+		}
+	}
 }
 
 #[tokio::test]
