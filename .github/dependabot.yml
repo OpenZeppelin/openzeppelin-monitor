@@ -7,28 +7,23 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     commit-message:
       # Prefix all commit messages with "chore(deps): "
       prefix: 'chore(deps): '
-    reviewers:
-      - OpenZeppelin/defender-sre
-      - OpenZeppelin/defender-dev
 
   # Maintain dependencies for cargo
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     ignore:
       - dependency-name: '*'
-        update-types: [version-update:semver-major]
+        update-types:
+        - version-update:semver-major
     commit-message:
       # Prefix all commit messages
       prefix: 'chore(deps): '
-    reviewers:
-      - OpenZeppelin/defender-dev
-      - OpenZeppelin/defender-sre
     labels:
       - dependabot
       - dependencies
