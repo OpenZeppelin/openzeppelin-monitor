@@ -20,7 +20,7 @@ use openzeppelin_monitor::{
 };
 
 use crate::integration::{
-	filters::common::{load_test_data, setup_trigger_execution_service, TestData},
+	filters::common::{setup_trigger_execution_service, TestData, TestDataBuilder},
 	mocks::MockEVMTransportClient,
 };
 
@@ -106,10 +106,23 @@ fn make_monitor_with_transactions(mut monitor: Monitor, include_expression: bool
 	monitor
 }
 
+fn make_monitor_with_tuples_expression_equality(mut monitor: Monitor) -> Monitor {
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.functions = vec![];
+	monitor.match_conditions.transactions = vec![];
+	monitor.match_conditions.functions.push(FunctionCondition {
+		signature:
+			"inputNestedStruct((bool,string,string,uint256,address,string[],(string,uint256)))"
+				.to_string(),
+		expression: Some("nestedStruct == '(true,\"The Book Title\",\"Author Name\",123,\"0x1234567890abcdef1234567890abcdef12345678\",[\"fiction\",\"bestseller\"],(\"The Sequel\",321))'".to_string()),
+	});
+	monitor
+}
+
 #[tokio::test]
 async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -157,7 +170,7 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 #[tokio::test]
 async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -225,7 +238,7 @@ async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> 
 #[tokio::test]
 async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -277,7 +290,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 #[tokio::test]
 async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -342,7 +355,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 #[tokio::test]
 async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -386,7 +399,7 @@ async fn test_monitor_transactions_with_no_expressions() -> Result<(), Box<Filte
 #[tokio::test]
 async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -432,7 +445,7 @@ async fn test_monitor_transactions_with_expressions() -> Result<(), Box<FilterEr
 #[tokio::test]
 async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -497,7 +510,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 #[tokio::test]
 async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	let client = EvmClient::new(&test_data.network).await.unwrap();
 
@@ -526,7 +539,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 #[tokio::test]
 async fn test_handle_match() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -595,7 +608,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 #[tokio::test]
 async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let mut test_data = load_test_data("evm");
+	let mut test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 
 	// only keep the last receipt with increment() transaction
@@ -625,7 +638,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 		.filter_block(
 			&client,
 			&test_data.network,
-			test_data.blocks.last().unwrap(), // last block contains increment() transaction
+			&test_data.blocks[3], // block at index 3 contains increment() transaction
 			&[monitor],
 			Some(&[contract_with_spec]),
 		)
@@ -685,7 +698,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 #[tokio::test]
 async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 
 	// Setup trigger execution service and capture the data structure
 	let data_capture = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
@@ -823,7 +836,7 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 
 #[tokio::test]
 async fn test_filter_block_with_receipt_and_logs() -> Result<(), Box<FilterError>> {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	let mock_transport = setup_mock_transport(test_data.clone());
 
@@ -924,7 +937,7 @@ async fn test_filter_block_with_receipt_and_logs() -> Result<(), Box<FilterError
 #[tokio::test]
 async fn test_filter_block_with_only_logs() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 	// Create mock transport
 	let mock_transport = setup_mock_transport(test_data.clone());
@@ -1009,7 +1022,7 @@ async fn test_filter_block_with_only_logs() -> Result<(), Box<FilterError>> {
 #[tokio::test]
 async fn test_filter_block_needs_receipt_for_status() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
 
 	let mut mock_transport = MockEVMTransportClient::new();
@@ -1115,6 +1128,162 @@ async fn test_filter_block_needs_receipt_for_status() -> Result<(), Box<FilterEr
 		_ => {
 			panic!("Expected EVM match");
 		}
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_block_with_tuples_contains_expression() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
+	let test_data = TestDataBuilder::new("evm")
+		.with_monitor("monitor_with_tuples.json")
+		.with_contract_spec("contract_spec_tuples.json")
+		.build();
+
+	let filter_service = FilterService::new();
+
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
+
+	let mut monitor = test_data.monitor;
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature:
+			"inputNestedStruct((bool,string,string,uint256,address,string[],(string,uint256)))"
+				.to_string(),
+		expression: Some("nestedStruct contains 'The Book Title'".to_string()),
+	}];
+	monitor.match_conditions.transactions = vec![];
+
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0x774283785a2e4845E7dF23e18af5849c3D23722f".to_string(),
+		contract_spec.clone(),
+	);
+
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			test_data.blocks.last().unwrap(),
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches");
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(
+				evm_match.receipt.is_none(),
+				"Transaction receipt should not be present"
+			);
+			assert!(
+				evm_match.logs.is_some(),
+				"Transaction logs should be present"
+			);
+			assert!(
+				evm_match.matched_on.events.is_empty(),
+				"Should not have matched events"
+			);
+			assert!(
+				!evm_match.matched_on.functions.is_empty(),
+				"Should have matched functions"
+			);
+			assert!(
+				evm_match.matched_on_args.is_some(),
+				"Should have matched on args"
+			);
+			let matched_on_args = evm_match.matched_on_args.as_ref().unwrap();
+			let function_args = &matched_on_args.functions.as_ref().unwrap()[0];
+			assert_eq!(
+				function_args.signature,
+				"inputNestedStruct((bool,string,string,uint256,address,string[],(string,uint256)))"
+			);
+		}
+		_ => panic!("Expected EVM match"),
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_filter_block_with_tuples_expression_equality() -> Result<(), Box<FilterError>> {
+	// Load test data using common utility
+	let test_data = TestDataBuilder::new("evm")
+		.with_monitor("monitor_with_tuples.json")
+		.with_contract_spec("contract_spec_tuples.json")
+		.build();
+
+	let filter_service = FilterService::new();
+
+	// Create mock transport
+	let mock_transport = setup_mock_transport(test_data.clone());
+	let client = EvmClient::new_with_transport(mock_transport);
+
+	let mut monitor = make_monitor_with_tuples_expression_equality(test_data.monitor);
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.functions = vec![FunctionCondition {
+		signature:
+			"inputNestedStruct((bool,string,string,uint256,address,string[],(string,uint256)))"
+				.to_string(),
+		expression: Some("nestedStruct == '(true,\"The Book Title\",\"Author Name\",123,\"0x1234567890abcdef1234567890abcdef12345678\",[\"fiction\",\"bestseller\"],(\"The Sequel\",321))'".to_string()),
+	}];
+	monitor.match_conditions.transactions = vec![];
+
+	let contract_spec = test_data.contract_spec.unwrap();
+	let contract_with_spec: (String, ContractSpec) = (
+		"0x774283785a2e4845E7dF23e18af5849c3D23722f".to_string(),
+		contract_spec.clone(),
+	);
+
+	let matches = filter_service
+		.filter_block(
+			&client,
+			&test_data.network,
+			test_data.blocks.last().unwrap(),
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches");
+	assert_eq!(matches.len(), 1, "Expected exactly one match");
+
+	match &matches[0] {
+		MonitorMatch::EVM(evm_match) => {
+			assert!(
+				evm_match.receipt.is_none(),
+				"Transaction receipt should not be present"
+			);
+			assert!(
+				evm_match.logs.is_some(),
+				"Transaction logs should be present"
+			);
+			assert!(
+				evm_match.matched_on.events.is_empty(),
+				"Should not have matched events"
+			);
+			assert!(
+				!evm_match.matched_on.functions.is_empty(),
+				"Should have matched functions"
+			);
+			assert!(
+				evm_match.matched_on_args.is_some(),
+				"Should have matched on args"
+			);
+			let matched_on_args = evm_match.matched_on_args.as_ref().unwrap();
+			let function_args = &matched_on_args.functions.as_ref().unwrap()[0];
+			assert_eq!(
+				function_args.signature,
+				"inputNestedStruct((bool,string,string,uint256,address,string[],(string,uint256)))"
+			);
+		}
+		_ => panic!("Expected EVM match"),
 	}
 
 	Ok(())

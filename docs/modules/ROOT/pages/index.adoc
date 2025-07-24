@@ -1414,6 +1414,11 @@ Expressions allow for condition checking of function arguments, event parameters
 | `contains`, `==`, `!=`
 | Behavior of `contains` and `==` differs based on whether the value is CSV or a JSON array string. See "Operations on Complex Types" for details.
 
+| `*Tuple (EVM)*`
+| Ordered list represented as a JSON array string (e.g., `'["Alice", 0x1234..., 25, true, [12,34]]'`).
+| `contains`, `==`, `!=`
+| The `contains` operation performs a case-insensitive deep search through all tuple elements. `==` and `!=` perform comparisons against the entire tuple values. See "Operations on Complex Types" for details.
+
 |===
 
 
@@ -1508,6 +1513,28 @@ When an EVM parameter is an array (often represented internally or configured wi
 - `array_param == '["raw_json_array_string"]'` string comparison of the array's entire JSON string representation against the provided string
 - `array_param != '["raw_json_array_string"]'` the negation of the above
 - `array_param[0]` indexed access
+
+*Tuple Operations (`kind: "tuple"`)*
+
+- `tuple_param contains 'value'` checks if the string `'value'` exists within the tuple.
+- `tuple_param == (12, "hello", "testing", 34)` checks if the tuple is equal.
+- `tuple_param != (12, "hello", "testing", 34)` checks if the tuple is not equal.
+
+Where `tuple_param` is the name of tuple param (we should have only one param for tuples).
+
+*Note on Solidity Structs:* When working with Solidity smart contracts, struct types are automatically converted to tuples during ABI encoding/decoding. For example, a Solidity struct like:
+
+[source,solidity]
+----
+struct User {
+    uint256 id;
+    string name;
+    string email;
+    uint256 age;
+}
+----
+
+Will be represented as a tuple `*(12, "user_name", "user_email", 34)*` where the values correspond to the struct fields in their declaration order. This conversion is handled transparently by the Solidity compiler and Web3 libraries, allowing you to use the tuple operations above to work with struct data returned from smart contract calls.
 
 ===== Stellar Specifics
 

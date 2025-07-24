@@ -89,7 +89,9 @@ impl<'a> EVMConditionEvaluator<'a> {
 			JsonValue::Object(nested_map) => nested_map
 				.values()
 				.any(|val_in_obj| self.check_json_value_matches_str(val_in_obj, rhs_str)),
-			JsonValue::Array(_) => false,
+			JsonValue::Array(arr) => arr
+				.iter()
+				.any(|item_in_array| self.check_json_value_matches_str(item_in_array, rhs_str)),
 			JsonValue::Null => rhs_str == "null",
 		}
 	}
@@ -146,23 +148,27 @@ impl<'a> EVMConditionEvaluator<'a> {
 
 		match operator {
 			ComparisonOperator::Eq | ComparisonOperator::Ne => {
-				let lhs_json_value = serde_json::from_str::<JsonValue>(lhs_json_array_str)
-					.map_err(|e| {
-						let msg = format!(
-							"Failed to parse LHS value '{}' as JSON array for 'Eq/Ne' operator",
-							lhs_json_array_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
+				let lhs_json_value = serde_json::from_str::<JsonValue>(
+					&lhs_json_array_str.to_lowercase(),
+				)
+				.map_err(|e| {
+					let msg = format!(
+						"Failed to parse LHS value '{}' as JSON array for 'Eq/Ne' operator",
+						lhs_json_array_str
+					);
+					EvaluationError::parse_error(msg, Some(e.into()), None)
+				})?;
 
-				let rhs_json_value =
-					serde_json::from_str::<JsonValue>(rhs_target_str).map_err(|e| {
-						let msg = format!(
-							"Failed to parse RHS value '{}' as JSON array for 'Eq/Ne' operator",
-							rhs_target_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
+				let rhs_json_value = serde_json::from_str::<JsonValue>(
+					&rhs_target_str.to_lowercase(),
+				)
+				.map_err(|e| {
+					let msg = format!(
+						"Failed to parse RHS value '{}' as JSON array for 'Eq/Ne' operator",
+						rhs_target_str
+					);
+					EvaluationError::parse_error(msg, Some(e.into()), None)
+				})?;
 
 				// Ensure both parsed values are actually arrays
 				if !lhs_json_value.is_array() || !rhs_json_value.is_array() {
@@ -203,6 +209,247 @@ impl<'a> EVMConditionEvaluator<'a> {
 				Err(EvaluationError::unsupported_operator(msg, None, None))
 			}
 		}
+	}
+
+	/// Compares a tuple value with a literal value using the Contains operator.
+	/// Tuples in EVM are represented in format: (value1,value2,value3,...)
+	///
+	/// Arguments:
+	/// - lhs_json_tuple_str: The left-hand side value as a tuple string.
+	/// - operator: The operator to use for the comparison.
+	/// - rhs_literal: The right-hand side value.
+	///
+	/// Returns:
+	/// - true if the comparison is true, false otherwise.
+	/// - error if the comparison is not supported.
+	pub fn compare_tuple(
+		&self,
+		lhs_json_tuple_str: &str,
+		operator: &ComparisonOperator,
+		rhs_literal: &LiteralValue<'_>,
+	) -> Result<bool, EvaluationError> {
+		let rhs_target_str = match rhs_literal {
+			LiteralValue::Str(s) => *s,
+			LiteralValue::Number(s) => {
+				if *operator == ComparisonOperator::Contains {
+					*s // For Contains, we search for this number (as string)
+				} else {
+					let msg = format!(
+						"Expected string literal (representing a tuple) for EVM 'tuple' Eq/Ne comparison, found number: {:?}",
+						rhs_literal
+					);
+					return Err(EvaluationError::type_mismatch(msg, None, None));
+				}
+			}
+			_ => {
+				let msg = format!(
+					"Expected string or number literal for EVM 'tuple' comparison, found: {:?}",
+					rhs_literal
+				);
+				return Err(EvaluationError::type_mismatch(msg, None, None));
+			}
+		};
+
+		tracing::debug!(
+			"EVM Comparing tuple: lhs: '{}', operator: {:?}, rhs_target: '{}'",
+			lhs_json_tuple_str,
+			operator,
+			rhs_target_str
+		);
+
+		match operator {
+			ComparisonOperator::Eq | ComparisonOperator::Ne => {
+				// For Eq/Ne, we compare the raw tuple strings
+				// This allows for exact matching of tuple representations
+				// For Eq/Ne, we compare the raw tuple strings (normalize whitespace for comparison)
+				let normalized_lhs = self.normalize_tuple_whitespace(lhs_json_tuple_str);
+				let normalized_rhs = self.normalize_tuple_whitespace(rhs_target_str);
+				let are_equal = normalized_lhs == normalized_rhs;
+
+				Ok(if *operator == ComparisonOperator::Eq {
+					are_equal
+				} else {
+					!are_equal
+				})
+			}
+			ComparisonOperator::Contains => {
+				// Parse the tuple and search for the target value within its elements
+				// Tuples are in format: (value1,value2,value3,...)
+				if !lhs_json_tuple_str.starts_with('(') || !lhs_json_tuple_str.ends_with(')') {
+					let msg = format!(
+						"Invalid tuple format: '{}'. Expected format: (value1,value2,value3,...)",
+						lhs_json_tuple_str
+					);
+					return Err(EvaluationError::parse_error(msg, None, None));
+				}
+
+				// Extract the content between parentheses
+				let content = &lhs_json_tuple_str[1..lhs_json_tuple_str.len() - 1];
+
+				// Split by comma, but be careful about nested structures
+				let elements = self.parse_tuple_elements(content)?;
+
+				// Check if any element contains the target value
+				let found = elements
+					.iter()
+					.any(|element| self.check_json_value_matches_str(element, rhs_target_str));
+
+				Ok(found)
+			}
+			_ => {
+				let msg = format!(
+				"Operator {:?} not supported for EVM 'tuple' type. Only 'Contains', 'Eq/Ne' are supported.",
+				operator
+			);
+				Err(EvaluationError::unsupported_operator(msg, None, None))
+			}
+		}
+	}
+
+	/// Helper function to parse tuple elements from a string like "12,title,[testing,value],14"
+	/// Handles nested structures like arrays and objects within tuples
+	///
+	/// Arguments:
+	/// - content: The string to parse.
+	///
+	/// Returns:
+	/// - A vector of JsonValue representing the tuple elements.
+	/// - An error if the string is not a valid tuple.
+	fn parse_tuple_elements(&self, content: &str) -> Result<Vec<JsonValue>, EvaluationError> {
+		if content.trim().is_empty() {
+			return Ok(vec![]);
+		}
+
+		let mut elements = Vec::new();
+		let mut chars = content.chars().peekable();
+		let mut current = String::new();
+
+		while chars.peek().is_some() {
+			// Parse one element
+			current.clear();
+			self.parse_single_element(&mut chars, &mut current);
+
+			if !current.is_empty() {
+				// Handle different types of nested structures
+				if current.starts_with('(') && current.ends_with(')') {
+					// This is a nested tuple - recursively parse it
+					let inner_content = &current[1..current.len() - 1];
+					let nested_elements = self.parse_tuple_elements(inner_content)?;
+
+					// Create a JSON array from the nested tuple elements for uniform handling
+					elements.push(JsonValue::Array(nested_elements));
+				} else if current.starts_with('[') || current.starts_with('{') {
+					// These are valid JSON structures (arrays and objects)
+					let json_value = serde_json::from_str(&current).map_err(|e| {
+						let msg =
+							format!("Failed to parse tuple element '{}' as JSON: {}", current, e);
+						EvaluationError::parse_error(msg, Some(e.into()), None)
+					})?;
+					elements.push(json_value);
+				} else {
+					// Otherwise, try to parse as JSON, but if it fails, wrap as a string
+					let json_value = match serde_json::from_str(&current) {
+						Ok(val) => val,
+						Err(_) => {
+							// If it's not valid JSON, treat it as a string value
+							JsonValue::String(current.clone())
+						}
+					};
+					elements.push(json_value);
+				}
+			}
+
+			if chars.peek() == Some(&',') {
+				chars.next();
+			}
+		}
+
+		Ok(elements)
+	}
+
+	/// Parse a single element from the character stream, handling nested structures and quotes
+	///
+	/// Arguments:
+	/// - chars: The character stream to parse.
+	/// - current: The current element being parsed.
+	///
+	/// Returns:
+	/// - The current element being parsed.
+	fn parse_single_element(
+		&self,
+		chars: &mut std::iter::Peekable<std::str::Chars>,
+		current: &mut String,
+	) {
+		let mut depth = 0;
+		let mut in_quotes = false;
+		let mut quote_char = None;
+
+		while let Some(&ch) = chars.peek() {
+			// If we're at depth 0, not in quotes, and see a comma, we're done with this element
+			if depth == 0 && !in_quotes && ch == ',' {
+				break;
+			}
+
+			chars.next(); // Consume the character
+			current.push(ch);
+
+			match ch {
+				'"' | '\'' => {
+					if !in_quotes {
+						in_quotes = true;
+						quote_char = Some(ch);
+					} else if quote_char == Some(ch) {
+						// Check if it's escaped - check the character before the quote
+						let prev_is_escape =
+							current.len() >= 2 && current.chars().rev().nth(1) == Some('\\');
+						if !prev_is_escape {
+							in_quotes = false;
+							quote_char = None;
+						}
+					}
+				}
+				'[' | '{' | '(' if !in_quotes => depth += 1,
+				']' | '}' | ')' if !in_quotes => depth -= 1,
+				_ => {}
+			}
+		}
+	}
+
+	/// Normalize whitespace in tuple strings for consistent comparison
+	fn normalize_tuple_whitespace(&self, tuple_str: &str) -> String {
+		// Normalize whitespace while preserving spaces within quoted strings
+		let mut result = String::new();
+		let chars = tuple_str.chars().peekable();
+		let mut in_quotes = false;
+		let mut quote_char = None;
+
+		for ch in chars {
+			match ch {
+				'"' | '\'' if !in_quotes => {
+					in_quotes = true;
+					quote_char = Some(ch);
+					result.push(ch);
+				}
+				ch if in_quotes && Some(ch) == quote_char => {
+					in_quotes = false;
+					quote_char = None;
+					result.push(ch);
+				}
+				ch if in_quotes => {
+					// Preserve all characters within quotes, including whitespace
+					result.push(ch);
+				}
+				ch if ch.is_whitespace() => {
+					// Skip whitespace outside of quotes
+					continue;
+				}
+				_ => {
+					result.push(ch);
+				}
+			}
+		}
+
+		result
 	}
 
 	/// Compares potential U256 LHS value with the RHS literal value
@@ -661,6 +908,7 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 			}
 			"bool" => self.compare_boolean(lhs_value_str, operator, rhs_literal),
 			"map" => self.compare_map(lhs_value_str, operator, rhs_literal),
+			"tuple" => self.compare_tuple(lhs_value_str, operator, rhs_literal),
 			_ => {
 				let msg = format!(
 					"Unsupported EVM parameter kind for comparison: {}",
@@ -1558,8 +1806,8 @@ mod tests {
 			)
 			.unwrap());
 
-		// Case sensitivity for string elements (serde_json::Value default behavior)
-		assert!(!evaluator
+		// Case insensitive for string elements
+		assert!(evaluator
 			.compare_array(
 				r#"["Alice"]"#,
 				&ComparisonOperator::Eq,
@@ -1602,13 +1850,15 @@ mod tests {
 				&LiteralValue::Str(r#"[1,2,3]"#)
 			)
 			.unwrap());
+
 		assert!(evaluator
 			.compare_array(
-				r#"["Alice"]"#,
+				r#"["Alice_2"]"#,
 				&ComparisonOperator::Ne,
 				&LiteralValue::Str(r#"["alice"]"#)
 			)
 			.unwrap());
+
 		assert!(evaluator
 			.compare_array(
 				r#"[1, 2]"#,
@@ -2064,6 +2314,16 @@ mod tests {
 				&LiteralValue::Str("value1")
 			)
 			.unwrap());
+
+		// Test routing to compare_tuple
+		assert!(evaluator
+			.compare_final_values(
+				"tuple",
+				r#"(12, "title",["testing","value"],14)"#,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("title")
+			)
+			.unwrap());
 	}
 
 	#[test]
@@ -2115,5 +2375,294 @@ mod tests {
 		assert_eq!(evaluator.get_kind_from_json_value(&json!([1, 2])), "array");
 		assert_eq!(evaluator.get_kind_from_json_value(&json!({"a":1})), "map");
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(null)), "null");
+	}
+
+	#[test]
+	fn test_compare_tuple_contains_value() {
+		let evaluator = create_evaluator();
+		let lhs_tuple = r#"(12, "title",["testing","value"],14)"#;
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("title")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Number("12")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("testing")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Number("14")
+			)
+			.unwrap());
+		assert!(!evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("bob")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_tuple_with_addresses() {
+		let evaluator = create_evaluator();
+		let addr1 = "0x1234567890123456789012345678901234567890";
+		let addr2 = "0x0987654321098765432109876543210987654321";
+		let lhs_tuple = format!(r#"({},{},{{}},1000)"#, addr1, addr2);
+
+		// Test Contains with address
+		assert!(evaluator
+			.compare_tuple(
+				&lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str(addr1)
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				&lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str(addr2)
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_tuple_with_nested_structures() {
+		let evaluator = create_evaluator();
+		let lhs_tuple = r#"(user,{"name":"alice","age":30},{"version":"1.0"})"#;
+
+		// Test Contains with nested values
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("alice")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Number("30")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("1.0")
+			)
+			.unwrap());
+		assert!(!evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("bob")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_tuple_with_mixed_types() {
+		let evaluator = create_evaluator();
+		let lhs_tuple = r#"(123, "string_value", true, ["array","elements"], {"key":"value"})"#;
+
+		// Test Contains with different types
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Number("123")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("string_value")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("true")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("array")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("value")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_tuple_equality() {
+		let evaluator = create_evaluator();
+		let lhs_tuple = r#"(12,"title",["testing","value"],14)"#;
+
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple,
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str(lhs_tuple)
+			)
+			.unwrap());
+
+		let lhs_tuple_whitespace = r#"(12, "title", ["testing","value"],14)"#;
+
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple_whitespace,
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str(lhs_tuple)
+			)
+			.unwrap());
+
+		let lhs_tuple_nested = r#"(12, "title", ["testing","value"],14, (12, "testing value"))"#;
+		assert!(evaluator
+			.compare_tuple(
+				lhs_tuple_nested,
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str(lhs_tuple_nested)
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_tuple_errors() {
+		let evaluator = create_evaluator();
+		let valid_lhs_tuple = r#"(12, "title",["testing","value"],14)"#;
+
+		// Wrong type for RHS
+		assert!(matches!(
+			evaluator.compare_tuple(
+				valid_lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Bool(true)
+			),
+			Err(EvaluationError::TypeMismatch(_))
+		));
+
+		// Invalid tuple format (missing parentheses)
+		let invalid_lhs_tuple = "12,title,testing,14";
+		assert!(matches!(
+			evaluator.compare_tuple(
+				invalid_lhs_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("title")
+			),
+			Err(EvaluationError::ParseError(_))
+		));
+
+		// Unsupported operator
+		assert!(matches!(
+			evaluator.compare_tuple(
+				valid_lhs_tuple,
+				&ComparisonOperator::Gt,
+				&LiteralValue::Str("title")
+			),
+			Err(EvaluationError::UnsupportedOperator(_))
+		));
+
+		// Unsupported operator
+		assert!(matches!(
+			evaluator.compare_tuple(
+				valid_lhs_tuple,
+				&ComparisonOperator::Gt,
+				&LiteralValue::Str("title")
+			),
+			Err(EvaluationError::UnsupportedOperator(_))
+		));
+
+		// Invalid JSON in tuple element
+		let invalid_json_tuple = r#"(12, "title",[invalid json],14)"#;
+		assert!(matches!(
+			evaluator.compare_tuple(
+				invalid_json_tuple,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("title")
+			),
+			Err(EvaluationError::ParseError(_))
+		));
+	}
+
+	#[test]
+	fn test_normalize_tuple_whitespace() {
+		let evaluator = create_evaluator();
+
+		// Basic whitespace removal
+		assert_eq!(evaluator.normalize_tuple_whitespace("(a, b, c)"), "(a,b,c)");
+
+		// Multiple spaces
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace("(  a  ,   b   ,    c  )"),
+			"(a,b,c)"
+		);
+
+		// Tabs and newlines
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace("(\ta\t,\nb\n,\r\nc\r)"),
+			"(a,b,c)"
+		);
+
+		// Mixed whitespace types
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace("( \t\na \r\n, \t b \n\r, \t\r c \n )"),
+			"(a,b,c)"
+		);
+
+		// Empty string
+		assert_eq!(evaluator.normalize_tuple_whitespace(""), "");
+
+		// Only whitespace
+		assert_eq!(evaluator.normalize_tuple_whitespace("   \t\n\r   "), "");
+
+		// No whitespace to remove
+		assert_eq!(evaluator.normalize_tuple_whitespace("(a,b,c)"), "(a,b,c)");
+
+		// Complex nested structure with whitespace
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace("( 123 , \"title\" , [ testing , value ] , 14 )"),
+			"(123,\"title\",[testing,value],14)"
+		);
+
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace("(\"hello world\", \"test string\")"),
+			"(\"hello world\",\"test string\")"
+		);
+
+		//Edge case with nested tuples
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace(
+				"(123, (456, \"test string\", \"hello world 2\"), 789)"
+			),
+			"(123,(456,\"test string\",\"hello world 2\"),789)"
+		);
 	}
 }
