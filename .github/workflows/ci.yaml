@@ -27,6 +27,11 @@ jobs:
       changed-tests-files: ${{ steps.changed-files-yaml.outputs.tests_any_changed }}
     steps:
    # Checkout the repository
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Get changed files
@@ -58,6 +63,11 @@ jobs:
     needs: [test, msrv, rustfmt, clippy]
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Failed
         run: exit 1
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
@@ -69,6 +79,11 @@ jobs:
     timeout-minutes: 10
     steps:
    # Checkout the repository
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Prepare
@@ -79,7 +94,7 @@ jobs:
       - name: Get cache-hit output
         run: 'echo "Cache hit >>>>>: ${{ steps.init.outputs.cache-hit }}"'
       - name: Install cargo hack
-        uses: taiki-e/install-action@cargo-hack
+        uses: taiki-e/install-action@7689010b667477e55299b24c373cdf719c945fdf # cargo-hack
 
    # Check the minimum supported Rust version
       - name: Default features
@@ -92,6 +107,11 @@ jobs:
     timeout-minutes: 10
     steps:
    # Checkout the repository
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Prepare
@@ -115,6 +135,11 @@ jobs:
     timeout-minutes: 10
     steps:
    # Checkout the repository
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Prepare
@@ -138,6 +163,11 @@ jobs:
     timeout-minutes: 20
     steps:
    # Checkout the repository
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Prepare
@@ -150,9 +180,9 @@ jobs:
       - name: Get cache-hit output
         run: 'echo "Cache hit >>>>>: ${{ steps.init.outputs.cache-hit }}"'
       - name: Install cargo hack
-        uses: taiki-e/install-action@cargo-hack
+        uses: taiki-e/install-action@7689010b667477e55299b24c373cdf719c945fdf # cargo-hack
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@16edcff251c6bb06f6878981359f84b77b28e7e2 # cargo-llvm-cov
       - name: Build
         run: cargo test --no-run --locked
 
@@ -212,6 +242,11 @@ jobs:
       ${{ github.event.pull_request.draft == false && needs.changed_files.outputs.changed-docker-files == 'true' }}
     steps:
       # Checkout the repository
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Prepare
