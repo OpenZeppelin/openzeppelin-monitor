@@ -3,7 +3,6 @@
 //! Provides functionality to send formatted messages to email addresses
 //! via SMTP, supporting message templates with variable substitution.
 
-use async_trait::async_trait;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use email_address::EmailAddress;
 use lettre::{
@@ -19,7 +18,7 @@ use std::{collections::HashMap, error::Error as StdError, sync::Arc};
 
 use crate::{
 	models::TriggerTypeConfig,
-	services::notification::{NotificationError, Notifier},
+	services::notification::NotificationError,
 	utils::{JitterSetting, RetryConfig},
 };
 
@@ -86,6 +85,100 @@ where
 			client: Arc::new(transport),
 			retry_policy,
 		}
+	}
+
+	/// Sends a formatted message to email
+	///
+	/// # Arguments
+	/// * `message` - The formatted message to send
+	///
+	/// # Returns
+	/// * `Result<(), NotificationError>` - Success or error
+	pub async fn notify(&self, message: &str) -> Result<(), NotificationError> {
+		let recipients_str = self
+			.recipients
+			.iter()
+			.map(ToString::to_string)
+			.collect::<Vec<_>>()
+			.join(", ");
+
+		let mailboxes: Mailboxes = recipients_str.parse::<Mailboxes>().map_err(|e| {
+			NotificationError::notify_failed(
+				format!("Failed to parse recipients: {}", e),
+				Some(e.into()),
+				None,
+			)
+		})?;
+		let recipients_header: header::To = mailboxes.into();
+
+		let email = Message::builder()
+			.mailbox(recipients_header)
+			.from(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to parse sender: {}", e),
+					Some(e.into()),
+					None,
+				)
+			})?)
+			.reply_to(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to parse reply-to: {}", e),
+					Some(e.into()),
+					None,
+				)
+			})?)
+			.subject(&self.subject)
+			.header(ContentType::TEXT_HTML)
+			.body(message.to_owned())
+			.map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to build email message: {}", e),
+					Some(e.into()),
+					None,
+				)
+			})?;
+
+		let operation = || async {
+			self.client.send(email.clone()).await.map_err(|e| {
+				NotificationError::notify_failed(
+					format!("Failed to send email: {}", e),
+					Some(Box::new(e)),
+					None,
+				)
+			})?;
+
+			Ok(())
+		};
+
+		let backoff = ExponentialBuilder::default()
+			.with_min_delay(self.retry_policy.initial_backoff)
+			.with_max_delay(self.retry_policy.max_backoff);
+
+		let backoff_with_jitter = match self.retry_policy.jitter {
+			JitterSetting::Full => backoff.with_jitter(),
+			JitterSetting::None => backoff,
+		};
+
+		// Retry if the error is SmtpError and not permanent
+		let should_retry = |e: &NotificationError| -> bool {
+			if let NotificationError::NotifyFailed(context) = e {
+				if let Some(source) = context.source() {
+					if let Some(smtp_error) = source.downcast_ref::<SmtpError>() {
+						return !smtp_error.is_permanent();
+					}
+				}
+			}
+			true
+		};
+
+		operation
+			.retry(
+				backoff_with_jitter
+					.build()
+					.take(self.retry_policy.max_retries as usize),
+			)
+			.when(should_retry)
+			.await
 	}
 }
 
@@ -182,108 +275,6 @@ impl EmailNotifier<AsyncSmtpTransport<Tokio1Executor>> {
 				None,
 			))
 		}
-	}
-}
-
-#[async_trait]
-impl<T> Notifier for EmailNotifier<T>
-where
-	T: AsyncTransport + Clone + Send + Sync + 'static,
-	T::Ok: Send + Sync,
-	T::Error: StdError + Send + Sync + 'static,
-{
-	/// Sends a formatted message to email
-	///
-	/// # Arguments
-	/// * `message` - The formatted message to send
-	///
-	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
-		let recipients_str = self
-			.recipients
-			.iter()
-			.map(ToString::to_string)
-			.collect::<Vec<_>>()
-			.join(", ");
-
-		let mailboxes: Mailboxes = recipients_str.parse::<Mailboxes>().map_err(|e| {
-			NotificationError::notify_failed(
-				format!("Failed to parse recipients: {}", e),
-				Some(e.into()),
-				None,
-			)
-		})?;
-		let recipients_header: header::To = mailboxes.into();
-
-		let email = Message::builder()
-			.mailbox(recipients_header)
-			.from(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
-				NotificationError::notify_failed(
-					format!("Failed to parse sender: {}", e),
-					Some(e.into()),
-					None,
-				)
-			})?)
-			.reply_to(self.sender.to_string().parse::<Mailbox>().map_err(|e| {
-				NotificationError::notify_failed(
-					format!("Failed to parse reply-to: {}", e),
-					Some(e.into()),
-					None,
-				)
-			})?)
-			.subject(&self.subject)
-			.header(ContentType::TEXT_HTML)
-			.body(message.to_owned())
-			.map_err(|e| {
-				NotificationError::notify_failed(
-					format!("Failed to build email message: {}", e),
-					Some(e.into()),
-					None,
-				)
-			})?;
-
-		let operation = || async {
-			self.client.send(email.clone()).await.map_err(|e| {
-				NotificationError::notify_failed(
-					format!("Failed to send email: {}", e),
-					Some(Box::new(e)),
-					None,
-				)
-			})?;
-
-			Ok(())
-		};
-
-		let backoff = ExponentialBuilder::default()
-			.with_min_delay(self.retry_policy.initial_backoff)
-			.with_max_delay(self.retry_policy.max_backoff);
-
-		let backoff_with_jitter = match self.retry_policy.jitter {
-			JitterSetting::Full => backoff.with_jitter(),
-			JitterSetting::None => backoff,
-		};
-
-		// Retry if the error is SmtpError and not permanent
-		let should_retry = |e: &NotificationError| -> bool {
-			if let NotificationError::NotifyFailed(context) = e {
-				if let Some(source) = context.source() {
-					if let Some(smtp_error) = source.downcast_ref::<SmtpError>() {
-						return !smtp_error.is_permanent();
-					}
-				}
-			}
-			true
-		};
-
-		operation
-			.retry(
-				backoff_with_jitter
-					.build()
-					.take(self.retry_policy.max_retries as usize),
-			)
-			.when(should_retry)
-			.await
 	}
 }
 
