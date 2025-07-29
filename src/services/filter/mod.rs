@@ -6,6 +6,9 @@
 //! - Chain-specific helper functions
 
 mod error;
+#[cfg(fuzzing)]
+pub mod expression;
+#[cfg(not(fuzzing))]
 mod expression;
 mod filter_match;
 mod filters;
