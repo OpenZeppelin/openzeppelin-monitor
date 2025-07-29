@@ -1,0 +1,29 @@
+[package]
+name = "openzeppelin-monitor-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.openzeppelin-monitor]
+path = ".."
+features = ["fuzzing"]
+
+[[bin]]
+name = "expression_parser"
+path = "fuzz_targets/expression_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xdr_value_parser"
+path = "fuzz_targets/xdr_value_parser.rs"
+test = false
+doc = false
+bench = false
