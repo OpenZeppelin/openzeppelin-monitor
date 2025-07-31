@@ -7,59 +7,148 @@ use async_trait::async_trait;
 
 use std::{collections::HashMap, sync::Arc};
 
-mod discord;
 mod email;
 mod error;
+pub mod payload_builder;
 mod pool;
 mod script;
-mod slack;
-mod telegram;
 mod webhook;
 
 use crate::{
-	models::{MonitorMatch, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig},
-	utils::normalize_string,
+	models::{
+		MonitorMatch, NotificationMessage, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig,
+	},
+	utils::{normalize_string, RetryConfig},
 };
 
-pub use discord::DiscordNotifier;
 pub use email::{EmailContent, EmailNotifier, SmtpConfig};
 pub use error::NotificationError;
+pub use payload_builder::{
+	DiscordPayloadBuilder, GenericWebhookPayloadBuilder, SlackPayloadBuilder,
+	TelegramPayloadBuilder, WebhookPayloadBuilder,
+};
 pub use pool::NotificationClientPool;
 pub use script::ScriptNotifier;
-pub use slack::SlackNotifier;
-pub use telegram::TelegramNotifier;
 pub use webhook::{WebhookConfig, WebhookNotifier};
 
-/// Interface for notification implementations
-///
-/// All notification types must implement this trait to provide
-/// consistent notification behavior.
-#[async_trait]
-pub trait Notifier {
-	/// Sends a notification with the given message
-	///
-	/// # Arguments
-	/// * `message` - The formatted message to send
-	///
-	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError>;
+/// A container for all components needed to configure and send a webhook notification.
+struct WebhookComponents {
+	config: WebhookConfig,
+	retry_policy: RetryConfig,
+	builder: Box<dyn WebhookPayloadBuilder>,
+}
 
-	/// Sends a notification with custom payload fields
-	///
-	/// # Arguments
-	/// * `message` - The formatted message to send
-	/// * `payload_fields` - Additional fields to include in the payload
-	///
-	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify_with_payload(
-		&self,
-		message: &str,
-		_payload_fields: HashMap<String, serde_json::Value>,
-	) -> Result<(), NotificationError> {
-		// Default implementation just calls notify
-		self.notify(message).await
+/// A type alias to simplify the complex tuple returned by the internal `match` statement.
+type WebhookParts = (
+	String,                          // url
+	NotificationMessage,             // message
+	Option<String>,                  // method
+	Option<String>,                  // secret
+	Option<HashMap<String, String>>, // headers
+	Box<dyn WebhookPayloadBuilder>,  // payload builder
+);
+
+/// A trait for trigger configurations that can be sent via webhook.
+/// This abstracts away the specific details of each webhook provider.
+trait AsWebhookComponents {
+	/// Consolidates the logic for creating webhook components from a trigger config.
+	/// It returns the generic `WebhookConfig`, RetryConfig and the specific `WebhookPayloadBuilder`
+	/// needed for the given trigger type.
+	fn as_webhook_components(&self) -> Result<WebhookComponents, NotificationError>;
+}
+
+impl AsWebhookComponents for TriggerTypeConfig {
+	fn as_webhook_components(&self) -> Result<WebhookComponents, NotificationError> {
+		let (url, message, method, secret, headers, builder): WebhookParts = match self {
+			TriggerTypeConfig::Webhook {
+				url,
+				message,
+				method,
+				secret,
+				headers,
+				..
+			} => (
+				url.as_ref().to_string(),
+				message.clone(),
+				method.clone(),
+				secret.as_ref().map(|s| s.as_ref().to_string()),
+				headers.clone(),
+				Box::new(GenericWebhookPayloadBuilder),
+			),
+			TriggerTypeConfig::Discord {
+				discord_url,
+				message,
+				..
+			} => (
+				discord_url.as_ref().to_string(),
+				message.clone(),
+				Some("POST".to_string()),
+				None,
+				None,
+				Box::new(DiscordPayloadBuilder),
+			),
+			TriggerTypeConfig::Telegram {
+				token,
+				message,
+				chat_id,
+				disable_web_preview,
+				..
+			} => (
+				format!("https://api.telegram.org/bot{}/sendMessage", token),
+				message.clone(),
+				Some("POST".to_string()),
+				None,
+				None,
+				Box::new(TelegramPayloadBuilder {
+					chat_id: chat_id.clone(),
+					disable_web_preview: disable_web_preview.unwrap_or(false),
+				}),
+			),
+			TriggerTypeConfig::Slack {
+				slack_url, message, ..
+			} => (
+				slack_url.as_ref().to_string(),
+				message.clone(),
+				Some("POST".to_string()),
+				None,
+				None,
+				Box::new(SlackPayloadBuilder),
+			),
+			_ => {
+				return Err(NotificationError::config_error(
+					format!("Trigger type is not webhook-compatible: {:?}", self),
+					None,
+					None,
+				))
+			}
+		};
+
+		// Construct the final WebhookConfig from the extracted parts.
+		let config = WebhookConfig {
+			url,
+			title: message.title,
+			body_template: message.body,
+			method,
+			secret,
+			headers,
+			url_params: None,
+			payload_fields: None,
+		};
+
+		// Use the retry policy from the trigger config
+		let retry_policy = self.get_retry_policy().ok_or_else(|| {
+			NotificationError::config_error(
+				"Webhook trigger config is unexpectedly missing a retry policy.",
+				None,
+				None,
+			)
+		})?;
+
+		Ok(WebhookComponents {
+			config,
+			retry_policy,
+			builder,
+		})
 	}
 }
 
@@ -122,19 +211,13 @@ impl NotificationService {
 			| TriggerType::Discord
 			| TriggerType::Webhook
 			| TriggerType::Telegram => {
-				// Extract retry policy from the trigger configuration
-				let retry_policy = trigger.config.get_retry_policy().ok_or_else(|| {
-					NotificationError::config_error(
-						format!("Expected retry policy in trigger config: {}", trigger.name),
-						None,
-						None,
-					)
-				})?;
+				// Use the Webhookable trait to get config, retry policy and payload builder
+				let components = trigger.config.as_webhook_components()?;
 
-				// Get or create the HTTP client from the pool
+				// Get or create the HTTP client from the pool based on the retry policy
 				let http_client = self
 					.client_pool
-					.get_or_create_http_client(&retry_policy)
+					.get_or_create_http_client(&components.retry_policy)
 					.await
 					.map_err(|e| {
 						NotificationError::execution_error(
@@ -144,29 +227,17 @@ impl NotificationService {
 						)
 					})?;
 
-				match &trigger.trigger_type {
-					TriggerType::Webhook => {
-						let notifier = WebhookNotifier::from_config(&trigger.config, http_client)?;
-						let message = notifier.format_message(variables);
-						notifier.notify(&message).await?;
-					}
-					TriggerType::Discord => {
-						let notifier = DiscordNotifier::from_config(&trigger.config, http_client)?;
-						let message = notifier.format_message(variables);
-						notifier.notify(&message).await?;
-					}
-					TriggerType::Telegram => {
-						let notifier = TelegramNotifier::from_config(&trigger.config, http_client)?;
-						let message = notifier.format_message(variables);
-						notifier.notify(&message).await?;
-					}
-					TriggerType::Slack => {
-						let notifier = SlackNotifier::from_config(&trigger.config, http_client)?;
-						let message = notifier.format_message(variables);
-						notifier.notify(&message).await?;
-					}
-					_ => unreachable!(),
-				}
+				// Build the payload
+				let payload = components.builder.build_payload(
+					&components.config.title,
+					&components.config.body_template,
+					variables,
+				);
+
+				// Create the notifier
+				let notifier = WebhookNotifier::new(components.config, http_client)?;
+
+				notifier.notify_json(&payload).await?;
 			}
 			TriggerType::Email => {
 				// Extract SMTP configuration from the trigger
@@ -266,8 +337,8 @@ mod tests {
 	use crate::{
 		models::{
 			AddressWithSpec, EVMMonitorMatch, EVMTransactionReceipt, EventCondition,
-			FunctionCondition, MatchConditions, Monitor, MonitorMatch, ScriptLanguage,
-			TransactionCondition, TriggerType,
+			FunctionCondition, MatchConditions, Monitor, MonitorMatch, NotificationMessage,
+			ScriptLanguage, SecretString, SecretValue, TransactionCondition, TriggerType,
 		},
 		utils::tests::{
 			builders::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
@@ -345,7 +416,7 @@ mod tests {
 			Err(NotificationError::ConfigError(ctx)) => {
 				assert!(ctx
 					.message
-					.contains("Expected retry policy in trigger config"));
+					.contains("Trigger type is not webhook-compatible"));
 			}
 			_ => panic!("Expected ConfigError"),
 		}
@@ -403,7 +474,7 @@ mod tests {
 			Err(NotificationError::ConfigError(ctx)) => {
 				assert!(ctx
 					.message
-					.contains("Expected retry policy in trigger config"));
+					.contains("Trigger type is not webhook-compatible"));
 			}
 			_ => panic!("Expected ConfigError"),
 		}
@@ -433,7 +504,7 @@ mod tests {
 			Err(NotificationError::ConfigError(ctx)) => {
 				assert!(ctx
 					.message
-					.contains("Expected retry policy in trigger config"));
+					.contains("Trigger type is not webhook-compatible"));
 			}
 			_ => panic!("Expected ConfigError"),
 		}
@@ -463,7 +534,7 @@ mod tests {
 			Err(NotificationError::ConfigError(ctx)) => {
 				assert!(ctx
 					.message
-					.contains("Expected retry policy in trigger config"));
+					.contains("Trigger type is not webhook-compatible"));
 			}
 			_ => panic!("Expected ConfigError"),
 		}
@@ -497,5 +568,153 @@ mod tests {
 			}
 			_ => panic!("Expected ConfigError"),
 		}
+	}
+
+	#[test]
+	fn as_webhook_components_trait_for_slack_config() {
+		let title = "Slack Title";
+		let message = "Slack Body";
+
+		let slack_config = TriggerTypeConfig::Slack {
+			slack_url: SecretValue::Plain(SecretString::new(
+				"https://slack.example.com".to_string(),
+			)),
+			message: NotificationMessage {
+				title: title.to_string(),
+				body: message.to_string(),
+			},
+			retry_policy: RetryConfig::default(),
+		};
+
+		let components = slack_config.as_webhook_components().unwrap();
+
+		// Assert WebhookConfig is correct
+		assert_eq!(components.config.url, "https://slack.example.com");
+		assert_eq!(components.config.title, title);
+		assert_eq!(components.config.body_template, message);
+		assert_eq!(components.config.method, Some("POST".to_string()));
+		assert!(components.config.secret.is_none());
+
+		// Assert the builder creates the correct payload
+		let payload = components
+			.builder
+			.build_payload(title, message, &HashMap::new());
+		assert!(
+			payload.get("blocks").is_some(),
+			"Expected a Slack payload with 'blocks'"
+		);
+		assert!(
+			payload.get("content").is_none(),
+			"Did not expect a Discord payload"
+		);
+	}
+
+	#[test]
+	fn as_webhook_components_trait_for_discord_config() {
+		let title = "Discord Title";
+		let message = "Discord Body";
+		let discord_config = TriggerTypeConfig::Discord {
+			discord_url: SecretValue::Plain(SecretString::new(
+				"https://discord.example.com".to_string(),
+			)),
+			message: NotificationMessage {
+				title: title.to_string(),
+				body: message.to_string(),
+			},
+			retry_policy: RetryConfig::default(),
+		};
+
+		let components = discord_config.as_webhook_components().unwrap();
+
+		// Assert WebhookConfig is correct
+		assert_eq!(components.config.url, "https://discord.example.com");
+		assert_eq!(components.config.title, title);
+		assert_eq!(components.config.body_template, message);
+		assert_eq!(components.config.method, Some("POST".to_string()));
+
+		// Assert the builder creates the correct payload
+		let payload = components
+			.builder
+			.build_payload(title, message, &HashMap::new());
+		assert!(
+			payload.get("content").is_some(),
+			"Expected a Discord payload with 'content'"
+		);
+		assert!(
+			payload.get("blocks").is_none(),
+			"Did not expect a Slack payload"
+		);
+	}
+
+	#[test]
+	fn as_webhook_components_trait_for_telegram_config() {
+		let title = "Telegram Title";
+		let message = "Telegram Body";
+		let telegram_config = TriggerTypeConfig::Telegram {
+			token: SecretValue::Plain(SecretString::new("test-token".to_string())),
+			chat_id: "12345".to_string(),
+			disable_web_preview: Some(true),
+			message: NotificationMessage {
+				title: title.to_string(),
+				body: message.to_string(),
+			},
+			retry_policy: RetryConfig::default(),
+		};
+
+		let components = telegram_config.as_webhook_components().unwrap();
+
+		// Assert WebhookConfig is correct
+		assert_eq!(
+			components.config.url,
+			"https://api.telegram.org/bottest-token/sendMessage"
+		);
+		assert_eq!(components.config.title, title);
+		assert_eq!(components.config.body_template, message);
+
+		// Assert the builder creates the correct payload
+		let payload = components
+			.builder
+			.build_payload(title, message, &HashMap::new());
+		assert_eq!(payload.get("chat_id").unwrap(), "12345");
+		assert_eq!(payload.get("disable_web_page_preview").unwrap(), &true);
+		assert!(payload.get("text").is_some());
+	}
+
+	#[test]
+	fn as_webhook_components_trait_for_generic_webhook_config() {
+		let title = "Generic Title";
+		let body_template = "Generic Body";
+		let webhook_config = TriggerTypeConfig::Webhook {
+			url: SecretValue::Plain(SecretString::new("https://generic.example.com".to_string())),
+			message: NotificationMessage {
+				title: title.to_string(),
+				body: body_template.to_string(),
+			},
+			method: Some("PUT".to_string()),
+			secret: Some(SecretValue::Plain(SecretString::new(
+				"my-secret".to_string(),
+			))),
+			headers: Some([("X-Custom".to_string(), "Value".to_string())].into()),
+			retry_policy: RetryConfig::default(),
+		};
+
+		let components = webhook_config.as_webhook_components().unwrap();
+
+		// Assert WebhookConfig is correct
+		assert_eq!(components.config.url, "https://generic.example.com");
+		assert_eq!(components.config.method, Some("PUT".to_string()));
+		assert_eq!(components.config.secret, Some("my-secret".to_string()));
+		assert!(components.config.headers.is_some());
+		assert_eq!(
+			components.config.headers.unwrap().get("X-Custom").unwrap(),
+			"Value"
+		);
+
+		// Assert the builder creates the correct payload
+		let payload = components
+			.builder
+			.build_payload(title, body_template, &HashMap::new());
+		assert!(payload.get("title").is_some());
+		assert!(payload.get("body").is_some());
 	}
 }

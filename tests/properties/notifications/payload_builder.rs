@@ -1,13 +1,11 @@
-//! Property-based tests for Discord notifications.
+//! Property-based tests for Webhook payload builder.
 //!
-//! These tests verify the behavior of the Discord notification system using property testing,
+//! These tests verify the behavior of the Webhook payload builder using property testing,
 //! focusing on template variable substitution, message formatting consistency, and edge cases.
-//! The tests ensure that the Discord notification system handles template variables correctly
+//! The tests ensure that the Webhook payload builder handles template variables correctly
 //! and produces consistent, well-formed output across various input combinations.
 
-use openzeppelin_monitor::{
-	services::notification::DiscordNotifier, utils::tests::create_test_http_client,
-};
+use openzeppelin_monitor::services::notification::payload_builder;
 use proptest::{prelude::*, test_runner::Config};
 use std::collections::HashMap;
 
@@ -28,22 +26,15 @@ proptest! {
 	/// should produce identical results.
 	///
 	/// # Properties tested
-	/// - Multiple calls to format_message with the same variables should return identical results
+	/// - Multiple calls to format_template with the same variables should return identical results
 	/// - Template can contain alphanumeric characters, spaces, $, {, }, and _
 	#[test]
 	fn test_notification_template_idempotency(
 		template in "[a-zA-Z0-9 ${}_]{1,100}",
 		vars in template_variables_strategy()
 	) {
-		let notifier = DiscordNotifier::new(
-			"https://discord.com/test".to_string(),
-			"Test".to_string(),
-			template.clone(),
-			create_test_http_client(),
-		).unwrap();
-
-		let first_pass = notifier.format_message(&vars);
-		let second_pass = notifier.format_message(&vars);
+		let first_pass = payload_builder::format_template(&template, &vars);
+		let second_pass = payload_builder::format_template(&template, &vars);
 
 		prop_assert_eq!(first_pass, second_pass);
 	}
@@ -59,14 +50,7 @@ proptest! {
 		template in "[a-zA-Z0-9 ]{0,50}\\$\\{[a-z_]+\\}[a-zA-Z0-9 ]{0,50}",
 		vars in template_variables_strategy()
 	) {
-		let notifier = DiscordNotifier::new(
-			"https://discord.com/test".to_string(),
-			"Test".to_string(),
-			template.clone(),
-			create_test_http_client(),
-		).unwrap();
-
-		let formatted = notifier.format_message(&vars);
+		let formatted = payload_builder::format_template(&template, &vars);
 
 		// Verify no partial variable substitutions occurred
 		prop_assert!(!formatted.contains("${{"));
@@ -77,22 +61,15 @@ proptest! {
 	///
 	/// # Properties tested
 	/// - Template remains identical when processed with an empty variables map
-	/// - The formatted message follows the expected Discord format: "*Title*\n\ntemplate"
+	/// - The formatted message follows the expected Webhook format: "{template}"
 	#[test]
 	fn test_notification_empty_variables(
 		template in "[a-zA-Z0-9 ${}_]{1,100}"
 	) {
-		let notifier = DiscordNotifier::new(
-			"https://discord.com/test".to_string(),
-			"Test".to_string(),
-			template.clone(),
-			create_test_http_client(),
-		).unwrap();
-
 		let empty_vars = HashMap::new();
-		let formatted = notifier.format_message(&empty_vars);
+		let formatted = payload_builder::format_template(&template, &empty_vars);
 
 		// Template should remain unchanged when no variables are provided
-		prop_assert_eq!(formatted, format!("*Test*\n\n{}", template));
+		prop_assert_eq!(formatted, format!("{}", template));
 	}
 }
