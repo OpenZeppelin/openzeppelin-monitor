@@ -348,17 +348,24 @@ proptest! {
 		prop_assert!(!evaluator.check_json_value_matches_str(&nested_obj, "nonexistent_value"));
 	}
 
-	/// Property: Array comparison should always return false
+	/// Property: Array comparison should search through array items recursively
 	#[test]
-	fn prop_check_json_value_array_always_false(
+	fn prop_check_json_value_array_searches_items(
 		array_content in prop::collection::vec(generate_any_json_value(), 0..5),
 		search_string in generate_comparison_target()
 	) {
 		let evaluator = create_evaluator();
-		let json_array = JsonValue::Array(array_content);
+		let json_array = JsonValue::Array(array_content.clone());
 
-		// Arrays should never match in check_json_value_matches_str
-		prop_assert!(!evaluator.check_json_value_matches_str(&json_array, &search_string));
+		// Arrays should match if any item in the array matches the search string
+		let expected_match = array_content.iter().any(|item| {
+			evaluator.check_json_value_matches_str(item, &search_string)
+		});
+
+		let actual_match = evaluator.check_json_value_matches_str(&json_array, &search_string);
+		prop_assert_eq!(actual_match, expected_match,
+			"Array search result should match expected: array={:?}, search='{}'",
+			array_content, search_string);
 	}
 
 	/// Property: Decimal parsing should be consistent between numbers and strings

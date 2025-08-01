@@ -1,6 +1,6 @@
 use crate::integration::{
 	filters::common::{
-		load_test_data, setup_monitor_service, setup_network_service, setup_trigger_service,
+		setup_monitor_service, setup_network_service, setup_trigger_service, TestDataBuilder,
 	},
 	mocks::{
 		create_test_network, MockClientPool, MockEvmClientTrait, MockNetworkRepository,
@@ -149,7 +149,7 @@ fn create_test_monitor(
 
 #[tokio::test]
 async fn test_execute_monitor_evm() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let receipts = test_data.receipts.clone();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
@@ -232,7 +232,7 @@ async fn test_execute_monitor_evm() {
 
 #[tokio::test]
 async fn test_execute_monitor_evm_wrong_network() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -280,7 +280,7 @@ async fn test_execute_monitor_evm_wrong_network() {
 
 #[tokio::test]
 async fn test_execute_monitor_evm_wrong_block_number() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -333,7 +333,7 @@ async fn test_execute_monitor_evm_wrong_block_number() {
 
 #[tokio::test]
 async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -386,7 +386,7 @@ async fn test_execute_monitor_evm_failed_to_get_block_by_number() {
 
 #[tokio::test]
 async fn test_execute_monitor_evm_failed_to_get_evm_client() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -431,7 +431,7 @@ async fn test_execute_monitor_evm_failed_to_get_evm_client() {
 
 #[tokio::test]
 async fn test_execute_monitor_stellar() {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -503,7 +503,7 @@ async fn test_execute_monitor_stellar() {
 
 #[tokio::test]
 async fn test_execute_monitor_failed_to_get_block() {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -560,7 +560,7 @@ async fn test_execute_monitor_failed_to_get_block() {
 
 #[tokio::test]
 async fn test_execute_monitor_failed_to_get_stellar_client() {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -605,7 +605,7 @@ async fn test_execute_monitor_failed_to_get_stellar_client() {
 
 #[tokio::test]
 async fn test_execute_monitor_failed_to_get_block_by_number() {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -663,7 +663,7 @@ async fn test_execute_monitor_failed_to_get_block_by_number() {
 
 #[tokio::test]
 async fn test_execute_monitor_get_latest_block_number_failed() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -714,7 +714,7 @@ async fn test_execute_monitor_get_latest_block_number_failed() {
 
 #[tokio::test]
 async fn test_execute_monitor_network_slug_not_defined() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let receipts = test_data.receipts.clone();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
@@ -792,7 +792,7 @@ async fn test_execute_monitor_network_slug_not_defined() {
 
 #[tokio::test]
 async fn test_execute_monitor_midnight() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -832,7 +832,7 @@ async fn test_execute_monitor_midnight() {
 
 #[tokio::test]
 async fn test_execute_monitor_solana() {
-	let test_data = load_test_data("evm");
+	let test_data = TestDataBuilder::new("evm").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -872,7 +872,7 @@ async fn test_execute_monitor_solana() {
 
 #[tokio::test]
 async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
-	let test_data = load_test_data("stellar");
+	let test_data = TestDataBuilder::new("stellar").build();
 	let mut mocked_monitors = HashMap::new();
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);
@@ -927,7 +927,7 @@ async fn test_execute_monitor_stellar_get_latest_block_number_failed() {
 
 #[tokio::test]
 async fn test_execute_monitor_evm_with_trigger_scripts() {
-	let mut test_data = load_test_data("evm");
+	let mut test_data = TestDataBuilder::new("evm").build();
 	let receipts = test_data.receipts.clone();
 	let mut mocked_monitors = HashMap::new();
 	test_data.monitor.trigger_conditions = vec![TriggerConditions {
