@@ -16,7 +16,7 @@
         "Content-Type": "application/json"
       },
       "message": {
-        "title": "large_transfer_webhook triggered",
+        "title": "${monitor.name} triggered",
         "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }
@@ -38,7 +38,7 @@
         "Content-Type": "application/json"
       },
       "message": {
-        "title": "large_transfer_webhook triggered",
+        "title": "${monitor.name} triggered",
         "body": "# USDC Transfer Alert\n\n**Large transfer detected**\n\n- **Amount:** ${events.0.args.value} USDC\n- **From:** `${events.0.args.from}`\n- **To:** `${events.0.args.to}`\n\n[View on Etherscan](https://etherscan.io/tx/${transaction.hash}#eventlog)"
       }
     }
@@ -60,7 +60,7 @@
         "Content-Type": "application/json"
       },
       "message": {
-        "title": "large_swap_by_dex_webhook triggered",
+        "title": "${monitor.name} triggered",
         "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
