@@ -997,11 +997,11 @@ The monitor uses a structured JSON format with nested objects for template varia
 | `*transaction.hash*`
 | Hash of the transaction
 
-| `*functions.[index].signature*`
-| Function signature
+| `*functions*`
+| All functions matched and their parameters
 
-| `*events.[index].signature*`
-| Event signature
+| `*events*`
+| All events matched and their parameters
 |===
 
 ===== Network-Specific Variables
@@ -1020,8 +1020,14 @@ The monitor uses a structured JSON format with nested objects for template varia
 | `*transaction.value*`
 | Transaction value
 
+| `*events.[index].signature*`
+| Event signature
+
 | `*events.[index].args.[param]*`
 | Event parameters by name
+
+| `*functions.[index].signature*`
+| Function signature
 
 | `*functions.[index].args.[param]*`
 | Function parameters by name
