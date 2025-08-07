@@ -86,3 +86,7 @@ name = "openzeppelin-monitor"
 
 [features]
 test-ci-only = []
+fuzzing = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
