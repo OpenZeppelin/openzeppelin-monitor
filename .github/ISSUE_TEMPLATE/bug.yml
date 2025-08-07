@@ -7,7 +7,6 @@ body:
     attributes:
       value: |
         Thanks for taking the time to fill out this bug report! Please provide as much detail as possible.
-
         If you believe you have found a vulnerability, please provide details [here](mailto:security@openzeppelin.com) instead.
   - type: textarea
     id: what-happened
@@ -15,7 +14,6 @@ body:
       label: Describe the bug
       description: |
         A clear and concise description of what the bug is.
-
         If the bug is in a crate you are using (i.e. you are not running the standard `openzeppelin-monitor` binary) please mention that as well.
     validations:
       required: true
@@ -23,11 +21,9 @@ body:
     id: reproduction-steps
     attributes:
       label: Steps to reproduce
-      description: Please provide any steps you think might be relevant to reproduce
-        the bug.
+      description: Please provide any steps you think might be relevant to reproduce the bug.
       placeholder: |
         Steps to reproduce:
-
         1. Start '...'
         2. Then '...'
         3. Check '...'
@@ -49,24 +45,14 @@ body:
       label: Platform(s)
       description: What platform(s) did this occur on?
       multiple: true
-      options:
-        - Linux (x86)
-        - Linux (ARM)
-        - Mac (Intel)
-        - Mac (Apple Silicon)
-        - Windows (x86)
-        - Windows (ARM)
+      options: [Linux (x86), Linux (ARM), Mac (Intel), Mac (Apple Silicon), Windows (x86), Windows (ARM)]
   - type: dropdown
     id: deployment
     attributes:
       label: Deployment Type
       description: How are you running openzeppelin-monitor?
       multiple: false
-      options:
-        - Binary from releases
-        - Built from source
-        - Docker container
-        - Other
+      options: [Binary from releases, Built from source, Docker container, Other]
     validations:
       required: true
   - type: textarea
@@ -96,10 +82,7 @@ body:
       label: Network Type
       description: Which blockchain network(s) are you monitoring?
       multiple: true
-      options:
-        - EVM
-        - Stellar
-        - Other
+      options: [EVM, Stellar, Other]
     validations:
       required: true
   - type: input

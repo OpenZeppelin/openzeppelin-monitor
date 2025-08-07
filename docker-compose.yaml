@@ -1,6 +1,5 @@
 ---
 # Ports `8081` for metrics server.
-
 services:
   monitor:
     image: openzeppelin/openzeppelin-monitor:latest
@@ -22,49 +21,26 @@ services:
       IN_DOCKER: 'true'
     restart: on-failure:5
     mem_swappiness: 0
-    security_opt:
-      - no-new-privileges
-    volumes:
-      - ./config:/app/config/:ro
-      - ${MONITOR_DATA_DIR:-/dev/null}:/app/data
-      - ${LOG_DATA_DIR:-./logs}:/app/logs
-    networks:
-      - monitor-network
-      - metrics-network
-
+    security_opt: [no-new-privileges]
+    volumes: [./config:/app/config/:ro, '${MONITOR_DATA_DIR:-/dev/null}:/app/data', '${LOG_DATA_DIR:-./logs}:/app/logs']
+    networks: [monitor-network, metrics-network]
   prometheus:
     image: prom/prometheus:v3.1.0
-    security_opt:
-      - no-new-privileges
-    command: --log.level=warn --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus
-      --storage.tsdb.retention.time=30d
-    ports:
-      - 9090:9090/tcp
-    networks:
-      - metrics-network
-      - monitor-network
-    volumes:
-      - ./cmd/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    security_opt: [no-new-privileges]
+    command: --log.level=warn --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=30d
+    ports: [9090:9090/tcp]
+    networks: [metrics-network, monitor-network]
+    volumes: [./cmd/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml]
     restart: on-failure:5
-    profiles:
-      - metrics
-
+    profiles: [metrics]
   grafana:
     image: grafana/grafana:11.5.1
-    security_opt:
-      - no-new-privileges
+    security_opt: [no-new-privileges]
     ports: [3000:3000/tcp]
-    networks:
-      - metrics-network
-      - monitor-network
-    volumes:
-      - ./cmd/prometheus/grafana.ini:/etc/grafana/grafana.ini
-      - ./cmd/prometheus/datasources:/etc/grafana/provisioning/datasources
-      - ./cmd/prometheus/dashboards:/etc/grafana/provisioning/dashboards
+    networks: [metrics-network, monitor-network]
+    volumes: [./cmd/prometheus/grafana.ini:/etc/grafana/grafana.ini, ./cmd/prometheus/datasources:/etc/grafana/provisioning/datasources, ./cmd/prometheus/dashboards:/etc/grafana/provisioning/dashboards]
     restart: on-failure:5
-    profiles:
-      - metrics
-
+    profiles: [metrics]
 networks:
   metrics-network:
     internal: true
