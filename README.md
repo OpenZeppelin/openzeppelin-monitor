@@ -150,6 +150,34 @@ openzeppelin-monitor/
 
 ### Development Environment Setup
 
+#### Linux
+
+To get started on Ubuntu 22.04+ or Debian-based systems:
+
+```bash
+# Install required packages directly
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    libffi-dev \
+    libyaml-dev \
+    python3 \
+    python3-venv \
+    python3-pip
+```
+
+or run the linux system package script:
+
+```bash
+chmod +x ./scripts/linux/sys_pkgs.sh
+# Installs required packages
+./scripts/linux/sys_pkgs.sh
+```
+
 #### Prerequisites
 
 - **Rust 2021 edition**, version `1.86` or later.

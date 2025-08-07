@@ -64,6 +64,32 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
 
 1. **Set Up Development Environment**:
 
+   - **System Dependencies (Linux)**: For Ubuntu 22.04+ or Debian-based systems, install required packages:
+
+     ```sh
+     # Install required packages directly
+     sudo apt update
+     sudo apt install -y \
+         build-essential \
+         curl \
+         git \
+         pkg-config \
+         libssl-dev \
+         libffi-dev \
+         libyaml-dev \
+         python3 \
+         python3-venv \
+         python3-pip
+     ```
+
+     Or use the provided system package script:
+
+     ```sh
+     chmod +x ./scripts/linux/sys_pkgs.sh
+     # Installs required packages
+     ./scripts/linux/sys_pkgs.sh
+     ```
+
    - Install dependencies:
 
      ```sh

@@ -19,6 +19,36 @@ Before you begin, ensure you have the following installed:
 * **Docker** - Optional, for containerized deployment
 * **Git** - For cloning the repository
 
+=== System Dependencies (Linux)
+
+For Ubuntu 22.04+ or Debian-based systems, install the required system packages:
+
+[source,bash]
+----
+# Install required packages directly
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    libffi-dev \
+    libyaml-dev \
+    python3 \
+    python3-venv \
+    python3-pip
+----
+
+Alternatively, use the provided system package script:
+
+[source,bash]
+----
+chmod +x ./scripts/linux/sys_pkgs.sh
+# Installs required packages
+./scripts/linux/sys_pkgs.sh
+----
+
 [TIP]
 ====
 If you don't have Rust installed, visit https://rustup.rs/ to install it.
