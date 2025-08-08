@@ -17,7 +17,7 @@
       },
       "message": {
         "title": "${monitor.name} triggered",
-        "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
+        "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog\n\n${events}\n\n${functions}"
       }
     }
   },
