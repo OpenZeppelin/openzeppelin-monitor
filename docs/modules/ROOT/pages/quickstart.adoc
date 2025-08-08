@@ -24,6 +24,38 @@ Before you begin, ensure you have the following installed:
 If you don't have Rust installed, visit https://rustup.rs/ to install it.
 ====
 
+=== System Dependencies (Linux)
+
+For Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures), install required packages:
+
+**Note:** Python 3.9+ is required for pre-commit hooks compatibility.
+
+[source,bash]
+----
+# Install required packages directly
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    libffi-dev \
+    libyaml-dev \
+    python3 \
+    python3-venv \
+    python3-pip
+----
+
+Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
+
+[source,bash]
+----
+chmod +x ./scripts/linux/sys_pkgs.sh
+# Installs required packages and ensures compatible Python version
+./scripts/linux/sys_pkgs.sh
+----
+
 == Quick Setup Options
 
 We provide two setup paths to get you started:

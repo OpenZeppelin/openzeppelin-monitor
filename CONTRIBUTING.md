@@ -64,7 +64,9 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
 
 1. **Set Up Development Environment**:
 
-   - **System Dependencies (Linux)**: For Ubuntu 22.04+ or Debian-based systems, install required packages:
+   - **System Dependencies (Linux)**: For Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures), install required packages:
+
+     **Note:** Python 3.9+ is required for pre-commit hooks compatibility.
 
      ```sh
      # Install required packages directly
@@ -82,11 +84,11 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
          python3-pip
      ```
 
-     Or use the provided system package script:
+     Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
 
      ```sh
      chmod +x ./scripts/linux/sys_pkgs.sh
-     # Installs required packages
+     # Installs required packages and ensures compatible Python version
      ./scripts/linux/sys_pkgs.sh
      ```
 
