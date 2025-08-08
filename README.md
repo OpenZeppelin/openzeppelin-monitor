@@ -150,6 +150,36 @@ openzeppelin-monitor/
 
 ### Development Environment Setup
 
+#### Linux
+
+To get started on Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures):
+
+**Note:** Python 3.9+ is required for pre-commit hooks compatibility.
+
+```bash
+# Install required packages directly
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    libffi-dev \
+    libyaml-dev \
+    python3 \
+    python3-venv \
+    python3-pip
+```
+
+or run the linux system package script (automatically ensures Python 3.9+ compatibility):
+
+```bash
+chmod +x ./scripts/linux/sys_pkgs.sh
+# Installs required packages and ensures compatible Python version
+./scripts/linux/sys_pkgs.sh
+```
+
 #### Prerequisites
 
 - **Rust 2021 edition**, version `1.86` or later.

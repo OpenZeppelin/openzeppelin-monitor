@@ -64,6 +64,34 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
 
 1. **Set Up Development Environment**:
 
+   - **System Dependencies (Linux)**: For Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures), install required packages:
+
+     **Note:** Python 3.9+ is required for pre-commit hooks compatibility.
+
+     ```sh
+     # Install required packages directly
+     sudo apt update
+     sudo apt install -y \
+         build-essential \
+         curl \
+         git \
+         pkg-config \
+         libssl-dev \
+         libffi-dev \
+         libyaml-dev \
+         python3 \
+         python3-venv \
+         python3-pip
+     ```
+
+     Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
+
+     ```sh
+     chmod +x ./scripts/linux/sys_pkgs.sh
+     # Installs required packages and ensures compatible Python version
+     ./scripts/linux/sys_pkgs.sh
+     ```
+
    - Install dependencies:
 
      ```sh
