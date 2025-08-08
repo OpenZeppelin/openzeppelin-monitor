@@ -1,4 +1,5 @@
 ---
+
 - id: conventional-pre-commit
   name: Conventional Commit
   entry: conventional-pre-commit
