@@ -78,10 +78,12 @@ pub fn build_match_reasons(variables: &HashMap<String, String>, prefix: &str) ->
 
 	let formatted_prefix = prefix[..1].to_uppercase() + &prefix[1..];
 	let mut match_reasons = String::from(&format!("\n\n*Matched {}:*\n", formatted_prefix));
+	let last_index = *indexes.last().unwrap(); // Safe because we checked indexes.is_empty() above
 
 	for &index in &indexes {
 		let signature_key = format!("{}.{}.signature", prefix, index);
 		if let Some(signature) = variables.get(&signature_key) {
+			// Display uses 1-based indexing (index + 1) for user clarity, while internal logic uses 0-based indexing.
 			match_reasons.push_str(&format!("\n_#{}_\n", index + 1));
 			match_reasons.push_str(&format!("\n*Signature:* `{}`\n", signature));
 
@@ -104,7 +106,7 @@ pub fn build_match_reasons(variables: &HashMap<String, String>, prefix: &str) ->
 				match_reasons.push_str(&format!("\n{}: `{}`", param_name, param_value));
 			}
 
-			if index != *indexes.last().unwrap() {
+			if index != last_index {
 				match_reasons.push('\n');
 			}
 		}
@@ -765,5 +767,124 @@ mod tests {
 		// Functions are processed before events, so functions section appears first
 		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Functions:*\n\n_#1_\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `750000`\nto: `0x9abc`\n\n_#2_\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `250000`\n\n\n\n*Matched Events:*\n\n_#1_\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\nvalue: `1000000`\n\n_#2_\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `500000`";
 		assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_format_template_with_no_events_removes_variable() {
+		let template = "Transaction detected: ${transaction.hash}\n\n${events}";
+		let variables = HashMap::from([
+			(
+				"transaction.hash".to_string(),
+				"0x1234567890abcdef".to_string(),
+			),
+			// No events variables present
+		]);
+
+		let result = format_template(template, &variables);
+		// Since there are no events, ${events} should be replaced with empty string
+		let expected = "Transaction detected: 0x1234567890abcdef\n\n";
+		assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_format_template_with_no_functions_removes_variable() {
+		let template = "Transaction detected: ${transaction.hash}\n\n${functions}";
+		let variables = HashMap::from([
+			(
+				"transaction.hash".to_string(),
+				"0x1234567890abcdef".to_string(),
+			),
+			// No functions variables present
+		]);
+
+		let result = format_template(template, &variables);
+		// Since there are no functions, ${functions} should be replaced with empty string
+		let expected = "Transaction detected: 0x1234567890abcdef\n\n";
+		assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_build_match_reasons_no_index_part() {
+		let variables = HashMap::from([
+			// Key that starts with prefix but doesn't end with .signature
+			("events.0.args.from".to_string(), "0x1234".to_string()),
+			// Key that doesn't start with prefix
+			("transaction.hash".to_string(), "0x1234".to_string()),
+			// Key that starts with prefix but has wrong format
+			("events.signature".to_string(), "Transfer".to_string()),
+		]);
+
+		let result = build_match_reasons(&variables, "events");
+		// Should return None since no valid signature keys were found
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn test_build_match_reasons_no_signature() {
+		let variables = HashMap::from([
+			// Has the signature key structure but no actual signature value
+			("events.0.signature".to_string(), "".to_string()),
+			// Has args but no signature
+			("events.0.args.from".to_string(), "0x1234".to_string()),
+			("events.0.args.to".to_string(), "0x5678".to_string()),
+		]);
+
+		let result = build_match_reasons(&variables, "events");
+		let result_str = result.unwrap();
+
+		assert!(result_str.contains("\n\n*Matched Events:*\n"));
+	}
+
+	#[test]
+	fn test_build_match_reasons_mixed_valid_and_invalid() {
+		let variables = HashMap::from([
+			// Valid signature
+			(
+				"events.0.signature".to_string(),
+				"Transfer(address,address,uint256)".to_string(),
+			),
+			("events.0.args.from".to_string(), "0x1234".to_string()),
+			// Invalid signature (empty)
+			("events.1.signature".to_string(), "".to_string()),
+			("events.1.args.to".to_string(), "0x5678".to_string()),
+			// Valid signature
+			(
+				"events.2.signature".to_string(),
+				"Approval(address,address,uint256)".to_string(),
+			),
+			("events.2.args.owner".to_string(), "0x9abc".to_string()),
+		]);
+
+		let result = build_match_reasons(&variables, "events");
+		// Should only include events 0 and 2, skipping event 1 due to empty signature
+		assert!(result.is_some());
+		let result_str = result.unwrap();
+		assert!(result_str.contains("Transfer(address,address,uint256)"));
+		assert!(!result_str.contains("events.1")); // Should not contain event 1
+		assert!(result_str.contains("Approval(address,address,uint256)"));
+	}
+
+	#[test]
+	fn test_build_match_reasons_invalid_index_format() {
+		let variables = HashMap::from([
+			// Invalid index format - not a number
+			("events.abc.signature".to_string(), "Transfer".to_string()),
+			// Invalid index format - negative number
+			("events.-1.signature".to_string(), "Transfer".to_string()),
+			// Valid index format
+			(
+				"events.0.signature".to_string(),
+				"Transfer(address,address,uint256)".to_string(),
+			),
+			("events.0.args.from".to_string(), "0x1234".to_string()),
+		]);
+
+		let result = build_match_reasons(&variables, "events");
+		// Should only include the valid event 0, skipping invalid formats
+		assert!(result.is_some());
+		let result_str = result.unwrap();
+		assert!(result_str.contains("Transfer(address,address,uint256)"));
+		assert!(!result_str.contains("abc")); // Should not contain invalid index
+		assert!(!result_str.contains("-1")); // Should not contain negative index
 	}
 }
