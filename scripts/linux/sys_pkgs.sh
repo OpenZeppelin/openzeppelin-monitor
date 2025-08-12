@@ -40,8 +40,8 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 # Check if we're on Ubuntu/Debian
-if ! command -v apt >/dev/null; then
-    error "This script requires apt (Ubuntu/Debian)"
+if ! command -v apt-get >/dev/null; then
+    error "This script requires apt-get (Ubuntu/Debian)"
     exit 1
 fi
 
@@ -52,7 +52,7 @@ success "Cleaned up package sources"
 # Update with retry
 step "Updating package lists..."
 for i in {1..3}; do
-    if sudo apt update >/dev/null 2>&1; then
+    if sudo apt-get update >/dev/null 2>&1; then
         success "Package lists updated"
         break
     elif [[ $i -eq 3 ]]; then
@@ -66,7 +66,7 @@ done
 
 # Install packages
 step "Installing core packages..."
-sudo apt install -y \
+sudo apt-get install -y \
     build-essential \
     curl \
     git \
@@ -96,18 +96,24 @@ fi
 if [[ "$python_ok" == false ]]; then
     warn "Python $python_version is below recommended 3.9+"
     step "Installing Python 3.11 for better compatibility..."
+    warn "You are about to add a 3rd-party PPA (deadsnakes) for newer Python versions."
+    read -p "Continue? [y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        error "Aborted by user."
+        exit 1
+    fi
     
     # Add PPA if not already there
     if ! find /etc/apt/sources.list.d -name "*deadsnakes*" | grep -q . 2>/dev/null; then
         info "Adding deadsnakes PPA..."
         sudo add-apt-repository -y ppa:deadsnakes/ppa >/dev/null 2>&1
-        sudo apt update >/dev/null 2>&1
+        sudo apt-get update >/dev/null 2>&1
     else
         info "Deadsnakes PPA already configured"
     fi
     
     # Install Python 3.11
-    sudo apt install -y python3.11 python3.11-venv python3.11-dev >/dev/null 2>&1
+    sudo apt-get install -y python3.11 python3.11-venv python3.11-dev >/dev/null 2>&1
     
     # Install pip if missing
     if ! python3.11 -m pip --version >/dev/null 2>&1; then
