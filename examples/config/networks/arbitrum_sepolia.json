@@ -7,7 +7,7 @@
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://sepolia-rollup.arbitrum.io/rpc"
+        "value": "https://arbitrum-sepolia-rpc.publicnode.com"
       },
       "weight": 100
     }

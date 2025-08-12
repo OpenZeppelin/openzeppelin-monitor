@@ -1,9 +1,9 @@
 use crate::services::blockchain::TransientErrorRetryStrategy;
 use crate::services::notification::SmtpConfig;
 use crate::utils::client_storage::ClientStorage;
-use crate::utils::{create_retryable_http_client, HttpRetryConfig};
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::SmtpTransport;
+use crate::utils::{create_retryable_http_client, RetryConfig};
+use lettre::Tokio1Executor;
+use lettre::{transport::smtp::authentication::Credentials, AsyncSmtpTransport};
 use reqwest::Client as ReqwestClient;
 use reqwest_middleware::ClientWithMiddleware;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ pub enum NotificationPoolError {
 /// allowing for efficient reuse and management of HTTP and SMTP connections.
 pub struct NotificationClientPool {
 	http_clients: ClientStorage<ClientWithMiddleware>,
-	smtp_clients: ClientStorage<SmtpTransport>,
+	smtp_clients: ClientStorage<AsyncSmtpTransport<Tokio1Executor>>,
 }
 
 impl NotificationClientPool {
@@ -35,6 +35,37 @@ impl NotificationClientPool {
 			http_clients: ClientStorage::new(),
 			smtp_clients: ClientStorage::new(),
 		}
+	}
+
+	/// A private, generic method to handle the core logic of getting or creating a client.
+	async fn get_or_create_client<T, F>(
+		&self,
+		key: &str,
+		storage: &ClientStorage<T>,
+		create_fn: F,
+	) -> Result<Arc<T>, NotificationPoolError>
+	where
+		T: Send + Sync,
+		F: FnOnce() -> Result<T, NotificationPoolError>,
+	{
+		// 1. Fast path (read lock)
+		if let Some(client) = storage.clients.read().await.get(key) {
+			return Ok(client.clone());
+		}
+
+		// 2. Slow path (write lock)
+		let mut clients = storage.clients.write().await;
+		// 3. Double-check
+		if let Some(client) = clients.get(key) {
+			return Ok(client.clone());
+		}
+
+		// 4. Create and insert
+		let new_client = create_fn()?;
+		let arc_client = Arc::new(new_client);
+		clients.insert(key.to_string(), arc_client.clone());
+
+		Ok(arc_client)
 	}
 
 	/// Get or create an HTTP client with retry capabilities.
@@ -47,41 +78,24 @@ impl NotificationClientPool {
 	///   fails.
 	pub async fn get_or_create_http_client(
 		&self,
-		retry_policy: &HttpRetryConfig,
+		retry_policy: &RetryConfig,
 	) -> Result<Arc<ClientWithMiddleware>, NotificationPoolError> {
-		// Generate a unique key for the retry policy based on its configuration.
 		let key = format!("{:?}", retry_policy);
+		self.get_or_create_client(&key, &self.http_clients, || {
+			let base_client = ReqwestClient::builder()
+				.pool_max_idle_per_host(10)
+				.pool_idle_timeout(Some(Duration::from_secs(90)))
+				.connect_timeout(Duration::from_secs(10))
+				.build()
+				.map_err(|e| NotificationPoolError::HttpClientBuildError(e.to_string()))?;
 
-		// Fast path: Read lock
-		if let Some(client) = self.http_clients.clients.read().await.get(key.as_str()) {
-			return Ok(client.clone());
-		}
-
-		// Slow path: Write lock
-		let mut clients = self.http_clients.clients.write().await;
-		// Double-check: Another thread might have created it
-		if let Some(client) = clients.get(&key) {
-			return Ok(client.clone());
-		}
-
-		// Create the new base client
-		let base_client = ReqwestClient::builder()
-			.pool_max_idle_per_host(10)
-			.pool_idle_timeout(Some(Duration::from_secs(90)))
-			.connect_timeout(Duration::from_secs(10))
-			.build()
-			.map_err(|e| NotificationPoolError::HttpClientBuildError(e.to_string()))?;
-
-		// Create the retryable client with the provided retry policy
-		let retryable_client = create_retryable_http_client(
-			retry_policy,
-			base_client,
-			Some(TransientErrorRetryStrategy),
-		);
-
-		let arc_client = Arc::new(retryable_client);
-		clients.insert(key.to_string(), arc_client.clone());
-		Ok(arc_client)
+			Ok(create_retryable_http_client(
+				retry_policy,
+				base_client,
+				Some(TransientErrorRetryStrategy),
+			))
+		})
+		.await
 	}
 
 	/// Get or create an SMTP client for sending emails.
@@ -89,41 +103,26 @@ impl NotificationClientPool {
 	/// * `smtp_config` - Configuration for the SMTP client, including host,
 	///   port, username, and password.
 	/// # Returns
-	/// * `Result<Arc<SmtpTransport>, NotificationPoolError>` - The SMTP client
+	/// * `Result<Arc<AsyncSmtpTransport<Tokio1Executor>>, NotificationPoolError>` - The SMTP client
 	///   wrapped in an `Arc` for shared ownership, or an error if client creation
 	///   fails.
 	pub async fn get_or_create_smtp_client(
 		&self,
 		smtp_config: &SmtpConfig,
-	) -> Result<Arc<SmtpTransport>, NotificationPoolError> {
-		// Generate a unique key for the retry policy based on its configuration.
+	) -> Result<Arc<AsyncSmtpTransport<Tokio1Executor>>, NotificationPoolError> {
 		let key = format!("{:?}", smtp_config);
-
-		// Fast path: Read lock to check for an existing client.
-		if let Some(client) = self.smtp_clients.clients.read().await.get(&key) {
-			return Ok(client.clone());
-		}
-
-		// Slow path: Write lock to create a new client if needed.
-		let mut clients = self.smtp_clients.clients.write().await;
-		// Double-check in case another thread created it while we waited for the lock.
-		if let Some(client) = clients.get(&key) {
-			return Ok(client.clone());
-		}
-
-		// Create the new SMTP client using the provided configuration.
-		let creds = Credentials::new(smtp_config.username.clone(), smtp_config.password.clone());
-		let client = SmtpTransport::relay(&smtp_config.host)
-			.map_err(|e| NotificationPoolError::SmtpClientBuildError(e.to_string()))?
-			.port(smtp_config.port)
-			.credentials(creds)
-			.build();
-
-		// Store the new client in the pool.
-		let arc_client = Arc::new(client);
-		clients.insert(key, arc_client.clone());
-
-		Ok(arc_client)
+		self.get_or_create_client(&key, &self.smtp_clients, || {
+			let creds =
+				Credentials::new(smtp_config.username.clone(), smtp_config.password.clone());
+			Ok(
+				AsyncSmtpTransport::<Tokio1Executor>::relay(&smtp_config.host)
+					.map_err(|e| NotificationPoolError::SmtpClientBuildError(e.to_string()))?
+					.port(smtp_config.port)
+					.credentials(creds)
+					.build(),
+			)
+		})
+		.await
 	}
 
 	/// Get the number of active HTTP clients in the pool
@@ -166,7 +165,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_pool_get_or_create_http_client() {
 		let pool = create_pool();
-		let retry_config = HttpRetryConfig::default();
+		let retry_config = RetryConfig::default();
 		let client = pool.get_or_create_http_client(&retry_config).await;
 
 		assert!(
@@ -184,7 +183,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_pool_returns_same_client() {
 		let pool = create_pool();
-		let retry_config = HttpRetryConfig::default();
+		let retry_config = RetryConfig::default();
 		let client1 = pool.get_or_create_http_client(&retry_config).await.unwrap();
 		let client2 = pool.get_or_create_http_client(&retry_config).await.unwrap();
 
@@ -202,7 +201,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_pool_concurrent_access() {
 		let pool = Arc::new(create_pool());
-		let retry_config = HttpRetryConfig::default();
+		let retry_config = RetryConfig::default();
 
 		let num_tasks = 10;
 		let mut tasks = Vec::new();
@@ -229,7 +228,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_pool_default() {
 		let pool = NotificationClientPool::default();
-		let retry_config = HttpRetryConfig::default();
+		let retry_config = RetryConfig::default();
 
 		assert_eq!(
 			pool.get_active_http_client_count().await,
@@ -262,11 +261,13 @@ mod tests {
 		let pool = create_pool();
 
 		// Config 1 (default)
-		let retry_config_1 = HttpRetryConfig::default();
+		let retry_config_1 = RetryConfig::default();
 
 		// Config 2 (different retry count)
-		let mut retry_config_2 = HttpRetryConfig::default();
-		retry_config_2.max_retries = 5;
+		let retry_config_2 = RetryConfig {
+			max_retries: 5,
+			..Default::default()
+		};
 
 		// Get a client for each config
 		let client1 = pool

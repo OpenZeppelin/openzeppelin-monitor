@@ -16,6 +16,11 @@ jobs:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       SLACK_CHANNEL: '#oss-releases'
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
+
       - name: Get github app token
         uses: actions/create-github-app-token@af35edadc00be37caa72ed9f3e6d5f7801bfdf09  # v1.11.7
         id: gh-app-token
@@ -46,7 +51,7 @@ jobs:
       - name: Upload Release Artifact
         env:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
-        run: gh release upload openzeppelin-monitor-${{ inputs.tag }}-spdx.json
+        run: gh release upload ${{ inputs.tag }} openzeppelin-monitor-${{ inputs.tag }}-spdx.json
       - name: SBOM attestation
         uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd  # main
         with:

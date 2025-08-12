@@ -158,7 +158,8 @@ impl<'a> StellarConditionEvaluator<'a> {
 					// Fallback to CSV
 					tracing::debug!(
 						"LHS for 'vec' ('{}') not valid JSON array, falling back to CSV check for value '{}'",
-						lhs_str, rhs_target_str
+						lhs_str,
+						rhs_target_str
 					);
 					let csv_values: Vec<&str> = lhs_str.split(',').map(str::trim).collect();
 					Ok(csv_values.contains(&rhs_target_str))
@@ -474,9 +475,9 @@ impl<'a> StellarConditionEvaluator<'a> {
 					serde_json::from_str::<serde_json::Map<String, JsonValue>>(lhs_json_map_str)
 						.map_err(|e| {
 							let msg = format!(
-						"Failed to parse LHS value '{}' as JSON map for 'contains' operator",
-						lhs_json_map_str
-					);
+								"Failed to parse LHS value '{}' as JSON map for 'contains' operator",
+								lhs_json_map_str
+							);
 							EvaluationError::parse_error(msg, Some(e.into()), None)
 						})?;
 

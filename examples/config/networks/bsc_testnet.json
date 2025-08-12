@@ -1,13 +1,13 @@
 {
   "network_type": "EVM",
-  "slug": "bsctest",
+  "slug": "bsc_testnet",
   "name": "BSC Testnet",
   "rpc_urls": [
     {
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://bsc-testnet-dataseed.bnbchain.org"
+        "value": "https://bsc-testnet-rpc.publicnode.com"
       },
       "weight": 100
     }

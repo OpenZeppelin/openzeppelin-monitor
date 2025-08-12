@@ -1,7 +1,7 @@
 use mockito::Server;
 use openzeppelin_monitor::{
 	services::blockchain::{BlockchainTransport, HttpTransportClient, RotatingTransport},
-	utils::HttpRetryConfig,
+	utils::RetryConfig,
 };
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -70,7 +70,7 @@ async fn test_client_creation_with_fallback() {
 	let mut server2 = Server::new_async().await;
 
 	// Use the default retry config to determine expected attempts
-	let expected_attempts = 1 + HttpRetryConfig::default().max_retries;
+	let expected_attempts = 1 + RetryConfig::default().max_retries;
 
 	let mock = server
 		.mock("POST", "/")

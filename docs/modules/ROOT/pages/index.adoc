@@ -3,8 +3,6 @@
 = OpenZeppelin Monitor
 :description: User guide for setting up and configuring OpenZeppelin Monitor
 
-CAUTION: This software is in alpha stage. Use in production environments at your own risk.
-
 == Overview
 
 In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
@@ -41,7 +39,7 @@ To get started immediately, see xref:quickstart.adoc[Quickstart].
 
 === Prerequisites
 
-* **Rust** 2021 edition or later
+* Use **Rust 2021 edition**, version `1.86` or later.
 * **Docker** (optional, for containerized deployment)
 
 === Local Installation
@@ -248,6 +246,7 @@ Following notification protocols support retry policies:
 * Discord
 * Telegram
 * Webhook
+* Email
 
 Default retry policy is using exponential backoff with the following parameters:
 [cols="1,1,1"]
@@ -260,7 +259,7 @@ Default retry policy is using exponential backoff with the following parameters:
 | `jitter` | `Full` | Jitter strategy to apply to the backoff duration, currently supports `Full` and `None`
 |===
 
-These parameters can be overridden by providing custom `HttpRetryConfig` struct in `retry_policy` field in trigger configuration.
+These parameters can be overridden by providing custom `RetryConfig` struct in `retry_policy` field in trigger configuration.
 
 ===== Script Security
 
@@ -619,7 +618,7 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
         "value": "https://hooks.slack.com/services/A/B/C"
       },
       "message": {
-        "title": "large_transfer_slack triggered",
+        "title": "${monitor.name} triggered",
         "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }

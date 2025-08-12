@@ -21,11 +21,8 @@ mod properties {
 		}
 	}
 	mod notifications {
-		mod discord;
 		mod email;
-		mod slack;
-		mod telegram;
-		mod webhook;
+		mod payload_builder;
 	}
 	mod repositories {
 		mod monitor;

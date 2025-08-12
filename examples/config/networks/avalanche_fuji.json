@@ -1,0 +1,20 @@
+{
+    "network_type": "EVM",
+    "slug": "avalanche_fuji",
+    "name": "Avalanche Fuji",
+    "rpc_urls": [
+      {
+        "type_": "rpc",
+        "url": {
+          "type": "plain",
+          "value": "https://api.avax-test.network/ext/bc/C/rpc"
+        },
+        "weight": 100
+      }
+    ],
+    "chain_id": 43113,
+    "block_time_ms": 2000,
+    "confirmation_blocks": 12,
+    "cron_schedule": "0 */1 * * * *",
+    "store_blocks": false
+  } 

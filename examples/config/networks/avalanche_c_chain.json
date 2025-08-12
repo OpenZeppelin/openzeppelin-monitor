@@ -1,20 +1,20 @@
 {
   "network_type": "EVM",
-  "slug": "zksync_era_sepolia",
-  "name": "ZkSync Era Sepolia",
+  "slug": "avalanche_c_chain",
+  "name": "Avalanche C-Chain",
   "rpc_urls": [
     {
       "type_": "rpc",
       "url": {
         "type": "plain",
-        "value": "https://sepolia.era.zksync.dev"
+        "value": "https://api.avax.network/ext/bc/C/rpc"
       },
       "weight": 100
     }
   ],
-  "chain_id": 300,
+  "chain_id": 43114,
   "block_time_ms": 2000,
-  "confirmation_blocks": 3,
+  "confirmation_blocks": 12,
   "cron_schedule": "0 */1 * * * *",
   "store_blocks": false
-}
+} 

@@ -3,7 +3,6 @@
 //! Provides functionality to send formatted messages to webhooks
 //! via incoming webhooks, supporting message templates with variable substitution.
 
-use async_trait::async_trait;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::{
@@ -11,14 +10,10 @@ use reqwest::{
 	Method,
 };
 use reqwest_middleware::ClientWithMiddleware;
-use serde::Serialize;
 use sha2::Sha256;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{
-	models::TriggerTypeConfig,
-	services::notification::{NotificationError, Notifier},
-};
+use crate::{models::TriggerTypeConfig, services::notification::NotificationError};
 
 /// HMAC SHA256 type alias
 type HmacSha256 = Hmac<Sha256>;
@@ -45,8 +40,6 @@ pub struct WebhookNotifier {
 	pub url_params: Option<HashMap<String, String>>,
 	/// Title to display in the message
 	pub title: String,
-	/// Message template with variable placeholders
-	pub body_template: String,
 	/// Configured HTTP client for webhook requests with retry capabilities
 	pub client: Arc<ClientWithMiddleware>,
 	/// HTTP method to use for the webhook request
@@ -57,14 +50,6 @@ pub struct WebhookNotifier {
 	pub headers: Option<HashMap<String, String>>,
 	/// Payload fields to use for the webhook request
 	pub payload_fields: Option<HashMap<String, serde_json::Value>>,
-}
-
-/// Represents a formatted webhook message
-#[derive(Serialize, Debug)]
-pub struct WebhookMessage {
-	/// The content of the message
-	title: String,
-	body: String,
 }
 
 impl WebhookNotifier {
@@ -88,28 +73,12 @@ impl WebhookNotifier {
 			url: config.url,
 			url_params: config.url_params,
 			title: config.title,
-			body_template: config.body_template,
 			client: http_client,
 			method: Some(config.method.unwrap_or("POST".to_string())),
 			secret: config.secret,
 			headers: Some(headers),
 			payload_fields: config.payload_fields,
 		})
-	}
-
-	/// Formats a message by substituting variables in the template
-	///
-	/// # Arguments
-	/// * `variables` - Map of variable names to values
-	///
-	/// # Returns
-	/// * `String` - Formatted message with variables replaced
-	pub fn format_message(&self, variables: &HashMap<String, String>) -> String {
-		let mut message = self.body_template.clone();
-		for (key, value) in variables {
-			message = message.replace(&format!("${{{}}}", key), value);
-		}
-		message
 	}
 
 	/// Creates a Webhook notifier from a trigger configuration
@@ -151,10 +120,10 @@ impl WebhookNotifier {
 		}
 	}
 
-	pub fn sign_request(
+	pub fn sign_payload(
 		&self,
 		secret: &str,
-		payload: &WebhookMessage,
+		payload: &serde_json::Value,
 	) -> Result<(String, String), NotificationError> {
 		// Explicitly reject empty secret, because `HmacSha256::new_from_slice` currently allows empty secrets
 		if secret.is_empty() {
@@ -173,7 +142,14 @@ impl WebhookNotifier {
 		})?; // Handle error if secret is invalid
 
 		// Create the message to sign
-		let message = format!("{:?}{}", payload, timestamp);
+		let serialized_payload = serde_json::to_string(payload).map_err(|e| {
+			NotificationError::internal_error(
+				format!("Failed to serialize payload: {}", e),
+				Some(e.into()),
+				None,
+			)
+		})?;
+		let message = format!("{}{}", serialized_payload, timestamp);
 		mac.update(message.as_bytes());
 
 		// Get the HMAC result
@@ -181,39 +157,15 @@ impl WebhookNotifier {
 
 		Ok((signature, timestamp.to_string()))
 	}
-}
 
-#[async_trait]
-impl Notifier for WebhookNotifier {
-	/// Sends a formatted message to Webhook
+	/// Sends a JSON payload to Webhook
 	///
 	/// # Arguments
-	/// * `message` - The formatted message to send
+	/// * `payload` - The JSON payload to send
 	///
 	/// # Returns
 	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify(&self, message: &str) -> Result<(), NotificationError> {
-		// Default payload with title and body
-		let mut payload_fields = HashMap::new();
-		payload_fields.insert("title".to_string(), serde_json::json!(self.title));
-		payload_fields.insert("body".to_string(), serde_json::json!(message));
-
-		self.notify_with_payload(message, payload_fields).await
-	}
-
-	/// Sends a formatted message to Webhook with custom payload fields
-	///
-	/// # Arguments
-	/// * `message` - The formatted message to send
-	/// * `payload_fields` - Additional fields to include in the payload
-	///
-	/// # Returns
-	/// * `Result<(), NotificationError>` - Success or error
-	async fn notify_with_payload(
-		&self,
-		message: &str,
-		mut payload_fields: HashMap<String, serde_json::Value>,
-	) -> Result<(), NotificationError> {
+	pub async fn notify_json(&self, payload: &serde_json::Value) -> Result<(), NotificationError> {
 		let mut url = self.url.clone();
 		// Add URL parameters if present
 		if let Some(params) = &self.url_params {
@@ -223,15 +175,6 @@ impl Notifier for WebhookNotifier {
 				.collect();
 			if !params_str.is_empty() {
 				url = format!("{}?{}", url, params_str.join("&"));
-			}
-		}
-
-		// Merge with default payload fields if they exist
-		if let Some(default_fields) = &self.payload_fields {
-			for (key, value) in default_fields {
-				if !payload_fields.contains_key(key) {
-					payload_fields.insert(key.clone(), value.clone());
-				}
 			}
 		}
 
@@ -249,17 +192,9 @@ impl Notifier for WebhookNotifier {
 		);
 
 		if let Some(secret) = &self.secret {
-			// Create a WebhookMessage for signing
-			let payload_for_signing = WebhookMessage {
-				title: self.title.clone(),
-				body: message.to_string(),
-			};
-
-			let (signature, timestamp) =
-				self.sign_request(secret, &payload_for_signing)
-					.map_err(|e| {
-						NotificationError::internal_error(e.to_string(), Some(e.into()), None)
-					})?;
+			let (signature, timestamp) = self.sign_payload(secret, payload).map_err(|e| {
+				NotificationError::internal_error(e.to_string(), Some(e.into()), None)
+			})?;
 
 			// Add signature headers
 			headers.insert(
@@ -310,7 +245,7 @@ impl Notifier for WebhookNotifier {
 			.client
 			.request(method, url.as_str())
 			.headers(headers)
-			.json(&payload_fields)
+			.json(payload)
 			.send()
 			.await
 			.map_err(|e| {
@@ -339,7 +274,8 @@ impl Notifier for WebhookNotifier {
 mod tests {
 	use crate::{
 		models::{NotificationMessage, SecretString, SecretValue},
-		utils::{tests::create_test_http_client, HttpRetryConfig},
+		services::notification::{GenericWebhookPayloadBuilder, WebhookPayloadBuilder},
+		utils::{tests::create_test_http_client, RetryConfig},
 	};
 
 	use super::*;
@@ -348,7 +284,6 @@ mod tests {
 
 	fn create_test_notifier(
 		url: &str,
-		body_template: &str,
 		secret: Option<&str>,
 		headers: Option<HashMap<String, String>>,
 	) -> WebhookNotifier {
@@ -357,7 +292,7 @@ mod tests {
 			url: url.to_string(),
 			url_params: None,
 			title: "Alert".to_string(),
-			body_template: body_template.to_string(),
+			body_template: "Test message".to_string(),
 			method: Some("POST".to_string()),
 			secret: secret.map(|s| s.to_string()),
 			headers,
@@ -376,55 +311,16 @@ mod tests {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		}
 	}
 
-	////////////////////////////////////////////////////////////
-	// format_message tests
-	////////////////////////////////////////////////////////////
-
-	#[test]
-	fn test_format_message() {
-		let notifier = create_test_notifier(
-			"https://webhook.example.com",
-			"Value is ${value} and status is ${status}",
-			None,
-			None,
-		);
-
-		let mut variables = HashMap::new();
-		variables.insert("value".to_string(), "100".to_string());
-		variables.insert("status".to_string(), "critical".to_string());
-
-		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Value is 100 and status is critical");
-	}
-
-	#[test]
-	fn test_format_message_with_missing_variables() {
-		let notifier = create_test_notifier(
-			"https://webhook.example.com",
-			"Value is ${value} and status is ${status}",
-			None,
-			None,
-		);
-
-		let mut variables = HashMap::new();
-		variables.insert("value".to_string(), "100".to_string());
-		// status variable is not provided
-
-		let result = notifier.format_message(&variables);
-		assert_eq!(result, "Value is 100 and status is ${status}");
-	}
-
-	#[test]
-	fn test_format_message_with_empty_template() {
-		let notifier = create_test_notifier("https://webhook.example.com", "", None, None);
-
-		let variables = HashMap::new();
-		let result = notifier.format_message(&variables);
-		assert_eq!(result, "");
+	fn create_test_payload() -> serde_json::Value {
+		GenericWebhookPayloadBuilder.build_payload(
+			"Test Alert",
+			"Test message with value ${value}",
+			&HashMap::from([("value".to_string(), "42".to_string())]),
+		)
 	}
 
 	////////////////////////////////////////////////////////////
@@ -433,19 +329,15 @@ mod tests {
 
 	#[test]
 	fn test_sign_request() {
-		let notifier = create_test_notifier(
-			"https://webhook.example.com",
-			"Test message",
-			Some("test-secret"),
-			None,
-		);
-		let payload = WebhookMessage {
-			title: "Test Title".to_string(),
-			body: "Test message".to_string(),
-		};
+		let notifier =
+			create_test_notifier("https://webhook.example.com", Some("test-secret"), None);
+		let payload = json!({
+			"title": "Test Title",
+			"body": "Test message"
+		});
 		let secret = "test-secret";
 
-		let result = notifier.sign_request(secret, &payload).unwrap();
+		let result = notifier.sign_payload(secret, &payload).unwrap();
 		let (signature, timestamp) = result;
 
 		assert!(!signature.is_empty());
@@ -454,15 +346,14 @@ mod tests {
 
 	#[test]
 	fn test_sign_request_fails_empty_secret() {
-		let notifier =
-			create_test_notifier("https://webhook.example.com", "Test message", None, None);
-		let payload = WebhookMessage {
-			title: "Test Title".to_string(),
-			body: "Test message".to_string(),
-		};
+		let notifier = create_test_notifier("https://webhook.example.com", None, None);
+		let payload = json!({
+			"title": "Test Title",
+			"body": "Test message"
+		});
 		let empty_secret = "";
 
-		let result = notifier.sign_request(empty_secret, &payload);
+		let result = notifier.sign_payload(empty_secret, &payload);
 		assert!(result.is_err());
 
 		let error = result.unwrap_err();
@@ -483,7 +374,6 @@ mod tests {
 		let notifier = notifier.unwrap();
 		assert_eq!(notifier.url, "https://webhook.example.com");
 		assert_eq!(notifier.title, "Test Alert");
-		assert_eq!(notifier.body_template, "Test message ${value}");
 	}
 
 	#[test]
@@ -497,7 +387,7 @@ mod tests {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
 			},
-			retry_policy: HttpRetryConfig::default(),
+			retry_policy: RetryConfig::default(),
 		};
 
 		let http_client = create_test_http_client();
@@ -514,9 +404,9 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_notify_failure() {
-		let notifier =
-			create_test_notifier("https://webhook.example.com", "Test message", None, None);
-		let result = notifier.notify("Test message").await;
+		let notifier = create_test_notifier("https://webhook.example.com", None, None);
+		let payload = create_test_payload();
+		let result = notifier.notify_json(&payload).await;
 		assert!(result.is_err());
 	}
 
@@ -527,24 +417,24 @@ mod tests {
 			.mock("POST", "/")
 			.match_header("X-Signature", Matcher::Regex("^[0-9a-f]{64}$".to_string()))
 			.match_header("X-Timestamp", Matcher::Regex("^[0-9]+$".to_string()))
-			.match_header("Content-Type", "text/plain")
+			.match_header("Content-Type", "application/json")
 			.with_status(200)
 			.create_async()
 			.await;
 
 		let notifier = create_test_notifier(
 			server.url().as_str(),
-			"Test message",
 			Some("top-secret"),
 			Some(HashMap::from([(
 				"Content-Type".to_string(),
-				"text/plain".to_string(),
+				"application/json".to_string(),
 			)])),
 		);
 
-		let response = notifier.notify("Test message").await;
+		let payload = create_test_payload();
+		let result = notifier.notify_json(&payload).await;
 
-		assert!(response.is_ok());
+		assert!(result.is_ok());
 
 		mock.assert();
 	}
@@ -559,14 +449,9 @@ mod tests {
 		let invalid_headers =
 			HashMap::from([("Invalid Header!@#".to_string(), "value".to_string())]);
 
-		let notifier = create_test_notifier(
-			server.url().as_str(),
-			"Test message",
-			None,
-			Some(invalid_headers),
-		);
-
-		let result = notifier.notify("Test message").await;
+		let notifier = create_test_notifier(server.url().as_str(), None, Some(invalid_headers));
+		let payload = create_test_payload();
+		let result = notifier.notify_json(&payload).await;
 		let err = result.unwrap_err();
 		assert!(err.to_string().contains("Invalid header name"));
 	}
@@ -577,14 +462,10 @@ mod tests {
 		let invalid_headers =
 			HashMap::from([("X-Custom-Header".to_string(), "Invalid\nValue".to_string())]);
 
-		let notifier = create_test_notifier(
-			server.url().as_str(),
-			"Test message",
-			None,
-			Some(invalid_headers),
-		);
+		let notifier = create_test_notifier(server.url().as_str(), None, Some(invalid_headers));
 
-		let result = notifier.notify("Test message").await;
+		let payload = create_test_payload();
+		let result = notifier.notify_json(&payload).await;
 		let err = result.unwrap_err();
 		assert!(err.to_string().contains("Invalid header value"));
 	}
@@ -605,14 +486,10 @@ mod tests {
 			.create_async()
 			.await;
 
-		let notifier = create_test_notifier(
-			server.url().as_str(),
-			"Test message",
-			None,
-			Some(valid_headers),
-		);
+		let notifier = create_test_notifier(server.url().as_str(), None, Some(valid_headers));
 
-		let result = notifier.notify("Test message").await;
+		let payload = create_test_payload();
+		let result = notifier.notify_json(&payload).await;
 		assert!(result.is_ok());
 		mock.assert();
 	}
@@ -629,33 +506,22 @@ mod tests {
 			.create_async()
 			.await;
 
-		let notifier = create_test_notifier(
-			server.url().as_str(),
-			"Test message",
-			Some("test-secret"),
-			None,
-		);
+		let notifier = create_test_notifier(server.url().as_str(), Some("test-secret"), None);
 
-		let result = notifier.notify("Test message").await;
+		let payload = create_test_payload();
+		let result = notifier.notify_json(&payload).await;
 		assert!(result.is_ok());
 		mock.assert();
 	}
 
 	#[test]
 	fn test_sign_request_validation() {
-		let notifier = create_test_notifier(
-			"https://webhook.example.com",
-			"Test message",
-			Some("test-secret"),
-			None,
-		);
+		let notifier =
+			create_test_notifier("https://webhook.example.com", Some("test-secret"), None);
 
-		let payload = WebhookMessage {
-			title: "Test Title".to_string(),
-			body: "Test message".to_string(),
-		};
+		let payload = create_test_payload();
 
-		let result = notifier.sign_request("test-secret", &payload).unwrap();
+		let result = notifier.sign_payload("test-secret", &payload).unwrap();
 		let (signature, timestamp) = result;
 
 		// Validate signature format (should be a hex string)
@@ -669,257 +535,5 @@ mod tests {
 			timestamp.parse::<i64>().is_ok(),
 			"Timestamp should be valid i64"
 		);
-	}
-
-	////////////////////////////////////////////////////////////
-	// notify_with_payload tests
-	////////////////////////////////////////////////////////////
-
-	#[tokio::test]
-	async fn test_notify_with_payload_success() {
-		let mut server = mockito::Server::new_async().await;
-		let expected_payload = json!({
-			"title": "Alert",
-			"body": "Test message",
-			"custom_field": "custom_value"
-		});
-
-		let mock = server
-			.mock("POST", "/")
-			.match_header("content-type", "application/json")
-			.match_body(Matcher::Json(expected_payload))
-			.with_header("content-type", "application/json")
-			.with_body("{}")
-			.with_status(200)
-			.expect(1)  // Expect exactly one request
-			.create_async()
-			.await;
-
-		let notifier = create_test_notifier(server.url().as_str(), "Test message", None, None);
-		let mut payload = HashMap::new();
-		// Insert fields in the same order as they appear in expected_payload
-		payload.insert("title".to_string(), serde_json::json!("Alert"));
-		payload.insert("body".to_string(), serde_json::json!("Test message"));
-		payload.insert(
-			"custom_field".to_string(),
-			serde_json::json!("custom_value"),
-		);
-
-		let result = notifier.notify_with_payload("Test message", payload).await;
-		assert!(result.is_ok());
-		mock.assert();
-	}
-
-	#[tokio::test]
-	async fn test_notify_with_payload_and_url_params() {
-		let mut server = mockito::Server::new_async().await;
-		let mock = server
-			.mock("POST", "/")
-			.match_query(mockito::Matcher::AllOf(vec![
-				mockito::Matcher::UrlEncoded("param1".into(), "value1".into()),
-				mockito::Matcher::UrlEncoded("param2".into(), "value2".into()),
-			]))
-			.with_status(200)
-			.create_async()
-			.await;
-
-		let mut url_params = HashMap::new();
-		url_params.insert("param1".to_string(), "value1".to_string());
-		url_params.insert("param2".to_string(), "value2".to_string());
-
-		let config = WebhookConfig {
-			url: server.url(),
-			url_params: Some(url_params),
-			title: "Alert".to_string(),
-			body_template: "Test message".to_string(),
-			method: None,
-			secret: None,
-			headers: None,
-			payload_fields: None,
-		};
-		let http_client = create_test_http_client();
-		let notifier = WebhookNotifier::new(config, http_client).unwrap();
-
-		let result = notifier
-			.notify_with_payload("Test message", HashMap::new())
-			.await;
-		assert!(result.is_ok());
-		mock.assert();
-	}
-
-	#[tokio::test]
-	async fn test_notify_with_payload_and_method_override() {
-		let mut server = mockito::Server::new_async().await;
-		let mock = server
-			.mock("GET", "/")
-			.with_status(200)
-			.create_async()
-			.await;
-
-		let config = WebhookConfig {
-			url: server.url(),
-			url_params: None,
-			title: "Alert".to_string(),
-			body_template: "Test message".to_string(),
-			method: Some("GET".to_string()),
-			secret: None,
-			headers: None,
-			payload_fields: None,
-		};
-		let http_client = create_test_http_client();
-		let notifier = WebhookNotifier::new(config, http_client).unwrap();
-
-		let result = notifier
-			.notify_with_payload("Test message", HashMap::new())
-			.await;
-		assert!(result.is_ok());
-		mock.assert();
-	}
-
-	#[tokio::test]
-	async fn test_notify_with_payload_merges_default_fields() {
-		let mut server = mockito::Server::new_async().await;
-
-		let expected_payload = json!({
-			"default_field": "default_value",
-			"custom_field": "custom_value"
-		});
-
-		let mock = server
-			.mock("POST", "/")
-			.match_body(mockito::Matcher::Json(expected_payload))
-			.with_status(200)
-			.create_async()
-			.await;
-
-		let mut default_fields = HashMap::new();
-		default_fields.insert(
-			"default_field".to_string(),
-			serde_json::json!("default_value"),
-		);
-
-		let config = WebhookConfig {
-			url: server.url(),
-			url_params: None,
-			title: "Alert".to_string(),
-			body_template: "Test message".to_string(),
-			method: None,
-			secret: None,
-			headers: None,
-			payload_fields: Some(default_fields),
-		};
-		let http_client = create_test_http_client();
-		let notifier = WebhookNotifier::new(config, http_client).unwrap();
-
-		let mut payload = HashMap::new();
-		payload.insert(
-			"custom_field".to_string(),
-			serde_json::json!("custom_value"),
-		);
-
-		let result = notifier.notify_with_payload("Test message", payload).await;
-		assert!(result.is_ok());
-		mock.assert();
-	}
-
-	#[tokio::test]
-	async fn test_notify_with_payload_custom_fields_override_defaults() {
-		let mut server = mockito::Server::new_async().await;
-
-		let expected_payload = json!({
-			 "custom_field": "custom_value"
-		});
-
-		let mock = server
-			.mock("POST", "/")
-			.match_body(mockito::Matcher::Json(expected_payload))
-			.with_status(200)
-			.create_async()
-			.await;
-
-		let mut default_fields = HashMap::new();
-		default_fields.insert(
-			"custom_field".to_string(),
-			serde_json::json!("default_value"),
-		);
-
-		let config = WebhookConfig {
-			url: server.url(),
-			url_params: None,
-			title: "Alert".to_string(),
-			body_template: "Test message".to_string(),
-			method: None,
-			secret: None,
-			headers: None,
-			payload_fields: Some(default_fields),
-		};
-		let http_client = create_test_http_client();
-		let notifier = WebhookNotifier::new(config, http_client).unwrap();
-
-		let mut payload = HashMap::new();
-		payload.insert(
-			"custom_field".to_string(),
-			serde_json::json!("custom_value"),
-		);
-
-		let result = notifier.notify_with_payload("Test message", payload).await;
-		assert!(result.is_ok());
-		mock.assert();
-	}
-
-	#[tokio::test]
-	async fn test_notify_with_payload_invalid_url() {
-		let notifier = create_test_notifier("invalid-url", "Test message", None, None);
-
-		let result = notifier
-			.notify_with_payload("Test message", HashMap::new())
-			.await;
-		assert!(result.is_err());
-
-		let error = result.unwrap_err();
-		assert!(matches!(error, NotificationError::NotifyFailed { .. }));
-	}
-
-	#[tokio::test]
-	async fn test_notify_with_payload_failure_with_retryable_error() {
-		let mut server = mockito::Server::new_async().await;
-		let default_retries_count = HttpRetryConfig::default().max_retries as usize;
-		let mock = server
-			.mock("POST", "/")
-			.with_status(500)
-			.with_body("Internal Server Error")
-			.expect(1 + default_retries_count)
-			.create_async()
-			.await;
-
-		let notifier = create_test_notifier(server.url().as_str(), "Test message", None, None);
-
-		let result = notifier
-			.notify_with_payload("Test message", HashMap::new())
-			.await;
-
-		assert!(result.is_err());
-		mock.assert();
-	}
-
-	#[tokio::test]
-	async fn test_notify_with_payload_failure_with_non_retryable_error() {
-		let mut server = mockito::Server::new_async().await;
-		let mock = server
-			.mock("POST", "/")
-			.with_status(400)
-			.with_body("Bad Request")
-			.expect(1)
-			.create_async()
-			.await;
-
-		let notifier = create_test_notifier(server.url().as_str(), "Test message", None, None);
-
-		let result = notifier
-			.notify_with_payload("Test message", HashMap::new())
-			.await;
-
-		assert!(result.is_err());
-		mock.assert();
 	}
 }

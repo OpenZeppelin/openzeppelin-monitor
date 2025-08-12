@@ -8,7 +8,7 @@
         "value": "https://hooks.slack.com/services/A/B/C"
       },
       "message": {
-        "title": "large_transfer_slack triggered",
+        "title": "${monitor.name} triggered",
         "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }
@@ -22,7 +22,7 @@
         "value": "https://hooks.slack.com/services/A/B/C"
       },
       "message": {
-        "title": "large_transfer_slack triggered",
+        "title": "${monitor.name} triggered",
         "body": "*USDC Transfer Details*\n*Amount:* ${events.0.args.value} USDC\n*From:* ${events.0.args.from}\n*To:* ${events.0.args.to}\n*Transaction:* <https://etherscan.io/tx/${transaction.hash}#eventlog|View on Etherscan>"
       }
     }

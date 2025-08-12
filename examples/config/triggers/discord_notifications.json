@@ -8,7 +8,7 @@
         "value": "https://discord.com/api/webhooks/123-456-789"
       },
       "message": {
-        "title": "large_transfer_discord triggered",
+        "title": "${monitor.name} triggered",
         "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }
@@ -22,7 +22,7 @@
         "value": "https://discord.com/api/webhooks/123-456-789"
       },
       "message": {
-        "title": "large_transfer_discord triggered",
+        "title": "${monitor.name} triggered",
         "body": "**Large transfer** of **${events.0.args.value} USDC** from `${events.0.args.from}` to `${events.0.args.to}`\n[View on Etherscan](https://etherscan.io/tx/${transaction.hash}#eventlog)"
       }
     }

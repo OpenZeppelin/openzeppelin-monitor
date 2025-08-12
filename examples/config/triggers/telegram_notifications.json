@@ -10,7 +10,7 @@
       "chat_id": "9876543210",
       "disable_web_preview": true,
       "message": {
-        "title": "large_transfer_telegram triggered",
+        "title": "${monitor.name} triggered",
         "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
       }
     }
@@ -26,7 +26,7 @@
       "chat_id": "9876543210",
       "disable_web_preview": true,
       "message": {
-        "title": "large_transfer_telegram triggered",
+        "title": "${monitor.name} triggered",
         "body": "*USDC Transfer Details*\n*Amount:* ${events.0.args.value} USDC\n*From:* ${events.0.args.from}\n*To:* ${events.0.args.to}\n*Transaction:* [View on Etherscan](https://etherscan.io/tx/${transaction.hash}#eventlog)"
       }
     }
