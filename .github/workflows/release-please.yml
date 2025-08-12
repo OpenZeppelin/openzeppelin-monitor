@@ -28,15 +28,14 @@ jobs:
         uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
-
       - name: Get github app token
-        uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5  # v2.0.2
+        uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5 # v2.0.2
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
       - name: Slack notification
-        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d  # v2.1.0
+        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d # v2.1.0
         with:
           status: starting
           steps: ${{ toJson(steps) }}
@@ -44,7 +43,7 @@ jobs:
           message: Starting release please workflow for ${{ github.repository }}
         if: always()
       - name: Checkout release branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           token: ${{ steps.gh-app-token.outputs.token }}
@@ -91,7 +90,7 @@ jobs:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
       - name: Start release please action
         id: release
-        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445  # v4.2.0
+        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.2.0
         with:
           token: ${{ steps.gh-app-token.outputs.token }}
           target-branch: ${{ github.ref_name }}
@@ -103,7 +102,7 @@ jobs:
         run: |
           echo "release_branch=${{ fromJSON(steps.release.outputs.pr).headBranchName }}" >> $GITHUB_OUTPUT
       - name: Slack notification success or failure
-        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d  # v2.1.0
+        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d # v2.1.0
         with:
           status: ${{ job.status }}
           steps: ${{ toJson(steps) }}
@@ -122,9 +121,8 @@ jobs:
         uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
-
       - name: Get github app token
-        uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5  # v2.0.2
+        uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5 # v2.0.2
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
@@ -134,7 +132,7 @@ jobs:
         run: |
           echo "pr head branch name: >>>>> ${{ needs.release-please.outputs.release_branch }}"
       - name: Checkout release branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 2
           token: ${{ steps.gh-app-token.outputs.token }}
@@ -174,7 +172,7 @@ jobs:
           fi
       - name: Commit cargo update
         if: ${{ steps.lock-file-commit.outputs.cargo_changed == 'true' || steps.update-antora.outputs.antora_changed == 'true' }}
-        uses: iarekylew00t/verified-bot-commit@849c406ce58dfd17ed6a8b981448968d4d0f2012  # v1.3.2
+        uses: iarekylew00t/verified-bot-commit@849c406ce58dfd17ed6a8b981448968d4d0f2012 # v1.3.2
         with:
           message: 'chore: Updating lock file and bumping version in antora file'
           token: ${{ steps.gh-app-token.outputs.token }}

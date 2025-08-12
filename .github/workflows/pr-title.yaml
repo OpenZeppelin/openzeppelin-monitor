@@ -1,12 +1,9 @@
 ---
 name: PR Title
-
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
     types: [opened, edited, reopened, synchronize]
-
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -15,8 +12,7 @@ jobs:
         uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
-
-      - uses: thehanimo/pr-title-checker@7fbfe05602bdd86f926d3fb3bccb6f3aed43bc70  # v1.4.3
+      - uses: thehanimo/pr-title-checker@7fbfe05602bdd86f926d3fb3bccb6f3aed43bc70 # v1.4.3
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           configuration_path: .github/pr-title-checker-config.json

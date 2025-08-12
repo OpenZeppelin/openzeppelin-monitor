@@ -1,4 +1,4 @@
 allow_duplicate_keys = false
 line_length = 280
-sequence_style = "flow_style"
+sequence_style = "keep_style"
 comments_min_spaces_from_content = 1
