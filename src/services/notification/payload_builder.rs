@@ -84,7 +84,7 @@ pub fn build_match_reasons(variables: &HashMap<String, String>, prefix: &str) ->
 		let signature_key = format!("{}.{}.signature", prefix, index);
 		if let Some(signature) = variables.get(&signature_key) {
 			// Display uses 1-based indexing (index + 1) for user clarity, while internal logic uses 0-based indexing.
-			match_reasons.push_str(&format!("\n_#{}_\n", index + 1));
+			match_reasons.push_str(&format!("\n*Reason {}*\n", index + 1));
 			match_reasons.push_str(&format!("\n*Signature:* `{}`\n", signature));
 
 			match_reasons.push_str("\n*Params:*\n");
@@ -480,7 +480,7 @@ mod tests {
 
 		let result = build_match_reasons(&variables, "events");
 		assert!(result.is_some());
-		let expected = "\n\n*Matched Events:*\n\n_#1_\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`";
+		let expected = "\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`";
 		assert_eq!(result.unwrap(), expected);
 	}
 
@@ -515,7 +515,7 @@ mod tests {
 
 		let result = build_match_reasons(&variables, "events");
 		assert!(result.is_some());
-		let expected = "\n\n*Matched Events:*\n\n_#1_\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n_#2_\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`\n\n_#3_\n\n*Signature:* `ValueChanged(uint256)`\n\n*Params:*\n\nvalue: `1000000000`";
+		let expected = "\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n*Reason 2*\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`\n\n*Reason 3*\n\n*Signature:* `ValueChanged(uint256)`\n\n*Params:*\n\nvalue: `1000000000`";
 		assert_eq!(result.unwrap(), expected);
 	}
 
@@ -561,7 +561,7 @@ mod tests {
 
 		let result = build_match_reasons(&variables, "events");
 		assert!(result.is_some());
-		let expected = "\n\n*Matched Events:*\n\n_#1_\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n_#2_\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`\n\n_#3_\n\n*Signature:* `ValueChanged(uint256)`\n\n*Params:*\n\nvalue: `1000000000`";
+		let expected = "\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n*Reason 2*\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`\n\n*Reason 3*\n\n*Signature:* `ValueChanged(uint256)`\n\n*Params:*\n\nvalue: `1000000000`";
 		assert_eq!(result.unwrap(), expected);
 	}
 
@@ -596,7 +596,7 @@ mod tests {
 
 		let result = format_template(template, &variables);
 		// Since the template contains ${events}, it should get the match reasons section
-		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Events:*\n\n_#1_\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n_#2_\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`";
+		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n*Reason 2*\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`";
 		assert_eq!(result, expected);
 	}
 
@@ -613,7 +613,7 @@ mod tests {
 
 		let result = build_match_reasons(&variables, "functions");
 		assert!(result.is_some());
-		let expected = "\n\n*Matched Functions:*\n\n_#1_\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`";
+		let expected = "\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`";
 		assert_eq!(result.unwrap(), expected);
 	}
 
@@ -644,7 +644,7 @@ mod tests {
 
 		let result = build_match_reasons(&variables, "functions");
 		assert!(result.is_some());
-		let expected = "\n\n*Matched Functions:*\n\n_#1_\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n_#2_\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\n\n_#3_\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `1000000`";
+		let expected = "\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n*Reason 2*\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\n\n*Reason 3*\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `1000000`";
 		assert_eq!(result.unwrap(), expected);
 	}
 
@@ -686,7 +686,7 @@ mod tests {
 
 		let result = build_match_reasons(&variables, "functions");
 		assert!(result.is_some());
-		let expected = "\n\n*Matched Functions:*\n\n_#1_\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n_#2_\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\n\n_#3_\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `1000000`";
+		let expected = "\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n*Reason 2*\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\n\n*Reason 3*\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `1000000`";
 		assert_eq!(result.unwrap(), expected);
 	}
 
@@ -717,7 +717,7 @@ mod tests {
 
 		let result = format_template(template, &variables);
 		// Since the template contains ${functions}, it should get the match reasons section
-		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Functions:*\n\n_#1_\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n_#2_\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`";
+		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n*Reason 2*\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`";
 		assert_eq!(result, expected);
 	}
 
@@ -765,7 +765,7 @@ mod tests {
 		let result = format_template(template, &variables);
 		// The template contains both ${events} and ${functions}, so both sections should be included
 		// Functions are processed before events, so functions section appears first
-		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Functions:*\n\n_#1_\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `750000`\nto: `0x9abc`\n\n_#2_\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `250000`\n\n\n\n*Matched Events:*\n\n_#1_\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\nvalue: `1000000`\n\n_#2_\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `500000`";
+		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `750000`\nto: `0x9abc`\n\n*Reason 2*\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `250000`\n\n\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\nvalue: `1000000`\n\n*Reason 2*\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `500000`";
 		assert_eq!(result, expected);
 	}
 
