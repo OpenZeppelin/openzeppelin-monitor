@@ -87,9 +87,11 @@ Beginner focused information can be found below in [Open a Pull Request](#openin
      Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
 
      ```sh
-     chmod +x ./scripts/linux/sys_pkgs.sh
+  chmod +x ./scripts/linux/sys_pkgs_core.sh
+  chmod +x ./scripts/linux/sys_pkgs_dev.sh
      # Installs required packages and ensures compatible Python version
-     ./scripts/linux/sys_pkgs.sh
+  ./scripts/linux/sys_pkgs_core.sh   # For runtime dependencies only
+  ./scripts/linux/sys_pkgs_dev.sh    # For Python/dev dependencies (calls core script)
      ```
 
    - Install dependencies:

@@ -42,18 +42,14 @@ sudo apt install -y \
     libssl-dev \
     libffi-dev \
     libyaml-dev \
-    python3 \
-    python3-venv \
-    python3-pip
 ----
 
-Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
+Or use the provided system packages script:
 
 [source,bash]
 ----
-chmod +x ./scripts/linux/sys_pkgs.sh
-# Installs required packages and ensures compatible Python version
-./scripts/linux/sys_pkgs.sh
+chmod +x ./scripts/linux/sys_pkgs_core.sh
+./scripts/linux/sys_pkgs_core.sh   // For runtime dependencies only
 ----
 
 == Quick Setup Options
