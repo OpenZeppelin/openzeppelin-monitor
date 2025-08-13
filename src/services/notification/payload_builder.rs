@@ -6,6 +6,8 @@ use regex::Regex;
 use serde_json::json;
 use std::collections::HashMap;
 
+use super::template_formatter;
+
 /// Trait for building webhook payloads.
 pub trait WebhookPayloadBuilder: Send + Sync {
 	/// Builds a webhook payload by formatting the template and applying channel-specific rules.
@@ -29,90 +31,7 @@ pub trait WebhookPayloadBuilder: Send + Sync {
 
 /// Formats a message by substituting variables in the template.
 pub fn format_template(template: &str, variables: &HashMap<String, String>) -> String {
-	let mut message = template.to_string();
-	for (key, value) in variables {
-		message = message.replace(&format!("${{{}}}", key), value);
-	}
-
-	if template.contains("${functions}") {
-		if let Some(functions_section) = build_match_reasons(variables, "functions") {
-			message = message.replace("${functions}", &functions_section);
-		} else {
-			message = message.replace("${functions}", "");
-		}
-	}
-
-	if template.contains("${events}") {
-		if let Some(events_section) = build_match_reasons(variables, "events") {
-			message = message.replace("${events}", &events_section);
-		} else {
-			message = message.replace("${events}", "");
-		}
-	}
-
-	message
-}
-
-/// Builds the "Match reasons" section for events or functions if they are present
-pub fn build_match_reasons(variables: &HashMap<String, String>, prefix: &str) -> Option<String> {
-	let mut indexes = Vec::new();
-
-	for key in variables.keys() {
-		if key.starts_with(&format!("{}.", prefix)) && key.ends_with(".signature") {
-			if let Some(index_part) = key
-				.strip_prefix(&format!("{}.", prefix))
-				.and_then(|s| s.strip_suffix(".signature"))
-			{
-				if let Ok(index) = index_part.parse::<usize>() {
-					indexes.push(index);
-				}
-			}
-		}
-	}
-
-	if indexes.is_empty() {
-		return None;
-	}
-
-	indexes.sort();
-
-	let formatted_prefix = prefix[..1].to_uppercase() + &prefix[1..];
-	let mut match_reasons = String::from(&format!("\n\n*Matched {}:*\n", formatted_prefix));
-	let last_index = *indexes.last().unwrap(); // Safe because we checked indexes.is_empty() above
-
-	for &index in &indexes {
-		let signature_key = format!("{}.{}.signature", prefix, index);
-		if let Some(signature) = variables.get(&signature_key) {
-			// Display uses 1-based indexing (index + 1) for user clarity, while internal logic uses 0-based indexing.
-			match_reasons.push_str(&format!("\n*Reason {}*\n", index + 1));
-			match_reasons.push_str(&format!("\n*Signature:* `{}`\n", signature));
-
-			match_reasons.push_str("\n*Params:*\n");
-
-			let mut params = Vec::new();
-			for (key, value) in variables {
-				if key.starts_with(&format!("{}.{}.args.", prefix, index)) {
-					if let Some(param_name) =
-						key.strip_prefix(&format!("{}.{}.args.", prefix, index))
-					{
-						params.push((param_name.to_string(), value.clone()));
-					}
-				}
-			}
-
-			params.sort_by(|a, b| a.0.cmp(&b.0));
-
-			for (param_name, param_value) in params {
-				match_reasons.push_str(&format!("\n{}: `{}`", param_name, param_value));
-			}
-
-			if index != last_index {
-				match_reasons.push('\n');
-			}
-		}
-	}
-
-	Some(match_reasons)
+	template_formatter::format_template(template, variables)
 }
 
 /// A payload builder for Slack.
@@ -478,7 +397,7 @@ mod tests {
 			("events.0.args.to".to_string(), "0x5678".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		assert!(result.is_some());
 		let expected = "\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`";
 		assert_eq!(result.unwrap(), expected);
@@ -513,7 +432,7 @@ mod tests {
 			("events.2.args.value".to_string(), "1000000000".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		assert!(result.is_some());
 		let expected = "\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n*Reason 2*\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`\n\n*Reason 3*\n\n*Signature:* `ValueChanged(uint256)`\n\n*Params:*\n\nvalue: `1000000000`";
 		assert_eq!(result.unwrap(), expected);
@@ -526,7 +445,7 @@ mod tests {
 			("monitor.name".to_string(), "Test Monitor".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		assert!(result.is_none());
 	}
 
@@ -559,7 +478,7 @@ mod tests {
 			("events.1.args.value".to_string(), "1000000000".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		assert!(result.is_some());
 		let expected = "\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\n\n*Reason 2*\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `1000000000`\n\n*Reason 3*\n\n*Signature:* `ValueChanged(uint256)`\n\n*Params:*\n\nvalue: `1000000000`";
 		assert_eq!(result.unwrap(), expected);
@@ -611,7 +530,7 @@ mod tests {
 			("functions.0.args.amount".to_string(), "1000000".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "functions");
+		let result = template_formatter::build_match_reasons(&variables, "functions");
 		assert!(result.is_some());
 		let expected = "\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`";
 		assert_eq!(result.unwrap(), expected);
@@ -642,7 +561,7 @@ mod tests {
 			("functions.2.args.amount".to_string(), "1000000".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "functions");
+		let result = template_formatter::build_match_reasons(&variables, "functions");
 		assert!(result.is_some());
 		let expected = "\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n*Reason 2*\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\n\n*Reason 3*\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `1000000`";
 		assert_eq!(result.unwrap(), expected);
@@ -655,7 +574,7 @@ mod tests {
 			("monitor.name".to_string(), "Test Monitor".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "functions");
+		let result = template_formatter::build_match_reasons(&variables, "functions");
 		assert!(result.is_none());
 	}
 
@@ -684,7 +603,7 @@ mod tests {
 			("functions.1.args.amount".to_string(), "500000".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "functions");
+		let result = template_formatter::build_match_reasons(&variables, "functions");
 		assert!(result.is_some());
 		let expected = "\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n*Reason 2*\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\n\n*Reason 3*\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `1000000`";
 		assert_eq!(result.unwrap(), expected);
@@ -715,7 +634,7 @@ mod tests {
 			("functions.1.args.amount".to_string(), "500000".to_string()),
 		]);
 
-		let result = format_template(template, &variables);
+		let result = template_formatter::format_template(template, &variables);
 		// Since the template contains ${functions}, it should get the match reasons section
 		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `1000000`\nto: `0x1234`\n\n*Reason 2*\n\n*Signature:* `approve(address,uint256)`\n\n*Params:*\n\namount: `500000`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`";
 		assert_eq!(result, expected);
@@ -762,7 +681,7 @@ mod tests {
 			("functions.1.args.amount".to_string(), "250000".to_string()),
 		]);
 
-		let result = format_template(template, &variables);
+		let result = template_formatter::format_template(template, &variables);
 		// The template contains both ${events} and ${functions}, so both sections should be included
 		// Functions are processed before events, so functions section appears first
 		let expected = "Transaction detected: 0x1234567890abcdef\n\n\n\n*Matched Functions:*\n\n*Reason 1*\n\n*Signature:* `transfer(address,uint256)`\n\n*Params:*\n\namount: `750000`\nto: `0x9abc`\n\n*Reason 2*\n\n*Signature:* `mint(uint256)`\n\n*Params:*\n\namount: `250000`\n\n\n\n*Matched Events:*\n\n*Reason 1*\n\n*Signature:* `Transfer(address,address,uint256)`\n\n*Params:*\n\nfrom: `0x1234`\nto: `0x5678`\nvalue: `1000000`\n\n*Reason 2*\n\n*Signature:* `Approval(address,address,uint256)`\n\n*Params:*\n\nowner: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nspender: `0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6`\nvalue: `500000`";
@@ -780,7 +699,7 @@ mod tests {
 			// No events variables present
 		]);
 
-		let result = format_template(template, &variables);
+		let result = template_formatter::format_template(template, &variables);
 		// Since there are no events, ${events} should be replaced with empty string
 		let expected = "Transaction detected: 0x1234567890abcdef\n\n";
 		assert_eq!(result, expected);
@@ -797,7 +716,7 @@ mod tests {
 			// No functions variables present
 		]);
 
-		let result = format_template(template, &variables);
+		let result = template_formatter::format_template(template, &variables);
 		// Since there are no functions, ${functions} should be replaced with empty string
 		let expected = "Transaction detected: 0x1234567890abcdef\n\n";
 		assert_eq!(result, expected);
@@ -814,7 +733,7 @@ mod tests {
 			("events.signature".to_string(), "Transfer".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		// Should return None since no valid signature keys were found
 		assert!(result.is_none());
 	}
@@ -829,7 +748,7 @@ mod tests {
 			("events.0.args.to".to_string(), "0x5678".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		let result_str = result.unwrap();
 
 		assert!(result_str.contains("\n\n*Matched Events:*\n"));
@@ -855,7 +774,7 @@ mod tests {
 			("events.2.args.owner".to_string(), "0x9abc".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		// Should only include events 0 and 2, skipping event 1 due to empty signature
 		assert!(result.is_some());
 		let result_str = result.unwrap();
@@ -879,7 +798,7 @@ mod tests {
 			("events.0.args.from".to_string(), "0x1234".to_string()),
 		]);
 
-		let result = build_match_reasons(&variables, "events");
+		let result = template_formatter::build_match_reasons(&variables, "events");
 		// Should only include the valid event 0, skipping invalid formats
 		assert!(result.is_some());
 		let result_str = result.unwrap();

@@ -18,7 +18,7 @@ use std::{collections::HashMap, error::Error as StdError, sync::Arc};
 
 use crate::{
 	models::TriggerTypeConfig,
-	services::notification::NotificationError,
+	services::notification::{template_formatter, NotificationError},
 	utils::{JitterSetting, RetryConfig},
 };
 
@@ -221,12 +221,7 @@ impl EmailNotifier<AsyncSmtpTransport<Tokio1Executor>> {
 	/// # Returns
 	/// * `String` - Formatted message with variables replaced and converted to HTML
 	pub fn format_message(body_template: &str, variables: &HashMap<String, String>) -> String {
-		let formatted_message = variables
-			.iter()
-			.fold(body_template.to_string(), |message, (key, value)| {
-				message.replace(&format!("${{{}}}", key), value)
-			});
-
+		let formatted_message = template_formatter::format_template(body_template, variables);
 		Self::markdown_to_html(&formatted_message)
 	}
 

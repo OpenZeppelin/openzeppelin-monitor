@@ -12,6 +12,7 @@ mod error;
 pub mod payload_builder;
 mod pool;
 mod script;
+mod template_formatter;
 mod webhook;
 
 use crate::{
