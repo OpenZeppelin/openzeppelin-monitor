@@ -20,7 +20,7 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types:
-        - version-update:semver-major
+          - version-update:semver-major
     commit-message:
       # Prefix all commit messages
       prefix: 'chore(deps): '

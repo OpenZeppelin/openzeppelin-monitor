@@ -1,7 +1,7 @@
 //! Common test utilities and helper functions.
 //!
 //! Provides shared functionality for loading test fixtures and setting up
-//! test environments for both EVM and Stellar chain tests.
+//! test environments for supported chain tests.
 
 use alloy::json_abi::JsonAbi;
 use openzeppelin_monitor::{
@@ -115,7 +115,7 @@ impl TestDataBuilder {
 						.unwrap_or_else(|| "contract_spec.json".to_string())
 				)),
 			)))
-		} else {
+		} else if self.chain == "evm" {
 			Some(ContractSpec::EVM(EVMContractSpec::from(
 				read_and_parse_json::<JsonAbi>(&format!(
 					"{}/contract_specs/{}",
@@ -124,6 +124,10 @@ impl TestDataBuilder {
 						.unwrap_or_else(|| "contract_spec.json".to_string())
 				)),
 			)))
+		} else if self.chain == "midnight" {
+			Some(ContractSpec::Midnight)
+		} else {
+			None
 		};
 
 		TestData {

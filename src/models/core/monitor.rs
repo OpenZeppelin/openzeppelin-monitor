@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::blockchain::ContractSpec;
+use crate::models::{blockchain::ContractSpec, ChainConfiguration};
 
 /// Configuration for monitoring specific blockchain activity.
 ///
@@ -34,6 +34,10 @@ pub struct Monitor {
 
 	/// IDs of triggers to execute when conditions match
 	pub triggers: Vec<String>,
+
+	/// Chain-specific configurations
+	#[serde(default)]
+	pub chain_configurations: Vec<ChainConfiguration>,
 }
 
 /// Contract address with optional ABI for decoding transactions and events
@@ -130,3 +134,10 @@ pub enum ScriptLanguage {
 	Python,
 	Bash,
 }
+
+/// Static mapping of script languages to their file extensions
+pub const SCRIPT_LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
+	(&ScriptLanguage::Python, "py"),
+	(&ScriptLanguage::JavaScript, "js"),
+	(&ScriptLanguage::Bash, "sh"),
+];

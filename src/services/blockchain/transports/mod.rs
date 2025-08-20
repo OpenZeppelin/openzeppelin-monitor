@@ -10,15 +10,35 @@ mod evm {
 mod stellar {
 	pub mod http;
 }
+mod midnight {
+	pub mod ws;
+}
 
-mod endpoint_manager;
+mod http {
+	pub mod endpoint_manager;
+	pub mod transport;
+}
+
+mod ws {
+	pub mod config;
+	pub mod connection;
+	pub mod endpoint_manager;
+	pub mod transport;
+}
+
 mod error;
-mod http;
 
-pub use endpoint_manager::EndpointManager;
+pub use http::{
+	endpoint_manager::EndpointManager as HttpEndpointManager, transport::HttpTransportClient,
+};
+pub use ws::{
+	config::WsConfig, endpoint_manager::EndpointManager as WsEndpointManager,
+	transport::WsTransportClient,
+};
+
 pub use error::TransportError;
 pub use evm::http::EVMTransportClient;
-pub use http::HttpTransportClient;
+pub use midnight::ws::MidnightTransportClient as MidnightWsTransportClient;
 pub use stellar::http::StellarTransportClient;
 
 use reqwest_middleware::ClientWithMiddleware;

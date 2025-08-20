@@ -3,11 +3,10 @@
 //! Note: These structures are based on the Stellar RPC implementation:
 //! <https://github.com/stellar/stellar-rpc/blob/main/cmd/stellar-rpc/internal/methods/get_transactions.go>
 
-use std::ops::Deref;
-
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::ops::Deref;
 use stellar_xdr::curr::{Limits, ReadXdr, TransactionEnvelope, TransactionMeta, TransactionResult};
 
 /// Information about a Stellar transaction

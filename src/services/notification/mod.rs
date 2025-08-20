@@ -95,7 +95,7 @@ impl AsWebhookComponents for TriggerTypeConfig {
 				disable_web_preview,
 				..
 			} => (
-				format!("https://api.telegram.org/bot{}/sendMessage", token),
+				format!("https://api.telegram.org/bot{}/sendMessage", token.as_ref()),
 				message.clone(),
 				Some("POST".to_string()),
 				None,
@@ -286,6 +286,7 @@ impl NotificationService {
 				let monitor_name = match monitor_match {
 					MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
 					MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,
+					MonitorMatch::Midnight(midnight_match) => &midnight_match.monitor.name,
 				};
 				let script_path = match &trigger.config {
 					TriggerTypeConfig::Script { script_path, .. } => script_path,
