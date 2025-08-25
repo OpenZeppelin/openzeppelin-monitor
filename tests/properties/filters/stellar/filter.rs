@@ -1707,7 +1707,7 @@ proptest! {
 			ledger: 1234,
 			ledger_closed_at: "2023-01-01T00:00:00Z".to_string(),
 			id: "0".to_string(),
-			paging_token: "0".to_string(),
+			paging_token: Some("0".to_string()),
 			in_successful_contract_call: true,
 			topic_json: None,
 			value_json: None,

@@ -1173,7 +1173,7 @@ mod tests {
 			ledger: 0,
 			ledger_closed_at: "0".to_string(),
 			id: "0".to_string(),
-			paging_token: "0".to_string(),
+			paging_token: Some("0".to_string()),
 			in_successful_contract_call: true,
 			topic_json: None,
 			value_json: None,
