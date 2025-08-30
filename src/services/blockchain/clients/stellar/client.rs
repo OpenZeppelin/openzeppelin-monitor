@@ -544,10 +544,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 			match http_response {
 				Ok(response_body) => {
 					// Check for RPC errors in the response
-					// Currently this won't catch OutsideRetentionWindow errors because RPC returns generic error message:
-					// "[-32003] request failed to process due to internal issue"
-					// but we can still handle it as generic RPC error
-					// TODO: revisit after this issue is resolved: https://github.com/stellar/stellar-rpc/issues/454
 					if let Err(rpc_error) = self.check_and_handle_rpc_error(
 						&response_body,
 						start_block as u32,
