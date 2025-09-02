@@ -25,6 +25,11 @@ config/**/*.json
 config/**/*.sh
 !examples/config/**/*.json
 
+# Ignore scripts in config folder
+config/**/*.sh
+config/**/*.js
+config/**/*.py
+
 # Ignore .env files
 .env
 

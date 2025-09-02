@@ -174,7 +174,8 @@ impl ConfigLoader for Network {
 
 		// Validate network_type
 		match self.network_type {
-			BlockChainType::EVM | BlockChainType::Stellar => {}
+			BlockChainType::EVM | BlockChainType::Stellar | BlockChainType::Midnight => {}
+			#[allow(unreachable_patterns)]
 			_ => {
 				return Err(ConfigError::validation_error(
 					"Invalid network_type",
@@ -197,41 +198,36 @@ impl ConfigLoader for Network {
 			));
 		}
 
-		// Validate RPC URL types
-		let supported_types = ["rpc"];
-		if !self
-			.rpc_urls
-			.iter()
-			.all(|rpc_url| supported_types.contains(&rpc_url.type_.as_str()))
-		{
-			return Err(ConfigError::validation_error(
-				format!(
-					"RPC URL type must be one of: {}",
-					supported_types.join(", ")
-				),
-				None,
-				None,
-			));
-		}
+		// Validate RPC URL types and formats based on network
+		let (supported_types, supported_protocols) = match self.network_type {
+			BlockChainType::Midnight => (vec!["ws_rpc"], vec!["wss://", "ws://"]),
+			_ => (vec!["rpc"], vec!["http://", "https://", "wss://", "ws://"]),
+		};
 
-		// Validate RPC URLs format
-		if !self.rpc_urls.iter().all(|rpc_url| {
-			rpc_url.url.starts_with("http://") || rpc_url.url.starts_with("https://")
-		}) {
-			return Err(ConfigError::validation_error(
-				"All RPC URLs must start with http:// or https://",
-				None,
-				None,
-			));
-		}
+		for rpc_url in &self.rpc_urls {
+			let type_valid = supported_types.contains(&rpc_url.type_.as_str());
+			let protocol_valid = supported_protocols
+				.iter()
+				.any(|protocol| rpc_url.url.starts_with(protocol));
+			let weight_valid = rpc_url.weight <= 100;
 
-		// Validate RPC URL weights
-		if !self.rpc_urls.iter().all(|rpc_url| rpc_url.weight <= 100) {
-			return Err(ConfigError::validation_error(
-				"All RPC URL weights must be between 0 and 100",
-				None,
-				None,
-			));
+			if !type_valid || !protocol_valid || !weight_valid {
+				return Err(ConfigError::validation_error(
+					format!(
+						"Invalid RPC URL configuration for {:?} network:\n\
+						Type: {} (must be one of: {})\n\
+						Protocol: must start with one of: {}\n\
+						Weight: {} (must be <= 100)",
+						self.network_type,
+						rpc_url.type_,
+						supported_types.join(", "),
+						supported_protocols.join(", "),
+						rpc_url.weight
+					),
+					None,
+					None,
+				));
+			}
 		}
 
 		// Validate block time
@@ -354,7 +350,7 @@ impl ConfigLoader for Network {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::utils::tests::builders::network::NetworkBuilder;
+	use crate::{models::SecretString, utils::tests::builders::network::NetworkBuilder};
 	use std::fs;
 	use tempfile::TempDir;
 	use tracing_test::traced_test;
@@ -368,6 +364,21 @@ mod tests {
 			.chain_id(1)
 			.store_blocks(true)
 			.rpc_url("https://test.network")
+			.block_time_ms(1000)
+			.confirmation_blocks(1)
+			.cron_schedule("0 */5 * * * *")
+			.max_past_blocks(10)
+			.build()
+	}
+
+	fn create_valid_midnight_network() -> Network {
+		NetworkBuilder::new()
+			.name("Test Midnight Network")
+			.slug("test_midnight_network")
+			.network_type(BlockChainType::Midnight)
+			.chain_id(0)
+			.store_blocks(false)
+			.add_rpc_url("wss://test.midnight.network", "ws_rpc", 100)
 			.block_time_ms(1000)
 			.confirmation_blocks(1)
 			.cron_schedule("0 */5 * * * *")
@@ -593,6 +604,69 @@ mod tests {
 		));
 		assert!(!logs_contain("https://secure.network"));
 		assert!(!logs_contain("wss://secure.ws.network"));
+	}
+
+	#[test]
+	fn test_validate_midnight_network_valid() {
+		let network = create_valid_midnight_network();
+		assert!(network.validate().is_ok());
+	}
+
+	#[test]
+	fn test_validate_midnight_network_invalid_type() {
+		let mut network = create_valid_midnight_network();
+		network.rpc_urls[0].type_ = "rpc".to_string();
+		let result = network.validate();
+		assert!(matches!(result, Err(ConfigError::ValidationError(_))));
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err.message.contains("Type: rpc (must be one of: ws_rpc)"));
+		}
+	}
+
+	#[test]
+	fn test_validate_midnight_network_invalid_protocol() {
+		let mut network = create_valid_midnight_network();
+		network.rpc_urls[0].url = SecretValue::Plain(SecretString::new(
+			"https://test.midnight.network".to_string(),
+		));
+		let result = network.validate();
+		assert!(matches!(result, Err(ConfigError::ValidationError(_))));
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err
+				.message
+				.contains("Protocol: must start with one of: wss://, ws://"));
+		}
+	}
+
+	#[test]
+	fn test_validate_evm_network_valid() {
+		let network = create_valid_network();
+		assert!(network.validate().is_ok());
+	}
+
+	#[test]
+	fn test_validate_evm_network_invalid_type() {
+		let mut network = create_valid_network();
+		network.rpc_urls[0].type_ = "ws_rpc".to_string();
+		let result = network.validate();
+		assert!(matches!(result, Err(ConfigError::ValidationError(_))));
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err.message.contains("Type: ws_rpc (must be one of: rpc)"));
+		}
+	}
+
+	#[test]
+	fn test_validate_evm_network_invalid_protocol() {
+		let mut network = create_valid_network();
+		network.rpc_urls[0].url =
+			SecretValue::Plain(SecretString::new("invalid://test.network".to_string()));
+		let result = network.validate();
+		assert!(matches!(result, Err(ConfigError::ValidationError(_))));
+		if let Err(ConfigError::ValidationError(err)) = result {
+			assert!(err
+				.message
+				.contains("Protocol: must start with one of: http://, https://, wss://, ws://"));
+		}
 	}
 
 	#[tokio::test]

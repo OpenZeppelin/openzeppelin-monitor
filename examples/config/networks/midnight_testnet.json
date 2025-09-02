@@ -1,0 +1,21 @@
+{
+  "network_type": "Midnight",
+  "slug": "midnight_testnet",
+  "name": "Midnight Testnet",
+  "rpc_urls": [
+    {
+      "type_": "ws_rpc",
+      "url": {
+        "type": "plain",
+        "value": "wss://rpc.testnet-02.midnight.network"
+      },
+      "weight": 100
+    }
+  ],
+  "chain_id": 0,
+  "block_time_ms": 6000,
+  "confirmation_blocks": 2,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 13,
+  "store_blocks": false
+}
