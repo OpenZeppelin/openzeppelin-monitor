@@ -612,5 +612,16 @@ proptest! {
 		prop_assert_eq!(lower_kind, "address");
 		prop_assert_eq!(upper_kind, "address");
 	}
+	#[test]
+	fn prop_large_numbers_classification(
+		// Use strings to represent very large numbers that might not fit in standard types
+		large_num_str in r"[1-9][0-9]{20,100}"
+	) {
+		let evaluator = create_evaluator();
 
+		// Test as string - should be "string" since it's a numeric string without decimal
+		let json_str = json!(large_num_str);
+		let kind_str = evaluator.get_kind_from_json_value(&json_str);
+		prop_assert_eq!(kind_str, "string");
+	}
 }
