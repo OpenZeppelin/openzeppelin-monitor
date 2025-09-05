@@ -38,8 +38,6 @@ const ARRAY_KINDS: &[&str] = &[
 	"string[]",
 	"address[]",
 	"bool[]",
-	"fixed[]",
-	"ufixed[]",
 	"bytes[]",
 	"bytes32[]",
 	"tuple[]",
@@ -901,13 +899,11 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 		}
 
 		match lhs_kind.as_str() {
-			"fixed" | "ufixed" => self.compare_fixed_point(lhs_value_str, operator, rhs_literal),
 			"address" => self.compare_address(lhs_value_str, operator, rhs_literal),
 			"string" | "bytes" | "bytes32" => {
 				self.compare_string(lhs_value_str, operator, rhs_literal)
 			}
 			"bool" => self.compare_boolean(lhs_value_str, operator, rhs_literal),
-			"map" => self.compare_map(lhs_value_str, operator, rhs_literal),
 			"tuple" => self.compare_tuple(lhs_value_str, operator, rhs_literal),
 			_ => {
 				let msg = format!(
@@ -944,17 +940,12 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 					} else {
 						"bytes".to_string()
 					}
-				// Check if it's a string representation of a decimal
-				} else if Decimal::from_str(s).is_ok() && s.contains('.') {
-					"fixed".to_string()
 				} else {
 					"string".to_string()
 				}
 			}
 			serde_json::Value::Number(n) => {
-				if n.is_f64() || n.to_string().contains('.') {
-					"fixed".to_string()
-				} else if n.is_i64() {
+				if n.is_i64() {
 					// check if it's negative, otherwise default to number
 					if n.as_i64().unwrap_or(0) < 0 {
 						"int64".to_string()
@@ -1935,20 +1926,6 @@ mod tests {
 				"[false, false]".to_string(),
 			),
 			(
-				"fixed[]/ufixed[] (elements as JSON numbers)",
-				"[1.23, 4.500, 6.789]".to_string(),
-				LiteralValue::Number("4.500"),
-				LiteralValue::Str("3.14"),
-				"[10.0, 20.01]".to_string(),
-			),
-			(
-				"fixed[]/ufixed[] (elements as JSON strings)",
-				r#"["10.23", "40.50", "60.789"]"#.to_string(),
-				LiteralValue::Str("40.50"),
-				LiteralValue::Number("30.14"),
-				r#"["100.0", "200.01"]"#.to_string(),
-			),
-			(
 				"bytes[]",
 				r#"["0xaa", "0xbbcc", "0x", "0x123456EF"]"#.to_string(),
 				LiteralValue::Str("0x123456ef"),
@@ -2247,16 +2224,6 @@ mod tests {
 			)
 			.unwrap());
 
-		// Test routing to compare_fixed_point
-		assert!(evaluator
-			.compare_final_values(
-				"fixed",
-				"1.23",
-				&ComparisonOperator::Eq,
-				&LiteralValue::Number("1.23")
-			)
-			.unwrap());
-
 		// Test routing to compare_address
 		assert!(evaluator
 			.compare_final_values(
@@ -2302,16 +2269,6 @@ mod tests {
 				r#"["val1", "val2"]"#,
 				&ComparisonOperator::Contains,
 				&LiteralValue::Str("val1")
-			)
-			.unwrap());
-
-		// Test routing to compare_map
-		assert!(evaluator
-			.compare_final_values(
-				"map",
-				r#"{"key1": "value1", "key2": "value2"}"#,
-				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value1")
 			)
 			.unwrap());
 
@@ -2366,14 +2323,8 @@ mod tests {
 		); // 0x + 64 hex chars
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(123)), "number"); // For U256 path
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(-100)), "int64"); // Or "int" if generic
-		assert_eq!(evaluator.get_kind_from_json_value(&json!(123.45)), "fixed");
-		assert_eq!(
-			evaluator.get_kind_from_json_value(&json!("123.45")),
-			"fixed"
-		); // String that is a decimal
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(true)), "bool");
 		assert_eq!(evaluator.get_kind_from_json_value(&json!([1, 2])), "array");
-		assert_eq!(evaluator.get_kind_from_json_value(&json!({"a":1})), "map");
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(null)), "null");
 	}
 
