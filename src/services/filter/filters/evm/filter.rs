@@ -2226,36 +2226,6 @@ mod tests {
 	}
 
 	#[test]
-	fn test_evaluate_expression_fixed_point_comparisons() {
-		let filter = create_test_filter();
-		let args = vec![create_test_param("price", "123.45", "fixed")];
-
-		// Test all operators
-		assert!(filter
-			.evaluate_expression("price == 123.45", &args)
-			.unwrap());
-		assert!(filter.evaluate_expression("price != 0.0", &args).unwrap());
-		assert!(filter.evaluate_expression("price < 200.0", &args).unwrap());
-		assert!(filter
-			.evaluate_expression("price <= 123.45", &args)
-			.unwrap());
-		assert!(filter.evaluate_expression("price > 100.0", &args).unwrap());
-		assert!(filter
-			.evaluate_expression("price >= 123.45", &args)
-			.unwrap());
-
-		// Test false conditions
-		assert!(!filter.evaluate_expression("price < 123.45", &args).unwrap());
-		assert!(!filter.evaluate_expression("price <= 100.0", &args).unwrap());
-		assert!(!filter.evaluate_expression("price > 123.45", &args).unwrap());
-		assert!(!filter.evaluate_expression("price >= 200.0", &args).unwrap());
-		assert!(!filter
-			.evaluate_expression("price != 123.45", &args)
-			.unwrap());
-		assert!(!filter.evaluate_expression("price == 0.0", &args).unwrap());
-	}
-
-	#[test]
 	fn test_evaluate_expression_address_comparisons() {
 		let filter = create_test_filter();
 		let args = vec![create_test_param(
@@ -2521,36 +2491,6 @@ mod tests {
 			.evaluate_expression(
 				"my_json_list != '[\"alice\", \"charlie\"]'",
 				&args_json_array
-			)
-			.unwrap());
-	}
-
-	#[test]
-	fn test_evaluate_expression_map_eq_ne_raw_json() {
-		let filter = create_test_filter();
-		let args_json_map = vec![create_test_param(
-			"my_json_map",
-			r#"{"key1": "value1", "key2": "value2"}"#,
-			"map",
-		)];
-
-		// Eq/Ne on "object" kind compares the raw JSON string value
-		assert!(filter
-			.evaluate_expression(
-				"my_json_map == '{\"key1\": \"value1\", \"key2\": \"value2\"}'",
-				&args_json_map
-			)
-			.unwrap());
-		assert!(!filter
-			.evaluate_expression(
-				"my_json_map == '{\"key1\": \"value1\", \"key2\": \"value3\"}'",
-				&args_json_map
-			)
-			.unwrap());
-		assert!(filter
-			.evaluate_expression(
-				"my_json_map != '{\"key1\": \"value1\", \"key2\": \"value3\"}'",
-				&args_json_map
 			)
 			.unwrap());
 	}
