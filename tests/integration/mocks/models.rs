@@ -84,6 +84,15 @@ pub fn create_evm_test_network_with_urls(urls: Vec<&str>) -> Network {
 		.build()
 }
 
+pub fn create_midnight_test_network_with_urls(urls: Vec<&str>) -> Network {
+	NetworkBuilder::new()
+		.name("test")
+		.slug("test")
+		.network_type(BlockChainType::Midnight)
+		.websocket_rpc_urls(urls)
+		.build()
+}
+
 pub fn create_http_valid_server_mock_network_response(server: &mut Server) -> Mock {
 	server
 		.mock("POST", "/")

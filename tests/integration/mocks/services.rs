@@ -3,12 +3,12 @@ use mockall::mock;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
-	models::{BlockType, Monitor, MonitorMatch, Network, ScriptLanguage},
+	models::{BlockType, ContractSpec, Monitor, MonitorMatch, Network, ScriptLanguage},
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
 		blockchain::BlockFilterFactory,
 		blockwatcher::{BlockStorage, BlockTrackerTrait, JobSchedulerTrait},
-		filter::FilterError,
+		filter::{FilterError, FilterServiceTrait},
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionServiceTrait},
 	},
@@ -34,8 +34,6 @@ mock! {
 
 mock! {
 	pub FilterService {
-		pub fn new() -> Self;
-
 		pub async fn filter_block<T: BlockFilterFactory<T> + Send + Sync + 'static>(
 			&self,
 			client: &T,
@@ -43,6 +41,20 @@ mock! {
 			block: &BlockType,
 			monitors: &[Monitor],
 		) -> Result<Vec<MonitorMatch>, FilterError>;
+	}
+}
+
+#[async_trait]
+impl FilterServiceTrait for MockFilterService {
+	async fn filter_block<T: BlockFilterFactory<T> + Send + Sync + 'static>(
+		&self,
+		client: &T,
+		network: &Network,
+		block: &BlockType,
+		monitors: &[Monitor],
+		_contract_specs: Option<&[(String, ContractSpec)]>,
+	) -> Result<Vec<MonitorMatch>, FilterError> {
+		self.filter_block(client, network, block, monitors).await
 	}
 }
 

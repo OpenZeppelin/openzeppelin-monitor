@@ -69,7 +69,7 @@ pub fn normalize_address(address: &str) -> String {
 	address
 		.strip_prefix("0x")
 		.unwrap_or(address)
-		.replace(" ", "")
+		.replace(char::is_whitespace, "")
 		.to_lowercase()
 }
 
@@ -93,7 +93,7 @@ pub fn are_same_signature(signature1: &str, signature2: &str) -> bool {
 /// # Returns
 /// The normalized signature string
 pub fn normalize_signature(signature: &str) -> String {
-	signature.replace(" ", "").to_lowercase()
+	signature.replace(char::is_whitespace, "").to_lowercase()
 }
 
 /// Formats a DynSolValue into a consistent string representation.
