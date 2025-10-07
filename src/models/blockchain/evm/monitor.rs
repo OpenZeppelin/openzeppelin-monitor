@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Result of a successful monitor match on an EVM chain
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct EVMMonitorMatch {
+pub struct MonitorMatch {
 	/// Monitor configuration that triggered the match
 	pub monitor: Monitor,
 
@@ -125,6 +125,13 @@ impl std::ops::Deref for ContractSpec {
 	}
 }
 
+/// EVM-specific configuration
+///
+/// This configuration is used to for additional fields in the monitor configuration
+/// that are specific to EVM.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct MonitorConfig {}
+
 #[cfg(test)]
 mod tests {
 	use crate::{
@@ -182,7 +189,7 @@ mod tests {
 			hex_signature: Some("0xa9059cbb".to_string()),
 		};
 
-		let monitor_match = EVMMonitorMatch {
+		let monitor_match = MonitorMatch {
 			monitor: monitor.clone(),
 			transaction: transaction.clone(),
 			receipt: Some(receipt.clone()),

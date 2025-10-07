@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, EndpointManager, TransportError,
+	BlockchainTransport, HttpEndpointManager, TransportError,
 };
 
 use crate::integration::mocks::{AlwaysFailsToUpdateClientTransport, MockTransport};
@@ -28,7 +28,7 @@ async fn test_endpoint_rotation() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		server1.url().as_ref(),
 		vec![server2.url(), server3.url()],
@@ -63,7 +63,8 @@ async fn test_send_raw_request() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager =
+		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -98,7 +99,7 @@ async fn test_rotation_on_error() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		primary_server.url().as_ref(),
 		vec![fallback_server.url()],
@@ -130,7 +131,8 @@ async fn test_no_fallback_urls_available() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager =
+		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -195,7 +197,8 @@ async fn test_rotate_url_no_fallbacks() {
 	let server = Server::new_async().await;
 
 	// Create manager with no fallback URLs
-	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager =
+		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate
@@ -221,7 +224,7 @@ async fn test_rotate_url_all_urls_match_active() {
 
 	// Create manager with fallback URLs that are identical to the active URL
 	let active_url = server.url();
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		active_url.as_ref(),
 		vec![active_url.clone(), active_url.clone()],
@@ -258,7 +261,7 @@ async fn test_rotate_url_connection_failure() {
 
 	// Create manager with an invalid fallback URL that will fail to connect
 	let invalid_url = "http://invalid-domain-that-does-not-exist:12345";
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		server.url().as_ref(),
 		vec![invalid_url.to_string()],
@@ -294,7 +297,7 @@ async fn test_rotate_url_update_client_failure() {
 	let server1 = Server::new_async().await;
 	let server2 = Server::new_async().await;
 
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		server1.url().as_ref(),
 		vec![server2.url()],
@@ -323,7 +326,7 @@ async fn test_rotate_url_all_urls_fail_returns_url_rotation_error() {
 	let invalid_url1 = "http://invalid-domain-that-will-fail-1:12345";
 	let invalid_url2 = "http://invalid-domain-that-will-fail-2:12345";
 
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		invalid_url1,
 		vec![invalid_url2.to_string()],
@@ -354,7 +357,7 @@ async fn test_update_client() {
 		.await;
 
 	let mut manager =
-		EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 
 	// Test initial client
 	let transport = MockTransport::new();
@@ -408,7 +411,7 @@ async fn test_send_raw_request_network_error() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		invalid_url,
 		vec![valid_server.url()], // Add valid fallback URL
@@ -434,7 +437,7 @@ async fn test_send_raw_request_network_error() {
 async fn test_send_raw_request_network_error_no_fallback() {
 	// Set up with an invalid URL and no fallbacks
 	let invalid_url = "http://invalid-domain-that-will-fail:12345";
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		invalid_url,
 		vec![], // No fallback URLs
@@ -467,7 +470,8 @@ async fn test_send_raw_request_response_parse_error() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager =
+		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	// Send request - should fail with parse error
@@ -490,7 +494,7 @@ async fn test_send_raw_request_all_urls_fail_returns_network_error() {
 	let invalid_url2 = "http://invalid-domain-that-will-fail-2:12345";
 	let invalid_url3 = "http://invalid-domain-that-will-fail-3:12345";
 
-	let manager = EndpointManager::new(
+	let manager = HttpEndpointManager::new(
 		get_mock_client_builder(),
 		invalid_url1,
 		vec![invalid_url2.to_string(), invalid_url3.to_string()],
@@ -518,7 +522,8 @@ async fn test_send_raw_request_returns_http_error_if_non_transient() {
 		.create_async()
 		.await;
 
-	let manager = EndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager =
+		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
 	let transport = MockTransport::new();
 
 	let result = manager

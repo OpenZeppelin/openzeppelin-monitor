@@ -11,20 +11,13 @@ use std::{collections::HashMap, marker::PhantomData, path::Path};
 use async_trait::async_trait;
 
 use crate::{
-	models::{ConfigLoader, Monitor, Network, ScriptLanguage, Trigger},
+	models::{ConfigLoader, Monitor, Network, Trigger, SCRIPT_LANGUAGE_EXTENSIONS},
 	repositories::{
 		error::RepositoryError,
 		network::{NetworkRepository, NetworkRepositoryTrait, NetworkService},
 		trigger::{TriggerRepository, TriggerRepositoryTrait, TriggerService},
 	},
 };
-
-/// Static mapping of script languages to their file extensions
-const LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
-	(&ScriptLanguage::Python, "py"),
-	(&ScriptLanguage::JavaScript, "js"),
-	(&ScriptLanguage::Bash, "sh"),
-];
 
 /// Repository for storing and retrieving monitor configurations
 #[derive(Clone)]
@@ -118,7 +111,7 @@ impl<
 				}
 
 				// Validate file extension matches the specified language
-				let expected_extension = match LANGUAGE_EXTENSIONS
+				let expected_extension = match SCRIPT_LANGUAGE_EXTENSIONS
 					.iter()
 					.find(|(lang, _)| *lang == &condition.language)
 					.map(|(_, ext)| *ext)
