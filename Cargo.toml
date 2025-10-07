@@ -18,7 +18,7 @@ panic = 'unwind'
 [dependencies]
 actix-rt = "2.0.0"
 actix-web = "4"
-alloy = { version = "0.15.6", features = ["full"] }
+alloy = { version = "1.0.36", features = ["full"] }
 anyhow = { version = "1.0.97", features = ["std"] }
 async-trait = "0.1"
 backon = "1.5.1"
