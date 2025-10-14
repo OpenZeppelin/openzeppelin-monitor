@@ -1,0 +1,24 @@
+{
+  "evm_large_transfer_usdt_webhook": {
+    "name": "Large Transfer Webhook Notification",
+    "trigger_type": "webhook",
+    "config": {
+      "url": {
+        "type": "plain",
+        "value": "http://localhost:8080/api/"
+      },
+      "method": "POST",
+      "secret": {
+        "type": "plain",
+        "value": "some-secret"
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "message": {
+        "title": "${monitor.name} triggered",
+        "body": "Large transfer of ${events.0.args.value} USDT from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog\n\n${events}\n\n${functions}"
+      }
+    }
+  }
+}

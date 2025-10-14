@@ -1,0 +1,16 @@
+{
+  "evm_large_transfer_usdt_slack": {
+    "name": "Large USDT Transfer Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "Environment",
+        "value": "OZM_SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": "${monitor.name} triggered",
+        "body": "Large transfer of ${events.0.args.value} USDT from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog\n\n${events}\n\n${functions}"
+      }
+    }
+  }
+}
