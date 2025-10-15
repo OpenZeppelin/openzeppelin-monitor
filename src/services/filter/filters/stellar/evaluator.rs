@@ -161,7 +161,14 @@ impl<'a> StellarConditionEvaluator<'a> {
 						lhs_str,
 						rhs_target_str
 					);
-					let csv_values: Vec<&str> = lhs_str.split(',').map(str::trim).collect();
+					// Remove surrounding brackets if present
+					let trimmed = lhs_str.trim();
+					let csv_str = if trimmed.starts_with('[') && trimmed.ends_with(']') {
+						&trimmed[1..trimmed.len() - 1]
+					} else {
+						trimmed
+					};
+					let csv_values: Vec<&str> = csv_str.split(',').map(str::trim).collect();
 					Ok(csv_values.contains(&rhs_target_str))
 				}
 			}
