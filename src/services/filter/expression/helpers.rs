@@ -24,8 +24,7 @@ pub fn evaluate(
 
 			if accessors.is_empty() {
 				// No accessors, use the base value directly
-				// Normalize map format if needed
-				final_left_value_str = normalize_map_json(base_value_str, base_kind_str);
+				final_left_value_str = base_value_str.to_string();
 				final_left_kind = base_kind_str.to_string();
 			} else {
 				let resolved_value = resolve_path_to_json_value(
@@ -112,103 +111,6 @@ pub fn compare_ordered_values<T: Ord>(
 	}
 }
 
-/// Normalizes Stellar-style map format to valid JSON.
-/// Converts {key:value} to {"key":"value"} for map types.
-/// Only applies if kind contains "map" and JSON parsing fails.
-fn normalize_map_json(value: &str, kind: &str) -> String {
-	// Only apply to map types
-	if !kind.to_lowercase().contains("map") {
-		return value.to_string();
-	}
-
-	// If it already parses as valid JSON, return as-is
-	if serde_json::from_str::<serde_json::Value>(value).is_ok() {
-		return value.to_string();
-	}
-
-	// Simple normalization for Stellar format
-	// Handles: {key:value,key2:value2} -> {"key":"value","key2":"value2"}
-	let mut result = String::with_capacity(value.len() * 2);
-	let mut chars = value.chars().peekable();
-	let mut expect_key = false;
-
-	while let Some(ch) = chars.next() {
-		match ch {
-			'{' => {
-				result.push(ch);
-				expect_key = true;
-			}
-			'}' => {
-				result.push(ch);
-				expect_key = false;
-			}
-			':' => {
-				result.push(ch);
-				expect_key = false;
-
-				// Skip whitespace and read value
-				while chars.peek() == Some(&' ') {
-					chars.next();
-				}
-
-				// Collect value token until ',' or '}'
-				let mut token = String::new();
-				while let Some(&next_ch) = chars.peek() {
-					if next_ch == ',' || next_ch == '}' {
-						break;
-					}
-					token.push(chars.next().unwrap());
-				}
-
-				let token = token.trim();
-
-				// Determine if token needs quoting
-				let needs_quotes = !token.starts_with('"')
-					&& token.parse::<f64>().is_err()
-					&& token != "true"
-					&& token != "false"
-					&& token != "null";
-
-				if needs_quotes {
-					result.push('"');
-					result.push_str(token);
-					result.push('"');
-				} else {
-					result.push_str(token);
-				}
-			}
-			',' => {
-				result.push(ch);
-				expect_key = true;
-			}
-			_ if expect_key && (ch.is_alphanumeric() || ch == '_') => {
-				// Reading a key - add quotes around it
-				result.push('"');
-				result.push(ch);
-
-				while let Some(&next_ch) = chars.peek() {
-					if next_ch.is_alphanumeric() || next_ch == '_' {
-						result.push(chars.next().unwrap());
-					} else {
-						break;
-					}
-				}
-
-				result.push('"');
-				expect_key = false;
-			}
-			' ' if !expect_key => {
-				// Skip whitespace outside of keys
-			}
-			_ => {
-				result.push(ch);
-			}
-		}
-	}
-
-	result
-}
-
 /// Resolves a JSON path from a base variable name and accessors
 /// Returns the resolved JSON value
 /// Returns an error if the traversal fails
@@ -246,10 +148,7 @@ fn parse_base_value(
 	base_name: &str,
 	full_expr: &ConditionLeft<'_>,
 ) -> Result<serde_json::Value, EvaluationError> {
-	// Normalize map format if needed before parsing
-	let normalized_value = normalize_map_json(base_value_str, base_kind_str);
-
-	serde_json::from_str(&normalized_value).map_err(|e| {
+	serde_json::from_str(base_value_str).map_err(|e| {
 		let msg = format!(
 			"Failed to parse value of base variable '{}' (kind: '{}', value: '{}') as JSON for path traversal. Full LHS: {:?}",
 			base_name, base_kind_str, base_value_str, full_expr,
@@ -443,68 +342,5 @@ mod tests {
 			segments,
 			vec!["base.field".to_string(), "base.field[0]".to_string()]
 		);
-	}
-
-	// --- Tests for `normalize_map_json` ---
-	#[test]
-	fn test_normalize_map_json_stellar_format() {
-		// Test Stellar's unquoted key:value format
-		let input = "{age:34,email:nico_testing@gmail.com,name:Nicolas Molina}";
-		let result = normalize_map_json(input, "Map<String,String>");
-
-		// Should convert to valid JSON
-		let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-		assert_eq!(parsed["age"], 34); // Numeric value stays as number
-		assert_eq!(parsed["email"], "nico_testing@gmail.com");
-		assert_eq!(parsed["name"], "Nicolas Molina");
-	}
-
-	#[test]
-	fn test_normalize_map_json_numeric_values() {
-		// Test with numeric values (should not be quoted)
-		let input = "{age:34,score:99}";
-		let result = normalize_map_json(input, "map");
-
-		let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-		assert_eq!(parsed["age"], 34);
-		assert_eq!(parsed["score"], 99);
-	}
-
-	#[test]
-	fn test_normalize_map_json_already_valid() {
-		// Test with already valid JSON - should return unchanged
-		let input = r#"{"age":34,"name":"Nicolas"}"#;
-		let result = normalize_map_json(input, "Map<String,U32>");
-
-		assert_eq!(result, input);
-	}
-
-	#[test]
-	fn test_normalize_map_json_non_map_type() {
-		// Test with non-map type - should return unchanged
-		let input = "{age:34}";
-		let result = normalize_map_json(input, "string");
-
-		assert_eq!(result, input);
-	}
-
-	#[test]
-	fn test_normalize_map_json_empty() {
-		// Test empty map
-		let input = "{}";
-		let result = normalize_map_json(input, "map");
-
-		assert_eq!(result, "{}");
-	}
-
-	#[test]
-	fn test_normalize_map_json_special_characters() {
-		// Test with special characters in values
-		let input = "{email:test@example.com,url:https://example.com}";
-		let result = normalize_map_json(input, "Map<String,String>");
-
-		let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-		assert_eq!(parsed["email"], "test@example.com");
-		assert_eq!(parsed["url"], "https://example.com");
 	}
 }
