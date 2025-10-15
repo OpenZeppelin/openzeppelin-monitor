@@ -563,7 +563,8 @@ impl<T> StellarBlockFilter<T> {
 				}
 			};
 
-			// Decode ALL topics first
+			// Decode prefix topics (event name/identifier) as strings
+			// Remaining topics are indexed parameters (XDR-encoded) and will be decoded separately
 			let mut decoded_topics = Vec::new();
 			for topic in topics.iter() {
 				match base64::engine::general_purpose::STANDARD.decode(topic) {
@@ -573,24 +574,32 @@ impl<T> StellarBlockFilter<T> {
 							match String::from_utf8(bytes[8..].to_vec()) {
 								Ok(name) => decoded_topics
 									.push(name.trim_matches(char::from(0)).to_string()),
-								Err(e) => {
-									tracing::warn!("Failed to decode topic as UTF-8: {}", e);
-									continue;
+								Err(_) => {
+									// Not a UTF-8 string, this is an indexed parameter
+									// Stop decoding topics as strings
+									tracing::warn!("Failed to decode topic as UTF-8");
+									break;
 								}
 							}
 						} else {
-							tracing::warn!("Topic bytes too short: {}", bytes.len());
-							continue;
+							// Invalid topic format, stop decoding
+							tracing::warn!("Invalid topic format");
+							break;
 						}
 					}
 					Err(e) => {
 						tracing::warn!("Failed to decode base64 topic: {}", e);
-						continue;
+						// Stop decoding topics as strings
+						break;
 					}
 				}
 			}
 
-			println!("decoded_topics: {:?}", decoded_topics);
+			// If we couldn't decode any topics, skip this event
+			if decoded_topics.is_empty() {
+				tracing::warn!("No valid prefix topics found for event");
+				continue;
+			}
 
 			// Lookup event spec by matching prefix_topics
 			let contract_spec = contract_specs
@@ -621,8 +630,6 @@ impl<T> StellarBlockFilter<T> {
 				None
 			};
 
-			println!("event_spec: {:?}", event_spec);
-
 			// Get the actual event name from the spec (not from topics)
 			let event_name = if let Some(spec) = event_spec {
 				spec.name.clone()
@@ -630,8 +637,6 @@ impl<T> StellarBlockFilter<T> {
 				// Fallback to first decoded topic if no spec found
 				decoded_topics.first().cloned().unwrap_or_default()
 			};
-
-			println!("event_name from spec: {:?}", event_name);
 
 			// Calculate how many topics to skip when extracting indexed params
 			let prefix_topics_count = event_spec.map(|spec| spec.prefix_topics.len()).unwrap_or(1); // Default to 1 if no spec (skip first topic)
@@ -759,8 +764,6 @@ impl<T> StellarBlockFilter<T> {
 				}
 			);
 
-			println!("event_signature: {:?}", event_signature);
-
 			let decoded_event = StellarMatchParamsMap {
 				signature: event_signature,
 				args: Some(
@@ -784,8 +787,6 @@ impl<T> StellarBlockFilter<T> {
 						.collect(),
 				),
 			};
-
-			println!("decoded_event: {:?}", decoded_event);
 
 			decoded_events.push(EventMap {
 				event: decoded_event,
