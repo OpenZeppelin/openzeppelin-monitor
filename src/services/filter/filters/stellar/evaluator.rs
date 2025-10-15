@@ -541,7 +541,14 @@ impl ConditionEvaluator for StellarConditionEvaluator<'_> {
 		operator: &ComparisonOperator,
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
-		match lhs_kind.to_lowercase().as_str() {
+		// Extract base type from potentially generic type (e.g., "Map<K,V>" -> "map")
+		let base_type = lhs_kind
+			.split('<')
+			.next()
+			.unwrap_or(lhs_kind)
+			.to_lowercase();
+
+		match base_type.as_str() {
 			"bool" => self.compare_boolean(lhs_str, operator, rhs_literal),
 			"u32" => self.compare_numeric::<u32>(lhs_str, operator, rhs_literal),
 			"u64" | "timepoint" | "duration" => {
@@ -552,12 +559,9 @@ impl ConditionEvaluator for StellarConditionEvaluator<'_> {
 			"u128" => self.compare_numeric::<u128>(lhs_str, operator, rhs_literal),
 			"i128" => self.compare_numeric::<i128>(lhs_str, operator, rhs_literal),
 			"u256" | "i256" => self.compare_large_int_as_string(lhs_str, operator, rhs_literal),
-			"string" | "symbol" | "address" | "bytes" => self.compare_string(
-				lhs_kind.to_ascii_lowercase().as_str(),
-				lhs_str,
-				operator,
-				rhs_literal,
-			),
+			"string" | "symbol" | "address" | "bytes" => {
+				self.compare_string(base_type.as_str(), lhs_str, operator, rhs_literal)
+			}
 			"vec" => self.compare_vec(lhs_str, operator, rhs_literal),
 			"map" => self.compare_map(lhs_str, operator, rhs_literal),
 			unknown_type => {
@@ -1528,5 +1532,41 @@ mod tests {
 			),
 			Err(EvaluationError::TypeMismatch(_))
 		));
+	}
+
+	/// Test that generic types with parameters (e.g., "Map<K,V>", "Vec<T>") are handled correctly
+	#[test]
+	fn test_compare_final_values_with_generic_types() {
+		let evaluator = create_evaluator();
+
+		// Test Map with generic parameters - should route to compare_map
+		assert!(evaluator
+			.compare_final_values(
+				"Map<String,U32,String>", // Generic Map type from Stellar SDK
+				r#"{"name":"Nicolas","age":"30","email":"nico@email.com"}"#,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("nico@email.com")
+			)
+			.unwrap());
+
+		// Test Vec with generic parameters - should route to compare_vec
+		assert!(evaluator
+			.compare_final_values(
+				"Vec<U32>", // Generic Vec type
+				r#"[10, 20, 30]"#,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Number("20")
+			)
+			.unwrap());
+
+		// Test Map equality with generics
+		assert!(evaluator
+			.compare_final_values(
+				"Map<String,String>",
+				r#"{"key1":"value1"}"#,
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str(r#"{"key1":"value1"}"#)
+			)
+			.unwrap());
 	}
 }

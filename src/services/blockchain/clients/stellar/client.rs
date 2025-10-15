@@ -5,6 +5,7 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde_json::json;
 use std::marker::PhantomData;
 use stellar_xdr::curr::{Limits, WriteXdr};
@@ -642,14 +643,16 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 		let contract_instance_ledger_key = get_contract_instance_ledger_key(contract_id)
 			.map_err(|e| anyhow::anyhow!("Failed to get contract instance ledger key: {}", e))?;
 
-		let contract_instance_ledger_key_xdr = contract_instance_ledger_key
-			.to_xdr_base64(Limits::none())
+		let contract_instance_ledger_key_xdr_bytes = contract_instance_ledger_key
+			.to_xdr(Limits::none())
 			.map_err(|e| {
 				anyhow::anyhow!(
 					"Failed to convert contract instance ledger key to XDR: {}",
 					e
 				)
 			})?;
+		let contract_instance_ledger_key_xdr =
+			BASE64_STANDARD.encode(&contract_instance_ledger_key_xdr_bytes);
 
 		let params = json!({
 			"keys": [contract_instance_ledger_key_xdr],
@@ -675,11 +678,13 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 		let contract_code_ledger_key = get_contract_code_ledger_key(wasm_hash.as_str())
 			.map_err(|e| anyhow::anyhow!("Failed to get contract code ledger key: {}", e))?;
 
-		let contract_code_ledger_key_xdr = contract_code_ledger_key
-			.to_xdr_base64(Limits::none())
+		let contract_code_ledger_key_xdr_bytes = contract_code_ledger_key
+			.to_xdr(Limits::none())
 			.map_err(|e| {
-			anyhow::anyhow!("Failed to convert contract code ledger key to XDR: {}", e)
-		})?;
+				anyhow::anyhow!("Failed to convert contract code ledger key to XDR: {}", e)
+			})?;
+		let contract_code_ledger_key_xdr =
+			BASE64_STANDARD.encode(&contract_code_ledger_key_xdr_bytes);
 
 		let params = json!({
 			"keys": [contract_code_ledger_key_xdr],

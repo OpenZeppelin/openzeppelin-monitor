@@ -1328,12 +1328,6 @@ checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
 name = "base64"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
-
-[[package]]
-name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
@@ -1657,6 +1651,17 @@ name = "cfg_aliases"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
+
+[[package]]
+name = "cfg_eval"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45565fc9416b9896014f5732ac776f810ee53a66730c17e4020c3ec064a8f88f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
 
 [[package]]
 name = "chrono"
@@ -2268,6 +2273,12 @@ dependencies = [
  "thiserror 1.0.69",
  "uuid 0.8.2",
 ]
+
+[[package]]
+name = "ethnum"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
 
 [[package]]
 name = "fastrand"
@@ -4872,6 +4883,17 @@ dependencies = [
 
 [[package]]
 name = "schemars"
+version = "0.8.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
+dependencies = [
+ "dyn-clone",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cd191f9397d57d581cddd31014772520aa448f65ef991055d7f61582c65165f"
@@ -5113,6 +5135,7 @@ dependencies = [
  "hex",
  "indexmap 1.9.3",
  "indexmap 2.10.0",
+ "schemars 0.8.22",
  "schemars 0.9.0",
  "schemars 1.0.3",
  "serde",
@@ -5297,11 +5320,11 @@ dependencies = [
 
 [[package]]
 name = "soroban-spec"
-version = "22.0.8"
+version = "23.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4ad0867aec99770ed614fedbec7ac4591791df162ff9e548ab7ebd07cd23a9c"
+checksum = "72526d30f8825b859afa7e0b94549dad05c58a6c928b0763620412744512d7e2"
 dependencies = [
- "base64 0.13.1",
+ "base64 0.22.1",
  "stellar-xdr",
  "thiserror 1.0.69",
  "wasmparser",
@@ -5344,9 +5367,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stellar-rpc-client"
-version = "22.1.0"
+version = "23.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3ce469900dde4426b3456692fd2778ac9c50d55195aed93188f153358b71f63"
+checksum = "0c8dde56ff1db696f25238cbf42fd6abc1c8f0b9b34406d9297723935549db63"
 dependencies = [
  "clap",
  "hex",
@@ -5390,17 +5413,20 @@ dependencies = [
 
 [[package]]
 name = "stellar-xdr"
-version = "22.1.0"
+version = "23.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce69db907e64d1e70a3dce8d4824655d154749426a6132b25395c49136013e4"
+checksum = "89d2848e1694b0c8db81fd812bfab5ea71ee28073e09ccc45620ef3cf7a75a9b"
 dependencies = [
- "base64 0.13.1",
+ "base64 0.22.1",
+ "cfg_eval",
  "crate-git-revision",
  "escape-bytes",
+ "ethnum",
  "hex",
  "serde",
  "serde_with",
- "stellar-strkey 0.0.9",
+ "sha2",
+ "stellar-strkey 0.0.13",
 ]
 
 [[package]]

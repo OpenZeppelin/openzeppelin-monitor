@@ -5,8 +5,9 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use openzeppelin_monitor::{
 	models::{
-		Monitor, StellarContractFunction, StellarContractInput, StellarDecodedTransaction,
-		StellarEvent, StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
+		Monitor, StellarContractEvent, StellarContractEventParam, StellarContractFunction,
+		StellarContractInput, StellarDecodedTransaction, StellarEvent, StellarEventParamLocation,
+		StellarFormattedContractSpec, StellarMatchArguments, StellarMatchParamEntry,
 		StellarMatchParamsMap, StellarTransaction, StellarTransactionInfo, TransactionStatus,
 	},
 	services::{
@@ -25,10 +26,11 @@ use serde_json::{json, Value as JsonValue};
 use std::{marker::PhantomData, str::FromStr};
 use stellar_strkey::Contract;
 use stellar_xdr::curr::{
-	AccountId, Hash, HostFunction, Int128Parts, InvokeContractArgs, InvokeHostFunctionOp, Memo,
-	MuxedAccount, Operation, OperationBody, Preconditions, ScAddress, ScString, ScSymbol, ScVal,
-	StringM, Transaction as XdrTransaction, TransactionEnvelope, TransactionExt,
-	TransactionV1Envelope, UInt128Parts, Uint256, VecM, WriteXdr,
+	AccountId, ContractId, Hash, HostFunction, Int128Parts, InvokeContractArgs,
+	InvokeHostFunctionOp, Limits, Memo, MuxedAccount, Operation, OperationBody, Preconditions,
+	ScAddress, ScString, ScSymbol, ScVal, StringM, Transaction as XdrTransaction,
+	TransactionEnvelope, TransactionExt, TransactionV1Envelope, UInt128Parts, Uint256, VecM,
+	WriteXdr,
 };
 
 prop_compose! {
@@ -83,7 +85,7 @@ prop_compose! {
 prop_compose! {
 	// Generates Stellar transaction envelopes with common contract functions
 	fn generate_envelope()(
-		address in prop_oneof![
+		_address in prop_oneof![
 			Just("CAVLP5DH2GJPZMVO7IJY4CVOD5MWEFTJFVPD2YY2FQXOQHRGHK4D6HLP"),
 			Just("CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"),
 		],
@@ -104,7 +106,7 @@ prop_compose! {
 		let args = VecM::<ScVal, { u32::MAX }>::try_from(vec![arg]).unwrap();
 		let invoke_host_function = InvokeHostFunctionOp {
 			host_function: HostFunction::InvokeContract(InvokeContractArgs {
-				contract_address: ScAddress::Contract(Contract::from_str(address).unwrap().0.into()),
+				contract_address: ScAddress::Contract(ContractId(Hash([0u8; 32]))),
 				function_name: StringM::<32>::from_str(function_name).unwrap().into(),
 				args,
 			}),
@@ -1304,8 +1306,15 @@ proptest! {
 						index: 0,
 					}],
 				}],
+				events: vec![],
 			},
 		)];
+
+		// Convert the contract address string to a Hash for use in XDR
+		let contract_hash = {
+			let contract = Contract::from_string(&contract_address).unwrap();
+			Hash(contract.0)
+		};
 
 		// Create ScVal argument based on param_type
 		let arg = match param_type {
@@ -1321,14 +1330,14 @@ proptest! {
 			"String" => ScVal::String(ScString(format!("value_{}", value).try_into().unwrap())),
 			"Bytes" => ScVal::Bytes(vec![value as u8].try_into().unwrap()),
 			"Symbol" => ScVal::Symbol(ScSymbol(StringM::<32>::from_str(&format!("SYM_{}", value)).unwrap())),
-			"Address" => ScVal::Address(ScAddress::Contract(Hash([0u8; 32]))),
+			"Address" => ScVal::Address(ScAddress::Contract(ContractId(contract_hash.clone()))),
 			_ => ScVal::I128(Int128Parts { hi: 0, lo: 0 }),
 		};
 
 		// Create transaction with host function invocation
 		let invoke_host_function = InvokeHostFunctionOp {
 			host_function: HostFunction::InvokeContract(InvokeContractArgs {
-				contract_address: ScAddress::Contract(Contract::from_str(&contract_address).unwrap().0.into()),
+				contract_address: ScAddress::Contract(ContractId(contract_hash.clone())),
 				function_name: StringM::<32>::from_str(function_name).unwrap().into(),
 				args: vec![arg].try_into().unwrap(),
 			}),
@@ -1695,7 +1704,8 @@ proptest! {
 		// Create I128 value separately
 		let value_i128 = Int128Parts { hi: 0, lo: value };
 		let sc_val = ScVal::I128(value_i128);
-		let encoded_value = sc_val.to_xdr_base64(stellar_xdr::curr::Limits::none()).unwrap();
+		let xdr_bytes = sc_val.to_xdr(Limits::none()).unwrap();
+		let encoded_value = BASE64.encode(&xdr_bytes);
 
 		// Create test event
 		let stellar_event = StellarEvent {
@@ -1734,6 +1744,87 @@ proptest! {
 			prop_assert_eq!(&args[0].name, "0");
 			prop_assert!(!args[0].indexed);
 			prop_assert_eq!(&args[0].value, &value.to_string());
+		}
+	}
+
+	// Tests decode_events with contract spec containing event parameter names
+	#[test]
+	fn test_decode_events_with_spec_parameter_names(
+		contract_address in valid_address(),
+		tx_hash in "[a-zA-Z0-9]{64}",
+		value in 0u64..u64::MAX,
+	) {
+		let filter = StellarBlockFilter::<StellarClient<StellarTransportClient>> {
+			_client: PhantomData,
+		};
+
+		let event_name = "Transfer";
+
+		// Create a buffer for event name encoding (8 byte prefix + name)
+		let mut event_name_buffer = vec![0u8; 8];
+		event_name_buffer.extend_from_slice(event_name.as_bytes());
+		let encoded_event_name = BASE64.encode(event_name_buffer);
+
+		// Create I128 value
+		let value_i128 = Int128Parts { hi: 0, lo: value };
+		let sc_val = ScVal::I128(value_i128);
+		let xdr_bytes = sc_val.to_xdr(Limits::none()).unwrap();
+		let encoded_value = BASE64.encode(&xdr_bytes);
+
+		// Create test event
+		let stellar_event = StellarEvent {
+			contract_id: contract_address.clone(),
+			transaction_hash: tx_hash.clone(),
+			topic_xdr: Some(vec![encoded_event_name.clone()]),
+			value_xdr: Some(encoded_value.clone()),
+			event_type: "contract".to_string(),
+			ledger: 1234,
+			ledger_closed_at: "2023-01-01T00:00:00Z".to_string(),
+			id: "0".to_string(),
+			paging_token: Some("0".to_string()),
+			in_successful_contract_call: true,
+			topic_json: None,
+			value_json: None,
+		};
+
+		let monitored_addresses = vec![normalize_address(&contract_address)];
+		let events = vec![stellar_event];
+
+		// Create contract spec with event parameter names
+		let contract_specs = vec![(
+			contract_address.clone(),
+			StellarFormattedContractSpec {
+				functions: Vec::new(),
+				events: vec![StellarContractEvent {
+					name: event_name.to_string(),
+					prefix_topics: Vec::new(),
+					signature: "Transfer(I128)".to_string(),
+					params: vec![StellarContractEventParam {
+						name: "amount".to_string(),
+						kind: "I128".to_string(),
+						location: StellarEventParamLocation::Data,
+					}],
+				}],
+			},
+		)];
+
+		// Run with spec
+		let decoded_events = filter.decode_events(&events, &monitored_addresses, &contract_specs);
+
+		// Verify parameter has name from spec
+		prop_assert_eq!(decoded_events.len(), 1);
+		if let Some(args) = &decoded_events[0].event.args {
+			prop_assert_eq!(args.len(), 1);
+			prop_assert_eq!(&args[0].name, "amount");  // Should use spec name
+			prop_assert_eq!(&args[0].value, &value.to_string());
+		}
+
+		// Run without spec (backwards compatibility)
+		let decoded_events_no_spec = filter.decode_events(&events, &monitored_addresses, &Vec::new());
+
+		// Verify parameter has numeric index when no spec
+		if let Some(args) = &decoded_events_no_spec[0].event.args {
+			prop_assert_eq!(&args[0].name, "0");  // Should use numeric index
 		}
 	}
 }

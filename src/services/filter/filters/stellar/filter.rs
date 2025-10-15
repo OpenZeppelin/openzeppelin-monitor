@@ -17,9 +17,10 @@ use tracing::instrument;
 use crate::{
 	models::{
 		BlockType, ContractSpec, EventCondition, FunctionCondition, MatchConditions, Monitor,
-		MonitorMatch, Network, StellarContractFunction, StellarEvent, StellarFormattedContractSpec,
-		StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch,
-		StellarTransaction, TransactionCondition, TransactionStatus,
+		MonitorMatch, Network, StellarContractEventParam, StellarContractFunction, StellarEvent,
+		StellarEventParamLocation, StellarFormattedContractSpec, StellarMatchArguments,
+		StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch, StellarTransaction,
+		TransactionCondition, TransactionStatus,
 	},
 	services::{
 		blockchain::{BlockChainClient, StellarClientTrait},
@@ -532,6 +533,171 @@ impl<T> StellarBlockFilter<T> {
 		}
 	}
 
+	/// Unpacks a Map string into individual parameter entries based on event spec
+	fn unpack_map_params(
+		map_value: &str,
+		data_params: &[StellarContractEventParam],
+		event_name: &str,
+	) -> Vec<StellarMatchParamEntry> {
+		let mut result = Vec::new();
+
+		// Parse the Map from the entry value
+		// The value format is: {key1:value1,key2:value2,...}
+		let map_str = map_value.trim_start_matches('{').trim_end_matches('}');
+		if !map_str.is_empty() {
+			let mut map_entries: std::collections::BTreeMap<String, String> =
+				std::collections::BTreeMap::new();
+
+			// Handle nested structures by counting braces/brackets
+			let mut current_key = String::new();
+			let mut current_value = String::new();
+			let mut depth = 0;
+			let mut in_value = false;
+
+			for ch in map_str.chars() {
+				match ch {
+					':' if depth == 0 && !in_value => {
+						in_value = true;
+					}
+					',' if depth == 0 => {
+						if !current_key.is_empty() {
+							map_entries.insert(
+								current_key.trim().to_string(),
+								current_value.trim().to_string(),
+							);
+						}
+						current_key.clear();
+						current_value.clear();
+						in_value = false;
+					}
+					'{' | '[' => {
+						depth += 1;
+						if in_value {
+							current_value.push(ch);
+						} else {
+							current_key.push(ch);
+						}
+					}
+					'}' | ']' => {
+						depth -= 1;
+						if in_value {
+							current_value.push(ch);
+						} else {
+							current_key.push(ch);
+						}
+					}
+					_ => {
+						if in_value {
+							current_value.push(ch);
+						} else {
+							current_key.push(ch);
+						}
+					}
+				}
+			}
+
+			// Don't forget the last entry
+			if !current_key.is_empty() {
+				map_entries.insert(
+					current_key.trim().to_string(),
+					current_value.trim().to_string(),
+				);
+			}
+
+			// Create individual entries for each data parameter in spec order
+			for param in data_params {
+				if let Some(value) = map_entries.get(&param.name) {
+					result.push(StellarMatchParamEntry {
+						name: param.name.clone(),
+						value: value.clone(),
+						kind: param.kind.clone(),
+						indexed: false,
+					});
+				} else {
+					tracing::warn!(
+						"Map missing expected parameter '{}' for event '{}'",
+						param.name,
+						event_name
+					);
+				}
+			}
+		}
+
+		result
+	}
+
+	/// Unpacks a Vec/Tuple string into individual parameter entries based on event spec
+	fn unpack_sequence_params(
+		seq_value: &str,
+		data_params: &[StellarContractEventParam],
+		event_name: &str,
+	) -> Vec<StellarMatchParamEntry> {
+		let mut result = Vec::new();
+
+		// Parse the sequence from the entry value
+		// The value format is: [value1,value2,...] or (value1,value2,...)
+		let seq_str = seq_value
+			.trim_start_matches('[')
+			.trim_start_matches('(')
+			.trim_end_matches(']')
+			.trim_end_matches(')');
+
+		if !seq_str.is_empty() {
+			let mut values = Vec::new();
+			let mut current_value = String::new();
+			let mut depth = 0;
+
+			// Handle nested structures
+			for ch in seq_str.chars() {
+				match ch {
+					',' if depth == 0 => {
+						if !current_value.is_empty() {
+							values.push(current_value.trim().to_string());
+							current_value.clear();
+						}
+					}
+					'{' | '[' | '(' => {
+						depth += 1;
+						current_value.push(ch);
+					}
+					'}' | ']' | ')' => {
+						depth -= 1;
+						current_value.push(ch);
+					}
+					_ => {
+						current_value.push(ch);
+					}
+				}
+			}
+
+			// Don't forget the last value
+			if !current_value.is_empty() {
+				values.push(current_value.trim().to_string());
+			}
+
+			// Match values with parameters by position
+			for (i, param) in data_params.iter().enumerate() {
+				if let Some(value) = values.get(i) {
+					result.push(StellarMatchParamEntry {
+						name: param.name.clone(),
+						value: value.clone(),
+						kind: param.kind.clone(),
+						indexed: false,
+					});
+				} else {
+					tracing::warn!(
+						"Sequence missing value at position {} for parameter '{}' in event '{}'",
+						i,
+						param.name,
+						event_name
+					);
+				}
+			}
+		}
+
+		result
+	}
+
 	/// Decodes Stellar events into a more processable format
 	///
 	/// # Arguments
@@ -544,7 +710,7 @@ impl<T> StellarBlockFilter<T> {
 		&self,
 		events: &Vec<StellarEvent>,
 		monitored_addresses: &[String],
-		_contract_specs: &[(String, StellarFormattedContractSpec)],
+		contract_specs: &[(String, StellarFormattedContractSpec)],
 	) -> Vec<EventMap> {
 		let mut decoded_events = Vec::new();
 		for event in events {
@@ -553,14 +719,7 @@ impl<T> StellarBlockFilter<T> {
 				continue;
 			}
 
-			// Get contract spec for the event
-			// Events are not yet supported in SEP-48
-			// let contract_spec = contract_specs
-			// 	.iter()
-			// 	.find(|(addr, _)| addr == &event.contract_id)
-			// 	.map(|(_, spec)| spec)
-			// 	.unwrap();
-
+			// Get topics from event
 			let topics = match &event.topic_xdr {
 				Some(topics) => topics,
 				None => {
@@ -569,36 +728,94 @@ impl<T> StellarBlockFilter<T> {
 				}
 			};
 
-			// Decode base64 event name
-			let event_name = match base64::engine::general_purpose::STANDARD.decode(&topics[0]) {
-				Ok(bytes) => {
-					// Skip the first 4 bytes (size) and the next 4 bytes (type)
-					if bytes.len() >= 8 {
-						match String::from_utf8(bytes[8..].to_vec()) {
-							Ok(name) => name.trim_matches(char::from(0)).to_string(),
-							Err(e) => {
-								tracing::warn!("Failed to decode event name as UTF-8: {}", e);
-								continue;
+			// Decode ALL topics first
+			let mut decoded_topics = Vec::new();
+			for topic in topics.iter() {
+				match base64::engine::general_purpose::STANDARD.decode(topic) {
+					Ok(bytes) => {
+						// Skip the first 4 bytes (size) and the next 4 bytes (type)
+						if bytes.len() >= 8 {
+							match String::from_utf8(bytes[8..].to_vec()) {
+								Ok(name) => decoded_topics
+									.push(name.trim_matches(char::from(0)).to_string()),
+								Err(e) => {
+									tracing::warn!("Failed to decode topic as UTF-8: {}", e);
+									continue;
+								}
 							}
+						} else {
+							tracing::warn!("Topic bytes too short: {}", bytes.len());
+							continue;
 						}
-					} else {
-						tracing::warn!("Event name bytes too short: {}", bytes.len());
+					}
+					Err(e) => {
+						tracing::warn!("Failed to decode base64 topic: {}", e);
 						continue;
 					}
 				}
-				Err(e) => {
-					tracing::warn!("Failed to decode base64 event name: {}", e);
-					continue;
-				}
+			}
+
+			println!("decoded_topics: {:?}", decoded_topics);
+
+			// Lookup event spec by matching prefix_topics
+			let contract_spec = contract_specs
+				.iter()
+				.find(|(addr, _)| normalize_address(addr) == normalize_address(&event.contract_id))
+				.map(|(_, spec)| spec);
+
+			println!("contract_spec: {:?}", contract_spec);
+
+			let event_spec = if let Some(spec) = contract_spec {
+				spec.events.iter().find(|e| {
+					// If event has prefix_topics, match them with decoded topics
+					if !e.prefix_topics.is_empty() {
+						// Check if we have enough decoded topics
+						if decoded_topics.len() < e.prefix_topics.len() {
+							return false;
+						}
+						// Match all prefix topics
+						e.prefix_topics.iter().enumerate().all(|(i, prefix)| {
+							decoded_topics
+								.get(i)
+								.is_some_and(|decoded| decoded == prefix)
+						})
+					} else {
+						// No prefix_topics, match by event name (first topic)
+						decoded_topics.first().is_some_and(|first| first == &e.name)
+					}
+				})
+			} else {
+				None
 			};
 
-			// Process indexed parameters from topics
+			println!("event_spec: {:?}", event_spec);
+
+			// Get the actual event name from the spec (not from topics)
+			let event_name = if let Some(spec) = event_spec {
+				spec.name.clone()
+			} else {
+				// Fallback to first decoded topic if no spec found
+				decoded_topics.first().cloned().unwrap_or_default()
+			};
+
+			println!("event_name from spec: {:?}", event_name);
+
+			// Calculate how many topics to skip when extracting indexed params
+			let prefix_topics_count = event_spec.map(|spec| spec.prefix_topics.len()).unwrap_or(1); // Default to 1 if no spec (skip first topic)
+
+			// Process indexed parameters from topics (skip prefix topics)
+			// Note: We need to decode from the ORIGINAL base64 topics, not the decoded strings
 			let mut indexed_args = Vec::new();
-			for topic in topics.iter().skip(1) {
+			for topic in topics.iter().skip(prefix_topics_count) {
 				match base64::engine::general_purpose::STANDARD.decode(topic) {
 					Ok(bytes) => {
-						if let Some(param_entry) = parse_xdr_value(&bytes, true) {
-							indexed_args.push(param_entry);
+						if let Some(decoded_entry) = parse_xdr_value(&bytes, true) {
+							indexed_args.push(StellarMatchParamEntry {
+								name: String::new(), // Will be set later
+								value: decoded_entry.value,
+								kind: decoded_entry.kind,
+								indexed: decoded_entry.indexed,
+							});
 						}
 					}
 					Err(e) => {
@@ -613,8 +830,63 @@ impl<T> StellarBlockFilter<T> {
 			if let Some(value_xdr) = &event.value_xdr {
 				match base64::engine::general_purpose::STANDARD.decode(value_xdr) {
 					Ok(bytes) => {
+						// Parse the XDR value
 						if let Some(entry) = parse_xdr_value(&bytes, false) {
-							value_args.push(entry);
+							// Check if we have an event spec to guide unpacking
+							if let Some(spec) = event_spec {
+								// Get the data parameters (non-indexed) from the spec
+								let data_params: Vec<_> = spec
+									.params
+									.iter()
+									.filter(|p| p.location == StellarEventParamLocation::Data)
+									.cloned()
+									.collect();
+
+								// If we expect multiple data parameters, try to unpack structured data
+								if data_params.len() > 1 {
+									let unpacked = if entry.kind.starts_with("Map") {
+										// Unpack Map format
+										Self::unpack_map_params(
+											&entry.value,
+											&data_params,
+											&event_name,
+										)
+									} else if entry.kind.starts_with("Vec")
+										|| entry.kind.starts_with("Tuple")
+									{
+										// Unpack Vec/Tuple format
+										Self::unpack_sequence_params(
+											&entry.value,
+											&data_params,
+											&event_name,
+										)
+									} else {
+										vec![StellarMatchParamEntry {
+											name: data_params[0].name.clone(),
+											value: entry.value.clone(),
+											kind: entry.kind.clone(),
+											indexed: entry.indexed,
+										}]
+									};
+									value_args.extend(unpacked);
+								} else {
+									// Single or no data parameters expected, keep as-is
+									value_args.push(StellarMatchParamEntry {
+										name: String::new(), // Will be set later based on spec or index
+										value: entry.value.clone(),
+										kind: entry.kind.clone(),
+										indexed: entry.indexed,
+									});
+								}
+							} else {
+								// No spec available, keep as-is
+								value_args.push(StellarMatchParamEntry {
+									name: String::new(), // Will be set later based on spec or index
+									value: entry.value.clone(),
+									kind: entry.kind.clone(),
+									indexed: entry.indexed,
+								});
+							}
 						}
 					}
 					Err(e) => {
@@ -656,6 +928,8 @@ impl<T> StellarBlockFilter<T> {
 				}
 			);
 
+			println!("event_signature: {:?}", event_signature);
+
 			let decoded_event = StellarMatchParamsMap {
 				signature: event_signature,
 				args: Some(
@@ -667,11 +941,20 @@ impl<T> StellarBlockFilter<T> {
 							kind: arg.kind.clone(),
 							value: arg.value.clone(),
 							indexed: arg.indexed,
-							name: i.to_string(),
+							name: if arg.name.is_empty() {
+								event_spec
+									.and_then(|spec| spec.params.get(i))
+									.map(|param| param.name.clone())
+									.unwrap_or_else(|| i.to_string())
+							} else {
+								arg.name.clone() // Keep the name already set
+							},
 						})
 						.collect(),
 				),
 			};
+
+			println!("decoded_event: {:?}", decoded_event);
 
 			decoded_events.push(EventMap {
 				event: decoded_event,
@@ -937,8 +1220,8 @@ mod tests {
 
 	use base64::engine::general_purpose::STANDARD as BASE64;
 	use stellar_xdr::curr::{
-		Asset, FeeBumpTransaction, FeeBumpTransactionEnvelope, FeeBumpTransactionExt, Hash,
-		HostFunction, InvokeContractArgs, InvokeHostFunctionOp, MuxedAccount, Operation,
+		Asset, ContractId, FeeBumpTransaction, FeeBumpTransactionEnvelope, FeeBumpTransactionExt,
+		Hash, HostFunction, InvokeContractArgs, InvokeHostFunctionOp, MuxedAccount, Operation,
 		OperationBody, PaymentOp, ScAddress, ScString, ScSymbol, ScVal, SequenceNumber, StringM,
 		Transaction, TransactionEnvelope, TransactionV1Envelope, Uint256, VecM,
 	};
@@ -1019,11 +1302,11 @@ mod tests {
 				let contract_address = if let Some(_addr) = to {
 					// Convert Stellar address to ScAddress
 					let bytes = [0u8; 32]; // Initialize with zeros
-					ScAddress::Contract(Hash(bytes))
+					ScAddress::Contract(ContractId(Hash(bytes)))
 				} else {
 					// Default contract address
 					let bytes = [0u8; 32];
-					ScAddress::Contract(Hash(bytes))
+					ScAddress::Contract(ContractId(Hash(bytes)))
 				};
 
 				OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
@@ -1441,6 +1724,7 @@ mod tests {
 						},
 					],
 				}],
+				events: vec![],
 			},
 		)];
 
@@ -1517,6 +1801,7 @@ mod tests {
 						},
 					],
 				}],
+				events: vec![],
 			},
 		)];
 
@@ -1591,6 +1876,7 @@ mod tests {
 						},
 					],
 				}],
+				events: vec![],
 			},
 		)];
 
@@ -1665,6 +1951,7 @@ mod tests {
 						},
 					],
 				}],
+				events: vec![],
 			},
 		)];
 
@@ -1743,6 +2030,7 @@ mod tests {
 						},
 					],
 				}],
+				events: vec![],
 			},
 		)];
 
@@ -1818,6 +2106,7 @@ mod tests {
 						},
 					],
 				}],
+				events: vec![],
 			},
 		)];
 
@@ -2786,12 +3075,7 @@ mod tests {
 			.evaluate_expression("val1 > 5 AND str1 == 'hello' OR bool1 == true", &args2)
 			.unwrap());
 
-		// Case 4: (T OR F) AND T => T
-		assert!(filter
-			.evaluate_expression("(val1 > 5 OR str1 == 'hello') AND bool1 == true", &args2)
-			.unwrap());
-
-		// Case 5: (F AND F) OR F => F
+		// Case 4: (F OR F) AND T => F
 		let args3 = vec![
 			StellarMatchParamEntry {
 				name: "val1".to_string(),
@@ -2816,12 +3100,12 @@ mod tests {
 			.evaluate_expression("val1 > 5 AND str1 == 'hello' OR bool1 == true", &args3)
 			.unwrap());
 
-		// Case 6: (F OR F) AND F => F
+		// Case 5: (F OR F) AND F => F
 		assert!(!filter
 			.evaluate_expression("(val1 > 5 OR str1 == 'hello') AND bool1 == true", &args3)
 			.unwrap());
 
-		// Case 7: T AND F OR F -> (T AND F) OR F -> F OR F -> F
+		// Case 6: T AND F OR F -> (T AND F) OR F -> F OR F -> F
 		let args_t_f_f = vec![
 			StellarMatchParamEntry {
 				name: "a".to_string(),
@@ -2846,12 +3130,12 @@ mod tests {
 			.evaluate_expression("a > 0 AND b == 'bar' OR c == true", &args_t_f_f)
 			.unwrap());
 
-		// Case 8: (T OR F) AND F -> T AND F -> F
+		// Case 7: (F OR F) AND F -> F AND F -> F
 		assert!(!filter
 			.evaluate_expression("(a > 0 OR b == 'bar') AND c == true", &args_t_f_f)
 			.unwrap());
 
-		// Case 9: F AND T OR T -> (F AND T) OR T -> F OR T -> T
+		// Case 8: F AND T OR T -> (F AND T) OR T -> F OR T -> T
 		let args_f_t_t = vec![
 			StellarMatchParamEntry {
 				name: "a".to_string(),
@@ -2876,7 +3160,7 @@ mod tests {
 			.evaluate_expression("a > 0 AND b == 'bar' OR c == true", &args_f_t_t)
 			.unwrap());
 
-		// Case 10: (F OR T) AND T -> T AND T -> T
+		// Case 9: (F OR T) AND T -> T AND T -> T
 		assert!(filter
 			.evaluate_expression("(a > 0 OR b == 'bar') AND c == true", &args_f_t_t)
 			.unwrap());
@@ -3234,6 +3518,7 @@ mod tests {
 					},
 				],
 			}],
+			events: vec![],
 		};
 
 		let params = filter

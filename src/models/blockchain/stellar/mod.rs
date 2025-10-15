@@ -12,8 +12,10 @@ mod transaction;
 pub use block::{Block as StellarBlock, LedgerInfo as StellarLedgerInfo};
 pub use event::Event as StellarEvent;
 pub use monitor::{
+	ContractEvent as StellarContractEvent, ContractEventParam as StellarContractEventParam,
 	ContractFunction as StellarContractFunction, ContractInput as StellarContractInput,
 	ContractSpec as StellarContractSpec, DecodedParamEntry as StellarDecodedParamEntry,
+	EventParamLocation as StellarEventParamLocation,
 	FormattedContractSpec as StellarFormattedContractSpec, MatchArguments as StellarMatchArguments,
 	MatchParamEntry as StellarMatchParamEntry, MatchParamsMap as StellarMatchParamsMap,
 	MonitorMatch as StellarMonitorMatch, ParsedOperationResult as StellarParsedOperationResult,

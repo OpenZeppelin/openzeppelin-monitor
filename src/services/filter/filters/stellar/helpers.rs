@@ -5,6 +5,7 @@
 //! operation processing.
 
 use alloy::primitives::{I256, U256};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex::encode;
 use serde_json::{json, Value};
 use std::fmt;
@@ -14,14 +15,16 @@ use soroban_spec::read;
 use std::collections::BTreeMap;
 use stellar_strkey::{ed25519::PublicKey as StrkeyPublicKey, Contract};
 use stellar_xdr::curr::{
-	AccountId, ContractExecutable, Hash, HostFunction, Int128Parts, Int256Parts,
+	AccountId, ContractExecutable, ContractId, Hash, HostFunction, Int128Parts, Int256Parts,
 	InvokeHostFunctionOp, LedgerEntryData, LedgerKey, LedgerKeyContractCode, Limits, PublicKey,
-	ReadXdr, ScAddress, ScMapEntry, ScSpecEntry, ScSpecTypeDef, ScVal, UInt128Parts, UInt256Parts,
+	ReadXdr, ScAddress, ScMapEntry, ScSpecEntry, ScSpecEventParamLocationV0, ScSpecTypeDef, ScVal,
+	UInt128Parts, UInt256Parts,
 };
 
 use crate::models::{
-	StellarContractFunction, StellarContractInput, StellarDecodedParamEntry,
-	StellarFormattedContractSpec, StellarParsedOperationResult,
+	StellarContractEvent, StellarContractEventParam, StellarContractFunction, StellarContractInput,
+	StellarDecodedParamEntry, StellarEventParamLocation, StellarFormattedContractSpec,
+	StellarParsedOperationResult,
 };
 
 /// Represents all possible Stellar smart contract types
@@ -161,12 +164,18 @@ impl From<ScVal> for StellarValue {
 				StellarValue::Map(btree)
 			}
 			ScVal::Address(addr) => StellarValue::Address(match addr {
-				ScAddress::Contract(hash) => Contract(hash.0).to_string(),
+				ScAddress::Contract(hash) => Contract(hash.0 .0).to_string(),
 				ScAddress::Account(account_id) => match account_id {
 					AccountId(PublicKey::PublicKeyTypeEd25519(key)) => {
 						StrkeyPublicKey(key.0).to_string()
 					}
 				},
+				ScAddress::MuxedAccount(_)
+				| ScAddress::ClaimableBalance(_)
+				| ScAddress::LiquidityPool(_) => {
+					// These variants are not commonly used in contract events
+					"unsupported_address_type".to_string()
+				}
 			}),
 			_ => StellarValue::Void,
 		}
@@ -648,12 +657,18 @@ pub fn process_invoke_host_function(
 	match &invoke_op.host_function {
 		HostFunction::InvokeContract(args) => {
 			let contract_address = match &args.contract_address {
-				ScAddress::Contract(hash) => Contract(hash.0).to_string(),
+				ScAddress::Contract(hash) => Contract(hash.0 .0).to_string(),
 				ScAddress::Account(account_id) => match account_id {
 					AccountId(PublicKey::PublicKeyTypeEd25519(key)) => {
 						StrkeyPublicKey(key.0).to_string()
 					}
 				},
+				ScAddress::MuxedAccount(_)
+				| ScAddress::ClaimableBalance(_)
+				| ScAddress::LiquidityPool(_) => {
+					// These variants are not commonly used in contract invocations
+					"unsupported_address_type".to_string()
+				}
 			};
 
 			let function_name = args.function_name.to_string();
@@ -845,12 +860,18 @@ pub fn parse_sc_val(val: &ScVal, indexed: bool) -> Option<StellarDecodedParamEnt
 			indexed,
 			kind: "Address".to_string(),
 			value: match addr {
-				ScAddress::Contract(hash) => Contract(hash.0).to_string(),
+				ScAddress::Contract(hash) => Contract(hash.0 .0).to_string(),
 				ScAddress::Account(account_id) => match account_id {
 					AccountId(PublicKey::PublicKeyTypeEd25519(key)) => {
 						StrkeyPublicKey(key.0).to_string()
 					}
 				},
+				ScAddress::MuxedAccount(_)
+				| ScAddress::ClaimableBalance(_)
+				| ScAddress::LiquidityPool(_) => {
+					// These variants are not commonly used in contract parameters
+					"unsupported_address_type".to_string()
+				}
 			},
 		}),
 		_ => None,
@@ -922,7 +943,7 @@ pub fn get_kind_from_value(value: &Value) -> String {
 pub fn get_contract_instance_ledger_key(contract_id: &str) -> Result<LedgerKey, anyhow::Error> {
 	let contract_id = contract_id.to_uppercase();
 	let contract_address = match Contract::from_string(contract_id.as_str()) {
-		Ok(contract) => ScAddress::Contract(Hash(contract.0)),
+		Ok(contract) => ScAddress::Contract(ContractId(Hash(contract.0))),
 		Err(err) => {
 			return Err(anyhow::anyhow!("Failed to decode contract ID: {}", err));
 		}
@@ -960,7 +981,10 @@ pub fn get_contract_code_ledger_key(wasm_hash: &str) -> Result<LedgerKey, anyhow
 pub fn get_wasm_code_from_ledger_entry_data(
 	ledger_entry_data: &str,
 ) -> Result<String, anyhow::Error> {
-	let val = match LedgerEntryData::from_xdr_base64(ledger_entry_data.as_bytes(), Limits::none()) {
+	let decoded = BASE64_STANDARD
+		.decode(ledger_entry_data)
+		.map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
+	let val = match LedgerEntryData::from_xdr(&decoded, Limits::none()) {
 		Ok(val) => val,
 		Err(e) => {
 			return Err(anyhow::anyhow!("Failed to parse contract data XDR: {}", e));
@@ -984,7 +1008,10 @@ pub fn get_wasm_code_from_ledger_entry_data(
 pub fn get_wasm_hash_from_ledger_entry_data(
 	ledger_entry_data: &str,
 ) -> Result<String, anyhow::Error> {
-	let val = match LedgerEntryData::from_xdr_base64(ledger_entry_data.as_bytes(), Limits::none()) {
+	let decoded = BASE64_STANDARD
+		.decode(ledger_entry_data)
+		.map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
+	let val = match LedgerEntryData::from_xdr(&decoded, Limits::none()) {
 		Ok(val) => val,
 		Err(e) => {
 			return Err(anyhow::anyhow!("Failed to parse contract data XDR: {}", e));
@@ -1083,6 +1110,85 @@ pub fn get_contract_spec_with_function_input_parameters(
 		.collect()
 }
 
+/// Filter contract spec entries to only include event definitions.
+///
+/// # Arguments
+/// * `spec_entries` - Vector of contract spec entries
+///
+/// # Returns
+/// A vector containing only ScSpecEntry::EventV0 entries
+pub fn get_contract_spec_events(spec_entries: Vec<ScSpecEntry>) -> Vec<ScSpecEntry> {
+	spec_entries
+		.into_iter()
+		.filter_map(|entry| match entry {
+			ScSpecEntry::EventV0(event) => Some(ScSpecEntry::EventV0(event)),
+			_ => None,
+		})
+		.collect()
+}
+
+/// Parse contract spec events and populate event parameters with names and locations.
+///
+/// # Arguments
+/// * `spec_entries` - Vector of contract spec entries (should be EventV0 entries)
+///
+/// # Returns
+/// A vector of ContractEvent with populated parameter names and locations
+pub fn get_contract_spec_with_event_parameters(
+	spec_entries: Vec<ScSpecEntry>,
+) -> Vec<StellarContractEvent> {
+	spec_entries
+		.into_iter()
+		.filter_map(|entry| match entry.clone() {
+			ScSpecEntry::EventV0(event) => Some(StellarContractEvent {
+				name: event.name.to_string(),
+				prefix_topics: event
+					.prefix_topics
+					.iter()
+					.map(|topic| topic.to_string())
+					.collect(),
+				signature: get_event_signature_from_spec_entry(&entry),
+				params: event
+					.params
+					.iter()
+					.map(|param| StellarContractEventParam {
+						name: param.name.to_string(),
+						kind: StellarType::from(param.type_.clone()).to_string(),
+						location: match param.location {
+							ScSpecEventParamLocationV0::TopicList => {
+								StellarEventParamLocation::Indexed
+							}
+							ScSpecEventParamLocationV0::Data => StellarEventParamLocation::Data,
+						},
+					})
+					.collect(),
+			}),
+			_ => None,
+		})
+		.collect()
+}
+
+/// Get event signature from a spec entry.
+///
+/// # Arguments
+/// * `entry` - The spec entry to extract the signature from
+///
+/// # Returns
+/// The event signature in the format "EventName(Type1,Type2,...)"
+fn get_event_signature_from_spec_entry(entry: &ScSpecEntry) -> String {
+	match entry {
+		ScSpecEntry::EventV0(event) => {
+			let param_types: Vec<String> = event
+				.params
+				.iter()
+				.map(|param| StellarType::from(param.type_.clone()).to_string())
+				.collect();
+			format!("{}({})", *event.name, param_types.join(","))
+		}
+		_ => String::new(),
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -1162,7 +1268,7 @@ mod tests {
 		];
 		let invoke_op = InvokeHostFunctionOp {
 			host_function: HostFunction::InvokeContract(stellar_xdr::curr::InvokeContractArgs {
-				contract_address: ScAddress::Contract(Hash([0; 32])),
+				contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
 				function_name: function_name.clone().try_into().unwrap(),
 				args: args.try_into().unwrap(),
 			}),
@@ -1493,7 +1599,8 @@ mod tests {
 			signers: vec![].try_into().unwrap(),
 			ext: stellar_xdr::curr::AccountEntryExt::V0,
 		});
-		let xdr = non_code_entry.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_code_entry.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_code_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result
@@ -1517,7 +1624,8 @@ mod tests {
 			signers: vec![].try_into().unwrap(),
 			ext: stellar_xdr::curr::AccountEntryExt::V0,
 		});
-		let xdr = non_data_entry.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_data_entry.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result
@@ -1528,12 +1636,13 @@ mod tests {
 		// Test non-contract instance
 		let non_instance_data = LedgerEntryData::ContractData(ContractDataEntry {
 			ext: stellar_xdr::curr::ExtensionPoint::V0,
-			contract: ScAddress::Contract(Hash([0; 32])),
+			contract: ScAddress::Contract(ContractId(Hash([0; 32]))),
 			key: ScVal::Bool(true),
 			durability: stellar_xdr::curr::ContractDataDurability::Persistent,
 			val: ScVal::Bool(true),
 		});
-		let xdr = non_instance_data.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_instance_data.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result
@@ -1544,7 +1653,7 @@ mod tests {
 		// Test non-WASM executable
 		let non_wasm_instance = LedgerEntryData::ContractData(ContractDataEntry {
 			ext: stellar_xdr::curr::ExtensionPoint::V0,
-			contract: ScAddress::Contract(Hash([0; 32])),
+			contract: ScAddress::Contract(ContractId(Hash([0; 32]))),
 			key: ScVal::LedgerKeyContractInstance,
 			durability: stellar_xdr::curr::ContractDataDurability::Persistent,
 			val: ScVal::ContractInstance(ScContractInstance {
@@ -1552,7 +1661,8 @@ mod tests {
 				storage: Some(ScMap(vec![].try_into().unwrap())),
 			}),
 		});
-		let xdr = non_wasm_instance.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_wasm_instance.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result.unwrap_err().to_string().contains("not WASM"));
@@ -2081,7 +2191,7 @@ mod tests {
 	fn test_udt_type_matching() {
 		let function_name: String = "process_request".into();
 		let args = vec![
-			ScVal::Address(ScAddress::Contract(Hash([0; 32]))),
+			ScVal::Address(ScAddress::Contract(ContractId(Hash([0; 32])))),
 			ScVal::Vec(Some(
 				vec![ScVal::Map(Some(ScMap(
 					vec![
@@ -2104,7 +2214,7 @@ mod tests {
 
 		let invoke_op = InvokeHostFunctionOp {
 			host_function: HostFunction::InvokeContract(stellar_xdr::curr::InvokeContractArgs {
-				contract_address: ScAddress::Contract(Hash([0; 32])),
+				contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
 				function_name: function_name.clone().try_into().unwrap(),
 				args: args.try_into().unwrap(),
 			}),
@@ -2128,6 +2238,7 @@ mod tests {
 					},
 				],
 			}],
+			events: vec![],
 		};
 
 		// Test that the UDT signature is returned even though runtime types are different
@@ -2250,7 +2361,7 @@ mod tests {
 		));
 
 		// Test Address
-		let contract_addr = ScAddress::Contract(Hash([0; 32]));
+		let contract_addr = ScAddress::Contract(ContractId(Hash([0; 32])));
 		assert!(matches!(
 			StellarValue::from(ScVal::Address(contract_addr)),
 			StellarValue::Address(_)

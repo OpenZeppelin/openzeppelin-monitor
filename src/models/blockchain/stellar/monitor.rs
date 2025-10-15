@@ -7,7 +7,8 @@ use stellar_xdr::curr::ScSpecEntry;
 use crate::{
 	models::{MatchConditions, Monitor, StellarBlock, StellarTransaction},
 	services::filter::stellar_helpers::{
-		get_contract_spec_functions, get_contract_spec_with_function_input_parameters,
+		get_contract_spec_events, get_contract_spec_functions,
+		get_contract_spec_with_event_parameters, get_contract_spec_with_function_input_parameters,
 	},
 };
 
@@ -172,14 +173,21 @@ impl std::ops::Deref for ContractSpec {
 pub struct FormattedContractSpec {
 	/// List of callable functions defined in the contract
 	pub functions: Vec<ContractFunction>,
+
+	/// List of events defined in the contract
+	pub events: Vec<ContractEvent>,
 }
 
 impl From<ContractSpec> for FormattedContractSpec {
 	fn from(spec: ContractSpec) -> Self {
-		let functions =
-			get_contract_spec_with_function_input_parameters(get_contract_spec_functions(spec.0));
+		let functions = get_contract_spec_with_function_input_parameters(
+			get_contract_spec_functions(spec.0.clone()),
+		);
 
-		FormattedContractSpec { functions }
+		let events =
+			get_contract_spec_with_event_parameters(get_contract_spec_events(spec.0.clone()));
+
+		FormattedContractSpec { functions, events }
 	}
 }
 
@@ -231,6 +239,53 @@ pub struct ContractInput {
 
 	/// Parameter type in Stellar's type system format
 	pub kind: String,
+}
+
+/// Event parameter location (indexed or data)
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub enum EventParamLocation {
+	/// Parameter is indexed (in topics)
+	#[default]
+	Indexed,
+	/// Parameter is in event data
+	Data,
+}
+
+/// Event parameter specification for a Stellar contract event
+///
+/// Describes a single parameter in a contract event, including its name,
+/// type, and whether it's indexed or in the event data.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct ContractEventParam {
+	/// Parameter name as defined in the contract
+	pub name: String,
+
+	/// Parameter type in Stellar's type system format
+	pub kind: String,
+
+	/// Whether this parameter is indexed or in data
+	pub location: EventParamLocation,
+}
+
+/// Event definition within a Stellar contract specification
+///
+/// Represents an event that can be emitted by a Stellar smart contract,
+/// including its name and parameters. This is parsed from the contract's
+/// ScSpecEventV0 entries.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct ContractEvent {
+	/// Name of the event as defined in the contract
+	pub name: String,
+
+	/// Prefix topics that are emitted before indexed parameters
+	/// These are metadata topics used to identify the event
+	pub prefix_topics: Vec<String>,
+
+	/// Ordered list of parameters in the event
+	pub params: Vec<ContractEventParam>,
+
+	/// Signature of the event
+	pub signature: String,
 }
 
 #[cfg(test)]
