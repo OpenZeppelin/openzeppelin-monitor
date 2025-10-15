@@ -24,7 +24,7 @@ use stellar_xdr::curr::{
 use crate::models::{
 	StellarContractEvent, StellarContractEventParam, StellarContractFunction, StellarContractInput,
 	StellarDecodedParamEntry, StellarEventParamLocation, StellarFormattedContractSpec,
-	StellarParsedOperationResult,
+	StellarMatchParamEntry, StellarParsedOperationResult,
 };
 
 /// Represents all possible Stellar smart contract types
@@ -1187,6 +1187,171 @@ fn get_event_signature_from_spec_entry(entry: &ScSpecEntry) -> String {
 		}
 		_ => String::new(),
 	}
+}
+
+/// Unpacks a Map string into individual parameter entries based on event spec
+pub fn unpack_map_params(
+	map_value: &str,
+	data_params: &[StellarContractEventParam],
+	event_name: &str,
+) -> Vec<StellarMatchParamEntry> {
+	let mut result = Vec::new();
+
+	// Parse the Map from the entry value
+	// The value format is: {key1:value1,key2:value2,...}
+	let map_str = map_value.trim_start_matches('{').trim_end_matches('}');
+	if !map_str.is_empty() {
+		let mut map_entries: std::collections::BTreeMap<String, String> =
+			std::collections::BTreeMap::new();
+
+		// Handle nested structures by counting braces/brackets
+		let mut current_key = String::new();
+		let mut current_value = String::new();
+		let mut depth = 0;
+		let mut in_value = false;
+
+		for ch in map_str.chars() {
+			match ch {
+				':' if depth == 0 && !in_value => {
+					in_value = true;
+				}
+				',' if depth == 0 => {
+					if !current_key.is_empty() {
+						map_entries.insert(
+							current_key.trim().to_string(),
+							current_value.trim().to_string(),
+						);
+					}
+					current_key.clear();
+					current_value.clear();
+					in_value = false;
+				}
+				'{' | '[' => {
+					depth += 1;
+					if in_value {
+						current_value.push(ch);
+					} else {
+						current_key.push(ch);
+					}
+				}
+				'}' | ']' => {
+					depth -= 1;
+					if in_value {
+						current_value.push(ch);
+					} else {
+						current_key.push(ch);
+					}
+				}
+				_ => {
+					if in_value {
+						current_value.push(ch);
+					} else {
+						current_key.push(ch);
+					}
+				}
+			}
+		}
+
+		// Don't forget the last entry
+		if !current_key.is_empty() {
+			map_entries.insert(
+				current_key.trim().to_string(),
+				current_value.trim().to_string(),
+			);
+		}
+
+		// Create individual entries for each data parameter in spec order
+		for param in data_params {
+			if let Some(value) = map_entries.get(&param.name) {
+				result.push(StellarMatchParamEntry {
+					name: param.name.clone(),
+					value: value.clone(),
+					kind: param.kind.clone(),
+					indexed: false,
+				});
+			} else {
+				tracing::warn!(
+					"Map missing expected parameter '{}' for event '{}'",
+					param.name,
+					event_name
+				);
+			}
+		}
+	}
+
+	result
+}
+
+/// Unpacks a Vec/Tuple string into individual parameter entries based on event spec
+pub fn unpack_sequence_params(
+	seq_value: &str,
+	data_params: &[StellarContractEventParam],
+	event_name: &str,
+) -> Vec<StellarMatchParamEntry> {
+	let mut result = Vec::new();
+
+	// Parse the sequence from the entry value
+	// The value format is: [value1,value2,...] or (value1,value2,...)
+	let seq_str = seq_value
+		.trim_start_matches('[')
+		.trim_start_matches('(')
+		.trim_end_matches(']')
+		.trim_end_matches(')');
+
+	if !seq_str.is_empty() {
+		let mut values = Vec::new();
+		let mut current_value = String::new();
+		let mut depth = 0;
+
+		// Handle nested structures
+		for ch in seq_str.chars() {
+			match ch {
+				',' if depth == 0 => {
+					if !current_value.is_empty() {
+						values.push(current_value.trim().to_string());
+						current_value.clear();
+					}
+				}
+				'{' | '[' | '(' => {
+					depth += 1;
+					current_value.push(ch);
+				}
+				'}' | ']' | ')' => {
+					depth -= 1;
+					current_value.push(ch);
+				}
+				_ => {
+					current_value.push(ch);
+				}
+			}
+		}
+
+		// Don't forget the last value
+		if !current_value.is_empty() {
+			values.push(current_value.trim().to_string());
+		}
+
+		// Match values with parameters by position
+		for (i, param) in data_params.iter().enumerate() {
+			if let Some(value) = values.get(i) {
+				result.push(StellarMatchParamEntry {
+					name: param.name.clone(),
+					value: value.clone(),
+					kind: param.kind.clone(),
+					indexed: false,
+				});
+			} else {
+				tracing::warn!(
+					"Sequence missing value at position {} for parameter '{}' in event '{}'",
+					i,
+					param.name,
+					event_name
+				);
+			}
+		}
+	}
+
+	result
 }
 
 #[cfg(test)]
