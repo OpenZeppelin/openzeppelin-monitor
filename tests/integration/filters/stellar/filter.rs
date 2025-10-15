@@ -1465,8 +1465,6 @@ async fn test_handle_match_with_event_spec() -> Result<(), Box<FilterError>> {
 		.map(|tx| StellarTransaction::from(tx.clone()))
 		.collect();
 
-	println!("decoded_transactions: {:?}", decoded_transactions.len());
-
 	// Setup mock expectations
 	mock_client
 		.expect_get_transactions()
