@@ -29,7 +29,8 @@ use crate::{
 			filters::stellar::evaluator::StellarConditionEvaluator,
 			stellar_helpers::{
 				are_same_signature, get_kind_from_value, normalize_address, parse_xdr_value,
-				process_invoke_host_function, unpack_map_params, unpack_sequence_params,
+				parse_xdr_value_with_stellar_value, process_invoke_host_function,
+				unpack_stellar_value,
 			},
 			BlockFilter, FilterError,
 		},
@@ -668,8 +669,10 @@ impl<T> StellarBlockFilter<T> {
 			if let Some(value_xdr) = &event.value_xdr {
 				match base64::engine::general_purpose::STANDARD.decode(value_xdr) {
 					Ok(bytes) => {
-						// Parse the XDR value
-						if let Some(entry) = parse_xdr_value(&bytes, false) {
+						// Parse XDR and preserve the StellarValue for unpacking
+						if let Some((entry, stellar_value)) =
+							parse_xdr_value_with_stellar_value(&bytes, false)
+						{
 							// Check if we have an event spec to guide unpacking
 							if let Some(spec) = event_spec {
 								// Get the data parameters (non-indexed) from the spec
@@ -680,49 +683,30 @@ impl<T> StellarBlockFilter<T> {
 									.cloned()
 									.collect();
 
-								// If we expect multiple data parameters, try to unpack structured data
-								if !data_params.is_empty() {
-									let unpacked = if entry.kind.starts_with("Map") {
-										// Unpack Map format
-										unpack_map_params(&entry.value, &data_params, &event_name)
-									} else if entry.kind.starts_with("Tuple") {
-										// Unpack Tuple format
-										unpack_sequence_params(
-											&entry.value,
-											&data_params,
-											&event_name,
-										)
-									} else {
-										// For Vec or other types, don't unpack - they are single parameters
-										vec![StellarMatchParamEntry {
-											name: data_params
-												.first()
-												.map(|p| p.name.clone())
-												.unwrap_or_default(),
-											value: entry.value.clone(),
-											kind: entry.kind.clone(),
-											indexed: entry.indexed,
-										}]
-									};
-									value_args.extend(unpacked);
-								} else {
-									// Single or no data parameters expected, keep as-is
-									value_args.push(StellarMatchParamEntry {
-										name: String::new(), // Will be set later based on spec or index
-										value: entry.value.clone(),
-										kind: entry.kind.clone(),
-										indexed: entry.indexed,
-									});
+								let unpacked =
+									unpack_stellar_value(&stellar_value, &data_params, &event_name);
+
+								if unpacked.is_empty() {
+									tracing::error!(
+										"Failed to unpack for event '{}'. Skipping this event.",
+										event_name
+									);
+									continue;
 								}
+
+								value_args.extend(unpacked);
 							} else {
-								// No spec available, keep as-is
+								// No spec available - treat as single parameter
 								value_args.push(StellarMatchParamEntry {
-									name: String::new(), // Will be set later based on spec or index
+									name: String::new(),
 									value: entry.value.clone(),
 									kind: entry.kind.clone(),
 									indexed: entry.indexed,
 								});
 							}
+						} else {
+							tracing::warn!("Failed to parse XDR value for event: '{}'", event_name);
+							continue;
 						}
 					}
 					Err(e) => {
@@ -1295,10 +1279,10 @@ mod tests {
 		}
 	}
 
-	// Helper function to create base64 encoded event name
 	fn encode_event_name(name: &str) -> String {
-		// Create a buffer with 8 bytes prefix (4 for size, 4 for type) + name
-		let mut buffer = vec![0u8; 8];
+		let mut buffer = vec![0, 0, 0, 15]; // discriminant 15 (matches integration tests)
+		let length = name.len() as u32;
+		buffer.extend_from_slice(&length.to_be_bytes());
 		buffer.extend_from_slice(name.as_bytes());
 		BASE64.encode(buffer)
 	}
@@ -2204,10 +2188,12 @@ mod tests {
 		let contract_address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 		let monitored_addresses = vec![normalize_address(contract_address)];
 
-		// Create a test event with a simple Transfer event name and one parameter
 		let event_name = encode_event_name("Transfer");
-		// Encode a simple u32 value (100) in base64
-		let value = BASE64.encode([0u8; 4]); // Simplified value encoding
+
+		// Create a proper XDR-encoded value for int64
+		let mut value_bytes = vec![0, 0, 0, 6]; // discriminant for ScVal::I64
+		value_bytes.extend_from_slice(&42i64.to_be_bytes()); // 8 bytes for int64
+		let value = BASE64.encode(&value_bytes);
 
 		let event = create_test_stellar_event(
 			contract_address,
