@@ -1550,9 +1550,9 @@ mod tests {
 		assert!(evaluator
 			.compare_final_values(
 				"Map<String,U32,String>", // Generic Map type from Stellar SDK
-				r#"{"name":"Nicolas","age":"30","email":"nico@email.com"}"#,
+				r#"{"name":"John","age":"30","email":"john@email.com"}"#,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("nico@email.com")
+				&LiteralValue::Str("john@email.com")
 			)
 			.unwrap());
 
@@ -1573,6 +1573,139 @@ mod tests {
 				r#"{"key1":"value1"}"#,
 				&ComparisonOperator::Eq,
 				&LiteralValue::Str(r#"{"key1":"value1"}"#)
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_vec_csv_fallback_contains_with_brackets() {
+		let evaluator = create_evaluator();
+
+		// Test CSV string WITH brackets - should strip them and parse as CSV
+		let lhs_with_brackets = "[alpha, beta, gamma]"; // Looks like array but invalid JSON
+		assert!(evaluator
+			.compare_vec(
+				lhs_with_brackets,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("beta")
+			)
+			.unwrap());
+		assert!(!evaluator
+			.compare_vec(
+				lhs_with_brackets,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("delta")
+			)
+			.unwrap());
+
+		// Test with extra whitespace
+		let lhs_with_space = "[ foo , bar , baz ]";
+		assert!(evaluator
+			.compare_vec(
+				lhs_with_space,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("bar")
+			)
+			.unwrap());
+		assert!(!evaluator
+			.compare_vec(
+				lhs_with_space,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("qux")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_vec_csv_fallback_contains_brackets_edge_cases() {
+		let evaluator = create_evaluator();
+
+		// Test with only opening bracket (should treat whole string as CSV)
+		let lhs_only_open = "[alpha, beta";
+		assert!(evaluator
+			.compare_vec(
+				lhs_only_open,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("[alpha")
+			)
+			.unwrap());
+
+		// Test with only closing bracket (should treat whole string as CSV)
+		let lhs_only_close = "alpha, beta]";
+		assert!(evaluator
+			.compare_vec(
+				lhs_only_close,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("beta]")
+			)
+			.unwrap());
+
+		// Test empty brackets
+		let lhs_empty_brackets = "[]";
+		assert!(!evaluator
+			.compare_vec(
+				lhs_empty_brackets,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("anything")
+			)
+			.unwrap());
+
+		// Test with numbers in bracket-wrapped CSV
+		let lhs_numbers = "[1, 2, 3]";
+		assert!(evaluator
+			.compare_vec(
+				lhs_numbers,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("2")
+			)
+			.unwrap());
+		assert!(!evaluator
+			.compare_vec(
+				lhs_numbers,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("5")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_vec_csv_fallback_contains_mixed_formats() {
+		let evaluator = create_evaluator();
+
+		// Test that bracket-wrapped CSV is different from plain CSV
+		// Both should work, but test the trimming logic
+		let lhs_plain = "a, b, c";
+		let lhs_bracketed = "[a, b, c]";
+
+		// Both should contain "b"
+		assert!(evaluator
+			.compare_vec(
+				lhs_plain,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("b")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_vec(
+				lhs_bracketed,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("b")
+			)
+			.unwrap());
+
+		// Neither should contain "d"
+		assert!(!evaluator
+			.compare_vec(
+				lhs_plain,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("d")
+			)
+			.unwrap());
+		assert!(!evaluator
+			.compare_vec(
+				lhs_bracketed,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("d")
 			)
 			.unwrap());
 	}
