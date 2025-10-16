@@ -1604,7 +1604,6 @@ When a Stellar parameter has `kind: "vec"`, its value can be either a CSV string
 - `vec_param == 'raw_string_value'` checks if the vector matches the provided raw string value. This works for both CSV and JSON array strings.
 - `vec_param != 'raw_string_value'` the negation of the above
 
-[[stellar-event-parameter-access]]
 *Event Parameter Access (Stellar)*
 
 Starting with Stellar Protocol 23, Soroban contracts can include event definitions in their contract specifications. This enables two ways to access event parameters:

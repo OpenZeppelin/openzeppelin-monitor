@@ -602,7 +602,7 @@ cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar
 * The `contract_spec` field is optional for Stellar contracts. If not provided, the monitor automatically fetches the contract's SEP-48 interface from the chain
 * You can explore Stellar contract interfaces using the link:https://lab.stellar.org/smart-contracts/contract-explorer[Stellar Contract Explorer^]
 * The expression `"out_min > 1000000000"` monitors swaps with minimum output over 1 billion tokens
-* Now, you can also filter by parameters event's name (Stellar Protocol 23 has introduced this new feature). See <<stellar-event-parameter-access>> for more details
+* Now, you can also filter by parameters event's name (Stellar Protocol 23 has introduced this new feature). See this xref:index.adoc#stellar_specifics[section] for more details
 ====
 
 ==== Step 3: Notification Setup
