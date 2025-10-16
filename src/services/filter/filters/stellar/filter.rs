@@ -1280,7 +1280,7 @@ mod tests {
 	}
 
 	fn encode_event_name(name: &str) -> String {
-		let mut buffer = vec![0, 0, 0, 15]; // discriminant 15 (matches integration tests)
+		let mut buffer = vec![0, 0, 0, 15];
 		let length = name.len() as u32;
 		buffer.extend_from_slice(&length.to_be_bytes());
 		buffer.extend_from_slice(name.as_bytes());

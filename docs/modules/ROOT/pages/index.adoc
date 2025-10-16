@@ -1075,6 +1075,9 @@ The monitor uses a structured JSON format with nested objects for template varia
 | `*events.[index].args.[position]*`
 | Event parameters by position
 
+| `*events.[index].args.[param]*`
+| Event parameters by name (only in case the contract supports event parameters name)
+
 | `*functions.[index].args.[param]*`
 | Function parameters by name
 |===
@@ -1601,6 +1604,7 @@ When a Stellar parameter has `kind: "vec"`, its value can be either a CSV string
 - `vec_param == 'raw_string_value'` checks if the vector matches the provided raw string value. This works for both CSV and JSON array strings.
 - `vec_param != 'raw_string_value'` the negation of the above
 
+[[stellar-event-parameter-access]]
 *Event Parameter Access (Stellar)*
 
 Starting with Stellar Protocol 23, Soroban contracts can include event definitions in their contract specifications. This enables two ways to access event parameters:
@@ -1757,6 +1761,16 @@ Assume event parameter `0` is `12345` (u64), `1` (kind: "array") is `'["Val1", "
 "1 contains 'val2'"
 "2.keyA == 'DATAX'"
 "2.keyB < 1000"
+----
+
+Now, after Stellar Protocol 23 we can access to Event parameters by name (first, make sure the contract supports the feature)
+
+----
+"0 > 10000"
+"param_name[0] == 'val1'"
+"param_name contains 'val2'"
+"param_name.keyA == 'DATAX'"
+"param_name.keyB < 1000"
 ----
 
 [NOTE]
