@@ -1603,7 +1603,23 @@ When a Stellar parameter has `kind: "vec"`, its value can be either a CSV string
 
 *Event Parameter Access (Stellar)*
 
-Stellar event parameters are typically accessed by their numeric index as the base variable name (e.g., `0`, `1`, `2`). If an indexed event parameter is itself a complex type (like an array or map, represented as a JSON string), you can then apply the respective access methods:
+Starting with Stellar Protocol 23, Soroban contracts can include event definitions in their contract specifications. This enables two ways to access event parameters:
+
+*Access by Name (Protocol 23+):*
+When a contract specification includes event definitions, you can access event parameters by their defined names:
+
+* If an event has a parameter named `recipient` (kind: "Address"):
+** `recipient == 'GBBD...ABCD'`
+* If an event has a parameter named `amount` (kind: "U128"):
+** `amount > 1000000`
+* If an event has a parameter named `metadata` (kind: "Map") containing `'{"id": 123, "name": "Test"}'`:
+** `metadata.name == 123`
+** `metadata.name contains 'john'` (case-insensitive)
+* If an event has a parameter named `items` (kind: "array") containing `'["alpha", "beta"]'`:
+** `items contains 'beta'` (case-insensitive deep search)
+
+*Access by Index (Legacy):*
+For contracts without event definitions in their specification, or when working with older contracts, event parameters can be accessed by their numeric index (e.g., `0`, `1`, `2`):
 
 * If event parameter `0` (kind: "Map") is `'{"id": 123, "name": "Test"}'`:
 ** `0.id == 123`
@@ -1612,6 +1628,11 @@ Stellar event parameters are typically accessed by their numeric index as the ba
 ** `1[0] == 'ALPHA'` (case-insensitive)
 ** `1[1].val == 'Beta'` (case-insensitive)
 ** `1 contains 'beta'` (case-insensitive deep search)
+
+[TIP]
+====
+Named access is recommended when available as it makes expressions more readable and maintainable. The monitor will automatically use named parameters if they're available in the contract specification, otherwise it falls back to indexed access.
+====
 
 ===== EVM Examples
 
