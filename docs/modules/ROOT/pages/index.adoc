@@ -1617,8 +1617,8 @@ When a contract specification includes event definitions, you can access event p
 * If an event has a parameter named `amount` (kind: "U128"):
 ** `amount > 1000000`
 * If an event has a parameter named `metadata` (kind: "Map") containing `'{"id": 123, "name": "Test"}'`:
-** `metadata.name == 123`
-** `metadata.name contains 'john'` (case-insensitive)
+** `metadata.id == 123`
+** `metadata.name contains 'test'` (case-insensitive)
 * If an event has a parameter named `items` (kind: "array") containing `'["alpha", "beta"]'`:
 ** `items contains 'beta'` (case-insensitive deep search)
 
