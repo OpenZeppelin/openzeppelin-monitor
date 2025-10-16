@@ -1199,7 +1199,12 @@ pub fn unpack_map_params(
 
 	// Parse the Map from the entry value
 	// The value format is: {key1:value1,key2:value2,...}
-	let map_str = map_value.trim_start_matches('{').trim_end_matches('}');
+	// Only strip the outermost braces, not all matching braces
+	let map_str = map_value
+		.strip_prefix('{')
+		.and_then(|s| s.strip_suffix('}'))
+		.unwrap_or(map_value);
+
 	if !map_str.is_empty() {
 		let mut map_entries: std::collections::BTreeMap<String, String> =
 			std::collections::BTreeMap::new();
@@ -1293,10 +1298,10 @@ pub fn unpack_sequence_params(
 	// Parse the sequence from the entry value
 	// The value format is: [value1,value2,...] or (value1,value2,...)
 	let seq_str = seq_value
-		.trim_start_matches('[')
-		.trim_start_matches('(')
-		.trim_end_matches(']')
-		.trim_end_matches(')');
+		.strip_prefix('[')
+		.or_else(|| seq_value.strip_prefix('('))
+		.and_then(|s| s.strip_suffix(']').or_else(|| s.strip_suffix(')')))
+		.unwrap_or(seq_value);
 
 	if !seq_str.is_empty() {
 		let mut values = Vec::new();
@@ -2708,5 +2713,585 @@ mod tests {
 			StellarType::from(nested_object),
 			StellarType::Map(_, _)
 		));
+	}
+
+	#[test]
+	fn test_unpack_map_params_simple() {
+		let map_value = "{key1:value1,key2:value2}";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "key1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "key2".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_map_params(map_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "key1");
+		assert_eq!(result[0].value, "value1");
+		assert_eq!(result[0].kind, "String");
+		assert!(!result[0].indexed);
+		assert_eq!(result[1].name, "key2");
+		assert_eq!(result[1].value, "value2");
+	}
+
+	#[test]
+	fn test_unpack_map_params_nested_map() {
+		let map_value = "{outer:{inner:value}}";
+		let data_params = vec![StellarContractEventParam {
+			name: "outer".to_string(),
+			kind: "Map".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+		let event_name = "TestEvent";
+
+		let result = unpack_map_params(map_value, &data_params, event_name);
+
+		println!("result: {:?}", result);
+
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "outer");
+		assert_eq!(result[0].value, "{inner:value}");
+	}
+
+	#[test]
+	fn test_unpack_map_params_missing_parameter() {
+		let map_value = "{key1:value1}";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "key1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "key2".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_map_params(map_value, &data_params, event_name);
+
+		// Should only return key1, key2 is missing
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "key1");
+	}
+
+	#[test]
+	fn test_unpack_map_params_preserves_spec_order() {
+		let map_value = "{z:value3,a:value1,m:value2}";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "a".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "m".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "z".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_map_params(map_value, &data_params, event_name);
+
+		// Should follow spec order (a, m, z), not map order (z, a, m)
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "a");
+		assert_eq!(result[1].name, "m");
+		assert_eq!(result[2].name, "z");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_simple_vec() {
+		// Simple vector with three values
+		let seq_value = "[value1,value2,value3]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "param0".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param2".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "param0");
+		assert_eq!(result[0].value, "value1");
+		assert_eq!(result[0].kind, "String");
+		assert!(!result[0].indexed);
+		assert_eq!(result[1].name, "param1");
+		assert_eq!(result[1].value, "value2");
+		assert_eq!(result[2].name, "param2");
+		assert_eq!(result[2].value, "value3");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_simple_tuple() {
+		// Simple tuple with parentheses instead of brackets
+		let seq_value = "(value1,value2,value3)";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "param0".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param2".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].value, "value1");
+		assert_eq!(result[1].value, "value2");
+		assert_eq!(result[2].value, "value3");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_empty_vec() {
+		let seq_value = "[]";
+		let data_params = vec![];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 0);
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_empty_string() {
+		let seq_value = "";
+		let data_params = vec![StellarContractEventParam {
+			name: "param0".to_string(),
+			kind: "String".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 0);
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_with_whitespace() {
+		let seq_value = "[ value1 , value2 , value3 ]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "param0".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param2".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].value, "value1");
+		assert_eq!(result[1].value, "value2");
+		assert_eq!(result[2].value, "value3");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_nested_vec() {
+		// Vector containing nested vectors
+		let seq_value = "[[1,2,3],value2]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "nested_array".to_string(),
+				kind: "Vec".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "simple_value".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "nested_array");
+		assert_eq!(result[0].value, "[1,2,3]");
+		assert_eq!(result[1].name, "simple_value");
+		assert_eq!(result[1].value, "value2");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_nested_map() {
+		// Vector containing a map
+		let seq_value = "[{key:value},value2]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "map_param".to_string(),
+				kind: "Map".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "simple_param".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "map_param");
+		assert_eq!(result[0].value, "{key:value}");
+		assert_eq!(result[1].name, "simple_param");
+		assert_eq!(result[1].value, "value2");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_nested_tuple() {
+		// Vector containing a tuple
+		let seq_value = "[(a,b,c),value2]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "tuple_param".to_string(),
+				kind: "Tuple".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "simple_param".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "tuple_param");
+		assert_eq!(result[0].value, "(a,b,c)");
+		assert_eq!(result[1].name, "simple_param");
+		assert_eq!(result[1].value, "value2");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_deeply_nested() {
+		// Deeply nested structures
+		let seq_value = "[[[1,2],[3,4]],{outer:{inner:value}}]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "nested_arrays".to_string(),
+				kind: "Vec".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "nested_maps".to_string(),
+				kind: "Map".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "nested_arrays");
+		assert_eq!(result[0].value, "[[1,2],[3,4]]");
+		assert_eq!(result[1].name, "nested_maps");
+		assert_eq!(result[1].value, "{outer:{inner:value}}");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_fewer_values_than_params() {
+		// Only 2 values but 3 parameters expected
+		let seq_value = "[value1,value2]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "param0".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param2".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		// Should only return the first 2 parameters, third is missing
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "param0");
+		assert_eq!(result[1].name, "param1");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_more_values_than_params() {
+		// 3 values but only 2 parameters expected
+		let seq_value = "[value1,value2,value3]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "param0".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		// Should only return first 2, third value is ignored
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "param0");
+		assert_eq!(result[0].value, "value1");
+		assert_eq!(result[1].name, "param1");
+		assert_eq!(result[1].value, "value2");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_single_value() {
+		let seq_value = "[onlyvalue]";
+		let data_params = vec![StellarContractEventParam {
+			name: "single_param".to_string(),
+			kind: "String".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "single_param");
+		assert_eq!(result[0].value, "onlyvalue");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_numeric_values() {
+		let seq_value = "[1000,2000,3000]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "amount1".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "amount2".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "amount3".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].value, "1000");
+		assert_eq!(result[0].kind, "U64");
+		assert_eq!(result[1].value, "2000");
+		assert_eq!(result[2].value, "3000");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_mixed_types() {
+		// Mix of addresses, numbers, and nested structures
+		let seq_value = "[GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI,1000,[1,2,3]]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "address".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "amount".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "data".to_string(),
+				kind: "Vec".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "address");
+		assert_eq!(
+			result[0].value,
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+		);
+		assert_eq!(result[0].kind, "Address");
+		assert_eq!(result[1].name, "amount");
+		assert_eq!(result[1].value, "1000");
+		assert_eq!(result[1].kind, "U64");
+		assert_eq!(result[2].name, "data");
+		assert_eq!(result[2].value, "[1,2,3]");
+		assert_eq!(result[2].kind, "Vec");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_all_indexed_false() {
+		// Verify that indexed is always false
+		let seq_value = "[val1,val2]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "param0".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "param1".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		for entry in result {
+			assert!(!entry.indexed);
+		}
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_positional_matching() {
+		// Values are matched by position, not by name
+		let seq_value = "[first,second,third]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "z_last".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "m_middle".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "a_first".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "TestEvent";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		// Should match by position: first->z_last, second->m_middle, third->a_first
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "z_last");
+		assert_eq!(result[0].value, "first");
+		assert_eq!(result[1].name, "m_middle");
+		assert_eq!(result[1].value, "second");
+		assert_eq!(result[2].name, "a_first");
+		assert_eq!(result[2].value, "third");
+	}
+
+	#[test]
+	fn test_unpack_sequence_params_complex_stellar_event() {
+		// Real-world Stellar transfer-like event
+		let seq_value = "[GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI,CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4,{type:I128,value:1000000}]";
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "from".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "to".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "amount".to_string(),
+				kind: "I128".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+		let event_name = "Transfer";
+
+		let result = unpack_sequence_params(seq_value, &data_params, event_name);
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "from");
+		assert_eq!(
+			result[0].value,
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+		);
+		assert_eq!(result[1].name, "to");
+		assert_eq!(
+			result[1].value,
+			"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
+		);
+		assert_eq!(result[2].name, "amount");
+		assert_eq!(result[2].value, "{type:I128,value:1000000}");
 	}
 }
