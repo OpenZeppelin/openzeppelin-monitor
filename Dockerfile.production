@@ -1,5 +1,5 @@
 # Base image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/rust:latest-dev@sha256:faf49718aaa95c798ed1dfdf3e4edee2cdbc3790c8994705ca6ef35972128459 AS base
+FROM cgr.dev/chainguard/rust:latest-dev AS base
 
 WORKDIR /usr/app
 
@@ -9,10 +9,10 @@ RUN apk update && apk add openssl-dev
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo install --root /usr/app --path . --locked
+    cargo install --root /usr/app --path . --profile release --locked
 
 # Wolfi image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base
+FROM cgr.dev/chainguard/wolfi-base
 
 ARG version=3.12
 
