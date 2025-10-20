@@ -39,7 +39,7 @@ jobs:
       RUSTUP_TOOLCHAIN: stable-${{ matrix.arch }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
       - name: Get github app token
@@ -49,7 +49,7 @@ jobs:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
       - name: Checkout sources
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ env.TAG }}
           token: ${{ steps.gh-app-token.outputs.token }}
@@ -88,7 +88,7 @@ jobs:
       TAG: ${{ needs.build.outputs.release_tag }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
       - name: Get github app token
@@ -98,12 +98,12 @@ jobs:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
       - name: Checkout sources
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ env.TAG }}
           token: ${{ steps.gh-app-token.outputs.token }}
       - name: Download artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           pattern: openzeppelin-monitor-*
           path: artifacts
@@ -113,7 +113,7 @@ jobs:
           subject-path: artifacts/**/openzeppelin-monitor*.tar.gz
           github-token: ${{ steps.gh-app-token.outputs.token }}
       - name: Update released binaries artifacts
-        uses: softprops/action-gh-release@97d42c1b50f585f357413698aa1b779307aa0d52  # main
+        uses: softprops/action-gh-release@5434409c2b6457c050f109d68b2547fcbf1db07b  # main
         with:
           tag_name: ${{ env.TAG }}
           files: artifacts/**/openzeppelin-monitor*.tar.gz
