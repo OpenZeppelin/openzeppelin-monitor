@@ -18,7 +18,8 @@ panic = 'unwind'
 [dependencies]
 actix-rt = "2.0.0"
 actix-web = "4"
-alloy = { version = "1.0.36", features = ["full"] }
+alloy = { version = "1.0.41", features = ["full"] }
+alloy-dyn-abi = "1.4.1"  # Force version to address GHSA-pgp9-98jm-wwq2 (High severity vulnerability)
 anyhow = { version = "1.0.97", features = ["std"] }
 async-trait = "0.1"
 backon = "1.5.1"
