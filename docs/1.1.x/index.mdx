@@ -1,0 +1,1533 @@
+---
+title: OpenZeppelin Monitor
+---
+
+## Overview
+
+In the rapidly evolving world of blockchain technology, effective monitoring is crucial for ensuring security and performance. OpenZeppelin Monitor is a blockchain monitoring service that watches for specific on-chain activities and triggers notifications based on configurable conditions. The service offers multi-chain support with configurable monitoring schedules, flexible trigger conditions, and an extensible architecture for adding new chains.
+
+### Key Capabilities
+
+* ***Real-time Monitoring***: Watch blockchain networks in real-time for specific events and transactions
+* ***Smart Filtering***: Use flexible expressions to define exactly what you want to monitor
+* ***Multi-notification Support***: Send alerts via Slack, Discord, Email, Telegram, Webhooks, or custom scripts
+* ***Configurable Scheduling***: Set custom monitoring schedules using cron expressions
+* ***Data Persistence***: Store monitoring data and resume from checkpoints
+* ***Extensible Architecture***: Easy to add support for new blockchains and notification types
+
+### Supported Networks
+
+* ***EVM-Compatible Networks***
+* ***Stellar***
+
+### Notification Channels
+
+* ***Slack*** - Send formatted messages to Slack channels
+* ***Discord*** - Post alerts to Discord channels via webhooks
+* ***Email*** - Send email notifications with SMTP support
+* ***Telegram*** - Send messages to Telegram chats via bot API
+* ***Webhooks*** - Send HTTP requests to custom endpoints
+* ***Custom Scripts*** - Execute Python, JavaScript, or Bash scripts
+
+<Callout>
+
+
+To get started immediately, see [Quickstart](/monitor/1.1.x/quickstart).
+
+</Callout>
+
+## Installation
+
+### Prerequisites
+
+* Use ***Rust 2021 edition***, version `1.86` or later.
+* ***Docker*** (optional, for containerized deployment)
+
+#### System Dependencies (Linux)
+
+For Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures), install required packages:
+
+***Note:*** Python 3.9+ is required for pre-commit hooks compatibility.
+
+```bash
+# Install required packages directly
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    libffi-dev \
+    libyaml-dev \
+    python3 \
+    python3-venv \
+    python3-pip
+```
+
+Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
+
+```bash
+chmod +x ./scripts/linux/sys_pkgs_core.sh
+chmod +x ./scripts/linux/sys_pkgs_dev.sh
+# Installs required packages and ensures compatible Python version
+./scripts/linux/sys_pkgs_core.sh   // For runtime dependencies only
+./scripts/linux/sys_pkgs_dev.sh    // For Python/dev dependencies (calls core script)
+```
+
+### Local Installation
+
+1. ***Clone the repository:***
+
+   ```bash
+   git clone https://github.com/openzeppelin/openzeppelin-monitor
+   cd openzeppelin-monitor
+   ```
+2. ***Build the application:***
+
+   ```bash
+   cargo build --release
+   ```
+3. ***Move binary to project root:***
+
+   ```bash
+   mv ./target/release/openzeppelin-monitor .
+   ```
+4. ***Verify installation:***
+
+   ```bash
+   ./openzeppelin-monitor --help
+   ```
+5. ***View available options:***
+
+   ```bash
+   ./openzeppelin-monitor --help
+
+   # Enable logging to file
+   ./openzeppelin-monitor --log-file
+
+   # Enable metrics server
+   ./openzeppelin-monitor --metrics
+
+   # Validate configuration files without starting the service
+   ./openzeppelin-monitor --check
+   ```
+
+### Docker Installation
+
+1. ***Clone the repository:***
+
+   ```bash
+   git clone https://github.com/openzeppelin/openzeppelin-monitor
+   cd openzeppelin-monitor
+   ```
+2. ***Set up environment:***
+
+   ```bash
+   cp .env.example .env
+   # Edit .env file with your configuration
+   ```
+3. ***Start with Docker Compose:***
+
+   ```bash
+   cargo make docker-compose-up
+   ```
+
+#### Metrics Configuration
+
+The metrics server, Prometheus, and Grafana can be enabled by setting `METRICS_ENABLED=true` in your `.env` file.
+
+You can start services directly with Docker Compose:
+
+```bash
+# without metrics profile ( METRICS_ENABLED=false by default )
+docker compose up -d
+
+# With metrics enabled
+docker compose --profile metrics up -d
+```
+
+To view prometheus metrics in a UI, you can use `http://localhost:9090` on your browser.
+
+To view grafana dashboard, you can use `http://localhost:3000` on your browser.
+
+By default, predefined metrics within a dashboard is populated in grafana.
+
+### Configuration Guidelines
+
+#### Recommended File Naming Conventions
+
+* Network configurations: `<network_type>_<network_name>.json`
+  * Example: `ethereum_mainnet.json`, `stellar_testnet.json`
+  * Should match the `slug` property inside the file
+* Monitor configurations: `<asset>_<action>_monitor.json`
+  * Example: `usdc_transfer_monitor.json`, `dai_liquidation_monitor.json`
+  * Referenced by monitors using their `name` property
+* Trigger configurations: `<type>_<purpose>.json`
+  * Example: `slack_notifications.json`, `email_alerts.json`
+  * Individual triggers referenced by their configuration key
+
+#### Configuration References
+
+* Monitor, network, and trigger names ***must be unique*** across all configurations files
+* Monitor’s `networks` array must contain valid network `slug` values from network configuration files
+* Monitor’s `triggers` array must contain valid trigger configuration keys
+* Example valid references:
+
+  ```json
+  // networks/ethereum_mainnet.json
+  {
+    "slug": "ethereum_mainnet",
+    ...
+  }
+
+  // triggers/slack_notifications.json
+  {
+    "large_transfer_slack": {
+      ...
+    }
+  }
+
+  // monitors/usdc_transfer_monitor.json
+  {
+    "networks": ["ethereum_mainnet"],
+    "triggers": ["large_transfer_slack"],
+    ...
+  }
+
+  ```
+
+<Callout type='warn'>
+
+
+Ensure all referenced slugs and trigger keys exist in their respective configuration files. The monitor will fail to start if it cannot resolve these references.
+
+</Callout>
+
+#### Safe Protocol Guidelines
+
+The monitor implements protocol security validations across different components and will issue warnings when potentially insecure configurations are detected. While insecure protocols are not blocked, we strongly recommend following these security guidelines:
+
+##### Network Protocols
+
+###### RPC URLs
+* **HTTPS Recommended**: Using `https://` for RPC endpoints is strongly recommended
+* **WSS Recommended**: For WebSocket connections, `wss://` (secure WebSocket) is strongly recommended
+* **Warning**: Using `http://` or `ws://` will trigger security warnings as they transmit data unencrypted
+
+##### Notification Protocols
+
+###### Webhook Notifications
+* **HTTPS Recommended**: URLs should use HTTPS protocol
+* **Authentication Recommended**: Including either:
+  * `X-API-Key` header
+  * `Authorization` header
+* **Optional Secret**: Can include a secret for HMAC authentication
+  * When a secret is provided, the monitor will:
+    * Generate a timestamp in milliseconds
+    * Create an HMAC-SHA256 signature of the payload and timestamp
+    * Add the signature in the `X-Signature` header
+    * Add the timestamp in the `X-Timestamp` header
+  * The signature is computed as: `HMAC-SHA256(secret, payload + timestamp)`
+* **Warning**: Non-HTTPS URLs or missing authentication headers will trigger security warnings
+
+###### Slack Notifications
+* **HTTPS Recommended**: Webhook URLs should start with `https://hooks.slack.com/`
+* **Warning**: Non-HTTPS URLs will trigger security warnings
+
+###### Discord Notifications
+* **HTTPS Recommended**: Webhook URLs should start with `https://discord.com/api/webhooks/`
+* **Warning**: Non-HTTPS URLs will trigger security warnings
+
+###### Telegram Notifications
+* ***Protocol:*** `POST` request with a `application/json` payload to the `sendMessage` method.
+* ***Endpoint:*** `https://api.telegram.org/bot<token>/sendMessage`
+* ***Security:***
+  * ***HTTPS Required:*** The API endpoint uses HTTPS.
+  * Authentication is handled via the ***Bot Token*** in the URL. Keep this token secure.
+* ***Formatting:*** Messages are sent with `parse_mode` set to `MarkdownV2`. Special characters in the message title and body are automatically escaped to prevent formatting errors.
+
+###### Email Notifications
+* **Secure Ports Recommended**: The following ports are considered secure:
+  * 465: SMTPS (SMTP over SSL)
+  * 587: SMTP with STARTTLS
+  * 993: IMAPS (IMAP over SSL)
+* **Warning**: Using other ports will trigger security warnings
+* **Valid Format**: Email addresses must follow RFC 5322 format
+
+###### Notifications Retry Policy
+
+Following notification protocols support retry policies:
+
+* Slack
+* Discord
+* Telegram
+* Webhook
+* Email
+
+Default retry policy is using exponential backoff with the following parameters:
+|     |     |     |
+| --- | --- | --- |
+| Parameter | Default Value | Description |
+| `max_retries` | `3` | Maximum number of retries before giving up |
+| `base_for_backoff` | `2` | Base duration for exponential backoff calculations in seconds |
+| `initial_backoff` | `250` | Initial backoff duration in milliseconds |
+| `max_backoff` | `10` | Maximum backoff duration in seconds |
+| `jitter` | `Full` | Jitter strategy to apply to the backoff duration, currently supports `Full` and `None` |
+
+These parameters can be overridden by providing custom `RetryConfig` struct in `retry_policy` field in trigger configuration.
+
+##### Script Security
+
+###### File Permissions (Unix Systems)
+* **Restricted Write Access**: Script files should not have overly permissive write permissions
+* **Recommended Permissions**: Use `644` (`rw-r--r--`) for script files
+* **Warning**: Files with mode `022` or more permissive will trigger security warnings
+
+**Example Setting Recommended Permissions**
+
+```bash
+chmod 644 ./config/filters/my_script.sh
+```
+
+#### Secret Management
+
+The monitor implements a secure secret management system with support for multiple secret sources and automatic memory zeroization.
+
+##### Secret Sources
+
+The monitor supports three types of secret sources:
+
+* **Plain Text**: Direct secret values (wrapped in `SecretString` for secure memory handling)
+* **Environment Variables**: Secrets stored in environment variables
+* **Hashicorp Cloud Vault**: Secrets stored in Hashicorp Cloud Vault
+
+##### Security Features
+
+* **Automatic Zeroization**: Secrets are automatically zeroized from memory when no longer needed
+* **Type-Safe Resolution**: Secure handling of secret resolution with proper error handling
+* **Configuration Support**: Serde support for configuration files
+
+##### Configuration
+
+Secrets can be configured in the JSON files using the following format:
+
+```json
+{
+  "type": "Plain",
+  "value": "my-secret-value"
+}
+```
+
+```json
+{
+  "type": "Environment",
+  "value": "MY_SECRET_ENV_VAR"
+}
+```
+
+```json
+{
+  "type": "HashicorpCloudVault",
+  "value": "my-secret-name"
+}
+```
+
+##### Hashicorp Cloud Vault Integration
+
+To use Hashicorp Cloud Vault, configure the following environment variables:
+
+| Environment Variable | Description |
+| --- | --- |
+| `HCP_CLIENT_ID` | Hashicorp Cloud Vault client ID |
+| `HCP_CLIENT_SECRET` | Hashicorp Cloud Vault client secret |
+| `HCP_ORG_ID` | Hashicorp Cloud Vault organization ID |
+| `HCP_PROJECT_ID` | Hashicorp Cloud Vault project ID |
+| `HCP_APP_NAME` | Hashicorp Cloud Vault application name |
+
+##### Best Practices
+
+* Use environment variables or vault for production secrets
+* Avoid storing plain text secrets in configuration files
+* Use appropriate access controls for vault secrets
+* Monitor vault access patterns for suspicious activity
+
+#### Basic Configuration
+
+* Set up environment variables:
+
+Copy the example environment file and update values according to your needs
+
+```bash
+cp .env.example .env
+```
+
+This table lists the environment variables and their default values.
+
+| Environment Variable | Default Value | Accepted Values | Description |
+| --- | --- | --- | --- |
+| `RUST_LOG` | `info` | `info, debug, warn, error, trace` | Log level. |
+| `LOG_MODE` | `stdout` | `stdout, file` | Write logs either to console or to file. |
+| `LOG_DATA_DIR` | `logs/` | `<any file path>` | Directory to write log files on host. |
+| `MONITOR_DATA_DIR` | `null` | `<any file path>` | Persist monitor data between container restarts. |
+| `LOG_MAX_SIZE` | `1073741824` | `<size in bytes or human-readable format (e.g., "1GB", "500MB")>` | Size after which logs needs to be rolled. Accepts both raw bytes (e.g., "1073741824") or human-readable formats (e.g., "1GB", "500MB"). |
+| `METRICS_ENABLED` | `false` | `true`, `false` | Enable metrics server for external tools to scrape metrics. |
+| `METRICS_PORT` | `8081` | `<any tcp port (preferably choose non-privileged ports i.e. (1024-65535))>` | Port to use for metrics server. |
+| `HCP_CLIENT_ID` | - | `<string>` | Hashicorp Cloud Vault client ID for secret management. |
+| `HCP_CLIENT_SECRET` | - | `<string>` | Hashicorp Cloud Vault client secret for secret management. |
+| `HCP_ORG_ID` | - | `<string>` | Hashicorp Cloud Vault organization ID for secret management. |
+| `HCP_PROJECT_ID` | - | `<string>` | Hashicorp Cloud Vault project ID for secret management. |
+| `HCP_APP_NAME` | - | `<string>` | Hashicorp Cloud Vault application name for secret management. |
+* Copy and configure some example files:
+
+```bash
+# EVM Configuration
+cp examples/config/monitors/evm_transfer_usdc.json config/monitors/evm_transfer_usdc.json
+cp examples/config/networks/ethereum_mainnet.json config/networks/ethereum_mainnet.json
+
+# Stellar Configuration
+cp examples/config/monitors/stellar_swap_dex.json config/monitors/stellar_swap_dex.json
+cp examples/config/networks/stellar_mainnet.json config/networks/stellar_mainnet.json
+
+# Notification Configuration
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
+cp examples/config/triggers/email_notifications.json config/triggers/email_notifications.json
+
+# Filter Configuration
+cp examples/config/filters/evm_filter_block_number.sh config/filters/evm_filter_block_number.sh
+cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar_filter_block_number.sh
+```
+### Command Line Options
+
+The monitor supports several command-line options for configuration and control:
+
+| **Option** | **Default** | **Description** |
+| --- | --- | --- |
+| `**--log-file**` | `false` | Write logs to file instead of stdout |
+| `**--log-level**` | `info` | Set log level (trace, debug, info, warn, error) |
+| `**--log-path**` | `logs/` | Path to store log files |
+| `**--log-max-size**` | `1GB` | Maximum log file size before rolling |
+| `**--metrics-address**` | `127.0.0.1:8081` | Address to start the metrics server on |
+| `**--metrics**` | `false` | Enable metrics server |
+| `**--monitor-path**` | - | Path to the monitor to execute (for testing) |
+| `**--network**` | - | Network to execute the monitor for (for testing) |
+| `**--block**` | - | Block number to execute the monitor for (for testing) |
+| `**--check**` | `false` | Validate configuration files without starting the service |
+
+## Data Storage Configuration
+
+The monitor uses file-based storage by default.
+
+### File Storage
+
+When `store_blocks` is enabled in the network configuration, the monitor stores:
+
+* Processed blocks: `./data/<network_slug>_blocks_<timestamp>.json`
+* Missed blocks: `./data/<network_slug>_missed_blocks.txt` (used to store missed blocks)
+
+The content of the `missed_blocks.txt` file may help to determine the right `max_past_blocks` value based on the network’s block time and the monitor’s cron schedule.
+
+Additionally, the monitor will always store:
+
+* Last processed block: `./data/<network_slug>_last_block.txt` (enables resuming from last checkpoint)
+
+## Configuration Files
+
+### Network Configuration
+
+A Network configuration defines connection details and operational parameters for a specific blockchain network, supporting both EVM and Stellar-based chains.
+
+**Example Network Configuration**
+
+```json
+{
+  "network_type": "Stellar",
+  "slug": "stellar_mainnet",
+  "name": "Stellar Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "https://soroban.stellar.org"
+      },
+      "weight": 100
+    }
+  ],
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "block_time_ms": 5000,
+  "confirmation_blocks": 2,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 20,
+  "store_blocks": true
+}
+```
+
+#### Available Fields
+
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**network_type**` | `String` | Type of blockchain (**"EVM"** or **"Stellar"**) |
+| `**slug**` | `String` | **Required** - **_Unique_** identifier for the network |
+| `**name**` | `String` | **Required** - **_Unique_** Human-readable network name |
+| `**rpc_urls**` | `Array[Object]` | List of RPC endpoints with weights for load balancing |
+| `**chain_id**` | `Number` | Network chain ID (**EVM only**) |
+| `**network_passphrase**` | `String` | Network identifier (**Stellar only**) |
+| `**block_time_ms**` | `Number` | Average block time in milliseconds |
+| `**confirmation_blocks**` | `Number` | Number of blocks to wait for confirmation |
+| `**cron_schedule**` | `String` | Monitor scheduling in cron format |
+| `**max_past_blocks**` | `Number` | Maximum number of past blocks to process |
+| `**store_blocks**` | `Boolean` | Whether to store processed blocks (defaults output to `./data/` directory) |
+
+#### Important Considerations
+
+* We strongly recommend using private RPC providers for improved reliability.
+
+### Trigger Configuration
+
+A Trigger defines actions to take when monitored conditions are met. Triggers can send notifications, make HTTP requests, or execute scripts.
+
+**Example Trigger Configuration**
+
+```json
+{
+  "evm_large_transfer_usdc_slack": {
+    "name": "Large Transfer Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/A/B/C"
+      },
+      "message": {
+        "title": "${monitor.name} triggered",
+        "body": "Large transfer of ${events.0.args.value} USDC from ${events.0.args.from} to ${events.0.args.to} | https://etherscan.io/tx/${transaction.hash}#eventlog"
+      }
+    }
+  },
+  "stellar_large_transfer_usdc_slack": {
+    "name": "Large Transfer Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "environment",
+        "value": "SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": "large_transfer_usdc_slack triggered",
+        "body": "${monitor.name} triggered because of a large transfer of ${functions.0.args.amount} USDC to ${functions.0.args.to} | https://stellar.expert/explorer/testnet/tx/${transaction.hash}"
+      }
+    }
+  }
+}
+```
+
+#### Trigger Types
+
+##### Slack Notifications
+```json
+{
+  "slack_url": {
+    "type": "HashicorpCloudVault",
+    "value": "slack-webhook-url"
+  },
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction.hash}"
+  }
+}
+```
+
+##### Slack Notification Fields
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**name**` | `String` | **Required** - **_Unique_** Human-readable name for the notification |
+| `**trigger_type**` | `String` | Must be **"slack"** for Slack notifications |
+| `**config.slack_url.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
+| `**config.slack_url.value**` | `String` | Secret value (URL, environment variable name, or vault secret name) |
+| `**config.message.title**` | `String` | Title that appears in the Slack message |
+| `**config.message.body**` | `String` | Message template with variable substitution |
+
+##### Email Notifications
+```json
+{
+  "host": "smtp.gmail.com",
+  "port": 465,
+  "username": {
+    "type": "plain",
+    "value": "sender@example.com"
+  },
+  "password": {
+    "type": "environment",
+    "value": "SMTP_PASSWORD"
+  },
+  "message": {
+    "title": "Alert Subject",
+    "body": "Alert message for ${transaction.hash}",
+  },
+  "sender": "sender@example.com",
+  "recipients": ["recipient@example.com"]
+}
+```
+
+##### Email Notification Fields
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**name**` | `String` | **Required** - **_Unique_** Human-readable name for the notification |
+| `**trigger_type**` | `String` | Must be **"email"** for email notifications |
+| `**config.host**` | `String` | SMTP server hostname |
+| `**config.port**` | `Number` | SMTP port (defaults to **465**) |
+| `**config.username.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
+| `**config.username.value**` | `String` | Secret value (username, environment variable name, or vault secret name) |
+| `**config.password.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
+| `**config.password.value**` | `String` | Secret value (password, environment variable name, or vault secret name) |
+| `**config.message.title**` | `String` | Email subject line |
+| `**config.message.body**` | `String` | Email body template with variable substitution |
+| `**config.sender**` | `String` | Sender email address |
+| `**config.recipients**` | `Array[String]` | List of recipient email addresses |
+
+##### Webhook Notifications
+```json
+{
+  "url": {
+    "type": "HashicorpCloudVault",
+    "value": "webhook-url"
+  },
+  "method": "POST",
+  "secret": {
+    "type": "environment",
+    "value": "WEBHOOK_SECRET"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction.hash}"
+  }
+}
+```
+
+##### Webhook Notification Fields
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**name**` | `String` | **Required** - **_Unique_** Human-readable name for the notification |
+| `**trigger_type**` | `String` | Must be **"webhook"** for webhook notifications |
+| `**config.url.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
+| `**config.url.value**` | `String` | Secret value (URL, environment variable name, or vault secret name) |
+| `**config.method**` | `String` | HTTP method (POST, GET, etc.) defaults to POST |
+| `**config.secret.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
+| `**config.secret.value**` | `String` | Secret value (HMAC secret, environment variable name, or vault secret name) |
+| `**config.headers**` | `Object` | Headers to include in the webhook request |
+| `**config.message.title**` | `String` | Title that appears in the webhook message |
+| `**config.message.body**` | `String` | Message template with variable substitution |
+
+##### Discord Notifications
+```json
+{
+  "discord_url": {
+    "type": "plain",
+    "value": "https://discord.com/api/webhooks/123-456-789"
+  },
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction.hash}"
+  }
+}
+```
+
+##### Discord Notification Fields
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**name**` | `String` | **Required** - **_Unique_** Human-readable name for the notification |
+| `**trigger_type**` | `String` | Must be **"discord"** for Discord notifications |
+| `**config.discord_url.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
+| `**config.discord_url.value**` | `String` | Secret value (URL, environment variable name, or vault secret name) |
+| `**config.message.title**` | `String` | Title that appears in the Discord message |
+| `**config.message.body**` | `String` | Message template with variable substitution |
+
+##### Telegram Notifications
+```json
+{
+  "token": {
+    "type": "HashicorpCloudVault",
+    "value": "telegram-bot-token"
+  },
+  "chat_id": "9876543210",
+  "message": {
+    "title": "Alert Title",
+    "body": "Alert message for ${transaction.hash}"
+  }
+}
+```
+
+##### Telegram Notification Fields
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**name**` | `String` | **Required** - **_Unique_** Human-readable name for the notification |
+| `**trigger_type**` | `String` | Must be **"telegram"** for Telegram notifications |
+| `**config.token.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
+| `**config.token.value**` | `String` | Secret value (bot token, environment variable name, or vault secret name) |
+| `**config.chat_id**` | `String` | Telegram chat ID |
+| `**config.disable_web_preview**` | `Boolean` | Whether to disable web preview in Telegram messages (defaults to false) |
+| `**config.message.title**` | `String` | Title that appears in the Telegram message |
+| `**config.message.body**` | `String` | Message template with variable substitution |
+
+##### Custom Script Notifications
+```json
+{
+  "language": "Bash",
+  "script_path": "./config/triggers/scripts/custom_notification.sh",
+  "arguments": ["--verbose"],
+  "timeout_ms": 1000
+}
+```
+
+##### Script Notification Fields
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**name**` | `String` | **Required** - **_Unique_** Human-readable name for the notification |
+| `**trigger_type**` | `String` | Must be **"script"** for Custom Script notifications |
+| `**language**` | `String` | The language of the script |
+| `**script_path**` | `String` | The path to the script |
+| `**arguments**` | `Array[String]` | The arguments of the script (optional). |
+| `**timeout_ms**` | `Number` | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed. |
+
+For more information about custom scripts, see [Custom Scripts Section](/monitor/1.1.x/scripts).
+
+
+
+***Security Risk***: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
+
+
+#### Available Template Variables
+
+The monitor uses a structured JSON format with nested objects for template variables. The data is flattened into dot notation for template use.
+
+##### Common Variables
+| **Variable** | **Description** |
+| --- | --- |
+| `**monitor.name**` | Name of the triggered monitor |
+| `**transaction.hash**` | Hash of the transaction |
+| `**functions**` | All functions matched and their parameters |
+| `**events**` | All events matched and their parameters |
+
+##### Network-Specific Variables
+
+###### EVM Variables
+| **Variable** | **Description** |
+| --- | --- |
+| `**transaction.from**` | Sender address |
+| `**transaction.to**` | Recipient address |
+| `**transaction.value**` | Transaction value |
+| `**events.[index].signature**` | Event signature |
+| `**events.[index].args.[param]**` | Event parameters by name |
+| `**functions.[index].signature**` | Function signature |
+| `**functions.[index].args.[param]**` | Function parameters by name |
+
+###### Stellar Variables
+| **Variable** | **Description** |
+| --- | --- |
+| `**events.[index].args.[position]**` | Event parameters by position |
+| `**events.[index].args.[param]**` | Event parameters by name (only in case the contract supports event parameters name) |
+| `**functions.[index].args.[param]**` | Function parameters by name |
+
+<Callout>
+
+
+Transaction-related variables (`transaction.from`, `transaction.to`, `transaction.value`) are not available for Stellar networks.
+
+</Callout>
+
+#### Message Formatting
+
+Slack, Discord, Telegram, Email and Webhook support Markdown formatting in their message bodies. You can use Markdown syntax to enhance your notifications.
+
+##### Example Email Notification with Markdown
+```json
+{
+  "email_notification": {
+    "name": "Formatted Alert",
+    "trigger_type": "email",
+    "config": {
+      "host": "smtp.example.com",
+      "port": 465,
+      "username": {"type": "plain", "value": "alerts@example.com"},
+      "password": {"type": "plain", "value": "password"},
+      "message": {
+        "title": "**High Value Transfer Alert**",
+        "body": "### Transaction Details\n\n* **Amount:** ${events.0.args.value} USDC\n* **From:** `${events.0.args.from}`\n* **To:** `${events.0.args.to}`\n\n> Transaction Hash: ${transaction.hash}\n\n[View on Explorer](https://etherscan.io/tx/${transaction.hash})"
+      },
+      "sender": "alerts@example.com",
+      "recipients": ["recipient@example.com"]
+    }
+  }
+}
+```
+
+##### Example Slack Notification with Markdown
+```json
+{
+  "slack_notification": {
+    "name": "Formatted Alert",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {"type": "plain", "value": "https://hooks.slack.com/services/XXX/YYY/ZZZ"},
+      "message": {
+        "title": "*🚨 High Value Transfer Alert*",
+        "body": "*Transaction Details*\n\n• *Amount:* `${events.0.args.value}` USDC\n• *From:* `${events.0.args.from}`\n• *To:* `${events.0.args.to}`\n\n>Transaction Hash: `${transaction.hash}`\n\n<https://etherscan.io/tx/${transaction.hash}|View on Explorer>"
+      }
+    }
+  }
+}
+```
+
+##### Example Discord Notification with Markdown
+```json
+{
+  "discord_notification": {
+    "name": "Formatted Alert",
+    "trigger_type": "discord",
+    "config": {
+      "discord_url": {"type": "plain", "value": "https://discord.com/api/webhooks/XXX/YYY"},
+      "message": {
+        "title": "**🚨 High Value Transfer Alert**",
+        "body": "# Transaction Details\n\n* **Amount:** `${events.0.args.value}` USDC\n* **From:** `${events.0.args.from}`\n* **To:** `${events.0.args.to}`\n\n>>> Transaction Hash: `${transaction.hash}`\n\n**[View on Explorer](https://etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}
+```
+
+##### Example Telegram Notification with Markdown
+```json
+{
+  "telegram_notification": {
+    "name": "Formatted Alert",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {"type": "plain", "value": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
+      "chat_id": "9876543210",
+      "message": {
+        "title": "*🚨 High Value Transfer Alert*",
+        "body": "*Transaction Details*\n\n• *Amount:* `${events.0.args.value}` USDC\n• *From:* `${events.0.args.from}`\n• *To:* `${events.0.args.to}`\n\n`Transaction Hash: ${transaction.hash}`\n\n[View on Explorer](https://etherscan.io/tx/${transaction.hash})"
+      }
+    }
+  }
+}
+```
+
+#### Important Considerations
+
+* Email notification port defaults to 465 if not specified.
+* Template variables are context-dependent:
+  * Event-triggered notifications only populate event variables.
+  * Function-triggered notifications only populate function variables.
+  * Mixing contexts results in empty values.
+* Credentials in configuration files should be properly secured.
+* Consider using environment variables for sensitive information.
+
+### Monitor Configuration
+
+A Monitor defines what blockchain activity to watch and what actions to take when conditions are met. Each monitor combines:
+
+* Network targets (which chains to monitor)
+* Contract addresses to watch
+* Conditions to match (functions, events, transactions)
+* Trigger conditions (custom scripts that act as filters for each monitor match to determine whether a trigger should be activated).
+* Triggers to execute when conditions are met
+
+**Example Monitor Configuration**
+
+```json
+{
+  "name": "Large USDC Transfers",
+  "networks": ["ethereum_mainnet"],
+  "paused": false,
+  "addresses": [
+    {
+      "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "contract_spec": [ ... ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "transfer(address,uint256)",
+        "expression": "value > 1000000"
+      }
+    ],
+    "events": [
+      {
+        "signature": "Transfer(address,address,uint256)",
+        "expression": "value > 1000000"
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": "value > 1500000000000000000"
+      }
+    ]
+  },
+  "trigger_conditions": [
+    {
+      "script_path": "./config/filters/evm_filter_block_number.sh",
+      "language": "bash",
+      "arguments": "--verbose",
+      "timeout_ms": 1000
+    }
+  ],
+  "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
+}
+```
+
+#### Available Fields
+
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**name**` | `String` | **Required** - **_Unique_** identifier for this monitor |
+| `**networks**` | `Array[String]` | List of network slugs this monitor should watch |
+| `**paused**` | `Boolean` | Whether this monitor is currently paused |
+| `**addresses**` | `Array[Object]` | Contract addresses to monitor with optional ABIs |
+| `**match_conditions**` | `Object` | Collection of conditions that can trigger the monitor |
+| `**trigger_conditions**` | `Array[Object]` | Collection of filters to apply to monitor matches before executing triggers |
+| `**triggers**` | `Array[String]` | IDs of triggers to execute when conditions match |
+
+#### Match Conditions
+
+Monitors support three types of match conditions that can be combined:
+
+##### Function Conditions
+Match specific function calls to monitored contracts:
+
+```json
+{
+  "functions": [
+    {
+      "signature": "transfer(address,uint256)",
+      "expression": "value > 1000"
+    }
+  ]
+}
+```
+
+##### Event Conditions
+Match events emitted by monitored contracts:
+
+```json
+{
+  "events": [
+    {
+      "signature": "Transfer(address,address,uint256)",
+      "expression": "value > 1000000"
+    }
+  ]
+}
+```
+
+##### Transaction Conditions
+Match transaction properties. The available fields and expression syntax depend on the network type (EVM/Stellar)
+
+```json
+{
+  "transactions": [
+    {
+      "status": "Success", // Only match successful transactions
+      "expression": "value > 1500000000000000000" // Match transactions with value greater than 1.5 ETH
+    }
+  ]
+}
+```
+
+#### Available Transaction Fields (EVM)
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**value**` | `uint256` | Transaction value in wei |
+| `**from**` | `address` | Sender address (case-insensitive comparison) |
+| `**to**` | `address` | Recipient address (case-insensitive comparison) |
+| `**hash**` | `string` | Transaction hash |
+| `**gas_price**` | `uint256` | Gas price in wei (legacy transactions) |
+| `**max_fee_per_gas**` | `uint256` | EIP-1559 maximum fee per gas |
+| `**max_priority_fee_per_gas**` | `uint256` | EIP-1559 priority fee |
+| `**gas_limit**` | `uint256` | Gas limit for transaction |
+| `**nonce**` | `uint256` | Sender nonce |
+| `**input**` | `string` | Hex-encoded input data (e.g., **"0xa9059cbb..."**) |
+| `**gas_used**` | `uint256` | Actual gas used (from receipt) |
+| `**transaction_index**` | `uint64` | Position in block |
+
+#### Available Transaction Fields (Stellar)
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**hash**` | `string` | Transaction hash |
+| `**ledger**` | `i64` | Ledger sequence number where the transaction was included |
+| `**value**` | `i64` | Value associated with the **first** relevant operation (e.g., payment amount). Defaults to 0 if no relevant operation or value is found. |
+| `**from**` | `address` | Source account address of the **first** relevant operation (e.g., payment sender). Case-insensitive comparison. |
+| `**to**` | `address` | Destination account address of the **first** relevant operation (e.g., payment recipient or invoked contract). Case-insensitive comparison. |
+
+#### Matching Rules
+
+* If no conditions are specified, all transactions match
+* For multiple condition types:
+  * Transaction conditions are checked first
+  * Then either function OR event conditions must match
+  * Both transaction AND (function OR event) must match if both specified
+
+### Expressions
+
+Expressions allow for condition checking of function arguments, event parameters, and transaction fields.
+
+**Supported Parameter/Field Types and Basic Operations:**
+
+| Type | Description | Example Operators | Notes |
+| --- | --- | --- | --- |
+| `**Numeric (uint/int variants)**` | Integer values (e.g., `42`, `-100`) or decimal values (e.g., `3.14`, `-0.5`). | `>`, `>=`, `<`, `<=`, `==`, `!=` | Numbers must have digits before and after a decimal point if one is present (e.g., `.5` or `5.` are not valid standalone numbers). |
+| `**Address**` | Blockchain addresses. | `==`, `!=` | Comparisons (e.g., `from == '0xABC...'`) are typically case-insensitive regarding the hex characters of the address value itself. |
+| `**String**` | Text values. Can be single-quoted (e.g., ’hello'`) or, on the right-hand side of a comparison, unquoted (e.g., `active`). | `==`, `!=`, `starts_with`, `ends_with`, `contains` | Quoted strings support `\'` to escape a single quote and `\\` to escape a backslash. All string comparison operations (e.g., `name == 'Alice'`, `description contains 'error'`) are performed case-insensitively during evaluation. See the dedicated "String Operations" section for more examples and details. |
+| `**Boolean**` | True or false values. | `==`, `!=` | Represented as `true` or `false`. These keywords are parsed case-insensitively (e.g., `TRUE`, `False` are also valid in expressions). |
+| `**Hex String Literal**` | A string literal starting with `0x` or `0X` followed by hexadecimal characters (0-9, a-f, A-F). | `==`, `!=`, `starts_with`, `ends_with`, `contains` | Treated as a string for comparison purposes (e.g., `input_data starts_with '0xa9059cbb'`). Comparison is case-sensitive for the hex characters after `0x`. |
+| `**Array (EVM/Stellar)**` | Ordered list of items. For Stellar, often a JSON string in config (e.g., ’["a", "id":1]'`). For EVM, typically decoded from ABI parameters. | `contains`, `==`, `!=`, `[index]` | Detailed operations, including indexed access and behavior of `contains`, vary by network. See "Operations on Complex Types" below. |
+| `**Object/Map (Stellar)**` | Key-value pairs, typically represented as a JSON string in config (e.g., ’"key": "value", "id": 123'`). | `.key_access`, `==`, `!=` | Supports dot notation for field access (e.g., `data.id`). See "Operations on Complex Types" for details. |
+| `**Vec (Stellar)**` | Ordered list, where the parameter’s value can be a CSV string (e.g., `"foo,bar"`) or a JSON array string (e.g., ’["foo","bar"]'`). | `contains`, `==`, `!=` | Behavior of `contains` and `==` differs based on whether the value is CSV or a JSON array string. See "Operations on Complex Types" for details. |
+| `**Tuple (EVM)**` | Ordered list represented as a JSON array string (e.g., ’["Alice", 0x1234..., 25, true, [12,34]]'`). | `contains`, `==`, `!=` | The `contains` operation performs a case-insensitive deep search through all tuple elements. `==` and `!=` perform comparisons against the entire tuple values. See "Operations on Complex Types" for details. |
+
+**Logical Operators:**
+
+* AND - All conditions must be true
+* OR - At least one condition must be true
+* () - Parentheses for grouping
+* AND has higher precedence than OR (i.e., AND operations are evaluated before OR operations if not grouped by parentheses)
+
+**Variable Naming and Access (Left-hand side of conditions):**
+
+The left-hand side (LHS) of a condition specifies the data field or parameter whose value you want to evaluate.
+
+**Base Names:**
+
+* These are the direct names of parameters or fields, such as `amount`, `from`, `status`, or event parameter indices like `0`, `1` (common in Stellar events).
+* Base names can consist of alphanumeric characters (a-z, A-Z, 0-9) and underscores (`_`).
+* They can start with a letter, an underscore, or a digit. Starting with a digit is primarily relevant for numerically indexed parameters (e.g., Stellar event parameters).
+* **Important:** Variable names are case-sensitive during evaluation. The name used in the expression must exactly match the casing of the field name in the source data (e.g., from an ABI or blockchain data structure). For example, if a field is named `TotalValue` in the data, an expression using `totalvalue` will not find it.
+* Variable names cannot be keywords (e.g., `true`, `AND`, `OR`, `contains`). Keywords themselves are parsed case-insensitively.
+
+**Path Accessors (for complex types):**
+
+If a base parameter is a complex type like an object, map, or array, you can access its internal data using accessors:
+
+**Key Access:** Use dot notation (`.`) to access properties of an object or map.
+
+* Examples: `transaction.value`, `user.name`, `data.0` (if `0` is a valid key name as a string).
+* Keys typically consist of alphanumeric characters and underscores. They usually start with a letter or underscore, but purely numeric keys (e.g., `.0`, `.123`) are also supported for map-like structures where keys might be strings representing numbers.
+* Keys cannot contain hyphens (`-`).
+
+**Index Access:** Use bracket notation (`[]`) to access elements of an array by their zero-based integer index.
+
+* Examples: `my_array[0]`, `log_entries[3]`.
+* The index must be a non-negative integer.
+
+**Combined Access:** You can combine key and index accessors to navigate nested structures.
+
+* Example: `event.data_array[0].property` (accesses the `property` field of the first object in `data_array`, which is part of `event`).
+* Example: `map.numeric_key_as_string_0[1].name` (accesses the `name` property of the second element of an array stored under the key `0` in `map`).
+
+**String Operations:**
+
+Several operators are available for matching patterns and comparing string values. These are particularly useful for EVM transaction `input` data, Stellar parameters defined with `kind: "string"`, or any other field that contains text.
+
+* `string_param starts_with 'prefix'`::
+  Checks if the string parameter’s value begins with the specified `prefix`.
+  Example: `transaction.input starts_with '0xa9059cbb'` (checks for ERC20 transfer function selector).
+* `string_param ends_with 'suffix'`::
+  Checks if the string parameter’s value ends with the specified `suffix`.
+  Example: `file_name ends_with '.txt'`
+* `string_param contains 'substring'`::
+  Checks if the string parameter’s value contains the specified `substring` anywhere within it.
+  Example: `message contains 'error'`
+* `string_param == 'exact_string'`::
+  Checks if the string parameter’s value is exactly equal to `exact_string`.
+* `string_param != 'different_string'`::
+  Checks if the string parameter’s value is not equal to `different_string`.
+
+**Important Notes on String Operations:**
+
+* **Operator Keywords:** The operator keywords themselves (`starts_with`, `ends_with`, `contains`, `AND`, `OR`, `true`, `false`, comparison symbols like `==`, `>`) are parsed case-insensitively. For example, `CONTAINS` is treated the same as `contains`, and `TRUE` is the same as `true`.
+* **Case-Insensitive Evaluation for String Comparisons:** When comparing string data (e.g., from event parameters, transaction fields, or function arguments) with literal string values in your expression, all standard string operations perform a ***case-insensitive*** comparison during evaluation.
+  * Equality (`==`) and Inequality (`!=`)
+  * Pattern matching (`starts_with`, `ends_with`, `contains`)
+* **Variable Name Case Sensitivity:** It is important to distinguish this from variable names (the left-hand side of your condition, e.g., `status`). Variable names **are** case-sensitive and must exactly match the field names in your source data (ABI, etc.).
+
+**Whitespace Handling:**
+Flexible whitespace is generally allowed around operators, parentheses, and keywords for readability. However, whitespace within quoted string literals is significant and preserved.
+
+#### Operations on Complex Types
+
+Beyond simple primitive types, expressions can also interact with more complex data structures like arrays, objects, and vectors.
+
+##### EVM Specifics
+
+**Array Operations (`kind: "array"`)**
+
+When an EVM parameter is an array (often represented internally or configured with `kind: "array"` and its value being a JSON string representation if manually configured), the following operations are supported:
+
+* `array_param contains 'value'` checks if the string ’value'` exists within the array.
+* `array_param == '["raw_json_array_string"]'` string comparison of the array’s entire JSON string representation against the provided string
+* `array_param != '["raw_json_array_string"]'` the negation of the above
+* `array_param[0]` indexed access
+
+**Tuple Operations (`kind: "tuple"`)**
+
+* `tuple_param contains 'value'` checks if the string ’value'` exists within the tuple.
+* `tuple_param == (12, "hello", "testing", 34)` checks if the tuple is equal.
+* `tuple_param != (12, "hello", "testing", 34)` checks if the tuple is not equal.
+
+Where `tuple_param` is the name of tuple param (we should have only one param for tuples).
+
+**Note on Solidity Structs:** When working with Solidity smart contracts, struct types are automatically converted to tuples during ABI encoding/decoding. For example, a Solidity struct like:
+
+```solidity
+struct User {
+    uint256 id;
+    string name;
+    string email;
+    uint256 age;
+}
+```
+
+Will be represented as a tuple `**(12, "user_name", "user_email", 34)**` where the values correspond to the struct fields in their declaration order. This conversion is handled transparently by the Solidity compiler and Web3 libraries, allowing you to use the tuple operations above to work with struct data returned from smart contract calls.
+
+##### Stellar Specifics
+
+**Object (`kind: "object"`) / Map (`kind: "Map"`) Operations**
+
+* `object_param.key == 'value'` checks if the object or map has a key named `key` with the value ’value'`.
+* `object_param.nested_key.another_key > 100` checks if the nested key `another_key` within `nested_key` has a value greater than 100.
+* `object_param == '"raw_json_object_string"'` checks if the object or map matches the provided JSON string representation.
+* `object_param != '"raw_json_object_string"'` the negation of the above
+
+**Array (`kind: "array"`) Operations**
+
+* `array_param[index]` accesses the element at the specified `index` in the array.
+* `array_param[0] == 'value'` checks if the first element in the array is equal to ’value'`.
+* `array_param[1].property == 'value'` checks if the second element in the array has a property named `property` with the value ’value'`.
+* `array_param contains 'value'` checks if the array contains the string ’value'`.
+* `array_param == '["raw_json_array_string"]'` checks if the array matches the provided JSON string representation.
+* `array_param != '["raw_json_array_string"]'` the negation of the above
+
+**Vector (`kind: "vec"`) Operations**
+When a Stellar parameter has `kind: "vec"`, its value can be either a CSV string or a JSON array string.
+
+* `vec_param contains 'item'` checks if the vector contains the string ’item'`. This works for both CSV and JSON array strings.
+* `vec_param == 'raw_string_value'` checks if the vector matches the provided raw string value. This works for both CSV and JSON array strings.
+* `vec_param != 'raw_string_value'` the negation of the above
+
+**Event Parameter Access (Stellar)**
+
+Starting with Stellar Protocol 23, Soroban contracts can include event definitions in their contract specifications. This enables two ways to access event parameters:
+
+**Access by Name (Protocol 23+):**
+When a contract specification includes event definitions, you can access event parameters by their defined names:
+
+* If an event has a parameter named `recipient` (kind: "Address"):
+  * `recipient == 'GBBD...ABCD'`
+* If an event has a parameter named `amount` (kind: "U128"):
+  * `amount > 1000000`
+* If an event has a parameter named `metadata` (kind: "Map") containing ’"id": 123, "name": "Test"'`:
+  * `metadata.id == 123`
+  * `metadata.name contains 'test'` (case-insensitive)
+* If an event has a parameter named `items` (kind: "array") containing ’["alpha", "beta"]'`:
+  * `items contains 'beta'` (case-insensitive deep search)
+
+**Access by Index (Legacy):**
+For contracts without event definitions in their specification, or when working with older contracts, event parameters can be accessed by their numeric index (e.g., `0`, `1`, `2`):
+
+* If event parameter `0` (kind: "Map") is ’"id": 123, "name": "Test"'`:
+  * `0.id == 123`
+  * `0.name contains 'est'` (case-insensitive)
+* If event parameter `1` (kind: "array") is ’["alpha", "val": "beta"]'`:
+  * `1[0] == 'ALPHA'` (case-insensitive)
+  * `1[1].val == 'Beta'` (case-insensitive)
+  * `1 contains 'beta'` (case-insensitive deep search)
+
+
+
+Named access is recommended when available as it makes expressions more readable and maintainable. The monitor will automatically use named parameters if they’re available in the contract specification, otherwise it falls back to indexed access.
+
+
+##### EVM Examples
+
+These examples assume common EVM event parameters or transaction fields.
+
+**Basic Comparisons**
+
+```json
+// Numeric
+"transaction.value > 1000000000000000000" // Value greater than 1 ETH
+"event.amount <= 500"
+"block.number == 12345678"
+
+// String (case-insensitive evaluation for '==' and 'contains')
+"transaction.to == '0xdeadbeef...'" // Address check (address value comparison itself is case-insensitive)
+"event.token_name == 'mytoken'"
+"transaction.input contains 'a9059cbb'" // Checks for ERC20 transfer selector
+
+// Boolean
+"receipt.status == true" // or simply "receipt.status" if boolean field can be evaluated directly
+"event.isFinalized == false"
+```
+
+**Logical Operators**
+
+```json
+"transaction.value > 1000 AND event.type == 'Deposit'"
+"(receipt.status == true OR event.fallback_triggered == true) AND user.is_whitelisted == false"
+```
+
+**String Operations**
+
+```json
+"transaction.input starts_with '0xa9059cbb'" // Case-insensitive for the operation
+"event.message ends_with 'failed'"
+"event.details contains 'critical alert'"
+```
+
+**Array Operations**
+
+Assume `event.ids` is `[10, 20, 30]` and `event.participants` is `["user": "Alice", "role": "admin", "user": "Bob", "role": "editor"]`.
+```json
+"event.ids[0] == 10"
+"event.ids contains '20'" // Checks for string '20' (case-insensitive)
+
+"event.participants contains 'Alice'"  // True (deep search, case-insensitive)
+"event.participants contains 'editor'" // True (deep search, case-insensitive)
+"event.participants == '[{\"user\": \"Alice\", \"role\": \"admin\"}, {\"user\": \"Bob\", \"role\": \"editor\"}]'" // Raw JSON match (case-sensitive for structure and keys)
+```
+
+##### Stellar Examples
+
+**Basic Comparisons**
+
+```json
+// Numeric
+"event.params.amount > 10000000" // Accessing 'amount' field in an object 'params'
+"ledger.sequence >= 123456"
+
+// String (case-insensitive evaluation for '==' and 'contains')
+"event.params.recipient == 'GBD22...'" // Address check
+"event.type == 'payment_processed'"
+
+// Boolean
+"transaction.successful == true"
+"event.data.is_verified == false"
+```
+
+**Logical Operators**
+
+```json
+"event.data.value > 500 AND event.source_account == 'GCA7Z...'"
+"(event.type == 'TRANSFER' OR event.type == 'PAYMENT') AND event.params.asset_code == 'XLM'"
+```
+
+**String Operations**
+
+```json
+"event.contract_id starts_with 'CA23...'"
+"event.memo ends_with '_TEST'"
+"event.params.description contains 'urgent'"
+```
+
+**Object (`kind: "object"`) / Map (`kind: "Map"`) Operations**
+
+Assume `event.details` (kind: "Map") is ’"id": 123, "user": "name": "CHarlie", "status": "Active", "tags": ["new"]'`.
+```json
+"event.details.id == 123"
+"event.details.user.name == 'charlie'"  // Case-insensitive string comparison
+"event.details.user.status contains 'act'" // Case-insensitive contains
+"event.details.tags == '[\"new\"]'" // Raw JSON string match for the 'tags' field
+```
+
+**Array (`kind: "array"`) Operations**
+
+Assume `event.items` (kind: "array") is ’["sku": "A1", "qty": 10, "sku": "B2", "qty": 5, "notes":"Rush order"]'`.
+```json
+"event.items[0].sku == 'a1'"
+"event.items[1].qty < 10"
+"event.items contains 'A1'"       // Deep search (case-insensitive)
+"event.items contains 'rush order'" // Deep search (case-insensitive)
+```
+
+**Vector (`kind: "vec"`) Operations**
+
+Assume `csv_data` (kind: "vec") is `"ALPHA,Bravo,Charlie"` and `json_array_data` (kind: "vec") is ’["Delta", "id": "ECHO", "Foxtrot"]'`.
+```json
+"csv_data contains 'bravo'"   // Case-insensitive CSV element match
+"csv_data == 'ALPHA,Bravo,Charlie'" // Raw string match
+
+"json_array_data contains 'delta'" // Case-insensitive deep search (like array)
+"json_array_data contains 'ECHO'"  // Case-insensitive deep search (like array)
+```
+
+**Event Parameter Access (Numerically Indexed)**
+
+Assume event parameter `0` is `12345` (u64), `1` (kind: "array") is ’["Val1", "VAL2"]'`, and `2` (kind: "Map") is ’"keyA": "dataX", "keyB": 789'`.
+```json
+"0 > 10000"
+"1[0] == 'val1'"
+"1 contains 'val2'"
+"2.keyA == 'DATAX'"
+"2.keyB < 1000"
+```
+
+Now, after Stellar Protocol 23 we can access to Event parameters by name (first, make sure the contract supports the feature)
+
+```
+"0 > 10000"
+"param_name[0] == 'val1'"
+"param_name contains 'val2'"
+"param_name.keyA == 'DATAX'"
+"param_name.keyB < 1000"
+```
+
+<Callout>
+
+
+With SEP-48 support, Stellar functions can now reference parameters by name (e.g., `amount > 1000`) instead of position (e.g., `2 > 1000`). Events still use indexed parameters until SEP-48 support is added for events.
+
+You can find the contract specification through Stellar contract explorer tool. For example:
+[Stellar DEX Contract Interface](https://lab.stellar.org/smart-contracts/contract-explorer?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=https:////mainnet.sorobanrpc.com&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;&smartContracts$explorer$contractId=CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE;;)
+
+</Callout>
+
+#### Trigger Conditions (Custom filters)
+
+Custom filters allow you to create sophisticated filtering logic for processing monitor matches. These filters act as additional validation layers that determine whether a match should trigger the execution of a trigger or not.
+
+For more information about custom scripts, see [Custom Scripts Section](/monitor/1.1.x/scripts).
+
+
+
+***Security Risk***: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
+
+
+**Example Trigger Conditions Configuration**
+
+```json
+{
+  "script_path": "./config/filters/evm_filter_block_number.sh",
+  "language": "Bash",
+  "arguments": ["--verbose"],
+  "timeout_ms": 1000
+}
+```
+
+#### Available Fields
+
+##### Trigger Conditions Fields
+| Field | Type | Description |
+| --- | --- | --- |
+| `**script_path**` | String | The path to the script |
+| `**language**` | String | The language of the script |
+| `**arguments**` | Array[String] | The arguments of the script (optional). |
+| `**timeout_ms**` | Number | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default. |
+
+#### Important Considerations
+
+* Network slugs in the monitor must match valid network configurations.
+* Trigger IDs must match configured triggers.
+* Expression syntax and available variables differ between EVM and Stellar networks.
+* ABIs can be provided in two ways:
+  * For EVM networks: Through the monitor configuration using standard Ethereum ABI format
+  * For Stellar networks: Through the monitor configuration using SEP-48 format, or automatically fetched from the chain if not provided
+* The monitoring frequency is controlled by the network’s `cron_schedule`.
+* Each monitor can watch multiple networks and addresses simultaneously.
+* Monitors can be paused without removing their configuration.
+
+## Running the Monitor
+
+### Local Execution
+
+1. ***Basic startup:***
+
+   ```bash
+   ./openzeppelin-monitor
+   ```
+2. ***With logging to file:***
+
+   ```bash
+   ./openzeppelin-monitor --log-file
+   ```
+3. ***With metrics enabled:***
+
+   ```bash
+   ./openzeppelin-monitor --metrics
+   ```
+4. ***Validate configuration without starting:***
+
+   ```bash
+   ./openzeppelin-monitor --check
+   ```
+
+### Docker Execution
+
+1. ***Start all services:***
+
+   ```bash
+   cargo make docker-compose-up
+   ```
+2. ***With metrics and monitoring (Prometheus + Grafana):***
+
+   ```bash
+   # Set METRICS_ENABLED=true in .env file, then:
+   docker compose --profile metrics up -d
+   ```
+3. ***View logs:***
+
+   ```bash
+   docker compose logs -f monitor
+   ```
+4. ***Stop services:***
+
+   ```bash
+   cargo make docker-compose-down
+   ```
+
+### Command Line Options
+
+|     |     |     |
+| --- | --- | --- |
+| Option | Default | Description |
+| `--log-file` | `false` | Write logs to file instead of stdout |
+| `--log-level` | `info` | Set log level (trace, debug, info, warn, error) |
+| `--metrics` | `false` | Enable metrics server on port 8081 |
+| `--check` | `false` | Validate configuration files only |
+| `--help` | - | Show all available options |
+
+### Testing your configuration
+
+#### Network Configuration
+The `validate_network_config.sh` script helps ensure your network configuration is properly set up and operational. The script:
+
+* Tests the health of all configured RPC endpoints
+* Validates connectivity using network-specific methods
+* Provides clear visual feedback for each endpoint
+
+```bash
+# Test default networks directory (/config/networks/)
+./scripts/validate_network_config.sh
+
+# Test a specific configuration directory
+./scripts/validate_network_config.sh -f /path/to/configs
+```
+
+<Callout>
+Run this script when setting up new networks, before deploying configuration changes, or when troubleshooting connectivity issues.
+</Callout>
+
+#### Validating Configuration Files
+
+Before starting the monitor service, you can validate your configuration files using the `--check` option:
+
+```bash
+./openzeppelin-monitor --check
+```
+
+This command will:
+
+* Parse and validate all configuration files
+* Check for syntax errors
+* Verify references between monitors, networks, and triggers
+* Report any issues without starting the service
+
+It’s recommended to run this check after making changes to any configuration files.
+
+#### Monitor Configuration
+The monitor can be tested in two modes:
+
+#### 1. Latest Block Mode
+
+This mode processes the most recent blocks across all configured networks.
+
+```bash
+./openzeppelin-monitor --monitor-path="config/monitors/evm_transfer_usdc.json"
+```
+
+What this does:
+
+* Runs the "Large Transfer of USDC Token" monitor
+* Targets all networks specified in the configuration
+* Processes only the latest block for each network
+* Sends a notification to all associated channels for every match that is found
+
+#### 2. Specific Block Mode
+
+This mode allows you to analyze a particular block on a specific network, which is useful for debugging specific transactions, verifying monitor behavior on known events, and testing monitor performance on historical data.
+
+```bash
+./openzeppelin-monitor \
+    --monitor-path="config/monitors/evm_transfer_usdc.json" \
+    --network=ethereum_mainnet \
+    --block=12345678
+```
+
+What this does:
+
+* Runs the "Large Transfer of USDC Token" monitor
+* Targets only the specified network (`ethereum_mainnet`)
+* Processes only the specified block (`12345678`)
+* Sends a notification to all associated channels for every match that is found
+
+<Callout type='warn'>
+
+
+Specific Block Mode requires both parameters:
+
+* `--network`: The network to analyze
+* `--block`: The block number to process
+
+</Callout>
+
+#### Data Persistence (Optional)
+
+* Set `LOG_MODE` as file will persist the log data in `logs/` on host. To change it to a different directory use `LOG_DATA_DIR`.
+* Set `MONITOR_DATA_DIR` to specific dir on your host system which will persist data between container restarts.
+
+## Error Handling
+
+The monitor implements a comprehensive error handling system with rich context and tracing capabilities. For detailed information about error handling, see [Error Handling Guide](/monitor/1.1.x/error).
+
+## Important Considerations
+
+### Performance Considerations
+
+* Monitor performance depends on network congestion and RPC endpoint reliability.
+  * View the [list of RPC calls](/monitor/1.1.x/rpc#list_of_rpc_calls) made by the monitor.
+* The `max_past_blocks` configuration is critical:
+  * Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
+  * Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
+  * Too low settings may result in missed blocks.
+* Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _***temporarily***_ increase it with `ulimit -n 2048`.
+* Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
+* See performance considerations about custom scripts [here](/monitor/1.1.x/scripts#performance_considerations).
+
+### Notification Considerations
+
+* Template variables are context-dependent:
+  * Event-triggered notifications only populate event variables.
+  * Function-triggered notifications only populate function variables.
+  * Mixing contexts results in empty values.
+* Custom script notifications have additional considerations:
+  * Scripts receive monitor match data and arguments as JSON input
+  * Scripts must complete within their configured timeout_ms or they will be terminated
+  * Script modifications require monitor restart to take effect
+  * Supported languages are limited to Python, JavaScript, and Bash
+
+## Support
+
+For support or inquiries, contact us on [Telegram](https://t.me/openzeppelin_tg/4).
+
+Have feature requests or want to contribute? Join our community on [GitHub](https://github.com/OpenZeppelin/openzeppelin-monitor/)
+
+## License
+This project is licensed under the GNU Affero General Public License v3.0 - see the LICENSE file for details.
+
+## Security
+For security concerns, please refer to our [Security Policy](https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/SECURITY.md).
