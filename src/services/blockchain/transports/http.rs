@@ -79,7 +79,6 @@ impl HttpTransportClient {
 				.timeout(Duration::from_secs(30))
 				.connect_timeout(Duration::from_secs(20))
 				.use_rustls_tls()
-				.http2_prior_knowledge()
 				.build()
 				.context("Failed to create base HTTP client")?,
 		);
