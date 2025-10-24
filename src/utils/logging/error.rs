@@ -398,7 +398,7 @@ mod tests {
 			assert!(logs_contain(&error.timestamp));
 
 			// Test with source error
-			let source_error = std::io::Error::new(std::io::ErrorKind::Other, "Source error");
+			let source_error = std::io::Error::other("Source error");
 			let error_with_source =
 				ErrorContext::new("Parent error", Some(Box::new(source_error)), None);
 
@@ -507,7 +507,7 @@ mod tests {
 		);
 
 		// Test with non-traceable error
-		let std_error = io::Error::new(io::ErrorKind::Other, "Standard error");
+		let std_error = io::Error::other("Standard error");
 		let dyn_error: &(dyn std::error::Error + 'static) = &std_error;
 		let extracted = try_extract_trace_id(dyn_error);
 

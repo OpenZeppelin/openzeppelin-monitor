@@ -1811,7 +1811,7 @@ mod tests {
 			.build();
 
 		filter.find_matching_functions_for_transaction(
-			&[contract_with_spec.clone()],
+			std::slice::from_ref(&contract_with_spec),
 			&transaction,
 			&monitor,
 			&mut matched_functions,

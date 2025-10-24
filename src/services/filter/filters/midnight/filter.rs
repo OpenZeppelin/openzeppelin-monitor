@@ -7,7 +7,6 @@
 #![allow(clippy::result_large_err)]
 
 use async_trait::async_trait;
-use midnight_ledger::structure::Proof;
 use midnight_node_ledger_helpers::NetworkId;
 use std::marker::PhantomData;
 use tracing::instrument;
@@ -221,7 +220,7 @@ impl<T> MidnightBlockFilter<T> {
 
 				let transaction = MidnightTransaction::from(tx.clone());
 				let (_hash, deserialized_ledger_transaction) =
-					match parse_tx_index_item::<Proof>(&hash, &raw_tx_data, network_id) {
+					match parse_tx_index_item(&hash, &raw_tx_data, network_id) {
 						Ok(res) => res,
 						Err(e) => {
 							return Err(FilterError::network_error(

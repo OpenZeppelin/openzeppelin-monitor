@@ -28,8 +28,8 @@ pub use blockchain::stellar::{
 	StellarBlock, StellarContractEvent, StellarContractEventParam, StellarContractFunction,
 	StellarContractInput, StellarContractSpec, StellarDecodedParamEntry, StellarDecodedTransaction,
 	StellarEvent, StellarEventParamLocation, StellarFormattedContractSpec, StellarLedgerInfo,
-	StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorMatch,
-	StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
+	StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorConfig,
+	StellarMonitorMatch, StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
 };
 
 pub use blockchain::midnight::{

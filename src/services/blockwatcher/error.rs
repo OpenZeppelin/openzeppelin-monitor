@@ -190,7 +190,7 @@ mod tests {
 
 	#[test]
 	fn test_error_source_chain() {
-		let io_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+		let io_error = std::io::Error::other("while reading config");
 
 		let outer_error = BlockWatcherError::scheduler_error(
 			"Failed to initialize",
@@ -230,7 +230,7 @@ mod tests {
 		assert_eq!(block_watcher_error.trace_id(), original_trace_id);
 
 		// Test trace ID propagation through error chain
-		let source_error = IoError::new(ErrorKind::Other, "Source error");
+		let source_error = IoError::other("Source error");
 		let error_context = ErrorContext::new("Middle error", Some(Box::new(source_error)), None);
 		let original_trace_id = error_context.trace_id.clone();
 

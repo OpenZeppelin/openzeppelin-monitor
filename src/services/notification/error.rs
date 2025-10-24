@@ -176,7 +176,7 @@ mod tests {
 
 	#[test]
 	fn test_error_source_chain() {
-		let io_error = std::io::Error::new(std::io::ErrorKind::Other, "while reading config");
+		let io_error = std::io::Error::other("while reading config");
 
 		let outer_error = NotificationError::network_error(
 			"Failed to initialize",

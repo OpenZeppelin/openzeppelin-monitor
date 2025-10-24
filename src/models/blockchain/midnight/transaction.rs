@@ -7,11 +7,9 @@
 //! <https://github.com/midnightntwrk/midnight-node/blob/39dbdf54afc5f0be7e7913b387637ac52d0c50f2/pallets/midnight/rpc/src/lib.rs>
 
 use alloy::hex::ToHexExt;
-use midnight_ledger::structure::{
-	ContractAction, Proof, Proofish, Transaction as MidnightNodeTransaction,
-};
+use midnight_ledger::structure::{ContractAction, Transaction as MidnightNodeTransaction};
 
-use midnight_node_ledger_helpers::DB;
+use midnight_storage::DefaultDB;
 
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
@@ -216,7 +214,9 @@ impl From<Transaction> for MidnightRpcTransaction {
 	}
 }
 
-impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
+impl<P: midnight_ledger::structure::ProofKind<D>, D: midnight_storage::db::DB>
+	From<ContractAction<P, D>> for Operation
+{
 	/// Converts a ContractAction into an Operation
 	///
 	/// This implementation handles the conversion of different types of contract actions
@@ -244,32 +244,46 @@ impl<P: Proofish<D>, D: DB> From<ContractAction<P, D>> for Operation {
 	}
 }
 
-impl<D: DB>
+impl Deref for Transaction {
+	type Target = MidnightRpcTransaction;
+
+	/// Dereferences the Transaction to access the underlying MidnightRpcTransaction
+	///
+	/// # Returns
+	/// A reference to the underlying MidnightRpcTransaction
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+// Specific implementation for DefaultDB to match the actual usage
+impl
 	TryFrom<(
 		Transaction,
-		Option<MidnightNodeTransaction<Proof, D>>,
+		Option<
+			MidnightNodeTransaction<
+				midnight_base_crypto::signatures::Signature,
+				(),
+				midnight_transient_crypto::commitment::Pedersen,
+				midnight_storage::DefaultDB,
+			>,
+		>,
 		&Vec<ChainConfiguration>,
 	)> for Transaction
 {
 	type Error = anyhow::Error;
 
-	/// Attempts to create a Transaction from a tuple of transaction data and chain configuration
-	///
-	/// This implementation processes the transaction data and attempts to decrypt any coins
-	/// using the provided chain configuration's viewing keys.
-	///
-	/// # Arguments
-	/// * `(block_tx, ledger_tx, chain_configurations)` - A tuple containing:
-	///   - The block transaction
-	///   - An optional ledger transaction
-	///   - A reference to chain configurations
-	///
-	/// # Returns
-	/// * `Result<Self, Self::Error>` - The processed transaction or an error
 	fn try_from(
 		(block_tx, ledger_tx, chain_configurations): (
 			Transaction,
-			Option<MidnightNodeTransaction<Proof, D>>,
+			Option<
+				MidnightNodeTransaction<
+					midnight_base_crypto::signatures::Signature,
+					(),
+					midnight_transient_crypto::commitment::Pedersen,
+					midnight_storage::DefaultDB,
+				>,
+			>,
 			&Vec<ChainConfiguration>,
 		),
 	) -> Result<Self, Self::Error> {
@@ -281,7 +295,10 @@ impl<D: DB>
 						let viewing_key_str = secret.as_str();
 						if let Some(ref ledger_tx) = ledger_tx {
 							// TODO: Do something with the coins...
-							let _ = process_transaction_for_coins::<D>(viewing_key_str, ledger_tx);
+							let _ = process_transaction_for_coins::<DefaultDB>(
+								viewing_key_str,
+								ledger_tx,
+							);
 						}
 					}
 				}
@@ -289,18 +306,6 @@ impl<D: DB>
 		}
 
 		Ok(block_tx)
-	}
-}
-
-impl Deref for Transaction {
-	type Target = MidnightRpcTransaction;
-
-	/// Dereferences the Transaction to access the underlying MidnightRpcTransaction
-	///
-	/// # Returns
-	/// A reference to the underlying MidnightRpcTransaction
-	fn deref(&self) -> &Self::Target {
-		&self.0
 	}
 }
 

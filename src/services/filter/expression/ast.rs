@@ -93,7 +93,7 @@ impl<'a> ConditionLeft<'a> {
 	/// If ConditionLeft is a simple variable, it returns an empty slice.
 	/// If it is a path, it returns the accessors of that path.
 	/// Used during evaluation to traverse nested structures.
-	pub fn accessors(&self) -> &[Accessor] {
+	pub fn accessors(&self) -> &[Accessor<'a>] {
 		match self {
 			ConditionLeft::Simple(_) => &[],
 			ConditionLeft::Path(path) => &path.accessors,

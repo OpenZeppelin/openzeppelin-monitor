@@ -415,7 +415,7 @@ async fn test_ordered_trigger_handling() {
 			let block_number = block.number().unwrap_or(0);
 
 			// Intentionally delay processing of even-numbered blocks
-			if block_number % 2 == 0 {
+			if block_number.is_multiple_of(2) {
 				tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 			} else {
 				tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
