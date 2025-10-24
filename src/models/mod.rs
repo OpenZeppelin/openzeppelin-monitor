@@ -2,7 +2,7 @@
 //!
 //! This module contains all the core data structures used throughout the application:
 //!
-//! - `blockchain`: Platform-specific implementations for different blockchains (EVM, Stellar)
+//! - `blockchain`: Platform-specific implementations for different blockchains
 //! - `config`: Configuration loading and validation
 //! - `core`: Core domain models (Monitor, Network, Trigger)
 //! - `security`: Security models (Secret)
@@ -14,13 +14,14 @@ mod security;
 
 // Re-export blockchain types
 pub use blockchain::{
-	BlockChainType, BlockType, ContractSpec, MonitorMatch, ProcessedBlock, TransactionType,
+	BlockChainType, BlockType, ChainConfiguration, ContractSpec, MonitorMatch, ProcessedBlock,
+	TransactionType,
 };
 
 pub use blockchain::evm::{
 	EVMBaseReceipt, EVMBaseTransaction, EVMBlock, EVMContractSpec, EVMMatchArguments,
-	EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EVMReceiptLog, EVMTransaction,
-	EVMTransactionReceipt,
+	EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorConfig, EVMMonitorMatch, EVMReceiptLog,
+	EVMTransaction, EVMTransactionReceipt,
 };
 
 pub use blockchain::stellar::{
@@ -31,11 +32,20 @@ pub use blockchain::stellar::{
 	StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
 };
 
+pub use blockchain::midnight::{
+	MidnightBaseTransaction, MidnightBlock, MidnightBlockDigest, MidnightBlockHeader,
+	MidnightCallDetails, MidnightClaimMintDetails, MidnightDeploymentDetails, MidnightEvent,
+	MidnightEventType, MidnightMaintainDetails, MidnightMatchArguments, MidnightMatchParamEntry,
+	MidnightMatchParamsMap, MidnightMonitorConfig, MidnightMonitorMatch, MidnightOperation,
+	MidnightPayoutDetails, MidnightPhase, MidnightRpcBlock, MidnightRpcTransactionEnum,
+	MidnightTopics, MidnightTransaction, MidnightTxAppliedDetails,
+};
+
 // Re-export core types
 pub use core::{
 	AddressWithSpec, EventCondition, FunctionCondition, MatchConditions, Monitor, Network,
 	NotificationMessage, RpcUrl, ScriptLanguage, TransactionCondition, TransactionStatus, Trigger,
-	TriggerConditions, TriggerType, TriggerTypeConfig,
+	TriggerConditions, TriggerType, TriggerTypeConfig, SCRIPT_LANGUAGE_EXTENSIONS,
 };
 
 // Re-export config types

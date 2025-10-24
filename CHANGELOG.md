@@ -109,7 +109,7 @@
 ## [0.2.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v0.1.0...v0.2.0) (2025-05-14)
 
 
-## ⚠️ ⚠️ Breaking Changes in v0.2.0
+## ⚠️ Breaking Changes in v0.2.0
 
 * Renamed abi to contract_spec in monitor configurations.
 * Stellar function expressions now use named parameters instead of positional indexes, for example;

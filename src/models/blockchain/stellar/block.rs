@@ -3,10 +3,9 @@
 //! Note: These structures are based on the Stellar RPC implementation:
 //! <https://github.com/stellar/stellar-rpc/blob/main/cmd/stellar-rpc/internal/methods/get_ledgers.go>
 
-use std::ops::Deref;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::ops::Deref;
 
 /// Information about a Stellar ledger (block)
 ///

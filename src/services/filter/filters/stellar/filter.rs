@@ -853,6 +853,8 @@ impl<T: BlockChainClient + StellarClientTrait> BlockFilter for StellarBlockFilte
 			}
 		};
 
+		tracing::debug!("Processing block {}", stellar_block.number().unwrap_or(0));
+
 		let transactions = match client.get_transactions(stellar_block.sequence, None).await {
 			Ok(transactions) => transactions,
 			Err(e) => {

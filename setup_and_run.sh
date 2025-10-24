@@ -11,11 +11,13 @@ NC='\033[0m' # No Color
 NETWORKS=(
     "ethereum_mainnet.json"
     "stellar_mainnet.json"
+    "midnight_testnet.json"
 )
 
 MONITORS=(
     "evm_transfer_usdc.json"
     "stellar_swap_dex.json"
+    "midnight_testnet_bulletin_post"
 )
 
 FILTERS=(

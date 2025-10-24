@@ -17,9 +17,18 @@ pub use error::FilterError;
 pub use filter_match::handle_match;
 
 pub use filters::{
-	evm::helpers as evm_helpers, stellar::helpers as stellar_helpers, BlockFilter, EVMArgs,
-	EVMBlockFilter, EVMConditionEvaluator, EventMap, FilterService, StellarArgs,
-	StellarBlockFilter, StellarConditionEvaluator,
+	evm::{
+		evaluator::{EVMArgs, EVMConditionEvaluator},
+		filter::EVMBlockFilter,
+		helpers as evm_helpers,
+	},
+	midnight::{filter::MidnightBlockFilter, helpers as midnight_helpers},
+	stellar::{
+		evaluator::{StellarArgs, StellarConditionEvaluator},
+		filter::{EventMap, StellarBlockFilter},
+		helpers as stellar_helpers,
+	},
+	BlockFilter, FilterService, FilterServiceTrait,
 };
 
 pub use expression::{ComparisonOperator, ConditionEvaluator, EvaluationError, LiteralValue};

@@ -19,8 +19,8 @@ use url::Url;
 use crate::{
 	models::Network,
 	services::blockchain::transports::{
-		BlockchainTransport, EndpointManager, RotatingTransport, TransientErrorRetryStrategy,
-		TransportError,
+		http::endpoint_manager::EndpointManager, BlockchainTransport, RotatingTransport,
+		TransientErrorRetryStrategy, TransportError,
 	},
 	utils::http::{create_retryable_http_client, RetryConfig},
 };
@@ -187,12 +187,9 @@ impl BlockchainTransport for HttpTransportClient {
 	where
 		P: Into<Value> + Send + Clone + Serialize,
 	{
-		let response = self
-			.endpoint_manager
+		self.endpoint_manager
 			.send_raw_request(self, method, params)
-			.await?;
-
-		Ok(response)
+			.await
 	}
 
 	/// Update endpoint manager with a new client

@@ -44,7 +44,7 @@ For high-availability setups, configure at least 3 (private) RPC endpoints with 
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `**type_**` | `String` | Type of endpoint (currently only "rpc" is supported) |
+| `**type_**` | `String` | Type of endpoint ("rpc" or "ws_rpc") |
 | `**url.type**` | `String` | Secret type ("Plain", "Environment", or "HashicorpCloudVault") |
 | `**url.value**` | `String` | The RPC endpoint URL |
 | `**weight**` | `Number` | Load balancing weight (0-100) |
@@ -227,13 +227,9 @@ As the number of blocks being processed increases, the number of RPC calls grows
 
 ```mermaid
 graph TD
-    subgraph Common Operations
-        A[Main] --> D[Process New Blocks]
-    end
-
     subgraph EVM Network Calls
-        B[Network Init] -->|net_version| D
-        D -->|eth_blockNumber| E[For every block in range]
+        B[Network Init] -->|net_version| D1[Process New Blocks]
+        D1 -->|eth_blockNumber| E[For every block in range]
         E -->|eth_getBlockByNumber| G1[Process Block]
         G1 -->|eth_getLogs| H[Get Block Logs]
         H -->|Only when needed| J[Get Transaction Receipt]
@@ -241,8 +237,8 @@ graph TD
     end
 
     subgraph Stellar Network Calls
-        C[Network Init] -->|getNetwork| D
-        D -->|getLatestLedger| F[In batches of 200 blocks]
+        C[Network Init] -->|getNetwork| D2[Process New Blocks]
+        D2 -->|getLatestLedger| F[In batches of 200 blocks]
         F -->|getLedgers| G2[Process Block]
         G2 -->|For each monitored contract without ABI| M[Fetch Contract Spec]
         M -->|getLedgerEntries| N[Get WASM Hash]
@@ -254,7 +250,18 @@ graph TD
         L1 --> Q[Complete]
         L2 --> Q
     end
-```
+
+    subgraph Midnight Network Calls
+        D3[Network Init] -->|system_chain| D4[Process New Blocks]
+        D4 -->|chain_getFinalisedHead| E1[Get Finalized Block Hash]
+        E1 -->|chain_getHeader| E2[Get Latest Block Number]
+        E2 -->|For each block| F1[Get Block Data]
+        F1 -->|chain_getBlockHash| G3[Get Block Hash]
+        G3 -->|midnight_jsonBlock| H1[Get Full Block]
+        H1 -->|If websocket RPC provided| I1[Get Events]
+        I1 --> J1[Complete]
+    end
+....
 
 **EVM**
 
@@ -277,7 +284,24 @@ graph TD
 * Fetching transactions (batched up to 200 in a single request): `getTransactions`
 * Fetching events (batched up to 200 in a single request): `getEvents`
 
-## Best Practices
+*Midnight*
+
+* RPC Client initialization (per active network): `system_chain`
+* Fetching the latest block number (per cron iteration):
+  ** `chain_getFinalisedHead` - Gets the latest finalized block hash
+  ** `chain_getHeader` - Gets the block number using the finalized block hash
+* Fetching block data (per block):
+  ** `chain_getBlockHash` - Gets the block hash for a specific block number
+  ** `midnight_jsonBlock` - Gets the full block data using the block hash
+* When websocket RPC is provided:
+  ** `get_events` - Gets transaction events for determining transaction status
+
+<Callout>
+The Midnight client uses `chain_getFinalisedHead` to ensure we get the latest finalized block number, even when different nodes in the network are at different stages of finalization. This prevents race conditions where multiple blocks could have the same number (height) due to load-balancing across nodes.
+Therefore, there may be a small delay in processing the latest blocks since we wait for finalization.
+</Callout>
+
+== Best Practices
 
 * Configure multiple private endpoints with appropriate weights
 * Use geographically distributed endpoints when possible

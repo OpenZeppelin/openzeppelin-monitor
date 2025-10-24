@@ -740,7 +740,10 @@ pub fn are_same_address(address1: &str, address2: &str) -> bool {
 /// # Returns
 /// The normalized address string
 pub fn normalize_address(address: &str) -> String {
-	address.trim().replace(" ", "").to_lowercase()
+	address
+		.trim()
+		.replace(char::is_whitespace, "")
+		.to_lowercase()
 }
 
 /// Compares two Stellar function signatures for equality, ignoring case and whitespace.
@@ -763,7 +766,10 @@ pub fn are_same_signature(signature1: &str, signature2: &str) -> bool {
 /// # Returns
 /// The normalized signature string
 pub fn normalize_signature(signature: &str) -> String {
-	signature.trim().replace(" ", "").to_lowercase()
+	signature
+		.trim()
+		.replace(char::is_whitespace, "")
+		.to_lowercase()
 }
 
 /// Parses a Stellar Contract Value into a decoded parameter entry.
