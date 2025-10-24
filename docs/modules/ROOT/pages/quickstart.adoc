@@ -602,6 +602,7 @@ cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar
 * The `contract_spec` field is optional for Stellar contracts. If not provided, the monitor automatically fetches the contract's SEP-48 interface from the chain
 * You can explore Stellar contract interfaces using the link:https://lab.stellar.org/smart-contracts/contract-explorer[Stellar Contract Explorer^]
 * The expression `"out_min > 1000000000"` monitors swaps with minimum output over 1 billion tokens
+* Now, you can also filter by parameters event's name (Stellar Protocol 23 has introduced this new feature). See this xref:index.adoc#stellar_specifics[section] for more details
 ====
 
 ==== Step 3: Notification Setup
@@ -634,6 +635,12 @@ cp examples/config/triggers/slack_notifications.json config/triggers/slack_notif
     }
   }
 }
+----
+
+* If you want to include event details in the notification message body, you can also access event parameters by name. Here's an example:
+[source,bash]
+----
+"body": "${monitor.name} triggered because of a large swap from ${events.0.args.from} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
 ----
 
 ==== Step 4: Run the Monitor

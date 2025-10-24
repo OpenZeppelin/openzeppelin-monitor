@@ -22,7 +22,7 @@ use openzeppelin_monitor::{
 	utils::tests::evm::{monitor::MonitorBuilder, receipt::ReceiptBuilder},
 };
 use proptest::{prelude::*, test_runner::Config};
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 
 // Generates valid EVM function signatures with random parameters
 prop_compose! {
@@ -575,44 +575,6 @@ proptest! {
 		prop_assert_eq!(result, expected);
 	}
 
-	// Tests fixed-point number comparison expressions
-	// Verifies all comparison operators work correctly with fixed-point numbers
-	#[test]
-	fn test_fixed_point_numbers_expression_evaluation(
-		value in 0.1_f64..1000000.0_f64,
-		operator in prop_oneof![
-			Just(">"), Just(">="), Just("<"), Just("<="),
-			Just("=="), Just("!=")
-		],
-		compare_to in 0.1_f64..1000000.0_f64,
-	) {
-		let expr = format!("amount {} {}", operator, compare_to);
-
-		let params = vec![EVMMatchParamEntry {
-			name: "amount".to_string(),
-			value: value.to_string(),
-			kind: "fixed".to_string(),
-			indexed: false,
-		}];
-
-		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
-			_client: PhantomData,
-		};
-		let result = filter.evaluate_expression(&expr, &params).unwrap();
-
-		let expected = match operator {
-			">" => value > compare_to,
-			">=" => value >= compare_to,
-			"<" => value < compare_to,
-			"<=" => value <= compare_to,
-			"==" => value == compare_to,
-			"!=" => value != compare_to,
-			_ => false
-		};
-
-		prop_assert_eq!(result, expected);
-	}
-
 	// Tests signed integer comparison expressions (int8 to int256)
 	// Verifies all comparison operators work correctly
 	#[test]
@@ -865,51 +827,6 @@ proptest! {
 			"Failed on values1: {:?}, values2: {:?}, expected: {}",
 			values1, values2, expected
 		);
-	}
-
-	// Tests direct object comparison expressions
-	#[test]
-	fn test_map_json_object_eq_ne_expression_evaluation(
-		lhs_json_map_str in prop_oneof![
-			Just("{\"name\":\"alice\", \"id\":1}".to_string()),
-			Just("{\"id\":1, \"name\":\"alice\"}".to_string()), // Same as above, different order
-			Just("{\"name\":\"bob\", \"id\":2}".to_string()),
-			Just("{\"city\":\"london\"}".to_string()),
-			Just("{}".to_string()) // Empty object
-		],
-		rhs_json_map_str in prop_oneof![
-			Just("{\"name\":\"alice\", \"id\":1}".to_string()),
-			Just("{\"id\":1, \"name\":\"alice\"}".to_string()),
-			Just("{\"name\":\"bob\", \"id\":2}".to_string()),
-			Just("{\"city\":\"london\"}".to_string()),
-			Just("{}".to_string()),
-			Just("{\"name\":\"alice\"}".to_string()) // Partially different
-		],
-		operator in prop_oneof![Just("=="), Just("!=")],
-	) {
-		let expr = format!("map_param {} '{}'", operator, rhs_json_map_str);
-
-		let params = vec![EVMMatchParamEntry {
-			name: "map_param".to_string(),
-			value: lhs_json_map_str.clone(),
-			kind: "map".to_string(),
-			indexed: false,
-		}];
-
-		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
-			_client: PhantomData,
-		};
-		let result = filter.evaluate_expression(&expr, &params).unwrap();
-		let lhs_json_val = serde_json::from_str::<JsonValue>(&lhs_json_map_str).unwrap();
-		let rhs_json_val = serde_json::from_str::<JsonValue>(&rhs_json_map_str).unwrap();
-
-		let expected = match operator {
-			"==" => lhs_json_val == rhs_json_val,
-			"!=" => lhs_json_val != rhs_json_val,
-			_ => unreachable!(),
-		};
-
-		prop_assert_eq!(result, expected);
 	}
 
 	// Tests logical AND combinations with mixed types

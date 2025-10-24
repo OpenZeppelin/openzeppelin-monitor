@@ -5,6 +5,7 @@
 //! operation processing.
 
 use alloy::primitives::{I256, U256};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hex::encode;
 use serde_json::{json, Value};
 use std::fmt;
@@ -14,14 +15,16 @@ use soroban_spec::read;
 use std::collections::BTreeMap;
 use stellar_strkey::{ed25519::PublicKey as StrkeyPublicKey, Contract};
 use stellar_xdr::curr::{
-	AccountId, ContractExecutable, Hash, HostFunction, Int128Parts, Int256Parts,
+	AccountId, ContractExecutable, ContractId, Hash, HostFunction, Int128Parts, Int256Parts,
 	InvokeHostFunctionOp, LedgerEntryData, LedgerKey, LedgerKeyContractCode, Limits, PublicKey,
-	ReadXdr, ScAddress, ScMapEntry, ScSpecEntry, ScSpecTypeDef, ScVal, UInt128Parts, UInt256Parts,
+	ReadXdr, ScAddress, ScMapEntry, ScSpecEntry, ScSpecEventParamLocationV0, ScSpecTypeDef, ScVal,
+	UInt128Parts, UInt256Parts,
 };
 
 use crate::models::{
-	StellarContractFunction, StellarContractInput, StellarDecodedParamEntry,
-	StellarFormattedContractSpec, StellarParsedOperationResult,
+	StellarContractEvent, StellarContractEventParam, StellarContractFunction, StellarContractInput,
+	StellarDecodedParamEntry, StellarEventParamLocation, StellarFormattedContractSpec,
+	StellarMatchParamEntry, StellarParsedOperationResult,
 };
 
 /// Represents all possible Stellar smart contract types
@@ -161,12 +164,18 @@ impl From<ScVal> for StellarValue {
 				StellarValue::Map(btree)
 			}
 			ScVal::Address(addr) => StellarValue::Address(match addr {
-				ScAddress::Contract(hash) => Contract(hash.0).to_string(),
+				ScAddress::Contract(hash) => Contract(hash.0 .0).to_string(),
 				ScAddress::Account(account_id) => match account_id {
 					AccountId(PublicKey::PublicKeyTypeEd25519(key)) => {
 						StrkeyPublicKey(key.0).to_string()
 					}
 				},
+				ScAddress::MuxedAccount(_)
+				| ScAddress::ClaimableBalance(_)
+				| ScAddress::LiquidityPool(_) => {
+					// These variants are not commonly used in contract events
+					"unsupported_address_type".to_string()
+				}
 			}),
 			_ => StellarValue::Void,
 		}
@@ -648,12 +657,18 @@ pub fn process_invoke_host_function(
 	match &invoke_op.host_function {
 		HostFunction::InvokeContract(args) => {
 			let contract_address = match &args.contract_address {
-				ScAddress::Contract(hash) => Contract(hash.0).to_string(),
+				ScAddress::Contract(hash) => Contract(hash.0 .0).to_string(),
 				ScAddress::Account(account_id) => match account_id {
 					AccountId(PublicKey::PublicKeyTypeEd25519(key)) => {
 						StrkeyPublicKey(key.0).to_string()
 					}
 				},
+				ScAddress::MuxedAccount(_)
+				| ScAddress::ClaimableBalance(_)
+				| ScAddress::LiquidityPool(_) => {
+					// These variants are not commonly used in contract invocations
+					"unsupported_address_type".to_string()
+				}
 			};
 
 			let function_name = args.function_name.to_string();
@@ -851,12 +866,18 @@ pub fn parse_sc_val(val: &ScVal, indexed: bool) -> Option<StellarDecodedParamEnt
 			indexed,
 			kind: "Address".to_string(),
 			value: match addr {
-				ScAddress::Contract(hash) => Contract(hash.0).to_string(),
+				ScAddress::Contract(hash) => Contract(hash.0 .0).to_string(),
 				ScAddress::Account(account_id) => match account_id {
 					AccountId(PublicKey::PublicKeyTypeEd25519(key)) => {
 						StrkeyPublicKey(key.0).to_string()
 					}
 				},
+				ScAddress::MuxedAccount(_)
+				| ScAddress::ClaimableBalance(_)
+				| ScAddress::LiquidityPool(_) => {
+					// These variants are not commonly used in contract parameters
+					"unsupported_address_type".to_string()
+				}
 			},
 		}),
 		_ => None,
@@ -876,6 +897,32 @@ pub fn parse_xdr_value(bytes: &[u8], indexed: bool) -> Option<StellarDecodedPara
 		Ok(scval) => {
 			let value = StellarValue::from(scval);
 			Some(value.to_param_entry(indexed))
+		}
+		Err(e) => {
+			tracing::debug!("Failed to parse XDR bytes: {}", e);
+			None
+		}
+	}
+}
+
+/// Enhanced parse_xdr_value that returns both the entry AND the original StellarValue.
+/// This allows callers to work with structured data instead of parsed strings.
+///
+/// # Arguments
+/// * `bytes` - The XDR-encoded bytes to parse
+/// * `indexed` - Whether this parameter is indexed
+///
+/// # Returns
+/// An Option containing both the decoded parameter entry and the StellarValue
+pub fn parse_xdr_value_with_stellar_value(
+	bytes: &[u8],
+	indexed: bool,
+) -> Option<(StellarDecodedParamEntry, StellarValue)> {
+	match ScVal::from_xdr(bytes, Limits::none()) {
+		Ok(scval) => {
+			let stellar_value = StellarValue::from(scval);
+			let entry = stellar_value.to_param_entry(indexed);
+			Some((entry, stellar_value))
 		}
 		Err(e) => {
 			tracing::debug!("Failed to parse XDR bytes: {}", e);
@@ -928,7 +975,7 @@ pub fn get_kind_from_value(value: &Value) -> String {
 pub fn get_contract_instance_ledger_key(contract_id: &str) -> Result<LedgerKey, anyhow::Error> {
 	let contract_id = contract_id.to_uppercase();
 	let contract_address = match Contract::from_string(contract_id.as_str()) {
-		Ok(contract) => ScAddress::Contract(Hash(contract.0)),
+		Ok(contract) => ScAddress::Contract(ContractId(Hash(contract.0))),
 		Err(err) => {
 			return Err(anyhow::anyhow!("Failed to decode contract ID: {}", err));
 		}
@@ -966,7 +1013,10 @@ pub fn get_contract_code_ledger_key(wasm_hash: &str) -> Result<LedgerKey, anyhow
 pub fn get_wasm_code_from_ledger_entry_data(
 	ledger_entry_data: &str,
 ) -> Result<String, anyhow::Error> {
-	let val = match LedgerEntryData::from_xdr_base64(ledger_entry_data.as_bytes(), Limits::none()) {
+	let decoded = BASE64_STANDARD
+		.decode(ledger_entry_data)
+		.map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
+	let val = match LedgerEntryData::from_xdr(&decoded, Limits::none()) {
 		Ok(val) => val,
 		Err(e) => {
 			return Err(anyhow::anyhow!("Failed to parse contract data XDR: {}", e));
@@ -990,7 +1040,10 @@ pub fn get_wasm_code_from_ledger_entry_data(
 pub fn get_wasm_hash_from_ledger_entry_data(
 	ledger_entry_data: &str,
 ) -> Result<String, anyhow::Error> {
-	let val = match LedgerEntryData::from_xdr_base64(ledger_entry_data.as_bytes(), Limits::none()) {
+	let decoded = BASE64_STANDARD
+		.decode(ledger_entry_data)
+		.map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
+	let val = match LedgerEntryData::from_xdr(&decoded, Limits::none()) {
 		Ok(val) => val,
 		Err(e) => {
 			return Err(anyhow::anyhow!("Failed to parse contract data XDR: {}", e));
@@ -1089,6 +1142,270 @@ pub fn get_contract_spec_with_function_input_parameters(
 		.collect()
 }
 
+/// Filter contract spec entries to only include event definitions.
+///
+/// # Arguments
+/// * `spec_entries` - Vector of contract spec entries
+///
+/// # Returns
+/// A vector containing only ScSpecEntry::EventV0 entries
+pub fn get_contract_spec_events(spec_entries: Vec<ScSpecEntry>) -> Vec<ScSpecEntry> {
+	spec_entries
+		.into_iter()
+		.filter_map(|entry| match entry {
+			ScSpecEntry::EventV0(event) => Some(ScSpecEntry::EventV0(event)),
+			_ => None,
+		})
+		.collect()
+}
+
+/// Parse contract spec events and populate event parameters with names and locations.
+///
+/// # Arguments
+/// * `spec_entries` - Vector of contract spec entries (should be EventV0 entries)
+///
+/// # Returns
+/// A vector of ContractEvent with populated parameter names and locations
+pub fn get_contract_spec_with_event_parameters(
+	spec_entries: Vec<ScSpecEntry>,
+) -> Vec<StellarContractEvent> {
+	spec_entries
+		.into_iter()
+		.filter_map(|entry| match entry.clone() {
+			ScSpecEntry::EventV0(event) => Some(StellarContractEvent {
+				name: event.name.to_string(),
+				prefix_topics: event
+					.prefix_topics
+					.iter()
+					.map(|topic| topic.to_string())
+					.collect(),
+				signature: get_event_signature_from_spec_entry(&entry),
+				params: event
+					.params
+					.iter()
+					.map(|param| StellarContractEventParam {
+						name: param.name.to_string(),
+						kind: StellarType::from(param.type_.clone()).to_string(),
+						location: match param.location {
+							ScSpecEventParamLocationV0::TopicList => {
+								StellarEventParamLocation::Indexed
+							}
+							ScSpecEventParamLocationV0::Data => StellarEventParamLocation::Data,
+						},
+					})
+					.collect(),
+			}),
+			_ => None,
+		})
+		.collect()
+}
+
+/// Get event signature from a spec entry.
+///
+/// # Arguments
+/// * `entry` - The spec entry to extract the signature from
+///
+/// # Returns
+/// The event signature in the format "EventName(Type1,Type2,...)"
+fn get_event_signature_from_spec_entry(entry: &ScSpecEntry) -> String {
+	match entry {
+		ScSpecEntry::EventV0(event) => {
+			let param_types: Vec<String> = event
+				.params
+				.iter()
+				.map(|param| StellarType::from(param.type_.clone()).to_string())
+				.collect();
+			format!("{}({})", *event.name, param_types.join(","))
+		}
+		_ => String::new(),
+	}
+}
+
+// In src/services/filter/filters/stellar/helpers.rs
+
+/// Unpacks any StellarValue into individual parameter entries based on event spec.
+///
+/// This generic function handles all cases:
+/// - Map: Extracts values by parameter names
+/// - Vec/Tuple: Extracts values by position
+/// - Single values: Returns as-is
+///
+/// # Arguments
+/// * `stellar_value` - The StellarValue to unpack (any variant)
+/// * `data_params` - Event spec parameters to match against
+/// * `event_name` - Name of the event (for logging purposes)
+///
+/// # Returns
+/// Vector of parameter entries extracted from the StellarValue
+pub fn unpack_stellar_value(
+	stellar_value: &StellarValue,
+	data_params: &[StellarContractEventParam],
+	event_name: &str,
+) -> Vec<StellarMatchParamEntry> {
+	let mut result = Vec::new();
+
+	match stellar_value {
+		// Case 1: Map - extract by parameter names
+		StellarValue::Map(btree_map) => {
+			tracing::debug!(
+				"Unpacking StellarValue::Map for event '{}' with {} entries",
+				event_name,
+				btree_map.len()
+			);
+
+			// Iterate through spec params in order (preserves spec order)
+			for param in data_params {
+				if let Some(stellar_val) = btree_map.get(&param.name) {
+					let value_str = stellar_val.to_string();
+					let kind_str = stellar_val.get_type().to_string();
+
+					tracing::trace!(
+						"Extracted map param '{}' = '{}' (kind: {})",
+						param.name,
+						value_str,
+						kind_str
+					);
+
+					result.push(StellarMatchParamEntry {
+						name: param.name.clone(),
+						value: value_str,
+						kind: kind_str,
+						indexed: false,
+					});
+				} else {
+					tracing::warn!(
+						"Map missing expected parameter '{}' for event '{}'. Available keys: {:?}",
+						param.name,
+						event_name,
+						btree_map.keys().collect::<Vec<_>>()
+					);
+				}
+			}
+		}
+
+		// Case 2: Vec - extract by position
+		StellarValue::Vec(vec) => {
+			tracing::debug!(
+				"Unpacking StellarValue::Vec for event '{}' with {} elements",
+				event_name,
+				vec.len()
+			);
+
+			if vec.len() < data_params.len() {
+				tracing::warn!(
+					"Vec for event '{}' has {} elements but spec expects {}",
+					event_name,
+					vec.len(),
+					data_params.len()
+				);
+			}
+
+			// Match each element to corresponding parameter in spec
+			for (index, stellar_val) in vec.iter().enumerate() {
+				let param = data_params.get(index);
+				let param_name = param
+					.map(|p| p.name.clone())
+					.unwrap_or_else(|| index.to_string());
+				let value_str = stellar_val.to_string();
+				let kind_str = stellar_val.get_type().to_string();
+
+				tracing::trace!(
+					"Extracted vec param[{}] '{}' = '{}' (kind: {})",
+					index,
+					param_name,
+					value_str,
+					kind_str
+				);
+
+				result.push(StellarMatchParamEntry {
+					name: param_name,
+					value: value_str,
+					kind: kind_str,
+					indexed: false,
+				});
+			}
+		}
+
+		// Case 3: Tuple - extract by position (same as Vec)
+		StellarValue::Tuple(tuple) => {
+			tracing::debug!(
+				"Unpacking StellarValue::Tuple for event '{}' with {} elements",
+				event_name,
+				tuple.len()
+			);
+
+			if tuple.len() < data_params.len() {
+				tracing::warn!(
+					"Tuple for event '{}' has {} elements but spec expects {}",
+					event_name,
+					tuple.len(),
+					data_params.len()
+				);
+			}
+
+			// Match each element to corresponding parameter in spec
+			for (index, stellar_val) in tuple.iter().enumerate() {
+				let param = data_params.get(index);
+				let param_name = param
+					.map(|p| p.name.clone())
+					.unwrap_or_else(|| index.to_string());
+				let value_str = stellar_val.to_string();
+				let kind_str = stellar_val.get_type().to_string();
+
+				tracing::trace!(
+					"Extracted tuple param[{}] '{}' = '{}' (kind: {})",
+					index,
+					param_name,
+					value_str,
+					kind_str
+				);
+
+				result.push(StellarMatchParamEntry {
+					name: param_name,
+					value: value_str,
+					kind: kind_str,
+					indexed: false,
+				});
+			}
+		}
+
+		// Case 4: Single value (any other type) - return as single parameter
+		other => {
+			tracing::debug!("Single value for event '{}': {:?}", event_name, other);
+
+			let param_name = data_params
+				.first()
+				.map(|p| p.name.clone())
+				.unwrap_or_else(|| "0".to_string());
+
+			let value_str = other.to_string();
+			let kind_str = other.get_type().to_string();
+
+			tracing::trace!(
+				"Extracted single param '{}' = '{}' (kind: {})",
+				param_name,
+				value_str,
+				kind_str
+			);
+
+			result.push(StellarMatchParamEntry {
+				name: param_name,
+				value: value_str,
+				kind: kind_str,
+				indexed: false,
+			});
+		}
+	}
+
+	tracing::debug!(
+		"Unpacked {} parameter(s) for event '{}'",
+		result.len(),
+		event_name
+	);
+
+	result
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -1168,7 +1485,7 @@ mod tests {
 		];
 		let invoke_op = InvokeHostFunctionOp {
 			host_function: HostFunction::InvokeContract(stellar_xdr::curr::InvokeContractArgs {
-				contract_address: ScAddress::Contract(Hash([0; 32])),
+				contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
 				function_name: function_name.clone().try_into().unwrap(),
 				args: args.try_into().unwrap(),
 			}),
@@ -1499,7 +1816,8 @@ mod tests {
 			signers: vec![].try_into().unwrap(),
 			ext: stellar_xdr::curr::AccountEntryExt::V0,
 		});
-		let xdr = non_code_entry.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_code_entry.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_code_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result
@@ -1523,7 +1841,8 @@ mod tests {
 			signers: vec![].try_into().unwrap(),
 			ext: stellar_xdr::curr::AccountEntryExt::V0,
 		});
-		let xdr = non_data_entry.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_data_entry.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result
@@ -1534,12 +1853,13 @@ mod tests {
 		// Test non-contract instance
 		let non_instance_data = LedgerEntryData::ContractData(ContractDataEntry {
 			ext: stellar_xdr::curr::ExtensionPoint::V0,
-			contract: ScAddress::Contract(Hash([0; 32])),
+			contract: ScAddress::Contract(ContractId(Hash([0; 32]))),
 			key: ScVal::Bool(true),
 			durability: stellar_xdr::curr::ContractDataDurability::Persistent,
 			val: ScVal::Bool(true),
 		});
-		let xdr = non_instance_data.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_instance_data.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result
@@ -1550,7 +1870,7 @@ mod tests {
 		// Test non-WASM executable
 		let non_wasm_instance = LedgerEntryData::ContractData(ContractDataEntry {
 			ext: stellar_xdr::curr::ExtensionPoint::V0,
-			contract: ScAddress::Contract(Hash([0; 32])),
+			contract: ScAddress::Contract(ContractId(Hash([0; 32]))),
 			key: ScVal::LedgerKeyContractInstance,
 			durability: stellar_xdr::curr::ContractDataDurability::Persistent,
 			val: ScVal::ContractInstance(ScContractInstance {
@@ -1558,7 +1878,8 @@ mod tests {
 				storage: Some(ScMap(vec![].try_into().unwrap())),
 			}),
 		});
-		let xdr = non_wasm_instance.to_xdr_base64(Limits::none()).unwrap();
+		let xdr_bytes = non_wasm_instance.to_xdr(Limits::none()).unwrap();
+		let xdr = BASE64_STANDARD.encode(&xdr_bytes);
 		let result = get_wasm_hash_from_ledger_entry_data(&xdr);
 		assert!(result.is_err());
 		assert!(result.unwrap_err().to_string().contains("not WASM"));
@@ -2087,7 +2408,7 @@ mod tests {
 	fn test_udt_type_matching() {
 		let function_name: String = "process_request".into();
 		let args = vec![
-			ScVal::Address(ScAddress::Contract(Hash([0; 32]))),
+			ScVal::Address(ScAddress::Contract(ContractId(Hash([0; 32])))),
 			ScVal::Vec(Some(
 				vec![ScVal::Map(Some(ScMap(
 					vec![
@@ -2110,7 +2431,7 @@ mod tests {
 
 		let invoke_op = InvokeHostFunctionOp {
 			host_function: HostFunction::InvokeContract(stellar_xdr::curr::InvokeContractArgs {
-				contract_address: ScAddress::Contract(Hash([0; 32])),
+				contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
 				function_name: function_name.clone().try_into().unwrap(),
 				args: args.try_into().unwrap(),
 			}),
@@ -2134,6 +2455,7 @@ mod tests {
 					},
 				],
 			}],
+			events: vec![],
 		};
 
 		// Test that the UDT signature is returned even though runtime types are different
@@ -2256,7 +2578,7 @@ mod tests {
 		));
 
 		// Test Address
-		let contract_addr = ScAddress::Contract(Hash([0; 32]));
+		let contract_addr = ScAddress::Contract(ContractId(Hash([0; 32])));
 		assert!(matches!(
 			StellarValue::from(ScVal::Address(contract_addr)),
 			StellarValue::Address(_)
@@ -2438,5 +2760,518 @@ mod tests {
 			StellarType::from(nested_object),
 			StellarType::Map(_, _)
 		));
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_map() {
+		// Test unpacking a Map with multiple parameters
+		let mut btree_map = BTreeMap::new();
+		btree_map.insert("amount".to_string(), StellarValue::U64(1000));
+		btree_map.insert(
+			"recipient".to_string(),
+			StellarValue::Address(
+				"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI".to_string(),
+			),
+		);
+		btree_map.insert(
+			"sender".to_string(),
+			StellarValue::Address(
+				"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4".to_string(),
+			),
+		);
+
+		let stellar_value = StellarValue::Map(btree_map);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "amount".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "recipient".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "sender".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "transfer");
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "amount");
+		assert_eq!(result[0].value, "1000");
+		assert_eq!(result[0].kind, "U64");
+		assert!(!result[0].indexed);
+
+		assert_eq!(result[1].name, "recipient");
+		assert_eq!(
+			result[1].value,
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+		);
+		assert_eq!(result[1].kind, "Address");
+
+		assert_eq!(result[2].name, "sender");
+		assert_eq!(
+			result[2].value,
+			"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
+		);
+		assert_eq!(result[2].kind, "Address");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_map_missing_key() {
+		// Test unpacking a Map when a parameter is missing
+		let mut btree_map = BTreeMap::new();
+		btree_map.insert("amount".to_string(), StellarValue::U64(1000));
+		// Missing "recipient" key
+
+		let stellar_value = StellarValue::Map(btree_map);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "amount".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "recipient".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "transfer");
+
+		// Should only extract the one that exists
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "amount");
+		assert_eq!(result[0].value, "1000");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_empty_map() {
+		// Test unpacking an empty Map
+		let btree_map = BTreeMap::new();
+		let stellar_value = StellarValue::Map(btree_map);
+
+		let data_params = vec![StellarContractEventParam {
+			name: "amount".to_string(),
+			kind: "U64".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "test_event");
+
+		assert_eq!(result.len(), 0);
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_vec() {
+		// Test unpacking a Vec with multiple elements
+		let vec = vec![
+			StellarValue::U64(1000),
+			StellarValue::Address(
+				"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI".to_string(),
+			),
+			StellarValue::Bool(true),
+		];
+
+		let stellar_value = StellarValue::Vec(vec);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "amount".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "recipient".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "is_active".to_string(),
+				kind: "Bool".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "vec_event");
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "amount");
+		assert_eq!(result[0].value, "1000");
+		assert_eq!(result[0].kind, "U64");
+
+		assert_eq!(result[1].name, "recipient");
+		assert_eq!(
+			result[1].value,
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+		);
+		assert_eq!(result[1].kind, "Address");
+
+		assert_eq!(result[2].name, "is_active");
+		assert_eq!(result[2].value, "true");
+		assert_eq!(result[2].kind, "Bool");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_vec_more_elements_than_params() {
+		// Test unpacking a Vec with more elements than spec parameters
+		let vec = vec![
+			StellarValue::U64(1000),
+			StellarValue::U64(2000),
+			StellarValue::U64(3000),
+		];
+
+		let stellar_value = StellarValue::Vec(vec);
+
+		let data_params = vec![StellarContractEventParam {
+			name: "amount".to_string(),
+			kind: "U64".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "vec_event");
+
+		// Should extract all elements, using names for those in spec and indices for extras
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "amount");
+		assert_eq!(result[0].value, "1000");
+		assert_eq!(result[1].name, "1"); // Falls back to index
+		assert_eq!(result[1].value, "2000");
+		assert_eq!(result[2].name, "2"); // Falls back to index
+		assert_eq!(result[2].value, "3000");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_empty_vec() {
+		// Test unpacking an empty Vec
+		let vec: Vec<StellarValue> = vec![];
+		let stellar_value = StellarValue::Vec(vec);
+
+		let data_params = vec![StellarContractEventParam {
+			name: "amount".to_string(),
+			kind: "U64".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "empty_vec_event");
+
+		assert_eq!(result.len(), 0);
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_tuple() {
+		// Test unpacking a Tuple
+		let tuple = vec![
+			StellarValue::String("Alice".to_string()),
+			StellarValue::U32(25),
+			StellarValue::Address(
+				"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI".to_string(),
+			),
+		];
+
+		let stellar_value = StellarValue::Tuple(tuple);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "name".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "age".to_string(),
+				kind: "U32".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "address".to_string(),
+				kind: "Address".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "tuple_event");
+
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].name, "name");
+		assert_eq!(result[0].value, "Alice");
+		assert_eq!(result[0].kind, "String");
+
+		assert_eq!(result[1].name, "age");
+		assert_eq!(result[1].value, "25");
+		assert_eq!(result[1].kind, "U32");
+
+		assert_eq!(result[2].name, "address");
+		assert_eq!(
+			result[2].value,
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+		);
+		assert_eq!(result[2].kind, "Address");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_tuple_fewer_params() {
+		// Test unpacking a Tuple with fewer parameters than elements
+		let tuple = vec![StellarValue::U64(100), StellarValue::U64(200)];
+
+		let stellar_value = StellarValue::Tuple(tuple);
+
+		let data_params = vec![StellarContractEventParam {
+			name: "first".to_string(),
+			kind: "U64".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "tuple_event");
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "first");
+		assert_eq!(result[0].value, "100");
+		assert_eq!(result[1].name, "1"); // Falls back to index
+		assert_eq!(result[1].value, "200");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_empty_tuple() {
+		// Test unpacking an empty Tuple
+		let tuple: Vec<StellarValue> = vec![];
+		let stellar_value = StellarValue::Tuple(tuple);
+
+		let data_params = vec![];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "empty_tuple_event");
+
+		assert_eq!(result.len(), 0);
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_single_value() {
+		// Test unpacking a single U64 value
+		let stellar_value = StellarValue::U64(42);
+
+		let data_params = vec![StellarContractEventParam {
+			name: "value".to_string(),
+			kind: "U64".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "single_value_event");
+
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "value");
+		assert_eq!(result[0].value, "42");
+		assert_eq!(result[0].kind, "U64");
+		assert!(!result[0].indexed);
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_single_address() {
+		// Test unpacking a single Address value
+		let stellar_value = StellarValue::Address(
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI".to_string(),
+		);
+
+		let data_params = vec![StellarContractEventParam {
+			name: "recipient".to_string(),
+			kind: "Address".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "address_event");
+
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "recipient");
+		assert_eq!(
+			result[0].value,
+			"GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+		);
+		assert_eq!(result[0].kind, "Address");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_single_value_no_params() {
+		// Test unpacking a single value when no params are provided
+		let stellar_value = StellarValue::Bool(true);
+
+		let data_params: Vec<StellarContractEventParam> = vec![];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "no_params_event");
+
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "0"); // Falls back to "0"
+		assert_eq!(result[0].value, "true");
+		assert_eq!(result[0].kind, "Bool");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_void() {
+		// Test unpacking a Void value
+		let stellar_value = StellarValue::Void;
+
+		let data_params = vec![StellarContractEventParam {
+			name: "result".to_string(),
+			kind: "Void".to_string(),
+			location: StellarEventParamLocation::Data,
+		}];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "void_event");
+
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].name, "result");
+		assert_eq!(result[0].value, "null");
+		assert_eq!(result[0].kind, "Void");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_nested_map() {
+		// Test unpacking a Map containing complex nested values
+		let mut inner_map = BTreeMap::new();
+		inner_map.insert("key1".to_string(), StellarValue::U32(100));
+
+		let mut btree_map = BTreeMap::new();
+		btree_map.insert("id".to_string(), StellarValue::U64(1));
+		btree_map.insert("data".to_string(), StellarValue::Map(inner_map));
+
+		let stellar_value = StellarValue::Map(btree_map);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "id".to_string(),
+				kind: "U64".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "data".to_string(),
+				kind: "Map<String,U32>".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "nested_event");
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "id");
+		assert_eq!(result[0].value, "1");
+		assert_eq!(result[1].name, "data");
+		assert_eq!(result[1].value, "{key1:100}");
+		assert_eq!(result[1].kind, "Map<String,U32>");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_vec_with_complex_types() {
+		// Test unpacking a Vec containing complex types
+		let vec = vec![
+			StellarValue::Vec(vec![StellarValue::U32(1), StellarValue::U32(2)]),
+			StellarValue::Bytes(vec![0xAB, 0xCD, 0xEF]),
+		];
+
+		let stellar_value = StellarValue::Vec(vec);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "numbers".to_string(),
+				kind: "Vec<U32>".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "hash".to_string(),
+				kind: "Bytes".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "complex_vec_event");
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "numbers");
+		assert_eq!(result[0].value, "[1,2]");
+		assert_eq!(result[1].name, "hash");
+		assert_eq!(result[1].value, "abcdef");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_large_numbers() {
+		// Test unpacking large number types
+		let vec = vec![
+			StellarValue::U128("340282366920938463463374607431768211455".to_string()),
+			StellarValue::I256(
+				"-57896044618658097711785492504343953926634992332820282019728792003956564819968"
+					.to_string(),
+			),
+		];
+
+		let stellar_value = StellarValue::Vec(vec);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "large_uint".to_string(),
+				kind: "U128".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "large_int".to_string(),
+				kind: "I256".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "large_numbers_event");
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "large_uint");
+		assert_eq!(result[0].value, "340282366920938463463374607431768211455");
+		assert_eq!(result[0].kind, "U128");
+		assert_eq!(result[1].name, "large_int");
+		assert_eq!(
+			result[1].value,
+			"-57896044618658097711785492504343953926634992332820282019728792003956564819968"
+		);
+		assert_eq!(result[1].kind, "I256");
+	}
+
+	#[test]
+	fn test_unpack_stellar_value_symbol_and_string() {
+		// Test unpacking Symbol and String types
+		let mut btree_map = BTreeMap::new();
+		btree_map.insert(
+			"symbol".to_string(),
+			StellarValue::Symbol("transfer".to_string()),
+		);
+		btree_map.insert(
+			"message".to_string(),
+			StellarValue::String("Hello, World!".to_string()),
+		);
+
+		let stellar_value = StellarValue::Map(btree_map);
+
+		let data_params = vec![
+			StellarContractEventParam {
+				name: "symbol".to_string(),
+				kind: "Symbol".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+			StellarContractEventParam {
+				name: "message".to_string(),
+				kind: "String".to_string(),
+				location: StellarEventParamLocation::Data,
+			},
+		];
+
+		let result = unpack_stellar_value(&stellar_value, &data_params, "text_event");
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "symbol");
+		assert_eq!(result[0].value, "transfer");
+		assert_eq!(result[0].kind, "Symbol");
+		assert_eq!(result[1].name, "message");
+		assert_eq!(result[1].value, "Hello, World!");
+		assert_eq!(result[1].kind, "String");
 	}
 }

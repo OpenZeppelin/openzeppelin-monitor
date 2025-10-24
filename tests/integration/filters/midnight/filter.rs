@@ -83,7 +83,7 @@ async fn test_monitor_functions_with_no_expressions() -> Result<(), Box<FilterEr
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -154,7 +154,7 @@ async fn test_monitor_functions_with_expressions() -> Result<(), Box<FilterError
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -241,7 +241,7 @@ async fn test_monitor_with_multiple_conditions() -> Result<(), Box<FilterError>>
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -285,7 +285,7 @@ async fn test_monitor_error_cases() -> Result<(), Box<FilterError>> {
 			&mock_client,
 			&network,
 			&invalid_block,
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await;
@@ -339,7 +339,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -410,7 +410,7 @@ async fn test_handle_match_with_no_args() -> Result<(), Box<FilterError>> {
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -481,7 +481,7 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -583,7 +583,7 @@ async fn test_monitor_transaction_status_success() -> Result<(), Box<FilterError
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -653,7 +653,7 @@ async fn test_monitor_transaction_status_failure() -> Result<(), Box<FilterError
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;
@@ -739,7 +739,7 @@ async fn test_monitor_transaction_status_any() -> Result<(), Box<FilterError>> {
 			&mock_client,
 			&network,
 			&BlockType::Midnight(Box::new(block)),
-			&[monitor.clone()],
+			std::slice::from_ref(&monitor),
 			None,
 		)
 		.await?;

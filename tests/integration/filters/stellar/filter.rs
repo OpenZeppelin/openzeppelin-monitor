@@ -44,6 +44,27 @@ fn make_monitor_with_events(mut monitor: Monitor, include_expression: bool) -> M
 	monitor
 }
 
+fn make_monitor_with_events_protocol_23(mut monitor: Monitor, include_expression: bool) -> Monitor {
+	monitor.name = "Testing stellar events".to_string();
+	monitor.addresses = vec![];
+	monitor.addresses = vec![AddressWithSpec {
+		address: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMC".to_string(),
+		contract_spec: None,
+	}];
+	monitor.match_conditions.functions = vec![];
+	monitor.match_conditions.transactions = vec![];
+	monitor.match_conditions.events = vec![];
+	monitor.match_conditions.events.push(EventCondition {
+		signature: "UserAdded(Symbol,String,U32,String)".to_string(),
+		expression: if include_expression {
+			Some("name == 'John'".to_string())
+		} else {
+			None
+		},
+	});
+	monitor
+}
+
 fn make_monitor_with_functions(mut monitor: Monitor, include_expression: bool) -> Monitor {
 	monitor.match_conditions.events = vec![];
 	monitor.match_conditions.transactions = vec![];
@@ -1404,6 +1425,152 @@ async fn test_filter_with_udt_expression() -> Result<(), Box<FilterError>> {
 			);
 		}
 		_ => panic!("Expected Stellar match"),
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_handle_match_with_event_spec() -> Result<(), Box<FilterError>> {
+	let test_data = TestDataBuilder::new("stellar")
+		.with_contract_spec("contract_spec_with_events.json")
+		.build();
+	let filter_service = FilterService::new();
+	let trigger_scripts = HashMap::new();
+
+	// // Load Stellar-specific test data
+	// let events: Vec<StellarEvent> =
+	// 	read_and_parse_json("tests/integration/fixtures/stellar/events.json");
+	let transactions: Vec<StellarTransactionInfo> =
+		read_and_parse_json("tests/integration/fixtures/stellar/transactions.json");
+
+	// Create a contract spec that includes event definitions with parameter names
+	// let contract_spec_with_events = read_and_parse_json(
+	// 	"tests/integration/fixtures/stellar/contract_specs/contract_spec_with_events.json",
+	// );
+	// let contract_spec = ContractSpec::Stellar(StellarContractSpec::from(contract_spec_with_events));
+
+	let contract_with_spec: (String, ContractSpec) = (
+		"CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMC".to_string(),
+		test_data.contract_spec.clone().unwrap(),
+	);
+
+	let mut mock_client = MockStellarClientTrait::<MockStellarTransportClient>::new();
+	let decoded_transactions: Vec<StellarTransaction> = transactions
+		.iter()
+		.filter(|tx| {
+			tx.transaction_hash
+				== "2c89fc3311bc275415ed6a764c77d7b0349cb9f4ce37fd2bbfc6604920811501"
+		})
+		.map(|tx| StellarTransaction::from(tx.clone()))
+		.collect();
+
+	// Setup mock expectations
+	mock_client
+		.expect_get_transactions()
+		.times(1)
+		.returning(move |_, _| Ok(decoded_transactions.clone()));
+
+	mock_client
+		.expect_get_events()
+		.times(1)
+		.returning(move |_, _| {
+			Ok(vec![StellarEvent {
+				event_type: "contract".to_string(),
+				topic_xdr: Some(vec!["AAAADwAAAAR1c2Vy".to_string(), "AAAADwAAAANhZGQA".to_string(), "AAAADwAAAAExAAAA".to_string()]),
+				topic_json: None,
+				value_xdr: Some("AAAAEQAAAAEAAAADAAAADwAAAANhZ2UAAAAAAwAAABQAAAAPAAAABWVtYWlsAAAAAAAADgAAAA5qb2huQGVtYWlsLmNvbQAAAAAADwAAAARuYW1lAAAADgAAAARKb2hu".to_string()),
+				value_json: None,
+				transaction_hash:
+					"2c89fc3311bc275415ed6a764c77d7b0349cb9f4ce37fd2bbfc6604920811501".to_string(),
+				contract_id: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMC".to_string(),
+				id: "0004604982330396672-0000000000".to_string(),
+				paging_token: None,
+				in_successful_contract_call: true,
+				ledger: 808663,
+				ledger_closed_at: "2025-10-15T20:11:47Z".to_string(),
+			}])
+		});
+
+	mock_client
+		.expect_get_contract_spec()
+		.returning(move |_| Ok(test_data.contract_spec.clone().unwrap()));
+
+	let mut trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/stellar/triggers/trigger.json")
+			.await;
+
+	// Expectation for the events match with proper parameter names
+	trigger_execution_service
+		.expect_execute()
+		.withf(
+			|trigger_name, variables, _monitor_match, _trigger_scripts| {
+				trigger_name == ["example_trigger_slack"]
+				// Monitor metadata
+				&& variables.get("monitor.name") == Some(&"Testing stellar events".to_string())
+				// Event arguments with proper parameter names from spec
+				&& variables.get("events.0.signature") == Some(&"UserAdded(Symbol,String,U32,String)".to_string())
+				&& variables.get("events.0.args.name") == Some(&"John".to_string())
+				&& variables.get("events.0.args.age") == Some(&"20".to_string())
+				&& variables.get("events.0.args.email") == Some(&"john@email.com".to_string())
+			},
+		)
+		.once()
+		.returning(|_, _, _, _| Ok(()));
+
+	// Create monitor that matches on events
+	let monitor = make_monitor_with_events_protocol_23(test_data.monitor, true);
+
+	let matches = filter_service
+		.filter_block(
+			&mock_client,
+			&test_data.network,
+			&test_data.blocks[0],
+			&[monitor],
+			Some(&[contract_with_spec]),
+		)
+		.await?;
+
+	assert!(!matches.is_empty(), "Should have found matches to handle");
+
+	// Verify the match contains event arguments
+	match &matches[0] {
+		MonitorMatch::Stellar(stellar_match) => {
+			assert!(stellar_match.matched_on.events.len() == 1);
+			assert!(
+				stellar_match.matched_on.events[0].signature
+					== "UserAdded(Symbol,String,U32,String)"
+			);
+
+			let matched_on_args = stellar_match.matched_on_args.as_ref().unwrap();
+			let event_args = &matched_on_args.events.as_ref().unwrap()[0];
+
+			// Verify that parameter names from spec are used
+			let args = event_args.args.as_ref().unwrap();
+			assert_eq!(
+				args[1].name, "name",
+				"Second parameter should be named 'name'"
+			);
+			assert_eq!(args[2].name, "age", "Third parameter should be named 'age'");
+			assert_eq!(
+				args[3].name, "email",
+				"Fourth parameter should named 'email'"
+			);
+		}
+		_ => {
+			panic!("Expected Stellar match");
+		}
+	}
+
+	// Test handle_match to verify the variables use proper parameter names
+	for matching_monitor in matches {
+		let result = handle_match(
+			matching_monitor.clone(),
+			&trigger_execution_service,
+			&trigger_scripts,
+		)
+		.await;
+		assert!(result.is_ok(), "Handle match should succeed");
 	}
 
 	Ok(())

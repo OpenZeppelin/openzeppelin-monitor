@@ -38,8 +38,6 @@ const ARRAY_KINDS: &[&str] = &[
 	"string[]",
 	"address[]",
 	"bool[]",
-	"fixed[]",
-	"ufixed[]",
 	"bytes[]",
 	"bytes32[]",
 	"tuple[]",
@@ -636,54 +634,6 @@ impl<'a> EVMConditionEvaluator<'a> {
 		}
 	}
 
-	/// Compares a fixed-point number (Decimal) with a literal value.
-	///
-	/// Arguments:
-	/// - lhs_str: The left-hand side value as a string.
-	/// - operator: The operator to use for the comparison.
-	/// - rhs_literal: The right-hand side value.
-	///
-	/// Returns:
-	/// - true if the comparison is true, false otherwise.
-	pub fn compare_fixed_point(
-		&self,
-		lhs_str: &str, // LHS value as string (needs parsing)
-		operator: &ComparisonOperator,
-		rhs_literal: &LiteralValue<'_>,
-	) -> Result<bool, EvaluationError> {
-		let left_decimal = Decimal::from_str(lhs_str).map_err(|e| {
-			let msg = format!("Failed to parse LHS value '{}' as Decimal", lhs_str);
-			EvaluationError::parse_error(msg, Some(e.into()), None)
-		})?;
-
-		// RHS must now be parsed from Number(&str) or Str(&str)
-		let rhs_str = match rhs_literal {
-			LiteralValue::Number(s) => *s,
-			LiteralValue::Str(s) => *s, // If user quoted a numeric string e.g., '123.45'
-			_ => {
-				let msg = format!(
-					"Expected number or string literal for Decimal comparison, found: {:?}",
-					rhs_literal
-				);
-				return Err(EvaluationError::type_mismatch(msg, None, None));
-			}
-		};
-
-		let right_decimal = Decimal::from_str(rhs_str).map_err(|e| {
-			let msg = format!("Failed to parse RHS value '{}' as Decimal", rhs_str);
-			EvaluationError::parse_error(msg, Some(e.into()), None)
-		})?;
-
-		tracing::debug!(
-			"Comparing Decimal: left={}, op={:?}, right={}",
-			left_decimal,
-			operator,
-			right_decimal
-		);
-
-		compare_ordered_values(&left_decimal, operator, &right_decimal)
-	}
-
 	/// Compares a boolean value (true/false) with a literal value.
 	/// Only supports Eq and Ne operators.
 	///
@@ -720,119 +670,6 @@ impl<'a> EVMConditionEvaluator<'a> {
 			_ => {
 				let msg = format!(
 					"Unsupported operator {:?} for EVM Bool comparison",
-					operator
-				);
-				Err(EvaluationError::unsupported_operator(msg, None, None))
-			}
-		}
-	}
-
-	/// Compares a map (JSON object) value with a literal value.
-	///
-	/// Arguments:
-	/// - lhs_json_map_str: The left-hand side value as a JSON map string.
-	/// - operator: The operator to use for the comparison.
-	/// - rhs_literal: The right-hand side value.
-	///
-	/// Returns:
-	/// - true if the comparison is true, false otherwise.
-	/// - error if the comparison is not supported.
-	pub fn compare_map(
-		&self,
-		lhs_json_map_str: &str,
-		operator: &ComparisonOperator,
-		rhs_literal: &LiteralValue<'_>,
-	) -> Result<bool, EvaluationError> {
-		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
-			LiteralValue::Number(s) => {
-				if *operator == ComparisonOperator::Contains {
-					*s // For Contains, we search for this number (as string)
-				} else {
-					let msg = format!(
-						"Expected string literal (representing a JSON map) for EVM 'map' Eq/Ne comparison, found number: {:?}",
-						rhs_literal
-					);
-					return Err(EvaluationError::type_mismatch(msg, None, None));
-				}
-			}
-			_ => {
-				let msg = format!(
-					"Expected string literal for EVM 'map' {} comparison, found: {:?}",
-					if *operator == ComparisonOperator::Contains {
-						"Contains"
-					} else {
-						"Eq/Ne"
-					},
-					rhs_literal
-				);
-				return Err(EvaluationError::type_mismatch(msg, None, None));
-			}
-		};
-
-		tracing::debug!(
-			"EVM Comparing map: lhs: '{}', operator: {:?}, rhs_target: '{}'",
-			lhs_json_map_str,
-			operator,
-			rhs_target_str
-		);
-
-		match operator {
-			ComparisonOperator::Eq | ComparisonOperator::Ne => {
-				let lhs_json_value =
-					serde_json::from_str::<JsonValue>(lhs_json_map_str).map_err(|e| {
-						let msg = format!(
-							"Failed to parse LHS value '{}' as JSON map for 'Eq/Ne' operator",
-							lhs_json_map_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
-
-				let rhs_json_value =
-					serde_json::from_str::<JsonValue>(rhs_target_str).map_err(|e| {
-						let msg = format!(
-							"Failed to parse RHS value '{}' as JSON map for 'Eq/Ne' operator",
-							rhs_target_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
-
-				// Ensure both parsed values are actually objects
-				if !lhs_json_value.is_object() || !rhs_json_value.is_object() {
-					let msg = format!(
-						"For 'map' Eq/Ne comparison, both LHS ('{}') and RHS ('{}') must resolve to JSON objects.",
-						lhs_json_map_str, rhs_target_str
-					);
-					return Err(EvaluationError::type_mismatch(msg, None, None));
-				}
-
-				let are_equal = lhs_json_value == rhs_json_value;
-
-				Ok(if *operator == ComparisonOperator::Eq {
-					are_equal
-				} else {
-					!are_equal
-				})
-			}
-			ComparisonOperator::Contains => {
-				let json_map =
-					serde_json::from_str::<serde_json::Map<String, JsonValue>>(lhs_json_map_str)
-						.map_err(|e| {
-							let msg = format!(
-								"Failed to parse LHS value '{}' as JSON map for 'contains' operator",
-								lhs_json_map_str
-							);
-							EvaluationError::parse_error(msg, Some(e.into()), None)
-						})?;
-
-				let found = json_map.values().any(|item_in_map| {
-					self.check_json_value_matches_str(item_in_map, rhs_target_str)
-				});
-				Ok(found)
-			}
-			_ => {
-				let msg = format!(
-					"Operator {:?} not supported for EVM 'map' type. Supported: Eq, Ne, Contains.",
 					operator
 				);
 				Err(EvaluationError::unsupported_operator(msg, None, None))
@@ -901,13 +738,11 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 		}
 
 		match lhs_kind.as_str() {
-			"fixed" | "ufixed" => self.compare_fixed_point(lhs_value_str, operator, rhs_literal),
 			"address" => self.compare_address(lhs_value_str, operator, rhs_literal),
 			"string" | "bytes" | "bytes32" => {
 				self.compare_string(lhs_value_str, operator, rhs_literal)
 			}
 			"bool" => self.compare_boolean(lhs_value_str, operator, rhs_literal),
-			"map" => self.compare_map(lhs_value_str, operator, rhs_literal),
 			"tuple" => self.compare_tuple(lhs_value_str, operator, rhs_literal),
 			_ => {
 				let msg = format!(
@@ -944,17 +779,12 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 					} else {
 						"bytes".to_string()
 					}
-				// Check if it's a string representation of a decimal
-				} else if Decimal::from_str(s).is_ok() && s.contains('.') {
-					"fixed".to_string()
 				} else {
 					"string".to_string()
 				}
 			}
 			serde_json::Value::Number(n) => {
-				if n.is_f64() || n.to_string().contains('.') {
-					"fixed".to_string()
-				} else if n.is_i64() {
+				if n.is_i64() {
 					// check if it's negative, otherwise default to number
 					if n.as_i64().unwrap_or(0) < 0 {
 						"int64".to_string()
@@ -1437,158 +1267,6 @@ mod tests {
 		));
 	}
 
-	/// --- Test cases for compare_fixed_point ---
-	#[test]
-	fn test_compare_fixed_point_valid() {
-		let evaluator = create_evaluator();
-
-		assert!(evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Eq,
-				&LiteralValue::Number("123.456")
-			)
-			.unwrap());
-
-		assert!(evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Ne,
-				&LiteralValue::Number("456.789")
-			)
-			.unwrap());
-
-		assert!(evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Gt,
-				&LiteralValue::Number("100.0")
-			)
-			.unwrap());
-
-		assert!(evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Gte,
-				&LiteralValue::Number("123.456")
-			)
-			.unwrap());
-
-		assert!(evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Lt,
-				&LiteralValue::Number("200.0")
-			)
-			.unwrap());
-
-		assert!(evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Lte,
-				&LiteralValue::Number("123.456")
-			)
-			.unwrap());
-	}
-
-	#[test]
-	fn test_compare_fixed_point_invalid() {
-		let evaluator = create_evaluator();
-
-		assert!(!evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Eq,
-				&LiteralValue::Number("456.789")
-			)
-			.unwrap());
-
-		assert!(!evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Ne,
-				&LiteralValue::Number("123.456")
-			)
-			.unwrap());
-
-		assert!(!evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Gt,
-				&LiteralValue::Number("200.0")
-			)
-			.unwrap());
-
-		assert!(!evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Gte,
-				&LiteralValue::Number("200.0")
-			)
-			.unwrap());
-
-		assert!(!evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Lt,
-				&LiteralValue::Number("100.0")
-			)
-			.unwrap());
-
-		assert!(!evaluator
-			.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Lte,
-				&LiteralValue::Number("100.0")
-			)
-			.unwrap());
-	}
-
-	#[test]
-	fn test_compare_fixed_point_error() {
-		let evaluator = create_evaluator();
-
-		// Parse error LHS
-		assert!(matches!(
-			evaluator.compare_fixed_point(
-				"not-a-number",
-				&ComparisonOperator::Eq,
-				&LiteralValue::Number("123.456")
-			),
-			Err(EvaluationError::ParseError(_))
-		));
-
-		// Parse error RHS
-		assert!(matches!(
-			evaluator.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Eq,
-				&LiteralValue::Str("not-a-number")
-			),
-			Err(EvaluationError::ParseError(_))
-		));
-
-		// Mismatch type error
-		assert!(matches!(
-			evaluator.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::Eq,
-				&LiteralValue::Bool(true)
-			),
-			Err(EvaluationError::TypeMismatch(_))
-		));
-
-		// Unsupported operator error
-		assert!(matches!(
-			evaluator.compare_fixed_point(
-				"123.456",
-				&ComparisonOperator::StartsWith,
-				&LiteralValue::Number("123.456")
-			),
-			Err(EvaluationError::UnsupportedOperator(_))
-		));
-	}
-
 	/// --- Test cases for compare_boolean ---
 	#[test]
 	fn test_compare_boolean_valid() {
@@ -1935,20 +1613,6 @@ mod tests {
 				"[false, false]".to_string(),
 			),
 			(
-				"fixed[]/ufixed[] (elements as JSON numbers)",
-				"[1.23, 4.500, 6.789]".to_string(),
-				LiteralValue::Number("4.500"),
-				LiteralValue::Str("3.14"),
-				"[10.0, 20.01]".to_string(),
-			),
-			(
-				"fixed[]/ufixed[] (elements as JSON strings)",
-				r#"["10.23", "40.50", "60.789"]"#.to_string(),
-				LiteralValue::Str("40.50"),
-				LiteralValue::Number("30.14"),
-				r#"["100.0", "200.01"]"#.to_string(),
-			),
-			(
 				"bytes[]",
 				r#"["0xaa", "0xbbcc", "0x", "0x123456EF"]"#.to_string(),
 				LiteralValue::Str("0x123456ef"),
@@ -2170,50 +1834,6 @@ mod tests {
 		));
 	}
 
-	/// --- Test cases for compare_map ---
-	#[test]
-	fn test_compare_map_contains_value() {
-		let evaluator = create_evaluator();
-		let lhs_json_map = r#"{"key1": "value1", "key2": "value2"}"#;
-		assert!(evaluator
-			.compare_map(
-				lhs_json_map,
-				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value1")
-			)
-			.unwrap());
-		assert!(!evaluator
-			.compare_map(
-				lhs_json_map,
-				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value3")
-			)
-			.unwrap());
-	}
-
-	#[test]
-	fn test_compare_map_semantic_equality() {
-		let evaluator = create_evaluator();
-
-		// Test Eq
-		assert!(evaluator
-			.compare_map(
-				r#"{"key1": "value1", "key2": "value2"}"#,
-				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"{"key2":"value2","key1":"value1"}"#)
-			)
-			.unwrap());
-
-		// Test Ne
-		assert!(!evaluator
-			.compare_map(
-				r#"{"key1": "value1", "key2": "value2"}"#,
-				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"{"key1":"value1","key2":"value2"}"#)
-			)
-			.unwrap());
-	}
-
 	/// --- Test cases for compare_final_values ---
 	#[test]
 	fn test_compare_final_values_routing() {
@@ -2244,16 +1864,6 @@ mod tests {
 				"-123",
 				&ComparisonOperator::Eq,
 				&LiteralValue::Number("-123")
-			)
-			.unwrap());
-
-		// Test routing to compare_fixed_point
-		assert!(evaluator
-			.compare_final_values(
-				"fixed",
-				"1.23",
-				&ComparisonOperator::Eq,
-				&LiteralValue::Number("1.23")
 			)
 			.unwrap());
 
@@ -2302,16 +1912,6 @@ mod tests {
 				r#"["val1", "val2"]"#,
 				&ComparisonOperator::Contains,
 				&LiteralValue::Str("val1")
-			)
-			.unwrap());
-
-		// Test routing to compare_map
-		assert!(evaluator
-			.compare_final_values(
-				"map",
-				r#"{"key1": "value1", "key2": "value2"}"#,
-				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value1")
 			)
 			.unwrap());
 
@@ -2366,14 +1966,8 @@ mod tests {
 		); // 0x + 64 hex chars
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(123)), "number"); // For U256 path
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(-100)), "int64"); // Or "int" if generic
-		assert_eq!(evaluator.get_kind_from_json_value(&json!(123.45)), "fixed");
-		assert_eq!(
-			evaluator.get_kind_from_json_value(&json!("123.45")),
-			"fixed"
-		); // String that is a decimal
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(true)), "bool");
 		assert_eq!(evaluator.get_kind_from_json_value(&json!([1, 2])), "array");
-		assert_eq!(evaluator.get_kind_from_json_value(&json!({"a":1})), "map");
 		assert_eq!(evaluator.get_kind_from_json_value(&json!(null)), "null");
 	}
 

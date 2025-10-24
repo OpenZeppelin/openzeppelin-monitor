@@ -25,11 +25,11 @@ pub use blockchain::evm::{
 };
 
 pub use blockchain::stellar::{
-	StellarBlock, StellarContractFunction, StellarContractInput, StellarContractSpec,
-	StellarDecodedParamEntry, StellarDecodedTransaction, StellarEvent,
-	StellarFormattedContractSpec, StellarLedgerInfo, StellarMatchArguments, StellarMatchParamEntry,
-	StellarMatchParamsMap, StellarMonitorConfig, StellarMonitorMatch, StellarParsedOperationResult,
-	StellarTransaction, StellarTransactionInfo,
+	StellarBlock, StellarContractEvent, StellarContractEventParam, StellarContractFunction,
+	StellarContractInput, StellarContractSpec, StellarDecodedParamEntry, StellarDecodedTransaction,
+	StellarEvent, StellarEventParamLocation, StellarFormattedContractSpec, StellarLedgerInfo,
+	StellarMatchArguments, StellarMatchParamEntry, StellarMatchParamsMap, StellarMonitorConfig,
+	StellarMonitorMatch, StellarParsedOperationResult, StellarTransaction, StellarTransactionInfo,
 };
 
 pub use blockchain::midnight::{

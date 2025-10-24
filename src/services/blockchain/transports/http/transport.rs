@@ -68,11 +68,9 @@ impl HttpTransportClient {
 			.collect();
 
 		rpc_urls.sort_by(|a, b| b.weight.cmp(&a.weight));
-
 		// Create a retry policy with default settings
 		// Shared config for endpoint manager and test connection
 		let http_retry_config = RetryConfig::default();
-
 		// Create the base HTTP client
 		let base_http_client = Arc::new(
 			reqwest::ClientBuilder::new()
@@ -80,10 +78,10 @@ impl HttpTransportClient {
 				.pool_max_idle_per_host(32)
 				.timeout(Duration::from_secs(30))
 				.connect_timeout(Duration::from_secs(20))
+				.use_rustls_tls()
 				.build()
 				.context("Failed to create base HTTP client")?,
 		);
-
 		// Create a retryable HTTP client with the base client and retry policy
 		// Shared across:
 		// - EndpointManager for handling endpoint rotation
@@ -93,14 +91,11 @@ impl HttpTransportClient {
 			(*base_http_client).clone(),
 			Some(TransientErrorRetryStrategy),
 		);
-
 		for rpc_url in rpc_urls.iter() {
 			let url = match Url::parse(rpc_url.url.as_ref()) {
 				Ok(url) => url,
 				Err(_) => continue,
 			};
-
-			// TODO: At some point we should re-use `try_connect` to test connectivity
 			let test_request = if let Some(test_payload) = &test_connection_payload {
 				serde_json::from_str(test_payload)
 					.context("Failed to parse test payload as JSON")?
@@ -112,14 +107,12 @@ impl HttpTransportClient {
 					"params": []
 				})
 			};
-
 			// Attempt to connect to the endpoint
 			let request_result = retryable_client
 				.post(url.clone())
 				.json(&test_request)
 				.send()
 				.await;
-
 			match request_result {
 				Ok(response) => {
 					// Check if the response indicates an error status (4xx or 5xx)
@@ -127,7 +120,6 @@ impl HttpTransportClient {
 						// Skip this URL if we got an error status
 						continue;
 					}
-
 					// Create list of fallback URLs (all URLs except the current one)
 					let fallback_urls: Vec<String> = rpc_urls
 						.iter()

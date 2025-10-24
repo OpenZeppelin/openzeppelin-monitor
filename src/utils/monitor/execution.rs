@@ -114,7 +114,7 @@ pub async fn execute_monitor<
 			.await
 			.get_all()
 			.values()
-			.filter(|network| has_active_monitors(&[monitor.clone()], &network.slug))
+			.filter(|network| has_active_monitors(std::slice::from_ref(&monitor), &network.slug))
 			.cloned()
 			.collect()
 	};
@@ -190,7 +190,7 @@ pub async fn execute_monitor<
 						&*client,
 						&network,
 						block,
-						&[monitor.clone()],
+						std::slice::from_ref(&monitor),
 						Some(&contract_specs),
 					)
 					.await
@@ -245,7 +245,7 @@ pub async fn execute_monitor<
 						&*client,
 						&network,
 						block,
-						&[monitor.clone()],
+						std::slice::from_ref(&monitor),
 						Some(&contract_specs),
 					)
 					.await
@@ -300,7 +300,7 @@ pub async fn execute_monitor<
 						&*client,
 						&network,
 						block,
-						&[monitor.clone()],
+						std::slice::from_ref(&monitor),
 						Some(&contract_specs),
 					)
 					.await
