@@ -228,7 +228,7 @@ pub struct ContractFunction {
 ///
 /// # Type Examples
 /// - Basic types: "U64", "I64", "Address", "Bool", "String"
-/// - Complex types: "Vec<Address>", "Map<String,U64>", "Bytes32"
+/// - Complex types: "`Vec<Address>`", "`Map<String,U64>`", "`Bytes32`"
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
 pub struct ContractInput {
 	/// Zero-based index of the parameter in the function signature

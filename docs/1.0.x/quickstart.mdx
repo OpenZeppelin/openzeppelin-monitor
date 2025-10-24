@@ -1,0 +1,614 @@
+---
+title: Quick Start Guide
+---
+
+OpenZeppelin Monitor is a powerful tool for monitoring blockchain events and transactions. This guide will help you get up and running quickly with practical examples for both EVM and Stellar networks.
+
+## What You'll Learn
+
+* How to set up OpenZeppelin Monitor locally or with Docker
+* How to configure monitoring for USDC transfers on Ethereum
+* How to monitor DEX swaps on Stellar
+* How to set up notifications via Slack and email
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+* ***Rust 2021 edition*** - Required for building from source
+* ***Docker*** - Optional, for containerized deployment
+* ***Git*** - For cloning the repository
+
+
+
+If you don’t have Rust installed, visit https://rustup.rs/ to install it.
+
+
+## Quick Setup Options
+
+We provide two setup paths to get you started:
+
+### Option 1: Automated Setup (Recommended)
+
+For the fastest setup experience, use our automated script that handles everything for you.
+
+#### What the Automated Setup Does
+
+The `setup_and_run.sh` script provides a complete solution that:
+
+* ***Builds the monitor application*** from source
+* ***Copies example configurations*** from `examples/` to `config/`
+  * Network configurations for major blockchains
+  * Pre-configured monitor examples (USDC transfers, Stellar DEX swaps)
+  * Required filter scripts and basic trigger notifications
+* ***Validates all configurations*** to ensure proper setup
+* ***Optionally runs the monitor*** to verify everything works
+
+#### Running the Automated Setup
+
+1. ***Clone the repository:***
+
+   ```bash
+   git clone https://github.com/openzeppelin/openzeppelin-monitor
+   cd openzeppelin-monitor
+   ```
+2. ***Make the script executable:***
+
+   ```bash
+   chmod +x setup_and_run.sh
+   ```
+3. ***Run the automated setup:***
+
+   ```bash
+   ./setup_and_run.sh
+   ```
+
+The script provides colored output and clear guidance throughout the process.
+
+#### After Automated Setup
+
+Once complete, you’ll have:
+
+* A fully built OpenZeppelin Monitor
+* Example configurations ready for customization
+* Clear guidance on next steps
+
+***Next Steps:***
+. Customize the copied configurations in `config/` directories
+. Update RPC URLs and notification credentials
+. Run the monitor with `./openzeppelin-monitor`
+
+
+
+The setup script creates working configurations with placeholder values. ***Remember to update your files with actual RPC endpoints and notification credentials*** before starting real monitoring.
+
+
+### Option 2: Manual Setup
+
+For users who prefer more control over the setup process.
+
+#### Building from Source
+
+1. ***Clone and build:***
+
+   ```bash
+   git clone https://github.com/openzeppelin/openzeppelin-monitor
+   cd openzeppelin-monitor
+   cargo build --release
+   ```
+2. ***Move the binary to project root:***
+
+   ```bash
+   mv ./target/release/openzeppelin-monitor .
+   ```
+
+#### Docker Setup
+
+For containerized deployment:
+
+1. ***Start services:***
+
+   ```bash
+   docker compose up
+   ```
+
+
+
+By default, Docker Compose uses `Dockerfile.development`. For production, set:
+`DOCKERFILE=Dockerfile.production` before running the command.
+
+
+#### Docker Management Commands
+
+| Command | Description |
+| --- | --- |
+| `docker ps -a` | Verify container status |
+| `docker compose down` | Stop services (without metrics) |
+| `docker compose --profile metrics down` | Stop services (with metrics) |
+| `docker compose logs -f` | View logs (follow mode) |
+
+## Environment Configuration
+
+### Logging Configuration
+
+Configure logging verbosity by setting the `RUST_LOG` environment variable:
+
+| Level | Description |
+| --- | --- |
+| `error` | Only error messages |
+| `warn` | Warnings and errors |
+| `info` | General information (recommended) |
+| `debug` | Detailed debugging information |
+| `trace` | Very detailed trace information |
+
+```bash
+export RUST_LOG=info
+```
+
+### Local Configuration
+
+Copy the example environment file and customize it:
+
+```bash
+cp .env.example .env
+```
+
+For detailed configuration options, see [Basic Configuration](/monitor/1.0.x#basic-configuration).
+
+## Practical Examples
+
+Now let’s set up real monitoring scenarios. Choose the example that matches your needs:
+
+### Example 1: Monitor USDC Transfers (Ethereum)
+
+This example monitors large USDC transfers on Ethereum mainnet and sends notifications when transfers exceed 10,000 USDC.
+
+#### Step 1: Network Configuration
+
+Create the Ethereum mainnet configuration:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/networks/ethereum_mainnet.json config/networks/ethereum_mainnet.json
+```
+
+***Key Configuration Details:***
+
+```json
+
+  "network_type": "EVM",
+  "slug": "ethereum_mainnet",
+  "name": "Ethereum Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_RPC_URL_HERE"
+      ,
+      "weight": 100
+    }
+  ],
+  "chain_id": 1,
+  "block_time_ms": 12000,
+  "confirmation_blocks": 12,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 18,
+  "store_blocks": false
+}
+```
+
+
+
+***Important:*** Replace `YOUR_RPC_URL_HERE` with your actual Ethereum RPC endpoint. You can use providers like Infura, Alchemy, or run your own node.
+
+
+#### Step 2: Monitor Configuration
+
+Set up the USDC transfer monitor:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/monitors/evm_transfer_usdc.json config/monitors/evm_transfer_usdc.json
+cp examples/config/filters/evm_filter_block_number.sh config/filters/evm_filter_block_number.sh
+```
+
+***Monitor Configuration Overview:***
+
+```json
+
+  "name": "Large Transfer of USDC Token",
+  "paused": false,
+  "networks": ["ethereum_mainnet"],
+  "addresses": [
+    {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            ,
+
+              "indexed": true,
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            ,
+
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+
+          ],
+          "name": "Transfer",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions":
+    "functions": [],
+    "events": [
+      {
+        "signature": "Transfer(address,address,uint256)",
+        "expression": "value > 10000000000"
+
+    ],
+    "transactions": [
+
+        "status": "Success",
+        "expression": null
+
+    ]
+  },
+  "trigger_conditions": [
+
+      "script_path": "./config/filters/evm_filter_block_number.sh",
+      "language": "bash",
+      "arguments": ["--verbose"],
+      "timeout_ms": 1000
+
+  ],
+  "triggers": ["evm_large_transfer_usdc_slack", "evm_large_transfer_usdc_email"]
+}
+```
+
+
+
+* The `expression: "value > 10000000000"` monitors transfers over 10,000 USDC (USDC has 6 decimals)
+* Remove the `trigger_conditions` array to disable additional filtering
+* The USDC contract address `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` is the official USDC contract on Ethereum mainnet
+
+
+#### Step 3: Notification Setup
+
+##### Slack Notifications
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
+```
+
+***Slack Configuration:***
+
+```json
+
+    "evm_large_transfer_usdc_slack": {
+        "name": "Large Transfer Slack Notification",
+        "trigger_type": "slack",
+        "config": {
+            "slack_url": {
+                "type": "plain",
+                "value": "SLACK_WEBHOOK_URL"
+            ,
+            "message":
+                "title": "large_transfer_slack triggered",
+                "body": "Large transfer of ${events.0.args.value USDC from $events.0.args.from to $events.0.args.to | https://etherscan.io/tx/$transaction.hash#eventlog"
+            }
+        }
+    }
+}
+```
+
+
+
+To get a Slack webhook URL:
+
+1. Go to https://api.slack.com/apps
+2. Create a new app or select existing one
+3. Enable "Incoming Webhooks"
+4. Create a webhook for your channel
+
+
+##### Email Notifications
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/triggers/email_notifications.json config/triggers/email_notifications.json
+```
+
+***Email Configuration:***
+
+```json
+
+    "evm_large_transfer_usdc_email": {
+        "name": "Large Transfer Email Notification",
+        "trigger_type": "email",
+        "config": {
+            "host": "smtp.gmail.com",
+            "port": 465,
+            "username": {
+                "type": "plain",
+                "value": "your_email@gmail.com"
+            ,
+            "password":
+                "type": "plain",
+                "value": "SMTP_PASSWORD"
+            ,
+            "message":
+                "title": "large_transfer_usdc_email triggered",
+                "body": "Large transfer of ${events.0.args.value USDC from $events.0.args.from to $events.0.args.to | https://etherscan.io/tx/$transaction.hash#eventlog"
+            },
+            "sender": "your_email@gmail.com",
+            "recipients": [
+                "recipient1@example.com",
+                "recipient2@example.com"
+            ]
+        }
+    }
+}
+```
+
+
+
+For Gmail, you’ll need to use an "App Password" instead of your regular password. Enable 2FA and generate an app password in your Google Account settings.
+
+
+#### Step 4: Run the Monitor
+
+***Local Deployment:***
+
+```bash
+./openzeppelin-monitor
+```
+
+***Docker Deployment:***
+
+```bash
+cargo make docker-compose-up
+```
+
+#### What Happens Next
+
+Once running, the monitor will:
+
+1. Check for new Ethereum blocks every minute
+2. Watch for USDC transfers over 10,000 USDC
+3. Send notifications via Slack and email when large transfers occur
+
+#### Customization Options
+
+* ***Adjust threshold:*** Modify `"value > 10000000000"` to change the minimum transfer amount
+* ***Monitor other tokens:*** Create new monitor configurations for different ERC20 tokens
+* ***Add more networks:*** Configure additional EVM networks (Polygon, BSC, etc.)
+
+### Example 2: Monitor DEX Swaps (Stellar)
+
+This example monitors large DEX swaps on Stellar mainnet.
+
+#### Step 1: Network Configuration
+
+Create the Stellar mainnet configuration:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/networks/stellar_mainnet.json config/networks/stellar_mainnet.json
+```
+
+***Key Configuration Details:***
+
+```json
+
+  "network_type": "Stellar",
+  "slug": "stellar_mainnet",
+  "name": "Stellar Mainnet",
+  "rpc_urls": [
+     {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_RPC_URL_HERE"
+      ,
+      "weight": 100
+    }
+  ],
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "block_time_ms": 5000,
+  "confirmation_blocks": 2,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 20,
+  "store_blocks": true
+}
+```
+
+#### Step 2: Monitor Configuration
+
+Set up the DEX swap monitor:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/monitors/stellar_swap_dex.json config/monitors/stellar_swap_dex.json
+cp examples/config/filters/stellar_filter_block_number.sh config/filters/stellar_filter_block_number.sh
+```
+
+***Monitor Configuration Overview:***
+
+```json
+
+  "name": "Large Swap By Dex",
+  "paused": false,
+  "networks": ["stellar_mainnet"],
+  "addresses": [
+    {
+     "address": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
+      "contract_spec": [
+        {
+          "function_v0": {
+            "doc": "",
+            "name": "swap",
+            "inputs": [
+              {
+                "doc": "",
+                "name": "user",
+                "type_": "address"
+              ,
+
+                "doc": "",
+                "name": "in_idx",
+                "type_": "u32"
+              ,
+
+                "doc": "",
+                "name": "out_idx",
+                "type_": "u32"
+              ,
+
+                "doc": "",
+                "name": "in_amount",
+                "type_": "u128"
+              ,
+
+                "doc": "",
+                "name": "out_min",
+                "type_": "u128"
+
+            ],
+            "outputs": ["u128"]
+          }
+        }
+      ]
+    }
+  ],
+  "match_conditions":
+    "functions": [
+      {
+        "signature": "swap(Address,U32,U32,U128,U128)",
+        "expression": "out_min > 1000000000"
+
+    ],
+    "events": [],
+    "transactions": [
+
+        "status": "Success",
+        "expression": null
+
+    ]
+  },
+  "trigger_conditions": [
+
+      "script_path": "./config/filters/stellar_filter_block_number.sh",
+      "language": "bash",
+      "arguments": ["--verbose"],
+      "timeout_ms": 1000
+
+  ],
+  "triggers": ["stellar_large_swap_by_dex_slack"]
+}
+```
+
+
+
+* The `contract_spec` field is optional for Stellar contracts. If not provided, the monitor automatically fetches the contract’s SEP-48 interface from the chain
+* You can explore Stellar contract interfaces using the [Stellar Contract Explorer](https://lab.stellar.org/smart-contracts/contract-explorer)
+* The expression `"out_min > 1000000000"` monitors swaps with minimum output over 1 billion tokens
+
+
+#### Step 3: Notification Setup
+
+Set up Slack notifications for Stellar swaps:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
+```
+
+***Slack Configuration:***
+
+```json
+
+  "stellar_large_swap_by_dex_slack": {
+    "name": "Large Swap By Dex Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "slack-webhook-url"
+      ,
+      "message":
+        "title": "large_swap_by_dex_slack triggered",
+        "body": "${monitor.name triggered because of a large swap of $functions.0.args.out_min tokens | https://stellar.expert/explorer/public/tx/$transaction.hash"
+      }
+    }
+  }
+}
+```
+
+#### Step 4: Run the Monitor
+
+***Local Deployment:***
+
+```bash
+./openzeppelin-monitor
+```
+
+***Docker Deployment:***
+
+```bash
+cargo make docker-compose-up
+```
+
+#### What Happens Next
+
+Once running, the monitor will:
+
+1. Check for new Stellar blocks every minute
+2. Watch for large DEX swaps
+3. Send notifications via Slack when large swaps occur
+
+## Next Steps
+
+Now that you have OpenZeppelin Monitor running, here are some suggestions for what to do next:
+
+### Testing and Validation
+
+* [Test your configuration](/monitor/1.0.x#testing-your-configuration) against specific block numbers
+* Verify your RPC endpoints are working correctly
+* Test notification channels with small transactions
+
+### Security and Best Practices
+
+* [Configure secure secret management](/monitor/1.0.x#secret-management) for sensitive data
+* Use environment variables or Hashicorp Cloud Vault for credentials
+* Regularly update your RPC endpoints and monitor configurations
+
+### Advanced Configuration
+
+* Explore additional examples in the [`examples/config/monitors` directory](https://github.com/OpenZeppelin/openzeppelin-monitor/tree/main/examples/config/monitors)
+* Set up monitoring for multiple networks simultaneously
+* Configure custom filter scripts for complex conditions
+
+### Getting Help
+
+* Check the [GitHub Issues](https://github.com/OpenZeppelin/openzeppelin-monitor/issues) for known problems
+* Review the [User Documentation](/monitor/1.0.x) for detailed configuration options
+* Join the OpenZeppelin community for support
+
+
+
+Start with simple monitoring scenarios and gradually add complexity. This helps you understand how the system works and makes troubleshooting easier.

@@ -11,10 +11,10 @@ VERSION=$(grep '^version:' "$DOCS_DIR/antora.yml" | awk '{print $2}')
 BUILD_DIR="$DOCS_DIR/build/site"
 RUST_DOCS_DIR="$DOCS_DIR/rust_docs"
 
-# Check if the target directory exists
+# Create the target directory if it doesn't exist
 if [ ! -d "$BUILD_DIR" ]; then
-  echo "Error: Build directory '$BUILD_DIR' not found."
-  exit 1
+  echo "Build directory '$BUILD_DIR' not found. Creating it..."
+  mkdir -p "$BUILD_DIR"
 fi
 
 # Copy the Rust docs to the target directory
