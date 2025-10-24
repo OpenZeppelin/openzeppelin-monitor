@@ -1,0 +1,303 @@
+---
+title: Contribution Guidelines
+---
+
+Welcome to the OpenZeppelin Monitor project! We appreciate your interest in contributing. This guide outlines the requirements and processes for contributing to the project.
+
+## Getting Started
+
+The OpenZeppelin Monitor project has comprehensive contribution guidelines documented in the [`CONTRIBUTING.md`](https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/CONTRIBUTING.md) file. This documentation provides a summary of key requirements, but for complete details including GitHub workflow, labeling guidelines, and advanced topics, please refer to the full CONTRIBUTING.md file.
+
+
+
+For the most up-to-date and comprehensive contribution guidelines, always refer to the [CONTRIBUTING.md](https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/CONTRIBUTING.md) file in the repository.
+
+
+## Key Requirements
+
+### Contributor License Agreement (CLA)
+
+***You must sign the CLA before contributing.*** The CLA process is automated through GitHub workflows that check and label PRs accordingly.
+
+* All contributors must complete the CLA process
+* The CLA bot will automatically check your PR status
+* PRs cannot be merged without a signed CLA
+
+### Signed Commits
+
+***All commits must be GPG-signed*** as a security requirement.
+
+* Configure GPG signing for your commits
+* Unsigned commits will not be accepted
+* This helps ensure code integrity and authenticity
+
+## Development Environment Setup
+
+### Prerequisites
+
+Before contributing, ensure you have:
+
+* ***Rust 2021 edition*** - Required for development
+* ***Git*** - For version control
+* ***Python/pip*** - For pre-commit hooks
+
+### Initial Setup
+
+```bash
+# Clone and set up the repository
+git clone https://github.com/openzeppelin/openzeppelin-monitor
+cd openzeppelin-monitor
+
+# Build the project
+cargo build
+
+# Set up environment variables
+cp .env.example .env
+```
+
+### Running Tests
+
+```bash
+# All tests
+RUST_TEST_THREADS=1 cargo test
+
+# Integration tests
+RUST_TEST_THREADS=1 cargo test integration
+
+# Property-based tests
+RUST_TEST_THREADS=1 cargo test properties
+```
+
+## Development Workflow
+
+### 1. Pre-commit Hooks
+
+***Required for code quality checks*** including `rustfmt`, `clippy`, and commit message validation.
+
+* Install and configure pre-commit hooks
+* Automatic formatting and linting checks
+* Commit message format validation
+
+#### Installing Pre-commit Hooks
+
+Install and configure pre-commit hooks to ensure code quality:
+
+```bash
+# Install pre-commit (use pipx for global installation if preferred)
+pip install pre-commit
+
+# Install and configure hooks for commit-msg, pre-commit, and pre-push
+pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
+```
+
+
+
+If you encounter issues with pip install, you may need to install [pipx](https://github.com/pypa/pipx) for global installation. Use `pipx install pre-commit` instead.
+
+
+The pre-commit hooks will automatically run on every commit and push, checking for:
+* Code formatting with `rustfmt`
+* Linting with `clippy`
+* Commit message format validation
+* Other code quality checks
+
+### 2. GitHub Workflow
+
+#### Fork and Clone
+
+1. ***Fork the repository*** on GitHub
+2. ***Clone your fork*** locally:
+
+```bash
+# Set up your working directory
+export working_dir="$HOME/repos"
+export user=<your-github-username>
+
+# Clone your fork
+mkdir -p $working_dir
+cd $working_dir
+git clone https://github.com/$user/openzeppelin-monitor.git
+
+# Add upstream remote
+cd openzeppelin-monitor
+git remote add upstream https://github.com/openzeppelin/openzeppelin-monitor.git
+git remote set-url --push upstream no_push
+```
+
+#### Branch Management
+
+* Create feature branches from an up-to-date main branch
+* Regularly sync with upstream
+* Use descriptive branch names
+
+```bash
+# Keep main updated
+git fetch upstream
+git checkout main
+git rebase upstream/main
+
+# Create feature branch
+git checkout -b feature/your-feature-name
+
+# Keep branch updated
+git fetch upstream
+git rebase upstream/main
+```
+
+
+
+Use `git rebase` instead of `git pull` to avoid merge commits and maintain a clean history.
+
+
+### 3. Pull Request Process
+
+#### Creating a Pull Request
+
+1. ***Push your changes*** to your fork:
+
+   ```bash
+   git push -f origin feature/your-feature-name
+   ```
+2. ***Create a Pull Request*** on GitHub
+3. ***Add appropriate labels*** (see Labeling Guidelines below)
+4. ***Include a clear description*** of your changes
+
+#### Best Practices for PRs
+
+* Write clear and meaningful commit messages
+* Include `fixes #123` in PR body (not commit messages) to auto-close issues
+* Break large changes into smaller, logical commits
+* Ensure all tests pass
+* Include sufficient information for reviewers
+
+## Code Standards
+
+### Rust Standards
+
+Rust API Guidelines:
+
+* Format code with `rustfmt`
+* Pass all `clippy` linting checks
+* Follow Rust naming conventions
+
+```bash
+# Format code
+cargo fmt
+
+# Check linting
+cargo clippy --all-targets --all-features
+
+# Run tests
+RUST_TEST_THREADS=1 cargo test
+```
+
+### Testing Requirements
+
+***All contributions must pass existing tests*** and include new tests when applicable:
+
+* Write unit tests for new functionality
+* Add integration tests for complex features
+* Ensure all tests pass before submitting
+* Maintain or improve code coverage
+
+For detailed testing information, see the [Testing Guide](/monitor/1.0.x/testing).
+
+### Commit Message Format
+
+***Follow conventional commit format*** with types like:
+
+* `feat:` - New features
+* `fix:` - Bug fixes
+* `docs:` - Documentation changes
+* `test:` - Test additions or modifications
+* `refactor:` - Code refactoring
+* `chore:` - Maintenance tasks
+
+## Issue and Pull Request Labeling
+
+The project uses a structured labeling system to organize issues and PRs. Key label categories include:
+
+### Area Labels (`A-`)
+* `A-arch` - Architectural concerns
+* `A-blocks` - Block processing
+* `A-clients` - Blockchain clients
+* `A-configs` - Configuration issues
+* `A-docs` - Documentation
+* `A-tests` - Testing
+
+### Type Labels (`T-`)
+* `T-bug` - Bug reports
+* `T-feature` - New features
+* `T-task` - General tasks
+* `T-documentation` - Documentation updates
+
+### Priority Labels (`P-`)
+* `P-high` - Critical tasks
+* `P-medium` - Important tasks
+* `P-low` - Low priority
+
+### Difficulty Labels (`D-`)
+* `D-easy` - Beginner-friendly
+* `D-medium` - Intermediate
+* `D-hard` - Complex issues
+
+
+
+For complete labeling guidelines and all available labels, see the [labeling section](https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/CONTRIBUTING.md#issue-and-pull-request-labeling-guidelines) in CONTRIBUTING.md.
+
+
+## Code Review Process
+
+### Review Requirements
+
+* All PRs require review and approval
+* At least one Reviewer and one Approver must approve
+* Address all review comments before merging
+* Commits are automatically squashed when merging
+
+### Review Guidelines
+
+Reviewers should focus on:
+
+1. ***Soundness*** - Is the idea behind the contribution sound?
+2. ***Architecture*** - Is the contribution architected correctly?
+3. ***Polish*** - Is the contribution polished and ready?
+
+### Getting Reviews
+
+If your PR isn’t getting attention:
+
+* Contact the team on [Telegram](https://t.me/openzeppelin_tg/4)
+* Ensure your PR has appropriate labels
+* Keep PRs focused and reasonably sized
+
+## Security
+
+* Follow the [Security Policy](https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/SECURITY.md)
+* Report security vulnerabilities through the proper channels
+* Never commit sensitive information or credentials
+
+## Community Guidelines
+
+### Code of Conduct
+
+Contributors must follow the [Code of Conduct](https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/CODE_OF_CONDUCT.md), which:
+
+* Establishes standards for respectful collaboration
+* Outlines enforcement procedures
+* Promotes an inclusive environment
+
+## Getting Help
+
+### Community Support
+
+* ***GitHub Discussions***: For questions and community interaction
+* ***Issues***: For bug reports and feature requests
+* ***Telegram***: [Join our community chat](https://t.me/openzeppelin_tg/4)
+* ***Good First Issues***: [Find beginner-friendly issues](https://github.com/openzeppelin/openzeppelin-monitor/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-issue)
+
+### Additional Resources
+
+* ***Full CONTRIBUTING.md***: [Complete contribution guidelines](https://github.com/OpenZeppelin/openzeppelin-monitor/blob/main/CONTRIBUTING.md)
+* ***User Documentation***: [Monitor documentation](https://docs.openzeppelin.com/monitor)
+* ***OpenZeppelin Website***: [Main website](https://openzeppelin.com/)

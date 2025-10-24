@@ -1,5 +1,5 @@
-# Base image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/rust:latest-dev@sha256:faf49718aaa95c798ed1dfdf3e4edee2cdbc3790c8994705ca6ef35972128459 AS base
+# Base image with latest-dev tag digest
+FROM cgr.dev/chainguard/rust@sha256:74aa2608956c114e507dfde8fe31b1e4d42157dad67c29e06337680dedd940e9 AS base
 
 WORKDIR /usr/app
 
@@ -13,8 +13,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     RUST_BACKTRACE=1 cargo install --root /usr/app --path . --debug --locked
 
-# Wolfi image
-FROM --platform=${BUILDPLATFORM} cgr.dev/chainguard/wolfi-base:latest
+# Wolfi image with latest tag digest
+FROM cgr.dev/chainguard/wolfi-base@sha256:9608820b6ea4da8bcf16989dac37a280f8f1fa0022efc45b5ed4b1ac1f634a79
 
 ARG version=3.12
 

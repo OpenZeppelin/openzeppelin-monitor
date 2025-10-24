@@ -30,8 +30,8 @@ pub struct Event {
 	pub id: String,
 
 	/// Deprecated: Use cursor at top level for pagination
-	#[serde(rename = "pagingToken")]
-	pub paging_token: String,
+	#[serde(rename = "pagingToken", skip_serializing_if = "Option::is_none")]
+	pub paging_token: Option<String>,
 
 	/// Whether the event was emitted during a successful contract call
 	#[serde(rename = "inSuccessfulContractCall")]

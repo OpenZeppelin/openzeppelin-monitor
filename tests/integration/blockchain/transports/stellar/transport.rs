@@ -164,8 +164,6 @@ async fn test_get_transactions_outside_of_rpc_retention_window() {
 
 	let err = result.unwrap_err();
 
-	println!("src Error: {}", err.source().unwrap());
-
 	// Check anyhow context message
 	assert!(err
 		.to_string()
@@ -437,8 +435,6 @@ async fn test_get_events_outside_of_rpc_retention_window() {
 	assert!(result.is_err());
 
 	let err = result.unwrap_err();
-
-	println!("src Error: {}", err.source().unwrap());
 
 	// Check anyhow context message
 	assert!(err
@@ -723,8 +719,50 @@ async fn test_get_blocks_invalid_sequence_range() {
 }
 
 #[tokio::test]
-#[ignore = "reason: Currently not possible to catch this error due to the current Stellar RPC behavior: https://github.com/stellar/stellar-rpc/issues/454"]
-async fn test_get_blocks_outside_of_rpc_retention_window() {}
+async fn test_get_blocks_outside_of_rpc_retention_window() {
+	let mut mock_stellar = MockStellarTransportClient::new();
+
+	let start_block = 57317319; // Example start block outside retention window
+	let end_block = 57369158; // Example end block within retention window
+	const ERROR_CODE: i64 = -32600;
+
+	let mock_response = json!({
+			"jsonrpc": "2.0",
+			"id": 1,
+			"error": {
+				"code": ERROR_CODE,
+				"message": format!("startLedger must be within the ledger range: {} - {}",
+					start_block, end_block),
+			}
+	});
+
+	mock_stellar
+		.expect_send_raw_request()
+		.with(predicate::eq("getLedgers"), predicate::always())
+		.times(1)
+		.returning(move |_, _| Ok(mock_response.clone()));
+
+	let client = StellarClient::new_with_transport(mock_stellar);
+
+	let result = client.get_blocks(start_block, Some(end_block)).await;
+
+	assert!(result.is_err());
+
+	let err = result.unwrap_err();
+
+	// Check anyhow context message
+	assert!(err
+		.to_string()
+		.contains("Soroban RPC reported an error during getLedgers"));
+
+	// Check source error
+	assert!(matches!(
+		err.source().and_then(|e| e.downcast_ref::<StellarClientError>()),
+		Some(StellarClientError::OutsideRetentionWindow { rpc_code, rpc_message, .. }) if
+			*rpc_code == ERROR_CODE  &&
+			rpc_message.contains("must be within the ledger range")
+	),);
+}
 
 #[tokio::test]
 async fn test_get_blocks_generic_rpc_error() {

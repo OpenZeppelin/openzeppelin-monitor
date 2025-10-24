@@ -1,20 +1,21 @@
-= Testing Guide
-:description: Comprehensive guide for testing OpenZeppelin Monitor
+---
+title: Testing Guide
+---
 
 This document provides information about testing OpenZeppelin Monitor, including running tests, generating coverage reports, and understanding the test structure.
 
-== Test Organization
+## Test Organization
 
 The project includes comprehensive test suites organized into different categories:
 
-=== Test Types
+### Test Types
 
-* **Unit Tests**: Located within `src/` modules alongside the code they test
-* **Integration Tests**: Located in `tests/integration/` directory
-* **Property-based Tests**: Located in `tests/properties/` directory
-* **Mock Implementations**: Located in `tests/integration/mocks/`
+* ***Unit Tests***: Located within `src/` modules alongside the code they test
+* ***Integration Tests***: Located in `tests/integration/` directory
+* ***Property-based Tests***: Located in `tests/properties/` directory
+* ***Mock Implementations***: Located in `tests/integration/mocks/`
 
-=== Test Structure
+### Test Structure
 
 ```
 tests/
@@ -32,101 +33,95 @@ tests/
 └── integration.rs      # Integration test entry point
 ```
 
-== Running Tests
+## Running Tests
 
-=== All Tests
+### All Tests
 
 Run the complete test suite:
 
-[source,bash]
-----
+```bash
 RUST_TEST_THREADS=1 cargo test
-----
+```
 
-[NOTE]
-====
+<Callout>
+
+
 `RUST_TEST_THREADS=1` is required to prevent test conflicts when accessing shared resources like configuration files or network connections.
-====
 
-=== Specific Test Categories
+</Callout>
 
-**Property-based Tests:**
-[source,bash]
-----
+### Specific Test Categories
+
+***Property-based Tests:***
+```bash
 RUST_TEST_THREADS=1 cargo test properties
-----
+```
 
-**Integration Tests:**
-[source,bash]
-----
+***Integration Tests:***
+```bash
 RUST_TEST_THREADS=1 cargo test integration
-----
+```
 
-**Unit Tests Only:**
-[source,bash]
-----
+***Unit Tests Only:***
+```bash
 RUST_TEST_THREADS=1 cargo test --lib
-----
+```
 
-== Coverage Reports
+## Coverage Reports
 
-=== Prerequisites
+### Prerequisites
 
 Install the coverage tool:
-[source,bash]
-----
+```bash
 rustup component add llvm-tools-preview
 cargo install cargo-llvm-cov
-----
+```
 
-=== Generating Coverage
+### Generating Coverage
 
-**HTML Coverage Report:**
-[source,bash]
-----
+***HTML Coverage Report:***
+```bash
 RUST_TEST_THREADS=1 cargo +stable llvm-cov --html --open
-----
+```
 
 This generates an HTML report in `target/llvm-cov/html/` and opens it in your browser.
 
-**Terminal Coverage Report:**
-[source,bash]
-----
+***Terminal Coverage Report:***
+```bash
 RUST_TEST_THREADS=1 cargo +stable llvm-cov
-----
+```
 
-== Troubleshooting
+## Troubleshooting
 
-=== Common Issues
+### Common Issues
 
-**Tests hanging or timing out:**
+***Tests hanging or timing out:***
 - Ensure `RUST_TEST_THREADS=1` is set
 - Verify mock setups are correct
 
-**Coverage tool not found:**
+***Coverage tool not found:***
 - Install with `cargo install cargo-llvm-cov`
 - Add component with `rustup component add llvm-tools-preview`
 
-**Permission errors:**
+***Permission errors:***
 - Ensure test directories are writable
 - Check file permissions on test fixtures
 
-=== Debug Output
+### Debug Output
 
 Enable debug logging for tests:
-[source,bash]
-----
+```bash
 RUST_LOG=debug RUST_TEST_THREADS=1 cargo test -- --nocapture
-----
+```
 
-== Contributing Tests
+## Contributing Tests
 
 When contributing new features:
 
-1. **Add comprehensive tests** for new functionality
-2. **Ensure all tests pass** locally before submitting
-3. **Include both unit and integration tests** where appropriate
-4. **Update test documentation** if adding new test patterns
-5. **Maintain or improve code coverage**
+1. ***Add comprehensive tests*** for new functionality
+2. ***Ensure all tests pass*** locally before submitting
+3. ***Include both unit and integration tests*** where appropriate
+4. ***Update test documentation*** if adding new test patterns
+5. ***Maintain or improve code coverage***
 
-For more information about contributing, see the project's contributing guidelines.
+For more information about contributing, see the project’s contributing guidelines.

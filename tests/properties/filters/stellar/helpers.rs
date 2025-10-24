@@ -2,15 +2,16 @@
 
 use alloy::primitives::U256;
 use openzeppelin_monitor::services::filter::stellar_helpers::{
-	combine_i128, combine_i256, combine_u128, combine_u256, get_kind_from_value, is_address,
-	parse_sc_val,
+	combine_i128, combine_i256, combine_u128, combine_u256, get_contract_spec_events,
+	get_contract_spec_with_event_parameters, get_kind_from_value, is_address, parse_sc_val,
 };
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::{json, Value};
 use std::str::FromStr;
 use stellar_xdr::curr::{
-	Hash, Int128Parts, Int256Parts, ScAddress, ScString, ScSymbol, ScVal, StringM, UInt128Parts,
-	UInt256Parts,
+	ContractId, Hash, Int128Parts, Int256Parts, ScAddress, ScSpecEntry, ScSpecEventDataFormat,
+	ScSpecEventParamLocationV0, ScSpecEventParamV0, ScSpecEventV0, ScSpecFunctionV0, ScSpecTypeDef,
+	ScString, ScSymbol, ScVal, StringM, UInt128Parts, UInt256Parts, VecM,
 };
 
 // Generator for ScVal values
@@ -58,7 +59,7 @@ prop_compose! {
 				for (i, byte) in bytes.iter().take(32).enumerate() {
 					hash_data[i] = *byte;
 				}
-				ScVal::Address(ScAddress::Contract(Hash(hash_data)))
+				ScVal::Address(ScAddress::Contract(ContractId(Hash(hash_data))))
 			},
 			_ => ScVal::Void
 		}
@@ -687,6 +688,100 @@ proptest! {
 		let value = json!(non_address.clone());
 		let kind = get_kind_from_value(&value);
 		prop_assert_eq!(kind, "String", "Non-address string '{}' should be classified as String", non_address);
+	}
+
+	/// Property: get_contract_spec_events filters only EventV0 entries
+	#[test]
+	fn test_get_contract_spec_events_filters_correctly(
+		num_functions in 0..5usize,
+		num_events in 0..5usize,
+	) {
+		let mut spec_entries = Vec::new();
+
+		// Add function entries
+		for i in 0..num_functions {
+			spec_entries.push(ScSpecEntry::FunctionV0(ScSpecFunctionV0 {
+				doc: StringM::<1024>::from_str("").unwrap(),
+				name: StringM::<32>::from_str(&format!("func{}", i)).unwrap().into(),
+				inputs: VecM::default(),
+				outputs: VecM::default(),
+			}));
+		}
+
+		// Add event entries
+		for i in 0..num_events {
+			spec_entries.push(ScSpecEntry::EventV0(ScSpecEventV0 {
+				doc: StringM::<1024>::from_str("").unwrap(),
+				lib: StringM::<80>::from_str("").unwrap(),
+				name: StringM::<32>::from_str(&format!("Event{}", i)).unwrap().into(),
+				prefix_topics: VecM::default(),
+				params: VecM::default(),
+				data_format: ScSpecEventDataFormat::SingleValue,
+			}));
+		}
+
+		let result = get_contract_spec_events(spec_entries);
+
+		// Should only contain EventV0 entries
+		prop_assert_eq!(result.len(), num_events);
+		for entry in result {
+			prop_assert!(matches!(entry, ScSpecEntry::EventV0(_)));
+		}
+	}
+
+	/// Property: get_contract_spec_with_event_parameters extracts event names and params
+	#[test]
+	fn test_get_contract_spec_with_event_parameters_extraction(
+		event_name in "[a-zA-Z][a-zA-Z0-9_]{0,10}",
+		num_params in 0..3usize,
+	) {
+		// Create event params
+		let mut params = Vec::new();
+		for i in 0..num_params {
+			params.push(ScSpecEventParamV0 {
+				doc: StringM::<1024>::from_str("").unwrap(),
+				name: StringM::<30>::from_str(&format!("param{}", i)).unwrap(),
+				type_: ScSpecTypeDef::I128,
+				location: if i % 2 == 0 {
+					ScSpecEventParamLocationV0::TopicList
+				} else {
+					ScSpecEventParamLocationV0::Data
+				}, // Alternate indexed/data
+			});
+		}
+
+		let spec_entries = vec![ScSpecEntry::EventV0(ScSpecEventV0 {
+			doc: StringM::<1024>::from_str("").unwrap(),
+			lib: StringM::<80>::from_str("").unwrap(),
+			name: StringM::<32>::from_str(&event_name).unwrap().into(),
+			prefix_topics: VecM::default(),
+			params: params.try_into().unwrap(),
+			data_format: ScSpecEventDataFormat::SingleValue,
+		})];
+
+		let result = get_contract_spec_with_event_parameters(spec_entries);
+
+		// Should have one event
+		prop_assert_eq!(result.len(), 1);
+
+		// Verify event name
+		prop_assert_eq!(&result[0].name, &event_name);
+
+		// Verify number of params
+		prop_assert_eq!(result[0].params.len(), num_params);
+
+		// Verify param names and locations
+		for (i, param) in result[0].params.iter().enumerate() {
+			prop_assert_eq!(&param.name, &format!("param{}", i));
+			prop_assert_eq!(&param.kind, "I128");
+			// Check indexed status matches
+			let expected_indexed = i % 2 == 0;
+			if expected_indexed {
+				prop_assert!(matches!(param.location, openzeppelin_monitor::models::StellarEventParamLocation::Indexed));
+			} else {
+				prop_assert!(matches!(param.location, openzeppelin_monitor::models::StellarEventParamLocation::Data));
+			}
+		}
 	}
 
 }

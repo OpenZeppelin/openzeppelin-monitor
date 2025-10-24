@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.1.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.0.0...v1.1.0) (2025-10-22)
+
+
+### 🚀 Features
+
+* Add events and functions summary in notifications ([#339](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/339)) ([000ae24](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/000ae24e896cd0867c6252111a71151942d820bc))
+* Introduce retry mechanism for Email notifier ([#282](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/282)) ([b6301aa](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/b6301aaac963ae904d93e07674d9d01543ecfcd0))
+* Update payload builder to support formatted titles ([#336](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/336)) ([12213b3](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/12213b32d609bf6a1ba69ce548f70809971f9fb3))
+* Upgrade stellar crates and read events from specs ([#371](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/371)) ([7273a3f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/7273a3f8d9249692db6b6ca53f4d8b28b21670f4))
+
+
+### 🐛 Bug Fixes
+
+* Bump MSRV ([#291](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/291)) ([f2d7953](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/f2d795310cd1417ad2fac854ea5f80cf6296b761))
+* correct env var value in semgrep.yml ([#317](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/317)) ([7a8253f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/7a8253fd23ae27c73b3971e2a688c39051c08a84))
+* Deprecate  Stellar `paging_token` in `GetEvents` response ([#344](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/344)) ([68d20f9](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/68d20f91b643ef3a7c85ee897308d4f92d43698b))
+* Generate SBOM step in release pipeline ([#294](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/294)) ([327269d](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/327269d1ce2a16e9c8419e872ca02503c318c480))
+* Multi arch. docker images and binary mismatch ([#382](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/382)) ([a61701e](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/a61701e11a13af03cdf86689b58e670b7d984a38))
+* Release binaries and enable nightly workflows to create binary artifacts and images ([#313](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/313)) ([43a0091](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/43a0091ed7b57a4ca33ca25a73423a73929802f7))
+* Remove deprecated reviewers field from dependabot.yml ([#316](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/316)) ([152843d](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/152843df396b089e1c6054221206097339502f1b))
+* Semgrep CI integration ([#315](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/315)) ([a2bc23b](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/a2bc23baa27630ba914fca12ac40b191cbbad525))
+* syntax error in codeql.yml ([#322](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/322)) ([7068e9e](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/7068e9ee3845a007ed9d6c80157cbe86555ad14e))
+* Update the Semgrep config ([#306](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/306)) ([d4ed740](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/d4ed7405e790098a0b1a0df3701feccb1908c56c))
+* Use unicode character for emoji ([#295](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/295)) ([bdccda5](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/bdccda5f2ca72612a4455a293c30647618476f95))
+
+
+### 🔧 Maintenance
+
+* Add fuzz tests ([#329](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/329)) ([7339896](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/7339896))
+* Add osv-scanner.toml file to ignore some false positives ([#321](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/321)) ([384f641](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/384f641))
+* Add Ubuntu Setup Instructions ([#309](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/309)) ([031fd49](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/031fd49))
+* Add codeql.yml ([#319](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/319)) ([fffb8c1](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/fffb8c1))
+* Fix vulnerabilities ([#367](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/367)) ([a6a06f6](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/a6a06f6))
+* Group dependabot updates for GitHub Actions ([#366](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/366)) ([28c018a](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/28c018a))
+* Harden GitHub Actions [StepSecurity] ([#328](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/328)) ([4c098df](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/4c098df))
+* Migrate from ethabi crate to alloy-core crate ([#272](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/272)) ([971dcbf](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/971dcbf))
+* Remove unsupported EVM ABI types ([#355](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/355)) ([59320ae](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/59320ae))
+* Test run evm networks ([#312](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/312)) ([e839c9f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/e839c9f))
+* Update CODEOWNERS and yamlfix rules ([#341](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/341)) ([f2aa458](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/f2aa458))
+* Update readme file ([#302](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/302)) ([213d461](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/213d461))
+* Upgrading alloy and alloy-dyn-abi ([#383](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/383)) ([47938d1](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/47938d1))
+* Upgrading alloy EVM crate ([#357](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/357)) ([6b26bb6](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/6b26bb6))
+* webhook notifier re-design ([#314](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/314)) ([e314db4](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/e314db4))
+
 ## [1.0.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v0.2.0...v1.0.0) (2025-06-30)
 
 
