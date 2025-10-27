@@ -458,4 +458,166 @@ mod tests {
 			"bf19b4b8a1cb232880d26999f01c0aca5c57635365019456109be2ee809f5919"
 		);
 	}
+
+	#[test]
+	fn test_seed_to_secret_keys() {
+		// Test with a randomly generated seed
+		use rand::RngCore;
+		let mut rng = rand::rng();
+		let mut bytes = [0u8; 32];
+		rng.fill_bytes(&mut bytes);
+		let seed = Seed::from(bytes);
+		let result = seed_to_secret_keys(seed);
+		assert!(result.is_ok());
+		let secret_keys = result.unwrap();
+
+		// Verify that we got a SecretKeys back and can access encryption_secret_key.repr()
+		// The repr() method provides the internal byte representation
+		let enc_key_repr = secret_keys.encryption_secret_key.repr();
+		assert_eq!(enc_key_repr.len(), 32); // SecretKey should be 32 bytes
+	}
+
+	#[test]
+	fn test_seed_to_secret_keys_deterministic() {
+		// Test that the same seed produces the same SecretKeys
+		use rand::RngCore;
+		let mut rng = rand::rng();
+		let mut bytes = [0u8; 32];
+		rng.fill_bytes(&mut bytes);
+
+		// Create two seeds from the same bytes
+		let seed1 = Seed::from(bytes);
+		let seed2 = Seed::from(bytes);
+
+		let result1 = seed_to_secret_keys(seed1);
+		let result2 = seed_to_secret_keys(seed2);
+
+		assert!(result1.is_ok());
+		assert!(result2.is_ok());
+
+		let secret_keys1 = result1.unwrap();
+		let secret_keys2 = result2.unwrap();
+
+		// Verify that the same seed produces the same encryption secret key
+		assert_eq!(
+			secret_keys1.encryption_secret_key.repr(),
+			secret_keys2.encryption_secret_key.repr()
+		);
+	}
+
+	#[test]
+	fn test_seed_to_secret_keys_different_seeds() {
+		// Test that different seeds produce different SecretKeys
+		use rand::RngCore;
+		let mut rng = rand::rng();
+		let mut bytes1 = [0u8; 32];
+		let bytes2 = [1u8; 32]; // Different seed
+		rng.fill_bytes(&mut bytes1);
+
+		let seed1 = Seed::from(bytes1);
+		let seed2 = Seed::from(bytes2);
+
+		let result1 = seed_to_secret_keys(seed1);
+		let result2 = seed_to_secret_keys(seed2);
+
+		assert!(result1.is_ok());
+		assert!(result2.is_ok());
+
+		let secret_keys1 = result1.unwrap();
+		let secret_keys2 = result2.unwrap();
+
+		// Verify that different seeds produce different encryption secret keys
+		assert_ne!(
+			secret_keys1.encryption_secret_key.repr(),
+			secret_keys2.encryption_secret_key.repr()
+		);
+	}
+
+	#[test]
+	fn test_parse_tx_index_item_valid_hash_with_data() {
+		// Test with valid hash and non-empty data
+		// Due to the TODO early return (lines 44-52), this should return Ok with None for tx
+		let valid_hash = "1234567890123456789012345678901234567890123456789012345678901234";
+		let raw_tx_data = "0012345678"; // Non-empty data
+
+		let result = parse_tx_index_item(valid_hash, raw_tx_data, NetworkId::TestNet);
+
+		// Should return Ok with None for tx due to early return
+		assert!(result.is_ok());
+		let (hash, tx) = result.unwrap();
+		assert!(tx.is_none());
+		assert_eq!(hash.0 .0.len(), PERSISTENT_HASH_BYTES);
+	}
+
+	#[test]
+	fn test_parse_tx_index_item_invalid_hash_length() {
+		// Test with hash that's too short - this should error during hex decode or conversion
+		let short_hash = "1234"; // Only 2 bytes, should be 32 bytes
+		let raw_tx_data = ""; // Empty data to hit the early return
+
+		let result = parse_tx_index_item(short_hash, raw_tx_data, NetworkId::TestNet);
+
+		// Should fail when trying to convert to 32-byte array
+		assert!(result.is_err());
+		let error_msg = result.unwrap_err().to_string();
+		assert!(error_msg.contains("Invalid hash length"));
+	}
+
+	#[test]
+	fn test_parse_tx_index_item_invalid_hex_in_hash() {
+		// Test with invalid hex in hash
+		let invalid_hex_hash = "GHIJKLmnopqrstuvwxyz123456789012345678901234567890123456789012";
+
+		let result = parse_tx_index_item(invalid_hex_hash, "", NetworkId::TestNet);
+
+		assert!(result.is_err());
+		let error_msg = result.unwrap_err().to_string();
+		assert!(error_msg.contains("TransactionHashDecodeError"));
+	}
+
+	#[test]
+	fn test_parse_tx_index_item_invalid_hex_in_body() {
+		// Test with invalid hex in body
+		// Note: Due to the TODO early return (line 44), this code path is unreachable
+		// When the TODO is fixed, this should test TransactionBodyDecodeError
+		let valid_hash = "1234567890123456789012345678901234567890123456789012345678901234";
+		let invalid_hex_body = "00GHIJKL"; // Invalid hex in body
+
+		let result = parse_tx_index_item(valid_hash, invalid_hex_body, NetworkId::TestNet);
+
+		// Currently returns Ok due to early return, but when TODO is fixed:
+		// assert!(result.is_err());
+		// let error_msg = result.unwrap_err().to_string();
+		// assert!(error_msg.contains("TransactionBodyDecodeError"));
+		assert!(result.is_ok());
+	}
+
+	#[test]
+	fn test_parse_tx_index_item_empty_raw_data() {
+		// Test with empty raw_tx_data (should return None for tx)
+		let valid_hash = "1234567890123456789012345678901234567890123456789012345678901234";
+
+		let result = parse_tx_index_item(valid_hash, "", NetworkId::TestNet);
+
+		assert!(result.is_ok());
+		let (hash, tx) = result.unwrap();
+		assert!(tx.is_none());
+		// Hash should be created correctly
+		assert_eq!(hash.0 .0.len(), PERSISTENT_HASH_BYTES);
+	}
+
+	#[test]
+	fn test_parse_tx_index_item_non_empty_raw_data_returns_early() {
+		// Test with non-empty raw_tx_data (should return early due to TODO)
+		let valid_hash = "1234567890123456789012345678901234567890123456789012345678901234";
+		let raw_tx_data = "00123456789012345678901234567890";
+
+		let result = parse_tx_index_item(valid_hash, raw_tx_data, NetworkId::TestNet);
+
+		// Due to the early return in the function (line 44-52), this should return Ok with None for tx
+		assert!(result.is_ok());
+		let (hash, tx) = result.unwrap();
+		assert!(tx.is_none());
+		assert_eq!(hash.0 .0.len(), PERSISTENT_HASH_BYTES);
+	}
 }

@@ -322,8 +322,8 @@ async fn test_websocket_connection_timeout() {
 	// Create config with very short timeouts
 	let config = WsConfig::new()
 		.with_max_reconnect_attempts(0)
-		.with_connection_timeout(Duration::from_millis(1))
-		.with_message_timeout(Duration::from_millis(1))
+		.with_connection_timeout(Duration::from_millis(0))
+		.with_message_timeout(Duration::from_millis(0))
 		.build();
 
 	// Test connection timeout with invalid URL

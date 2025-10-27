@@ -406,3 +406,146 @@ impl<T: BlockChainClient + MidnightClientTrait> BlockFilter for MidnightBlockFil
 		Ok(matching_results)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::models::MidnightRpcTransactionEnum;
+	use crate::utils::tests::builders::midnight::{
+		block::BlockBuilder, transaction::TransactionBuilder,
+	};
+
+	#[test]
+	fn test_find_matching_events_for_transaction() {
+		// Test that find_matching_events_for_transaction doesn't crash
+		// This is currently a stub function that does nothing
+		let filter = MidnightBlockFilter::<()> {
+			_client: PhantomData,
+		};
+		let monitor = Monitor::default();
+		let mut matched_events = vec![EventCondition {
+			signature: "test".to_string(),
+			expression: None,
+		}];
+		let mut matched_on_args = MidnightMatchArguments {
+			events: Some(Vec::new()),
+			functions: Some(Vec::new()),
+		};
+		let mut involved_addresses = vec![];
+
+		// Should not panic
+		futures::executor::block_on(filter.find_matching_events_for_transaction(
+			&monitor,
+			&mut matched_events,
+			&mut matched_on_args,
+			&mut involved_addresses,
+		));
+
+		// The function doesn't modify anything since it's a stub
+		assert_eq!(matched_events.len(), 1); // Should be unchanged
+	}
+
+	#[test]
+	fn test_evaluate_expression() {
+		// Test that evaluate_expression always returns false (current implementation)
+		let filter = MidnightBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Test with various expressions
+		assert!(!filter.evaluate_expression("some expression", &None));
+		assert!(!filter.evaluate_expression("", &None));
+		assert!(!filter.evaluate_expression("true == true", &Some(vec![])));
+
+		// Test with different args
+		let args = Some(vec![MidnightMatchParamEntry {
+			name: "test".to_string(),
+			value: "value".to_string(),
+			indexed: false,
+			kind: "string".to_string(),
+		}]);
+		assert!(!filter.evaluate_expression("true", &args));
+	}
+
+	#[test]
+	fn test_deserialize_transactions_success() {
+		// Test successful deserialization with valid data
+		let filter = MidnightBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Create a simple block with one transaction
+		let tx = TransactionBuilder::new().build();
+		let block = BlockBuilder::new()
+			.add_rpc_transaction(tx.clone().into())
+			.build();
+
+		let network_id = NetworkId::TestNet;
+		let chain_configurations = vec![];
+
+		let result = filter.deserialize_transactions(&block, network_id, &chain_configurations);
+		assert!(result.is_ok());
+		let transactions = result.unwrap();
+		assert_eq!(transactions.len(), 1);
+	}
+
+	#[test]
+	fn test_deserialize_transactions_with_invalid_hash() {
+		// Test deserialization error when parse_tx_index_item fails due to invalid hash
+		let filter = MidnightBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		// Create a transaction with invalid hash
+		let tx = TransactionBuilder::new()
+			.hash("invalid_hex_hash_zzz".to_string()) // Invalid hex
+			.build();
+
+		// Build a block with this invalid transaction
+		let invalid_block = BlockBuilder::new()
+			.body(vec![MidnightRpcTransactionEnum::MidnightTransaction {
+				tx_raw: "".to_string(),
+				tx: tx.into(),
+			}])
+			.transactions_index(vec![(
+				"invalid_hex_hash_zzz".to_string(), // Invalid hex to trigger parse error
+				"some_raw_data".to_string(),
+			)])
+			.build();
+
+		let network_id = NetworkId::TestNet;
+		let chain_configurations = vec![];
+
+		let result =
+			filter.deserialize_transactions(&invalid_block, network_id, &chain_configurations);
+
+		// Should return an error
+		assert!(result.is_err());
+		let error = result.unwrap_err();
+
+		// Verify it's the expected error type
+		match error {
+			FilterError::NetworkError { .. } => {
+				// This is the expected error type
+			}
+			_ => panic!("Expected FilterError::NetworkError, got {:?}", error),
+		}
+	}
+
+	#[test]
+	fn test_deserialize_transactions_empty_block() {
+		// Test deserialization with an empty block
+		let filter = MidnightBlockFilter::<()> {
+			_client: PhantomData,
+		};
+
+		let block = BlockBuilder::new().build();
+		let network_id = NetworkId::TestNet;
+		let chain_configurations = vec![];
+
+		let result = filter.deserialize_transactions(&block, network_id, &chain_configurations);
+		assert!(result.is_ok());
+		let transactions = result.unwrap();
+		assert!(transactions.is_empty());
+	}
+}
