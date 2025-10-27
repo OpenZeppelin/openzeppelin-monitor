@@ -54,6 +54,7 @@ impl BlockType {
 
 /// Transaction data from different blockchain platforms
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum TransactionType {
 	/// EVM transaction
 	EVM(evm::EVMTransaction),

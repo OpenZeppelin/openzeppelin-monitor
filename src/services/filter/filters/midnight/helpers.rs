@@ -4,28 +4,33 @@
 //! and formatting, including address normalization, value parsing, and
 //! operation processing.
 
-use midnight_ledger::{
-	base_crypto::hash::{HashOutput, PERSISTENT_HASH_BYTES},
-	serialize::deserialize,
-	storage::DefaultDB,
-	structure::{Proof, Proofish, Transaction as MidnightNodeTransaction, TransactionHash},
-	transient_crypto::encryption,
-	zswap::{
-		keys::{SecretKeys, Seed},
-		CoinCiphertext,
-	},
+use midnight_base_crypto::hash::{HashOutput, PERSISTENT_HASH_BYTES};
+use midnight_ledger::structure::{Transaction as MidnightNodeTransaction, TransactionHash};
+use midnight_node_ledger_helpers::{deserialize, CoinInfo, NetworkId};
+use midnight_storage::DefaultDB;
+use midnight_transient_crypto::encryption;
+use midnight_zswap::{
+	keys::{SecretKeys, Seed},
+	CoinCiphertext,
 };
-use midnight_node_ledger_helpers::{CoinInfo, NetworkId, DB};
 
 /// Parse a transaction index item
-pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
+#[allow(clippy::type_complexity)]
+pub fn parse_tx_index_item(
 	hash_without_prefix: &str,
 	raw_tx_data: &str,
-	network_id: NetworkId,
+	_network_id: NetworkId,
 ) -> Result<
 	(
 		TransactionHash,
-		Option<MidnightNodeTransaction<P, DefaultDB>>,
+		Option<
+			MidnightNodeTransaction<
+				midnight_base_crypto::signatures::Signature,
+				(),
+				midnight_transient_crypto::commitment::Pedersen,
+				DefaultDB,
+			>,
+		>,
 	),
 	anyhow::Error,
 > {
@@ -79,7 +84,7 @@ pub fn parse_tx_index_item<P: Proofish<DefaultDB>>(
 	let body =
 		hex::decode(body_str).map_err(|e| anyhow::anyhow!("TransactionBodyDecodeError: {}", e))?;
 
-	let tx = deserialize(body.as_slice(), network_id)
+	let tx = deserialize(body.as_slice())
 		.map_err(|e| anyhow::anyhow!("TransactionDeserializeError: {}", e))?;
 
 	Ok((hash, tx))
@@ -210,9 +215,14 @@ pub fn seed_to_secret_keys(seed: Seed) -> Result<SecretKeys, anyhow::Error> {
 ///
 /// # Returns
 /// The result of the operation
-pub fn process_transaction_for_coins<D: DB>(
+pub fn process_transaction_for_coins<D: midnight_storage::db::DB>(
 	viewing_key_hex: &str,
-	tx: &MidnightNodeTransaction<Proof, D>,
+	tx: &MidnightNodeTransaction<
+		midnight_base_crypto::signatures::Signature,
+		(),
+		midnight_transient_crypto::commitment::Pedersen,
+		D,
+	>,
 ) -> Result<Vec<CoinInfo>, anyhow::Error> {
 	let reconstructed_viewing_key = encryption::SecretKey::from_repr(
 		&hex::decode(viewing_key_hex)
@@ -230,9 +240,15 @@ pub fn process_transaction_for_coins<D: DB>(
 	let mut coins: Vec<CoinInfo> = vec![];
 
 	if let MidnightNodeTransaction::Standard(tx) = tx {
-		for output in tx.guaranteed_coins.outputs.iter() {
-			if let Some(coin) = try_decrypt_coin(&output.ciphertext, &viewing_key)? {
-				coins.push(coin);
+		if let Some(guaranteed_coins) = &tx.guaranteed_coins {
+			for output in guaranteed_coins.outputs.iter() {
+				if let Some(ciphertext) = &output.ciphertext {
+					if let Some(coin) =
+						try_decrypt_coin(&Some((**ciphertext).clone()), &viewing_key)?
+					{
+						coins.push(coin);
+					}
+				}
 			}
 		}
 	}
