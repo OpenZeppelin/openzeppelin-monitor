@@ -204,21 +204,7 @@ pub async fn start_test_websocket_server(
 			tokio::select! {
 				accept_result = listener.accept() => {
 					if let Ok((stream, _addr)) = accept_result {
-						// First, read the HTTP upgrade request
-						let mut buf = [0u8; 1024];
-						let n = match stream.peek(&mut buf).await {
-							Ok(n) => n,
-							Err(_) => continue,
-						};
-
-						// Check if this is a WebSocket upgrade request
-						let request = String::from_utf8_lossy(&buf[..n]);
-
-						if !request.contains("Upgrade: websocket") {
-							continue;
-						}
-
-						// Now accept the WebSocket connection
+						// Accept the WebSocket connection
 						let ws_stream = match tokio_tungstenite::accept_async(stream).await {
 							Ok(ws_stream) => ws_stream,
 							Err(_) => continue,

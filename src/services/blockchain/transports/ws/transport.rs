@@ -91,17 +91,21 @@ impl WsTransportClient {
 			if active_url.is_none() {
 				match timeout(config.connection_timeout, connect_async(&url)).await {
 					Ok(Ok(_)) => {
-						active_url = Some(url);
+						active_url = Some(url.clone());
+						// Picked as active; do not push to fallbacks
 						continue;
 					}
 					Ok(Err(e)) => {
-						return Err(anyhow::anyhow!("Failed to connect to {}: {}", url, e));
+						tracing::warn!("WS connect failed for {}: {}", url, e);
+						// try next URL
 					}
 					Err(e) => {
-						return Err(anyhow::anyhow!("Connection timeout for {}: {}", url, e));
+						tracing::warn!("WS connect timeout for {}: {}", url, e);
+						// try next URL
 					}
 				}
 			}
+			// Either already have active, or this one failed and remains a fallback candidate
 			fallback_urls.push(url);
 		}
 

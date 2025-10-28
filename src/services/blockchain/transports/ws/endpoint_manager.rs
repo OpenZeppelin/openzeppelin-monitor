@@ -23,7 +23,6 @@ use crate::services::blockchain::transports::{ws::config::WsConfig, RotatingTran
 /// * `fallback_urls` - List of fallback URLs to use when the active URL fails
 /// * `rotation_lock` - Mutex to ensure thread-safe URL rotation
 /// * `config` - Configuration settings for WebSocket connections
-/// * `client` - The WebSocket client instance
 #[derive(Clone, Debug)]
 pub struct EndpointManager {
 	/// The currently active WebSocket endpoint URL

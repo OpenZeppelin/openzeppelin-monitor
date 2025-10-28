@@ -184,7 +184,7 @@ chmod +x ./scripts/linux/sys_pkgs_dev.sh
 
 #### Prerequisites
 
-- **Rust 2021 edition**, version `1.86` or later.
+- **Rust 2024 edition**, version `1.90` or later.
 - **Git** for version control
 - **Python/pip** for pre-commit hooks
 

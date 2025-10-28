@@ -384,7 +384,7 @@ Note: if your pull request isn't getting enough attention, you can contact us on
 
 ## Coding Standards
 
-- Use **Rust 2021 edition**.
+- Use **Rust 2024 edition**.
 - Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/).
 - Format code with `rustfmt`:
 

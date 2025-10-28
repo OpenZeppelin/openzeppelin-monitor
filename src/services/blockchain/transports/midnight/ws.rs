@@ -59,7 +59,7 @@ impl BlockchainTransport for MidnightTransportClient {
 	/// * `params` - Optional parameters to pass with the request
 	///
 	/// # Returns
-	/// * `Result<Value, anyhow::Error>` - The JSON response or error
+	/// * `Result<Value, TransportError>` - The JSON response or error
 	async fn send_raw_request<P>(
 		&self,
 		method: &str,

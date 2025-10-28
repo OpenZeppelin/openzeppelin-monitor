@@ -207,7 +207,7 @@ impl Event {
 	/// Check if the event is a success event.
 	///
 	/// This is a convenience method that checks if the event is a transaction applied event
-	/// or a only guaranteed transaction applied event.
+	/// or an only guaranteed transaction applied event.
 	pub fn is_success(&self) -> bool {
 		self.is_tx_applied() || self.is_only_guaranteed_tx_applied()
 	}

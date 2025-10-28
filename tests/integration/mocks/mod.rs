@@ -27,6 +27,4 @@ pub use services::*;
 #[allow(unused_imports)]
 pub use subxt::*;
 #[allow(unused_imports)]
-pub use subxt::*;
-#[allow(unused_imports)]
 pub use transports::*;

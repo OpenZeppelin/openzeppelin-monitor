@@ -21,9 +21,8 @@ data/**/*.txt
 data/**/*.json
 
 # Ignore actual config files but not examples
-config/**/*.json
-config/**/*.sh
 !examples/config/**/*.json
+config/**/*.json
 
 # Ignore scripts in config folder
 config/**/*.sh
