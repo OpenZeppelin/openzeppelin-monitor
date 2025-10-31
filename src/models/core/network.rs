@@ -40,14 +40,6 @@ pub struct Network {
 
 	/// Whether to store processed blocks
 	pub store_blocks: Option<bool>,
-
-	/// Number of blocks to buffer before reporting missed blocks.
-	/// This allows for concurrent block processing without false positives.
-	///
-	/// - None or 0: Strict sequential ordering (default, backward compatible)
-	/// - 260-300: Recommended for fast chains (< 1s block time like Arbitrum, Optimism)
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub block_tracking_tolerance: Option<u64>,
 }
 
 /// RPC endpoint configuration with load balancing weight

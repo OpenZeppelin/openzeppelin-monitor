@@ -16,6 +16,5 @@
   "block_time_ms": 250,
   "confirmation_blocks": 12,
   "cron_schedule": "0 */1 * * * *",
-  "store_blocks": false,
-  "block_tracking_tolerance": 300
+  "store_blocks": false
 }

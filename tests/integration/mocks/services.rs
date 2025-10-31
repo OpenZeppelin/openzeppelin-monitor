@@ -84,6 +84,8 @@ mock! {
 		 fn new(history_size: usize, storage: Option<std::sync::Arc<S> >) -> Self;
 		 async fn record_block(&self, network: &Network, block_number: u64) -> Result<(), anyhow::Error>;
 		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
+		 async fn record_fetched_block(&self, network: &Network, block_number: u64);
+		 async fn was_block_fetched(&self, network_slug: &str, block_number: u64) -> bool;
 	}
 }
 
