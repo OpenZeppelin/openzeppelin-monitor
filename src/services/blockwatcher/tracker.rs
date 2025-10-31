@@ -33,6 +33,7 @@ pub trait BlockTrackerTrait<S: BlockStorage> {
 	async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
 	async fn record_fetched_block(&self, network: &Network, block_number: u64);
 	async fn was_block_fetched(&self, network_slug: &str, block_number: u64) -> bool;
+	async fn clear_fetched_blocks(&self, network_slug: &str);
 }
 
 /// BlockTracker is responsible for monitoring the sequence of processed blocks
@@ -112,31 +113,26 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 					// Check if the block was fetched to differentiate error types
 					let was_fetched = self.was_block_fetched(&network.slug, missed).await;
 
-					if was_fetched {
-						// Block was fetched but failed during processing/triggering
-						BlockWatcherError::block_tracker_error(
-							format!("Processing failed for block {} (block was fetched but not triggered)", missed),
-							None,
-							None,
-						);
-					} else {
+					if !was_fetched {
 						// Block was never fetched from RPC
 						BlockWatcherError::block_tracker_error(
 							format!("Missed block {}", missed),
 							None,
 							None,
 						);
-					}
 
-					if network.store_blocks.unwrap_or(false) {
-						if let Some(storage) = &self.storage {
-							// Store the missed block info
-							if (storage.save_missed_block(&network.slug, missed).await).is_err() {
-								BlockWatcherError::storage_error(
-									format!("Failed to store missed block {}", missed),
-									None,
-									None,
-								);
+						// Only save truly missed blocks (never received from RPC) to file
+						if network.store_blocks.unwrap_or(false) {
+							if let Some(storage) = &self.storage {
+								// Store the missed block info
+								if (storage.save_missed_block(&network.slug, missed).await).is_err()
+								{
+									BlockWatcherError::storage_error(
+										format!("Failed to store missed block {}", missed),
+										None,
+										None,
+									);
+								}
 							}
 						}
 					}
@@ -159,14 +155,6 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 		// Maintain history size
 		while network_history.len() > self.history_size {
 			network_history.pop_front();
-		}
-
-		// Clean up old fetched blocks to prevent unbounded memory growth
-		// Keep only blocks within a reasonable window (2x history size from current block)
-		let cleanup_threshold = block_number.saturating_sub(self.history_size as u64 * 2);
-		let mut fetched = self.fetched_blocks.lock().await;
-		if let Some(network_fetched) = fetched.get_mut(&network.slug) {
-			network_fetched.retain(|&block| block > cleanup_threshold);
 		}
 
 		Ok(())
@@ -224,6 +212,21 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 			.get(network_slug)
 			.map(|set| set.contains(&block_number))
 			.unwrap_or(false)
+	}
+
+	/// Clears all fetched blocks for a network.
+	///
+	/// This should be called after a batch of blocks has been processed
+	/// to free memory and prepare for the next iteration.
+	///
+	/// # Arguments
+	///
+	/// * `network_slug` - The network identifier
+	async fn clear_fetched_blocks(&self, network_slug: &str) {
+		let mut fetched = self.fetched_blocks.lock().await;
+		if let Some(network_fetched) = fetched.get_mut(network_slug) {
+			network_fetched.clear();
+		}
 	}
 }
 

@@ -86,6 +86,7 @@ mock! {
 		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
 		 async fn record_fetched_block(&self, network: &Network, block_number: u64);
 		 async fn was_block_fetched(&self, network_slug: &str, block_number: u64) -> bool;
+		 async fn clear_fetched_blocks(&self, network_slug: &str);
 	}
 }
 

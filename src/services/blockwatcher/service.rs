@@ -559,6 +559,9 @@ pub async fn process_new_blocks<
 	// Wait for both pipeline stages to complete
 	let (_process_result, _trigger_result) = tokio::join!(process_handle, trigger_handle);
 
+	// Clear fetched blocks to free memory for next iteration
+	block_tracker.clear_fetched_blocks(&network.slug).await;
+
 	if network.store_blocks.unwrap_or(false) {
 		// Delete old blocks before saving new ones
 		block_storage
