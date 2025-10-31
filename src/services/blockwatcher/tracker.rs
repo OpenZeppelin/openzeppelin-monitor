@@ -286,28 +286,32 @@ impl<S: BlockStorage> BlockTracker<S> {
 		// We keep the last 'tolerance' blocks in pending as they might still arrive
 		let finalize_up_to = end.saturating_sub(tolerance);
 
-		if finalize_up_to <= start {
-			return Ok(()); // Nothing to finalize yet
+		// Nothing to finalize if finalize_up_to is 0 or if there are no blocks to finalize
+		if finalize_up_to == 0 {
+			return Ok(());
 		}
 
-		// Check for gaps in the finalized range
-		for expected in (start + 1)..=finalize_up_to {
-			if !pending.contains(&expected) {
-				// This block is truly missed
-				BlockWatcherError::block_tracker_error(
-					format!("Missed block {}", expected),
-					None,
-					None,
-				);
+		// Check for gaps in the finalized range only if there's a range to check
+		// When finalize_up_to == start, there are no gaps to check (empty range)
+		if finalize_up_to > start {
+			for expected in (start + 1)..=finalize_up_to {
+				if !pending.contains(&expected) {
+					// This block is truly missed
+					BlockWatcherError::block_tracker_error(
+						format!("Missed block {}", expected),
+						None,
+						None,
+					);
 
-				if network.store_blocks.unwrap_or(false) {
-					if let Some(storage) = &self.storage {
-						if (storage.save_missed_block(&network.slug, expected).await).is_err() {
-							BlockWatcherError::storage_error(
-								format!("Failed to store missed block {}", expected),
-								None,
-								None,
-							);
+					if network.store_blocks.unwrap_or(false) {
+						if let Some(storage) = &self.storage {
+							if (storage.save_missed_block(&network.slug, expected).await).is_err() {
+								BlockWatcherError::storage_error(
+									format!("Failed to store missed block {}", expected),
+									None,
+									None,
+								);
+							}
 						}
 					}
 				}
@@ -488,5 +492,348 @@ mod tests {
 		tracker.record_block(&network, 1).await.unwrap();
 		// This should trigger save_missed_block for block 2
 		tracker.record_block(&network, 3).await.unwrap();
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_initial_state() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
+
+		// Create network with tolerance
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		// Simulate starting with a high block number (like in production)
+		// This should NOT report millions of missed blocks
+		tracker.record_block(&network, 210123279).await.unwrap();
+		tracker.record_block(&network, 210123280).await.unwrap();
+		tracker.record_block(&network, 210123281).await.unwrap();
+
+		// Verify watermark is set
+		let watermarks = tracker.watermarks.lock().await;
+		assert_eq!(watermarks.get("test_net"), Some(&210123281));
+
+		// Verify pending blocks contains our blocks
+		let pending = tracker.pending_blocks.lock().await;
+		let network_pending = pending.get("test_net").unwrap();
+		assert!(network_pending.contains(&210123279));
+		assert!(network_pending.contains(&210123280));
+		assert!(network_pending.contains(&210123281));
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_finalization() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		// Start with block 100
+		tracker.record_block(&network, 100).await.unwrap();
+
+		// Add blocks in sequence
+		for i in 101..=110 {
+			tracker.record_block(&network, i).await.unwrap();
+		}
+
+		// Jump ahead to trigger finalization
+		// Need to advance by more than tolerance to finalize
+		// finalize_up_to = 121 - 10 = 111, which is > 110 (old_watermark)
+		tracker.record_block(&network, 121).await.unwrap();
+
+		// Verify blocks were finalized
+		let pending = tracker.pending_blocks.lock().await;
+		let network_pending = pending.get("test_net").unwrap();
+
+		// Blocks 100-111 should be finalized (121 - 10 = 111)
+		assert!(!network_pending.contains(&100));
+		assert!(!network_pending.contains(&105));
+		assert!(!network_pending.contains(&111));
+
+		// Recent blocks should still be pending
+		assert!(network_pending.contains(&121));
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_out_of_order_within_tolerance() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		// Process blocks out of order but within tolerance
+		tracker.record_block(&network, 100).await.unwrap();
+		tracker.record_block(&network, 102).await.unwrap();
+		tracker.record_block(&network, 101).await.unwrap(); // Out of order but within tolerance
+		tracker.record_block(&network, 103).await.unwrap();
+
+		// All blocks should be in pending
+		let pending = tracker.pending_blocks.lock().await;
+		let network_pending = pending.get("test_net").unwrap();
+		assert!(network_pending.contains(&100));
+		assert!(network_pending.contains(&101));
+		assert!(network_pending.contains(&102));
+		assert!(network_pending.contains(&103));
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_duplicate_detection() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		tracker.record_block(&network, 100).await.unwrap();
+		tracker.record_block(&network, 101).await.unwrap();
+
+		// Try to record block 101 again - should detect duplicate
+		tracker.record_block(&network, 101).await.unwrap();
+
+		let pending = tracker.pending_blocks.lock().await;
+		let network_pending = pending.get("test_net").unwrap();
+
+		// Should only contain one instance of 101
+		assert_eq!(network_pending.iter().filter(|&&b| b == 101).count(), 1);
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_block_too_far_behind() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		// Establish watermark with a sequence of blocks
+		for i in 100..=110 {
+			tracker.record_block(&network, i).await.unwrap();
+		}
+
+		// Advance watermark to trigger finalization
+		tracker.record_block(&network, 120).await.unwrap();
+
+		// Try to record a block that's too far behind (outside tolerance)
+		// Watermark is 120, tolerance is 10, so blocks < 110 should be rejected
+		tracker.record_block(&network, 105).await.unwrap();
+
+		let pending = tracker.pending_blocks.lock().await;
+		let network_pending = pending.get("test_net").unwrap();
+
+		// Block 105 should NOT be in pending (too far behind watermark - tolerance = 110)
+		assert!(!network_pending.contains(&105));
+		// Blocks that were finalized (up to 120 - 10 = 110) should not be in pending
+		assert!(!network_pending.contains(&100));
+		assert!(!network_pending.contains(&110));
+		// Recent blocks should still be pending
+		assert!(network_pending.contains(&120));
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_missed_blocks_detection() {
+		let mut mock_storage = MockBlockStorage::new();
+
+		// We'll skip blocks 115 and 116, and detect them when we finalize
+		mock_storage
+			.expect_save_missed_block()
+			.with(
+				mockall::predicate::eq("test_net"),
+				mockall::predicate::eq(115),
+			)
+			.times(1)
+			.returning(|_, _| Ok(()));
+
+		mock_storage
+			.expect_save_missed_block()
+			.with(
+				mockall::predicate::eq("test_net"),
+				mockall::predicate::eq(116),
+			)
+			.times(1)
+			.returning(|_, _| Ok(()));
+
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", true); // store_blocks = true
+		network.block_tracking_tolerance = Some(10);
+
+		// Process blocks with gaps at 115 and 116
+		for i in 100..=114 {
+			tracker.record_block(&network, i).await.unwrap();
+		}
+		// Skip 115 and 116 - these are the missed blocks we want to detect
+
+		// Jump from 114 to 126
+		// old_watermark = 114, new block = 126
+		// Condition: 126 > 114 + 5? → 126 > 119? → YES ✓ (triggers finalization)
+		// finalize_up_to = 126 - 10 = 116
+		// Checks blocks (114+1)..=116, which is 115..=116
+		// Both blocks 115 and 116 are missing and should be reported
+		tracker.record_block(&network, 126).await.unwrap();
+
+		// Blocks 115 and 116 should have been detected as missed and stored
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_watermark_advancement() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		tracker.record_block(&network, 100).await.unwrap();
+
+		{
+			let watermarks = tracker.watermarks.lock().await;
+			assert_eq!(watermarks.get("test_net"), Some(&100));
+		}
+
+		tracker.record_block(&network, 105).await.unwrap();
+
+		{
+			let watermarks = tracker.watermarks.lock().await;
+			assert_eq!(watermarks.get("test_net"), Some(&105));
+		}
+
+		// Lower block shouldn't change watermark
+		tracker.record_block(&network, 103).await.unwrap();
+
+		{
+			let watermarks = tracker.watermarks.lock().await;
+			assert_eq!(watermarks.get("test_net"), Some(&105));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_finalization_threshold() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		tracker.record_block(&network, 100).await.unwrap();
+
+		// Advance by less than tolerance/2 (< 5) - should NOT finalize
+		tracker.record_block(&network, 104).await.unwrap();
+
+		{
+			let pending = tracker.pending_blocks.lock().await;
+			let network_pending = pending.get("test_net").unwrap();
+			// Both blocks should still be pending (no finalization yet)
+			assert!(network_pending.contains(&100));
+			assert!(network_pending.contains(&104));
+		}
+
+		// Advance by more than tolerance/2 (>= 5) - SHOULD finalize
+		tracker.record_block(&network, 110).await.unwrap();
+
+		{
+			let pending = tracker.pending_blocks.lock().await;
+			let network_pending = pending.get("test_net").unwrap();
+
+			// finalize_up_to = 110 - 10 = 100
+			// So block 100 should be finalized (removed from pending)
+			assert!(!network_pending.contains(&100));
+			// But blocks after 100 should still be pending
+			assert!(network_pending.contains(&104));
+			assert!(network_pending.contains(&110));
+		}
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_history_after_finalization() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(10);
+
+		// Process a sequence of blocks
+		for i in 100..=110 {
+			tracker.record_block(&network, i).await.unwrap();
+		}
+
+		// Trigger finalization
+		tracker.record_block(&network, 121).await.unwrap();
+
+		// Check that finalized blocks are in history
+		let history = tracker.block_history.lock().await;
+		let network_history = history.get("test_net").unwrap();
+
+		// Blocks up to finalize_up_to (121 - 10 = 111) should be in history
+		assert!(network_history.contains(&100));
+		assert!(network_history.contains(&105));
+		assert!(network_history.contains(&110));
+
+		// History should be sorted
+		let history_vec: Vec<u64> = network_history.iter().copied().collect();
+		let mut sorted = history_vec.clone();
+		sorted.sort_unstable();
+		assert_eq!(history_vec, sorted);
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_multiple_networks_independent() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network1 = create_test_network("net-1", "net_1", false);
+		network1.block_tracking_tolerance = Some(10);
+
+		let mut network2 = create_test_network("net-2", "net_2", false);
+		network2.block_tracking_tolerance = Some(5);
+
+		// Process blocks for both networks
+		tracker.record_block(&network1, 100).await.unwrap();
+		tracker.record_block(&network2, 200).await.unwrap();
+		tracker.record_block(&network1, 110).await.unwrap();
+		tracker.record_block(&network2, 210).await.unwrap();
+
+		// Check watermarks are independent
+		let watermarks = tracker.watermarks.lock().await;
+		assert_eq!(watermarks.get("net_1"), Some(&110));
+		assert_eq!(watermarks.get("net_2"), Some(&210));
+
+		// Check pending blocks are independent
+		let pending = tracker.pending_blocks.lock().await;
+		let net1_pending = pending.get("net_1").unwrap();
+		let net2_pending = pending.get("net_2").unwrap();
+
+		// Network 1: finalize_up_to = 110 - 10 = 100, so block 100 is finalized
+		assert!(!net1_pending.contains(&100));
+		assert!(net1_pending.contains(&110));
+		assert!(!net1_pending.contains(&200));
+
+		// Network 2: finalize_up_to = 210 - 5 = 205, so block 200 is finalized
+		assert!(!net2_pending.contains(&200));
+		assert!(net2_pending.contains(&210));
+		assert!(!net2_pending.contains(&100));
+	}
+
+	#[tokio::test]
+	async fn test_buffered_mode_edge_case_tolerance_one() {
+		let mock_storage = MockBlockStorage::new();
+		let tracker = BlockTracker::new(100, Some(Arc::new(mock_storage)));
+
+		let mut network = create_test_network("test-net", "test_net", false);
+		network.block_tracking_tolerance = Some(1);
+
+		tracker.record_block(&network, 100).await.unwrap();
+		tracker.record_block(&network, 101).await.unwrap();
+
+		// With tolerance=1, blocks should be finalized quickly
+		tracker.record_block(&network, 102).await.unwrap();
+
+		let pending = tracker.pending_blocks.lock().await;
+		let network_pending = pending.get("test_net").unwrap();
+
+		// Should have finalized some blocks
+		// finalize_up_to = 102 - 1 = 101
+		println!("network_pending: {:?}", network_pending);
+		assert!(!network_pending.contains(&100));
 	}
 }
