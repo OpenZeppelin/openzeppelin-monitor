@@ -403,15 +403,6 @@ pub async fn process_new_blocks<
 			})?;
 	}
 
-	// Log the fetched block range
-	tracing::info!(
-		network = %network.slug,
-		start = blocks.first().map(|b| b.number().unwrap_or(0)),
-		end = blocks.last().map(|b| b.number().unwrap_or(0)),
-		count = blocks.len(),
-		"Fetched blocks for processing"
-	);
-
 	// Record all fetched blocks in the tracker
 	// This allows us to differentiate between blocks that were never received
 	// and blocks that were received but failed during processing
@@ -483,13 +474,6 @@ pub async fn process_new_blocks<
 								"Failed to record block in tracker"
 							);
 						}
-
-						// Log before triggering (sequential order)
-						tracing::info!(
-							network = %network.slug,
-							block_number = expected,
-							"Triggering block (sequential)"
-						);
 						(trigger_handler)(&block);
 						next_block_number = Some(expected + 1);
 					} else {
@@ -519,17 +503,9 @@ pub async fn process_new_blocks<
 
 	// Feed blocks into the pipeline
 	futures::future::join_all(blocks.iter().map(|block| {
-		let network = network.clone();
 		let mut process_tx = process_tx.clone();
 		async move {
 			let block_number = block.number().unwrap_or(0);
-
-			// Log before recording (concurrent order)
-			tracing::info!(
-				network = %network.slug,
-				block_number = block_number,
-				"Recording block (concurrent)"
-			);
 
 			// Send block to processing pipeline
 			process_tx
@@ -544,13 +520,6 @@ pub async fn process_new_blocks<
 	.into_iter()
 	.collect::<Result<Vec<_>, _>>()
 	.with_context(|| format!("Failed to process blocks for network {}", network.slug))?;
-
-	// Log batch completion
-	tracing::info!(
-		network = %network.slug,
-		processed_count = blocks.len(),
-		"Completed batch processing"
-	);
 
 	// Drop the sender after all blocks are sent
 	drop(process_tx);
