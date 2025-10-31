@@ -28,12 +28,13 @@ use crate::{
 #[async_trait]
 pub trait BlockTrackerTrait<S: BlockStorage> {
 	fn new(history_size: usize, storage: Option<Arc<S>>) -> Self;
-	async fn record_block(&self, network: &Network, block_number: u64)
-		-> Result<(), anyhow::Error>;
+	async fn record_block(
+		&self,
+		network: &Network,
+		block_number: u64,
+		fetched_blocks: &HashSet<u64>,
+	) -> Result<(), anyhow::Error>;
 	async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
-	async fn record_fetched_block(&self, network: &Network, block_number: u64);
-	async fn was_block_fetched(&self, network_slug: &str, block_number: u64) -> bool;
-	async fn clear_fetched_blocks(&self, network_slug: &str);
 }
 
 /// BlockTracker is responsible for monitoring the sequence of processed blocks
@@ -50,9 +51,6 @@ pub struct BlockTracker<S> {
 	/// Tracks the last N blocks processed for each network
 	/// Key: network_slug, Value: Queue of block numbers
 	block_history: Arc<Mutex<HashMap<String, VecDeque<u64>>>>,
-	/// Tracks blocks that were fetched from RPC
-	/// Key: network_slug, Value: Set of block numbers
-	fetched_blocks: Arc<Mutex<HashMap<String, HashSet<u64>>>>,
 	/// Maximum number of blocks to keep in history per network
 	history_size: usize,
 	/// Storage interface for persisting missed blocks
@@ -74,7 +72,6 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 	fn new(history_size: usize, storage: Option<Arc<S>>) -> Self {
 		Self {
 			block_history: Arc::new(Mutex::new(HashMap::new())),
-			fetched_blocks: Arc::new(Mutex::new(HashMap::new())),
 			history_size,
 			storage,
 		}
@@ -91,6 +88,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 	///
 	/// * `network` - The network information for the processed block
 	/// * `block_number` - The block number being recorded
+	/// * `fetched_blocks` - Set of block numbers that were fetched from RPC in this execution
 	///
 	/// # Warning
 	///
@@ -99,6 +97,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 		&self,
 		network: &Network,
 		block_number: u64,
+		fetched_blocks: &HashSet<u64>,
 	) -> Result<(), anyhow::Error> {
 		let mut history = self.block_history.lock().await;
 		let network_history = history
@@ -111,7 +110,7 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 				// Log each missed block number
 				for missed in (last_block + 1)..block_number {
 					// Check if the block was fetched to differentiate error types
-					let was_fetched = self.was_block_fetched(&network.slug, missed).await;
+					let was_fetched = fetched_blocks.contains(&missed);
 
 					if !was_fetched {
 						// Block was never fetched from RPC
@@ -177,57 +176,6 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 			.get(network_slug)
 			.and_then(|history| history.back().copied())
 	}
-
-	/// Records a block that was successfully fetched from the RPC.
-	///
-	/// This allows us to differentiate between blocks that were never received
-	/// and blocks that were received but failed during processing.
-	///
-	/// # Arguments
-	///
-	/// * `network` - The network information
-	/// * `block_number` - The block number that was fetched
-	async fn record_fetched_block(&self, network: &Network, block_number: u64) {
-		let mut fetched = self.fetched_blocks.lock().await;
-		let network_fetched = fetched
-			.entry(network.slug.clone())
-			.or_insert_with(HashSet::new);
-		network_fetched.insert(block_number);
-	}
-
-	/// Checks if a block was previously fetched from RPC.
-	///
-	/// # Arguments
-	///
-	/// * `network_slug` - The network identifier
-	/// * `block_number` - The block number to check
-	///
-	/// # Returns
-	///
-	/// `true` if the block was fetched, `false` otherwise
-	async fn was_block_fetched(&self, network_slug: &str, block_number: u64) -> bool {
-		self.fetched_blocks
-			.lock()
-			.await
-			.get(network_slug)
-			.map(|set| set.contains(&block_number))
-			.unwrap_or(false)
-	}
-
-	/// Clears all fetched blocks for a network.
-	///
-	/// This should be called after a batch of blocks has been processed
-	/// to free memory and prepare for the next iteration.
-	///
-	/// # Arguments
-	///
-	/// * `network_slug` - The network identifier
-	async fn clear_fetched_blocks(&self, network_slug: &str) {
-		let mut fetched = self.fetched_blocks.lock().await;
-		if let Some(network_fetched) = fetched.get_mut(network_slug) {
-			network_fetched.clear();
-		}
-	}
 }
 
 #[cfg(test)]
@@ -270,10 +218,22 @@ mod tests {
 		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
 		let network = create_test_network("test-net", "test_net", true);
 
+		// Create fetched blocks set
+		let fetched_blocks: HashSet<u64> = vec![1, 2, 3].into_iter().collect();
+
 		// Process blocks in sequence
-		tracker.record_block(&network, 1).await.unwrap();
-		tracker.record_block(&network, 2).await.unwrap();
-		tracker.record_block(&network, 3).await.unwrap();
+		tracker
+			.record_block(&network, 1, &fetched_blocks)
+			.await
+			.unwrap();
+		tracker
+			.record_block(&network, 2, &fetched_blocks)
+			.await
+			.unwrap();
+		tracker
+			.record_block(&network, 3, &fetched_blocks)
+			.await
+			.unwrap();
 
 		assert_eq!(tracker.get_last_block("test_net").await, Some(3));
 	}
@@ -285,9 +245,15 @@ mod tests {
 		let tracker = BlockTracker::new(3, Some(Arc::new(mock_storage)));
 		let network = create_test_network("test-net", "test_net", true);
 
+		// Create fetched blocks set
+		let fetched_blocks: HashSet<u64> = (1..=5).collect();
+
 		// Process 5 blocks with a history limit of 3
 		for i in 1..=5 {
-			tracker.record_block(&network, i).await.unwrap();
+			tracker
+				.record_block(&network, i, &fetched_blocks)
+				.await
+				.unwrap();
 		}
 
 		let history = tracker.block_history.lock().await;
@@ -318,10 +284,19 @@ mod tests {
 		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
 		let network = create_test_network("test-net", "test_net", true);
 
+		// Create fetched blocks set - block 2 was not fetched from RPC
+		let fetched_blocks: HashSet<u64> = vec![1, 3].into_iter().collect();
+
 		// Process block 1
-		tracker.record_block(&network, 1).await.unwrap();
-		// Skip block 2 and process block 3
-		tracker.record_block(&network, 3).await.unwrap();
+		tracker
+			.record_block(&network, 1, &fetched_blocks)
+			.await
+			.unwrap();
+		// Skip block 2 and process block 3 - should detect block 2 as missed
+		tracker
+			.record_block(&network, 3, &fetched_blocks)
+			.await
+			.unwrap();
 	}
 
 	#[tokio::test]
@@ -331,9 +306,18 @@ mod tests {
 		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
 		let network = create_test_network("test-net", "test_net", true);
 
+		// Create fetched blocks set
+		let fetched_blocks: HashSet<u64> = vec![1, 2].into_iter().collect();
+
 		// Process blocks out of order
-		tracker.record_block(&network, 2).await.unwrap();
-		tracker.record_block(&network, 1).await.unwrap();
+		tracker
+			.record_block(&network, 2, &fetched_blocks)
+			.await
+			.unwrap();
+		tracker
+			.record_block(&network, 1, &fetched_blocks)
+			.await
+			.unwrap();
 
 		assert_eq!(tracker.get_last_block("test_net").await, Some(1));
 	}
@@ -346,11 +330,27 @@ mod tests {
 		let network1 = create_test_network("net-1", "net_1", true);
 		let network2 = create_test_network("net-2", "net_2", true);
 
+		// Create fetched blocks sets for each network
+		let fetched_blocks_net1: HashSet<u64> = vec![1, 2].into_iter().collect();
+		let fetched_blocks_net2: HashSet<u64> = vec![100, 101].into_iter().collect();
+
 		// Process blocks for both networks
-		tracker.record_block(&network1, 1).await.unwrap();
-		tracker.record_block(&network2, 100).await.unwrap();
-		tracker.record_block(&network1, 2).await.unwrap();
-		tracker.record_block(&network2, 101).await.unwrap();
+		tracker
+			.record_block(&network1, 1, &fetched_blocks_net1)
+			.await
+			.unwrap();
+		tracker
+			.record_block(&network2, 100, &fetched_blocks_net2)
+			.await
+			.unwrap();
+		tracker
+			.record_block(&network1, 2, &fetched_blocks_net1)
+			.await
+			.unwrap();
+		tracker
+			.record_block(&network2, 101, &fetched_blocks_net2)
+			.await
+			.unwrap();
 
 		assert_eq!(tracker.get_last_block("net_1").await, Some(2));
 		assert_eq!(tracker.get_last_block("net_2").await, Some(101));
@@ -378,9 +378,18 @@ mod tests {
 		let tracker = BlockTracker::new(5, Some(Arc::new(mock_storage)));
 		let network = create_test_network("test-network", "test_network", true);
 
+		// Create fetched blocks set - block 2 was not fetched
+		let fetched_blocks: HashSet<u64> = vec![1, 3].into_iter().collect();
+
 		// This should trigger save_last_processed_block
-		tracker.record_block(&network, 1).await.unwrap();
+		tracker
+			.record_block(&network, 1, &fetched_blocks)
+			.await
+			.unwrap();
 		// This should trigger save_missed_block for block 2
-		tracker.record_block(&network, 3).await.unwrap();
+		tracker
+			.record_block(&network, 3, &fetched_blocks)
+			.await
+			.unwrap();
 	}
 }

@@ -6,7 +6,7 @@
 use anyhow::Context;
 use futures::{channel::mpsc, future::BoxFuture, stream::StreamExt, SinkExt};
 use std::{
-	collections::{BTreeMap, HashMap},
+	collections::{BTreeMap, HashMap, HashSet},
 	sync::Arc,
 };
 use tokio::sync::RwLock;
@@ -403,16 +403,10 @@ pub async fn process_new_blocks<
 			})?;
 	}
 
-	// Record all fetched blocks in the tracker
-	// This allows us to differentiate between blocks that were never received
-	// and blocks that were received but failed during processing
-	for block in &blocks {
-		if let Some(block_number) = block.number() {
-			block_tracker
-				.record_fetched_block(network, block_number)
-				.await;
-		}
-	}
+	// Create a local set of fetched block numbers for this execution
+	// This allows concurrent executions to maintain isolated state
+	let fetched_block_numbers: HashSet<u64> =
+		blocks.iter().filter_map(|block| block.number()).collect();
 
 	// Create channels for our pipeline
 	let (process_tx, process_rx) = mpsc::channel::<(BlockType, u64)>(blocks.len() * 2);
@@ -451,6 +445,7 @@ pub async fn process_new_blocks<
 		let network = network.clone();
 		let block_tracker = block_tracker.clone();
 		let trigger_handler = trigger_handler.clone();
+		let fetched_block_numbers = fetched_block_numbers.clone();
 
 		async move {
 			let mut trigger_rx = trigger_rx;
@@ -466,7 +461,10 @@ pub async fn process_new_blocks<
 				while let Some(expected) = next_block_number {
 					if let Some(block) = pending_blocks.remove(&expected) {
 						// Record block in tracker (sequential order - no race condition)
-						if let Err(e) = block_tracker.record_block(&network, expected).await {
+						if let Err(e) = block_tracker
+							.record_block(&network, expected, &fetched_block_numbers)
+							.await
+						{
 							tracing::error!(
 								network = %network.slug,
 								block_number = expected,
@@ -486,7 +484,10 @@ pub async fn process_new_blocks<
 			while let Some(min_block) = pending_blocks.keys().next().copied() {
 				if let Some(block) = pending_blocks.remove(&min_block) {
 					// Record block in tracker
-					if let Err(e) = block_tracker.record_block(&network, min_block).await {
+					if let Err(e) = block_tracker
+						.record_block(&network, min_block, &fetched_block_numbers)
+						.await
+					{
 						tracing::error!(
 							network = %network.slug,
 							block_number = min_block,
@@ -527,9 +528,6 @@ pub async fn process_new_blocks<
 
 	// Wait for both pipeline stages to complete
 	let (_process_result, _trigger_result) = tokio::join!(process_handle, trigger_handle);
-
-	// Clear fetched blocks to free memory for next iteration
-	block_tracker.clear_fetched_blocks(&network.slug).await;
 
 	if network.store_blocks.unwrap_or(false) {
 		// Delete old blocks before saving new ones

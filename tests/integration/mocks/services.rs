@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use mockall::mock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use openzeppelin_monitor::{
 	models::{BlockType, ContractSpec, Monitor, MonitorMatch, Network, ScriptLanguage},
@@ -82,11 +82,8 @@ mock! {
 	#[async_trait]
 	impl<S: BlockStorage + 'static> BlockTrackerTrait<S> for BlockTracker<S> {
 		 fn new(history_size: usize, storage: Option<std::sync::Arc<S> >) -> Self;
-		 async fn record_block(&self, network: &Network, block_number: u64) -> Result<(), anyhow::Error>;
+		 async fn record_block(&self, network: &Network, block_number: u64, fetched_blocks: &HashSet<u64>) -> Result<(), anyhow::Error>;
 		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
-		 async fn record_fetched_block(&self, network: &Network, block_number: u64);
-		 async fn was_block_fetched(&self, network_slug: &str, block_number: u64) -> bool;
-		 async fn clear_fetched_blocks(&self, network_slug: &str);
 	}
 }
 

@@ -96,34 +96,15 @@ fn setup_mocks(
 	// Setup mock block tracker with the same Arc<MockBlockStorage>
 	let mut block_tracker = MockBlockTracker::<MockBlockStorage>::default();
 
-	// Configure record_fetched_block expectations
-	for &block_number in &config.expected_tracked_blocks {
-		let block_num = block_number; // Create owned copy
-		block_tracker
-			.expect_record_fetched_block()
-			.withf(move |network: &Network, num: &u64| {
-				network.network_type == BlockChainType::EVM && *num == block_num
-			})
-			.returning(|_, _| ())
-			.times(1);
-	}
-
-	// Configure clear_fetched_blocks expectation
-	block_tracker
-		.expect_clear_fetched_blocks()
-		.with(predicate::always())
-		.returning(|_| ())
-		.times(1);
-
 	// Configure record_block expectations
 	for &block_number in &config.expected_tracked_blocks {
 		let block_num = block_number; // Create owned copy
 		block_tracker
 			.expect_record_block()
-			.withf(move |network: &Network, num: &u64| {
+			.withf(move |network: &Network, num: &u64, _fetched_blocks| {
 				network.network_type == BlockChainType::EVM && *num == block_num
 			})
-			.returning(|_, _| Ok(()))
+			.returning(|_, _, _| Ok(()))
 			.times(1);
 	}
 
@@ -872,18 +853,9 @@ async fn test_process_new_blocks_storage_save_error() {
 	// Setup block tracker expectations
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
-		.expect_record_fetched_block()
-		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| ())
-		.times(1);
-	block_tracker
-		.expect_clear_fetched_blocks()
-		.returning(|_| ())
-		.times(1);
-	block_tracker
 		.expect_record_block()
-		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| Ok(()))
+		.withf(|_, block_number, _fetched_blocks| *block_number == 101)
+		.returning(|_, _, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -945,18 +917,9 @@ async fn test_process_new_blocks_save_last_processed_error() {
 	// Setup block tracker expectations
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
-		.expect_record_fetched_block()
-		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| ())
-		.times(1);
-	block_tracker
-		.expect_clear_fetched_blocks()
-		.returning(|_| ())
-		.times(1);
-	block_tracker
 		.expect_record_block()
-		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| Ok(()))
+		.withf(|_, block_number, _fetched_blocks| *block_number == 101)
+		.returning(|_, _, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -1021,18 +984,9 @@ async fn test_process_new_blocks_storage_delete_error() {
 	// Setup block tracker expectations
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
-		.expect_record_fetched_block()
-		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| ())
-		.times(1);
-	block_tracker
-		.expect_clear_fetched_blocks()
-		.returning(|_| ())
-		.times(1);
-	block_tracker
 		.expect_record_block()
-		.withf(|_, block_number| *block_number == 101)
-		.returning(|_, _| Ok(()))
+		.withf(|_, block_number, _fetched_blocks| *block_number == 101)
+		.returning(|_, _, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
