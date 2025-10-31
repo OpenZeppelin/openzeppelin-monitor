@@ -25,7 +25,6 @@ struct MockConfig {
 	expected_block_range: Option<(u64, Option<u64>)>,
 	expected_tracked_blocks: Vec<u64>,
 	store_blocks: bool,
-	history_size: usize,
 }
 
 /// Helper function to setup mock implementations with configurable expectations
@@ -76,12 +75,6 @@ fn setup_mocks(
 	// Wrap the mock in an Arc to share the instance
 	let block_storage_arc = Arc::new(block_storage);
 
-	// Setup block tracker context for monitoring block processing
-	let ctx = MockBlockTracker::<MockBlockStorage>::new_context();
-	ctx.expect()
-		.withf(|_, _| true)
-		.returning(|_, _| MockBlockTracker::<MockBlockStorage>::default());
-
 	// Setup mock RPC client
 	let mut rpc_client = MockEvmClientTrait::new();
 
@@ -101,10 +94,26 @@ fn setup_mocks(
 	}
 
 	// Setup mock block tracker with the same Arc<MockBlockStorage>
-	let mut block_tracker = MockBlockTracker::<MockBlockStorage>::new(
-		config.history_size,
-		Some(block_storage_arc.clone()),
-	);
+	let mut block_tracker = MockBlockTracker::<MockBlockStorage>::default();
+
+	// Configure record_fetched_block expectations
+	for &block_number in &config.expected_tracked_blocks {
+		let block_num = block_number; // Create owned copy
+		block_tracker
+			.expect_record_fetched_block()
+			.withf(move |network: &Network, num: &u64| {
+				network.network_type == BlockChainType::EVM && *num == block_num
+			})
+			.returning(|_, _| ())
+			.times(1);
+	}
+
+	// Configure clear_fetched_blocks expectation
+	block_tracker
+		.expect_clear_fetched_blocks()
+		.with(predicate::always())
+		.returning(|_| ())
+		.times(1);
 
 	// Configure record_block expectations
 	for &block_number in &config.expected_tracked_blocks {
@@ -138,29 +147,16 @@ async fn test_normal_block_range() {
 		expected_block_range: Some((101, Some(104))),
 		expected_tracked_blocks: vec![101, 102, 103, 104],
 		store_blocks: false,
-		history_size: 10,
 	};
 
-	let cloned_config = config.clone();
-
-	let (block_storage, mut block_tracker, rpc_client) = setup_mocks(config);
-
-	// Configure record_block expectations
-	for block_number in cloned_config.expected_tracked_blocks {
-		let block_num = block_number;
-		block_tracker
-			.expect_record_block()
-			.withf(move |network: &Network, num: &u64| {
-				network.network_type == BlockChainType::EVM && *num == block_num
-			})
-			.returning(|_, _| Ok(()));
-	}
+	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
 
 	// Create block processing handler that returns a ProcessedBlock
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 101,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -198,16 +194,16 @@ async fn test_fresh_start_processing() {
 		expected_block_range: Some((99, None)),
 		expected_tracked_blocks: vec![99],
 		store_blocks: false,
-		history_size: 10,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
 
 	// Create block processing handler that returns a ProcessedBlock
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 0,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -246,7 +242,6 @@ async fn test_no_new_blocks() {
 		expected_block_range: None,      // No block range should be requested
 		expected_tracked_blocks: vec![], // No blocks should be tracked
 		store_blocks: true,
-		history_size: 10,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
@@ -300,7 +295,6 @@ async fn test_concurrent_processing() {
 		expected_block_range: Some((101, Some(150))),
 		expected_tracked_blocks: blocks_to_process.clone(),
 		store_blocks: false,
-		history_size: 50,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
@@ -401,7 +395,6 @@ async fn test_ordered_trigger_handling() {
 		expected_block_range: Some((101, Some(105))),
 		expected_tracked_blocks: blocks_to_process.clone(),
 		store_blocks: false,
-		history_size: 10,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
@@ -494,15 +487,15 @@ async fn test_block_storage_enabled() {
 		expected_block_range: Some((101, Some(102))),
 		expected_tracked_blocks: vec![101, 102],
 		store_blocks: true,
-		history_size: 10,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
 
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 0,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -546,15 +539,15 @@ async fn test_max_past_blocks_limit() {
 		expected_block_range: Some((106, Some(109))),
 		expected_tracked_blocks: vec![106, 107, 108, 109],
 		store_blocks: false,
-		history_size: 10,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
 
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 0,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -622,15 +615,15 @@ async fn test_max_past_blocks_limit_recommended() {
 			125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138,
 		],
 		store_blocks: false,
-		history_size: 10,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
 
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 0,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -674,15 +667,15 @@ async fn test_confirmation_blocks() {
 		expected_block_range: Some((101, Some(103))),
 		expected_tracked_blocks: vec![101, 102, 103],
 		store_blocks: false,
-		history_size: 10,
 	};
 
 	let (block_storage, block_tracker, rpc_client) = setup_mocks(config);
 
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 101,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -879,6 +872,15 @@ async fn test_process_new_blocks_storage_save_error() {
 	// Setup block tracker expectations
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
+		.expect_record_fetched_block()
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_clear_fetched_blocks()
+		.returning(|_| ())
+		.times(1);
+	block_tracker
 		.expect_record_block()
 		.withf(|_, block_number| *block_number == 101)
 		.returning(|_, _| Ok(()))
@@ -895,10 +897,11 @@ async fn test_process_new_blocks_storage_save_error() {
 		.returning(|_, _| Ok(vec![create_test_block(BlockChainType::EVM, 101)]))
 		.times(1);
 
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 101,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -942,6 +945,15 @@ async fn test_process_new_blocks_save_last_processed_error() {
 	// Setup block tracker expectations
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
+		.expect_record_fetched_block()
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_clear_fetched_blocks()
+		.returning(|_| ())
+		.times(1);
+	block_tracker
 		.expect_record_block()
 		.withf(|_, block_number| *block_number == 101)
 		.returning(|_, _| Ok(()))
@@ -958,10 +970,11 @@ async fn test_process_new_blocks_save_last_processed_error() {
 		.returning(|_, _| Ok(vec![create_test_block(BlockChainType::EVM, 101)]))
 		.times(1);
 
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 101,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
@@ -1008,6 +1021,15 @@ async fn test_process_new_blocks_storage_delete_error() {
 	// Setup block tracker expectations
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
+		.expect_record_fetched_block()
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_clear_fetched_blocks()
+		.returning(|_| ())
+		.times(1);
+	block_tracker
 		.expect_record_block()
 		.withf(|_, block_number| *block_number == 101)
 		.returning(|_, _| Ok(()))
@@ -1024,10 +1046,11 @@ async fn test_process_new_blocks_storage_delete_error() {
 		.returning(|_, _| Ok(vec![create_test_block(BlockChainType::EVM, 101)]))
 		.times(1);
 
-	let block_handler = Arc::new(|_: BlockType, network: Network| {
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
 		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
 			ProcessedBlock {
-				block_number: 101,
+				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
 			}
