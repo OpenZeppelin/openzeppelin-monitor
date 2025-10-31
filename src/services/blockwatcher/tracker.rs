@@ -12,7 +12,7 @@
 
 use async_trait::async_trait;
 use std::{
-	collections::{HashMap, VecDeque},
+	collections::{HashMap, HashSet, VecDeque},
 	sync::Arc,
 };
 use tokio::sync::Mutex;
@@ -51,6 +51,12 @@ pub struct BlockTracker<S> {
 	history_size: usize,
 	/// Storage interface for persisting missed blocks
 	storage: Option<Arc<S>>,
+	/// Blocks received but not yet finalized (for buffered mode)
+	/// Key: network_slug, Value: Set of block numbers
+	pending_blocks: Arc<Mutex<HashMap<String, HashSet<u64>>>>,
+	/// Highest block number watermark per network (for buffered mode)
+	/// Key: network_slug, Value: highest block number seen
+	watermarks: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 #[async_trait]
@@ -70,6 +76,8 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 			block_history: Arc::new(Mutex::new(HashMap::new())),
 			history_size,
 			storage,
+			pending_blocks: Arc::new(Mutex::new(HashMap::new())),
+			watermarks: Arc::new(Mutex::new(HashMap::new())),
 		}
 	}
 
@@ -80,6 +88,10 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 	/// - Identifies out-of-order or duplicate blocks
 	/// - Stores information about missed blocks if storage is configured
 	///
+	/// Supports two modes based on network configuration:
+	/// - Strict mode (tolerance = 0 or None): Enforces sequential ordering
+	/// - Buffered mode (tolerance > 0): Allows blocks within tolerance window
+	///
 	/// # Arguments
 	///
 	/// * `network` - The network information for the processed block
@@ -89,6 +101,47 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 	///
 	/// This method will log warnings for out-of-order blocks and errors for missed blocks.
 	async fn record_block(
+		&self,
+		network: &Network,
+		block_number: u64,
+	) -> Result<(), anyhow::Error> {
+		let tolerance = network.block_tracking_tolerance.unwrap_or(0);
+
+		if tolerance == 0 {
+			// Strict sequential mode (backward compatible)
+			self.record_block_strict(network, block_number).await
+		} else {
+			// Buffered mode with tolerance window
+			self.record_block_buffered(network, block_number, tolerance)
+				.await
+		}
+	}
+
+	/// Retrieves the most recently processed block number for a given network.
+	///
+	/// # Arguments
+	///
+	/// * `network_slug` - The unique identifier for the network
+	///
+	/// # Returns
+	///
+	/// Returns `Some(block_number)` if blocks have been processed for the network,
+	/// otherwise returns `None`.
+	async fn get_last_block(&self, network_slug: &str) -> Option<u64> {
+		self.block_history
+			.lock()
+			.await
+			.get(network_slug)
+			.and_then(|history| history.back().copied())
+	}
+}
+
+impl<S: BlockStorage> BlockTracker<S> {
+	/// Records a block in strict sequential mode (tolerance = 0).
+	///
+	/// This is the original behavior: enforces strict sequential ordering
+	/// and reports any gaps or out-of-order blocks immediately.
+	async fn record_block_strict(
 		&self,
 		network: &Network,
 		block_number: u64,
@@ -144,22 +197,142 @@ impl<S: BlockStorage> BlockTrackerTrait<S> for BlockTracker<S> {
 		Ok(())
 	}
 
-	/// Retrieves the most recently processed block number for a given network.
+	/// Records a block in buffered mode with tolerance window.
 	///
-	/// # Arguments
+	/// Allows blocks to arrive slightly out of order within the tolerance window.
+	/// Finalizes ranges and reports missed blocks once the window advances.
+	async fn record_block_buffered(
+		&self,
+		network: &Network,
+		block_number: u64,
+		tolerance: u64,
+	) -> Result<(), anyhow::Error> {
+		let mut pending = self.pending_blocks.lock().await;
+		let mut watermarks = self.watermarks.lock().await;
+		let mut history = self.block_history.lock().await;
+
+		let network_pending = pending
+			.entry(network.slug.clone())
+			.or_insert_with(HashSet::new);
+		let watermark = watermarks.entry(network.slug.clone()).or_insert(0);
+		let network_history = history
+			.entry(network.slug.clone())
+			.or_insert_with(|| VecDeque::with_capacity(self.history_size));
+
+		// Check if block is too far behind the watermark (outside tolerance)
+		if *watermark > 0 && block_number < watermark.saturating_sub(tolerance) {
+			BlockWatcherError::block_tracker_error(
+				format!(
+					"Out of order block: {} is too far behind watermark {} (tolerance: {})",
+					block_number, watermark, tolerance
+				),
+				None,
+				None,
+			);
+			return Ok(());
+		}
+
+		// Check for duplicate
+		if network_pending.contains(&block_number) {
+			BlockWatcherError::block_tracker_error(
+				format!("Duplicate block detected: {}", block_number),
+				None,
+				None,
+			);
+			return Ok(());
+		}
+
+		// Add block to pending set
+		network_pending.insert(block_number);
+
+		// Update watermark if this is a new high
+		let old_watermark = *watermark;
+		if block_number > *watermark {
+			*watermark = block_number;
+
+			// If we've advanced significantly, finalize the old range
+			// We finalize when we've moved forward by at least half the tolerance
+			// Skip finalization if old_watermark is 0 (initial state - no previous blocks to check)
+			if old_watermark > 0 && block_number > old_watermark + (tolerance / 2) {
+				self.finalize_range(
+					network,
+					network_pending,
+					network_history,
+					old_watermark,
+					block_number,
+					tolerance,
+				)
+				.await?;
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Finalizes a range of blocks and checks for gaps.
 	///
-	/// * `network_slug` - The unique identifier for the network
-	///
-	/// # Returns
-	///
-	/// Returns `Some(block_number)` if blocks have been processed for the network,
-	/// otherwise returns `None`.
-	async fn get_last_block(&self, network_slug: &str) -> Option<u64> {
-		self.block_history
-			.lock()
-			.await
-			.get(network_slug)
-			.and_then(|history| history.back().copied())
+	/// This is called when the watermark advances significantly in buffered mode.
+	/// It validates that all blocks in the finalized range were received.
+	async fn finalize_range(
+		&self,
+		network: &Network,
+		pending: &mut HashSet<u64>,
+		history: &mut VecDeque<u64>,
+		start: u64,
+		end: u64,
+		tolerance: u64,
+	) -> Result<(), anyhow::Error> {
+		// The finalized range is from start to (end - tolerance)
+		// We keep the last 'tolerance' blocks in pending as they might still arrive
+		let finalize_up_to = end.saturating_sub(tolerance);
+
+		if finalize_up_to <= start {
+			return Ok(()); // Nothing to finalize yet
+		}
+
+		// Check for gaps in the finalized range
+		for expected in (start + 1)..=finalize_up_to {
+			if !pending.contains(&expected) {
+				// This block is truly missed
+				BlockWatcherError::block_tracker_error(
+					format!("Missed block {}", expected),
+					None,
+					None,
+				);
+
+				if network.store_blocks.unwrap_or(false) {
+					if let Some(storage) = &self.storage {
+						if (storage.save_missed_block(&network.slug, expected).await).is_err() {
+							BlockWatcherError::storage_error(
+								format!("Failed to store missed block {}", expected),
+								None,
+								None,
+							);
+						}
+					}
+				}
+			}
+		}
+
+		// Move finalized blocks to history and remove from pending
+		let mut finalized_blocks: Vec<u64> = pending
+			.iter()
+			.filter(|&&block| block <= finalize_up_to)
+			.copied()
+			.collect();
+		finalized_blocks.sort_unstable();
+
+		for block in finalized_blocks {
+			history.push_back(block);
+			pending.remove(&block);
+
+			// Maintain history size
+			while history.len() > self.history_size {
+				history.pop_front();
+			}
+		}
+
+		Ok(())
 	}
 }
 
