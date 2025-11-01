@@ -25,7 +25,7 @@ jobs:
       SLACK_CHANNEL: '#oss-releases'
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
       - name: Get github app token
@@ -43,7 +43,7 @@ jobs:
           message: Starting release please workflow for ${{ github.repository }}
         if: always()
       - name: Checkout release branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
           token: ${{ steps.gh-app-token.outputs.token }}
@@ -90,7 +90,7 @@ jobs:
           GH_TOKEN: ${{ steps.gh-app-token.outputs.token }}
       - name: Start release please action
         id: release
-        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.2.0
+        uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
         with:
           token: ${{ steps.gh-app-token.outputs.token }}
           target-branch: ${{ github.ref_name }}
@@ -118,7 +118,7 @@ jobs:
     if: ${{ needs.release-please.outputs.release_created == 'false' && needs.release-please.outputs.pr_created == 'true' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
       - name: Get github app token
@@ -132,7 +132,7 @@ jobs:
         run: |
           echo "pr head branch name: >>>>> ${{ needs.release-please.outputs.release_branch }}"
       - name: Checkout release branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 2
           token: ${{ steps.gh-app-token.outputs.token }}
@@ -172,7 +172,7 @@ jobs:
           fi
       - name: Commit cargo update
         if: ${{ steps.lock-file-commit.outputs.cargo_changed == 'true' || steps.update-antora.outputs.antora_changed == 'true' }}
-        uses: iarekylew00t/verified-bot-commit@cd576ea029efdd8044bffb27a9d13b464f1bf9fe # v1.5.2
+        uses: iarekylew00t/verified-bot-commit@334e1468ab6efe36e4c3c99c90cfba2146a81dc3 # v2.0.4
         with:
           message: 'chore: Updating lock file and bumping version in antora file'
           token: ${{ steps.gh-app-token.outputs.token }}
