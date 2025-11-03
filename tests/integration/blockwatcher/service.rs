@@ -32,7 +32,7 @@ fn setup_mocks(
 	config: MockConfig,
 ) -> (
 	Arc<MockBlockStorage>,
-	MockBlockTracker<MockBlockStorage>,
+	MockBlockTracker,
 	MockEvmClientTrait<MockEVMTransportClient>,
 ) {
 	// Setup mock block storage
@@ -94,17 +94,17 @@ fn setup_mocks(
 	}
 
 	// Setup mock block tracker with the same Arc<MockBlockStorage>
-	let mut block_tracker = MockBlockTracker::<MockBlockStorage>::default();
+	let mut block_tracker = MockBlockTracker::default();
 
 	// Configure record_block expectations
 	for &block_number in &config.expected_tracked_blocks {
 		let block_num = block_number; // Create owned copy
 		block_tracker
 			.expect_record_block()
-			.withf(move |network: &Network, num: &u64, _fetched_blocks| {
+			.withf(move |network: &Network, num: &u64| {
 				network.network_type == BlockChainType::EVM && *num == block_num
 			})
-			.returning(|_, _, _| Ok(()))
+			.returning(|_, _| Ok(()))
 			.times(1);
 	}
 
@@ -694,10 +694,10 @@ async fn test_process_new_blocks_storage_error() {
 	let block_storage = Arc::new(block_storage);
 
 	// Setup other required mocks
-	let ctx = MockBlockTracker::<MockBlockStorage>::new_context();
+	let ctx = MockBlockTracker::new_context();
 	ctx.expect()
-		.withf(|_, _| true)
-		.returning(|_, _| MockBlockTracker::<MockBlockStorage>::default());
+		.withf(|_| true)
+		.returning(|_| MockBlockTracker::default());
 
 	let rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 
@@ -854,8 +854,8 @@ async fn test_process_new_blocks_storage_save_error() {
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
 		.expect_record_block()
-		.withf(|_, block_number, _fetched_blocks| *block_number == 101)
-		.returning(|_, _, _| Ok(()))
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -918,8 +918,8 @@ async fn test_process_new_blocks_save_last_processed_error() {
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
 		.expect_record_block()
-		.withf(|_, block_number, _fetched_blocks| *block_number == 101)
-		.returning(|_, _, _| Ok(()))
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -985,8 +985,8 @@ async fn test_process_new_blocks_storage_delete_error() {
 	let mut block_tracker = MockBlockTracker::default();
 	block_tracker
 		.expect_record_block()
-		.withf(|_, block_number, _fetched_blocks| *block_number == 101)
-		.returning(|_, _, _| Ok(()))
+		.withf(|_, block_number| *block_number == 101)
+		.returning(|_, _| Ok(()))
 		.times(1);
 
 	// Setup mock RPC client
@@ -1043,7 +1043,7 @@ async fn test_network_block_watcher_new() {
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
-	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+	let block_tracker = Arc::new(BlockTracker::new(10));
 
 	let watcher = NetworkBlockWatcher::<_, _, _, JobScheduler>::new(
 		network,
@@ -1078,7 +1078,7 @@ async fn test_network_block_watcher_start_stop() {
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
-	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+	let block_tracker = Arc::new(BlockTracker::new(10));
 
 	let watcher = NetworkBlockWatcher::<_, _, _, JobScheduler>::new(
 		network.clone(),
@@ -1121,7 +1121,7 @@ async fn test_block_watcher_service_start_stop_network() {
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
-	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+	let block_tracker = Arc::new(BlockTracker::new(10));
 
 	let service = BlockWatcherService::<_, _, _, JobScheduler>::new(
 		block_storage.clone(),
@@ -1191,7 +1191,7 @@ async fn test_block_watcher_service_new() {
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
-	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+	let block_tracker = Arc::new(BlockTracker::new(10));
 
 	let service = BlockWatcherService::<_, _, _, JobScheduler>::new(
 		block_storage.clone(),
@@ -1271,7 +1271,7 @@ async fn test_scheduler_errors() {
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
 	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
-	let block_tracker = Arc::new(BlockTracker::new(10, Some(block_storage.clone())));
+	let block_tracker = Arc::new(BlockTracker::new(10));
 
 	// Test case 1: Scheduler fails to initialize
 	{

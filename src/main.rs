@@ -345,7 +345,7 @@ async fn main() -> Result<()> {
 		file_block_storage.clone(),
 		block_handler,
 		trigger_handler,
-		Arc::new(BlockTracker::new(1000, Some(file_block_storage.clone()))),
+		Arc::new(BlockTracker::new(1000)),
 	)
 	.await?;
 
