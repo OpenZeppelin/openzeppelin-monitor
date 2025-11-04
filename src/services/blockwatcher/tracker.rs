@@ -130,8 +130,14 @@ impl BlockTrackerTrait for BlockTracker {
 		}
 
 		// Find min and max without sorting
-		let first = *fetched_block_numbers.iter().min().unwrap();
-		let last = *fetched_block_numbers.iter().max().unwrap();
+		let first = *fetched_block_numbers
+			.iter()
+			.min()
+			.expect("fetched_block_numbers is guaranteed to be non-empty");
+		let last = *fetched_block_numbers
+			.iter()
+			.max()
+			.expect("fetched_block_numbers is guaranteed to be non-empty");
 
 		// Collect missed blocks
 		// Note: Gap detection is per-execution and doesn't require shared state.

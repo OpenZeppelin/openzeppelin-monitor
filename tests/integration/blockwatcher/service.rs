@@ -1999,3 +1999,472 @@ async fn test_duplicate_block_detection() {
 		"Process should succeed even with duplicate blocks"
 	);
 }
+
+#[tokio::test]
+async fn test_missed_blocks_with_store_blocks_none() {
+	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	network.store_blocks = None; // Test the None case specifically
+
+	// Create blocks with gaps
+	let blocks_with_gaps = vec![
+		create_test_block(BlockChainType::EVM, 101),
+		create_test_block(BlockChainType::EVM, 103), // missing 102
+	];
+
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+
+	// save_missed_blocks should NOT be called when store_blocks is None
+	block_storage.expect_save_missed_blocks().times(0);
+
+	block_storage
+		.expect_save_last_processed_block()
+		.with(predicate::always(), predicate::eq(104))
+		.returning(|_, _| Ok(()))
+		.times(1);
+
+	let block_storage = Arc::new(block_storage);
+
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_reset_expected_next()
+		.withf(|_, block: &u64| *block == 101)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_detect_missing_blocks()
+		.returning(|_, _| vec![102]) // Missing block detected
+		.times(1);
+
+	for &block_num in &[101, 103] {
+		block_tracker
+			.expect_check_processed_block()
+			.withf(move |_, num: &u64| *num == block_num)
+			.returning(|_, _| BlockCheckResult::Ok)
+			.times(1);
+	}
+
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(move |_, _| Ok(blocks_with_gaps.clone()))
+		.times(1);
+
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
+		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
+			ProcessedBlock {
+				block_number,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(
+		result.is_ok(),
+		"Process should succeed without saving missed blocks when store_blocks is None"
+	);
+}
+
+#[tokio::test]
+async fn test_empty_blocks_from_rpc_despite_having_new_blocks() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+	// Even with no blocks processed, we still save last_processed_block
+	block_storage
+		.expect_save_last_processed_block()
+		.with(predicate::always(), predicate::eq(104))
+		.returning(|_, _| Ok(()))
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_reset_expected_next()
+		.withf(|_, block: &u64| *block == 101)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_detect_missing_blocks()
+		.withf(|_, blocks: &[BlockType]| blocks.is_empty())
+		.returning(|_, _| Vec::new())
+		.times(1);
+
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	// RPC returns empty despite last_processed_block < latest_confirmed_block
+	rpc_client
+		.expect_get_blocks()
+		.with(predicate::eq(101), predicate::eq(Some(104)))
+		.returning(|_, _| Ok(vec![])) // Empty despite condition matching
+		.times(1);
+
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
+		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
+			ProcessedBlock {
+				block_number,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(
+		result.is_ok(),
+		"Process should handle empty blocks from RPC gracefully"
+	);
+}
+
+#[tokio::test]
+async fn test_out_of_order_in_cleanup_phase() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	let blocks = vec![
+		create_test_block(BlockChainType::EVM, 101),
+		create_test_block(BlockChainType::EVM, 102),
+		create_test_block(BlockChainType::EVM, 103),
+		create_test_block(BlockChainType::EVM, 100), // Out of order - arrives last
+	];
+
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(99)))
+		.times(1);
+	block_storage
+		.expect_save_last_processed_block()
+		.with(predicate::always(), predicate::eq(104))
+		.returning(|_, _| Ok(()))
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_reset_expected_next()
+		.withf(|_, block: &u64| *block == 100)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_detect_missing_blocks()
+		.returning(|_, _| Vec::new())
+		.times(1);
+
+	// Track the order of calls to simulate cleanup phase detection
+	let call_count = Arc::new(std::sync::Mutex::new(0));
+	let call_count_clone = call_count.clone();
+
+	block_tracker
+		.expect_check_processed_block()
+		.returning(move |_, num| {
+			let mut count = call_count_clone.lock().unwrap();
+			*count += 1;
+
+			// First 3 calls (100, 101, 102) are Ok
+			// Last call (103) detects out-of-order for block 100 in cleanup
+			if *count <= 3 {
+				BlockCheckResult::Ok
+			} else if num == 100 {
+				// Block 100 comes after 103, so it's out of order
+				BlockCheckResult::OutOfOrder {
+					expected: 104,
+					received: 100,
+				}
+			} else {
+				BlockCheckResult::Ok
+			}
+		})
+		.times(4);
+
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(move |_, _| Ok(blocks.clone()))
+		.times(1);
+
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
+		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
+
+			// Add delay for block 100 to ensure it's processed last and buffered
+			if block_number == 100 {
+				tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+			}
+
+			ProcessedBlock {
+				block_number,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(
+		result.is_ok(),
+		"Process should handle out-of-order blocks in cleanup phase"
+	);
+}
+
+#[tokio::test]
+async fn test_out_of_order_detection_main_loop() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	let blocks = vec![
+		create_test_block(BlockChainType::EVM, 105),
+		create_test_block(BlockChainType::EVM, 103), // Out of order
+		create_test_block(BlockChainType::EVM, 104),
+	];
+
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(102)))
+		.times(1);
+	block_storage
+		.expect_save_last_processed_block()
+		.with(predicate::always(), predicate::eq(105))
+		.returning(|_, _| Ok(()))
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_reset_expected_next()
+		.withf(|_, block: &u64| *block == 103)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_detect_missing_blocks()
+		.returning(|_, _| Vec::new())
+		.times(1);
+
+	// Simulate the actual out-of-order detection
+	block_tracker
+		.expect_check_processed_block()
+		.withf(|_, num| *num == 103)
+		.returning(|_, _| BlockCheckResult::Ok)
+		.times(1);
+	block_tracker
+		.expect_check_processed_block()
+		.withf(|_, num| *num == 104)
+		.returning(|_, _| BlockCheckResult::Ok)
+		.times(1);
+	block_tracker
+		.expect_check_processed_block()
+		.withf(|_, num| *num == 105)
+		.returning(|_, _| BlockCheckResult::Ok)
+		.times(1);
+
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(106))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(move |_, _| Ok(blocks.clone()))
+		.times(1);
+
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
+		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
+			ProcessedBlock {
+				block_number,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let triggered_blocks = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+	let trigger_handler = {
+		let triggered_blocks = triggered_blocks.clone();
+		Arc::new(move |block: &ProcessedBlock| {
+			let triggered_blocks = triggered_blocks.clone();
+			let block_number = block.block_number;
+			tokio::spawn(async move {
+				triggered_blocks.lock().await.push(block_number);
+			})
+		})
+	};
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(result.is_ok(), "Process should handle out-of-order blocks");
+
+	// Verify all blocks were triggered in order despite arriving out of order
+	let final_order = triggered_blocks.lock().await;
+	assert_eq!(*final_order, vec![103, 104, 105]);
+}
+
+#[tokio::test]
+async fn test_duplicate_detection_in_cleanup_phase() {
+	let network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+
+	let blocks = vec![
+		create_test_block(BlockChainType::EVM, 101),
+		create_test_block(BlockChainType::EVM, 102),
+		create_test_block(BlockChainType::EVM, 103),
+		create_test_block(BlockChainType::EVM, 102), // Duplicate - arrives last
+	];
+
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+	block_storage
+		.expect_save_last_processed_block()
+		.with(predicate::always(), predicate::eq(104))
+		.returning(|_, _| Ok(()))
+		.times(1);
+	let block_storage = Arc::new(block_storage);
+
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_reset_expected_next()
+		.withf(|_, block: &u64| *block == 101)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_detect_missing_blocks()
+		.returning(|_, _| Vec::new())
+		.times(1);
+
+	// Track which blocks have been seen to detect duplicates
+	let seen_blocks = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+	let seen_blocks_clone = seen_blocks.clone();
+
+	block_tracker
+		.expect_check_processed_block()
+		.returning(move |_, num| {
+			let mut seen = seen_blocks_clone.lock().unwrap();
+
+			if seen.contains(&num) {
+				// This is a duplicate
+				BlockCheckResult::Duplicate { last_seen: num }
+			} else {
+				seen.insert(num);
+				BlockCheckResult::Ok
+			}
+		})
+		.times(4); // 101, 102, 103, 102 (duplicate)
+
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(105))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.returning(move |_, _| Ok(blocks.clone()))
+		.times(1);
+
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
+		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
+
+			// Add delay for the duplicate block to ensure it's processed last and enters cleanup
+			if block_number == 102 {
+				tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+			}
+
+			ProcessedBlock {
+				block_number,
+				network_slug: network.slug,
+				processing_results: vec![],
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let triggered_blocks = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+	let trigger_handler = {
+		let triggered_blocks = triggered_blocks.clone();
+		Arc::new(move |block: &ProcessedBlock| {
+			let triggered_blocks = triggered_blocks.clone();
+			let block_number = block.block_number;
+			tokio::spawn(async move {
+				triggered_blocks.lock().await.push(block_number);
+			})
+		})
+	};
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+	)
+	.await;
+
+	assert!(
+		result.is_ok(),
+		"Process should succeed even with duplicate blocks in cleanup phase"
+	);
+}
