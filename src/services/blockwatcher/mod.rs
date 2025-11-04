@@ -16,4 +16,4 @@ pub use service::{
 	process_new_blocks, BlockWatcherService, JobSchedulerTrait, NetworkBlockWatcher,
 };
 pub use storage::{BlockStorage, FileBlockStorage};
-pub use tracker::{BlockTracker, BlockTrackerTrait};
+pub use tracker::{BlockCheckResult, BlockTracker, BlockTrackerTrait};

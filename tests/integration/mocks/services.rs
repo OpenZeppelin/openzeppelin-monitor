@@ -7,7 +7,7 @@ use openzeppelin_monitor::{
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
 		blockchain::BlockFilterFactory,
-		blockwatcher::{BlockStorage, BlockTrackerTrait, JobSchedulerTrait},
+		blockwatcher::{BlockCheckResult, BlockStorage, BlockTrackerTrait, JobSchedulerTrait},
 		filter::{FilterError, FilterServiceTrait},
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionServiceTrait},
@@ -62,7 +62,7 @@ mock! {
 	pub BlockStorage {}
 	#[async_trait]
 	impl BlockStorage for BlockStorage {
-		async fn save_missed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
+		async fn save_missed_blocks(&self, network_slug: &str, blocks: &[u64]) -> Result<(), anyhow::Error>;
 		async fn save_last_processed_block(&self, network_slug: &str, block_number: u64) -> Result<(), anyhow::Error>;
 		async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, anyhow::Error>;
 		async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), anyhow::Error>;
@@ -82,8 +82,10 @@ mock! {
 	#[async_trait]
 	impl BlockTrackerTrait for BlockTracker {
 		 fn new(history_size: usize) -> Self;
-		 async fn record_block(&self, network: &Network, block_number: u64) -> Result<(), anyhow::Error>;
 		 async fn get_last_block(&self, network_slug: &str) -> Option<u64>;
+		 async fn detect_missing_blocks(&self, network: &Network, fetched_blocks: &[BlockType]) -> Vec<u64>;
+		 async fn check_processed_block(&self, network: &Network, block_number: u64) -> BlockCheckResult;
+		 async fn reset_expected_next(&self, network: &Network, start_block: u64);
 	}
 }
 

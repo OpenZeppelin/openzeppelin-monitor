@@ -67,15 +67,19 @@ pub trait BlockStorage: Clone + Send + Sync {
 	/// * `Result<(), anyhow::Error>` - Success or error
 	async fn delete_blocks(&self, network_id: &str) -> Result<(), anyhow::Error>;
 
-	/// Saves a missed block for a network
+	/// Saves multiple missed blocks for a network in a single operation
 	///
 	/// # Arguments
 	/// * `network_id` - Unique identifier for the network
-	/// * `block` - Block number to save
+	/// * `blocks` - Slice of block numbers to save
 	///
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error
-	async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), anyhow::Error>;
+	async fn save_missed_blocks(
+		&self,
+		network_id: &str,
+		blocks: &[u64],
+	) -> Result<(), anyhow::Error>;
 }
 
 /// File-based implementation of block storage
@@ -197,15 +201,23 @@ impl BlockStorage for FileBlockStorage {
 		Ok(())
 	}
 
-	/// Saves a missed block for a network
+	/// Saves multiple missed blocks for a network in a single operation
 	///
 	/// # Arguments
 	/// * `network_id` - Unique identifier for the network
-	/// * `block` - Block number to save
+	/// * `blocks` - Slice of block numbers to save
 	///
 	/// # Returns
 	/// * `Result<(), anyhow::Error>` - Success or error
-	async fn save_missed_block(&self, network_id: &str, block: u64) -> Result<(), anyhow::Error> {
+	async fn save_missed_blocks(
+		&self,
+		network_id: &str,
+		blocks: &[u64],
+	) -> Result<(), anyhow::Error> {
+		if blocks.is_empty() {
+			return Ok(());
+		}
+
 		let file_path = self
 			.storage_path
 			.join(format!("{}_missed_blocks.txt", network_id));
@@ -218,10 +230,14 @@ impl BlockStorage for FileBlockStorage {
 			.await
 			.map_err(|e| anyhow::anyhow!("Failed to create missed block file: {}", e))?;
 
-		// Write the block number followed by a newline
-		tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", block).as_bytes())
+		// Write all block numbers at once, one per line
+		let content = blocks
+			.iter()
+			.map(|block| format!("{}\n", block))
+			.collect::<String>();
+		tokio::io::AsyncWriteExt::write_all(&mut file, content.as_bytes())
 			.await
-			.map_err(|e| anyhow::anyhow!("Failed to save missed block: {}", e))?;
+			.map_err(|e| anyhow::anyhow!("Failed to save missed blocks: {}", e))?;
 
 		Ok(())
 	}
@@ -379,12 +395,12 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn test_save_missed_block() {
+	async fn test_save_missed_blocks() {
 		let temp_dir = tempfile::tempdir().unwrap();
 		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
 
-		// Test 1: Normal save
-		let result = storage.save_missed_block("test", 100).await;
+		// Test 1: Normal save with single block
+		let result = storage.save_missed_blocks("test", &[100]).await;
 		assert!(result.is_ok());
 
 		// Verify the content
@@ -393,7 +409,21 @@ mod tests {
 			.unwrap();
 		assert_eq!(content, "100\n");
 
-		// Test 2: Save with invalid path
+		// Test 2: Save multiple blocks
+		let result = storage.save_missed_blocks("test", &[101, 102, 103]).await;
+		assert!(result.is_ok());
+
+		// Verify the content (should append)
+		let content = tokio::fs::read_to_string(temp_dir.path().join("test_missed_blocks.txt"))
+			.await
+			.unwrap();
+		assert_eq!(content, "100\n101\n102\n103\n");
+
+		// Test 3: Save empty slice (should be no-op)
+		let result = storage.save_missed_blocks("test", &[]).await;
+		assert!(result.is_ok());
+
+		// Test 4: Save with invalid path
 		#[cfg(unix)]
 		{
 			use std::os::unix::fs::PermissionsExt;
@@ -404,7 +434,7 @@ mod tests {
 			std::fs::set_permissions(&readonly_dir, perms).unwrap();
 
 			let readonly_storage = FileBlockStorage::new(readonly_dir);
-			let result = readonly_storage.save_missed_block("test", 100).await;
+			let result = readonly_storage.save_missed_blocks("test", &[100]).await;
 			assert!(result.is_err());
 			let err = result.unwrap_err();
 
