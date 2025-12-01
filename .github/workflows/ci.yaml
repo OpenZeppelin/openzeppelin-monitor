@@ -32,10 +32,10 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Get changed files
         id: changed-files-yaml
-        uses: tj-actions/changed-files@70069877f29101175ed2b055d210fe8b1d54d7d7 # v45.0.6
+        uses: tj-actions/changed-files@abdd2f68ea150cee8f236d4a9fb4e0f2491abf1b # v45.0.6
         with:
           files_yaml: |
             code:
@@ -82,7 +82,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Prepare
         id: init
         uses: ./.github/actions/prepare
@@ -109,7 +109,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Prepare
         id: init
         uses: ./.github/actions/prepare
@@ -136,7 +136,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Prepare
         id: init
         uses: ./.github/actions/prepare
@@ -163,7 +163,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Prepare
         id: init
         uses: ./.github/actions/prepare
@@ -241,7 +241,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Setup QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # main
         with:
@@ -301,7 +301,7 @@ jobs:
             echo ">>>>>>>Architecture match for $platform<<<<<<<<"
           done
       - name: Scan image
-        uses: anchore/scan-action@568b89d27fc18c60e56937bff480c91c772cd993 # v7.1.0
+        uses: anchore/scan-action@40a61b52209e9d50e87917c5b901783d546b12d0 # v7.2.1
         with:
           image: openzeppelin-monitor-dev:${{ github.sha }}-amd64
           fail-build: true
