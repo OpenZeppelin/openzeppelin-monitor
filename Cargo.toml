@@ -65,7 +65,7 @@ stellar-rpc-client = "23.0.1"
 stellar-strkey = "0.0.13"
 subxt = "0.42.1"
 stellar-xdr = "23.0.0"
-sysinfo = "0.34.2"
+sysinfo = "0.37.2"
 thiserror = "2.0.12"
 tokio = { version = "1.0", features = ["full"] }
 tokio-cron-scheduler = "0.13.0"
