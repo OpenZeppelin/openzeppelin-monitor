@@ -29,7 +29,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Get github app token
-        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2.2.0
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
@@ -43,7 +43,7 @@ jobs:
           message: Starting release please workflow for ${{ github.repository }}
         if: always()
       - name: Checkout release branch
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           fetch-depth: 0
           token: ${{ steps.gh-app-token.outputs.token }}
@@ -122,7 +122,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Get github app token
-        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2.2.0
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
@@ -132,7 +132,7 @@ jobs:
         run: |
           echo "pr head branch name: >>>>> ${{ needs.release-please.outputs.release_branch }}"
       - name: Checkout release branch
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           fetch-depth: 2
           token: ${{ steps.gh-app-token.outputs.token }}
@@ -172,7 +172,7 @@ jobs:
           fi
       - name: Commit cargo update
         if: ${{ steps.lock-file-commit.outputs.cargo_changed == 'true' || steps.update-antora.outputs.antora_changed == 'true' }}
-        uses: iarekylew00t/verified-bot-commit@68c52beb4042b7038cf40c4daf6e469f118c686b # v2.0.5
+        uses: iarekylew00t/verified-bot-commit@9bc80191f098974ecf436b05a5cd854525281a49 # v2.0.7
         with:
           message: 'chore: Updating lock file and bumping version in antora file'
           token: ${{ steps.gh-app-token.outputs.token }}
