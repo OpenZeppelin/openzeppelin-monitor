@@ -13,6 +13,9 @@ mod stellar {
 mod midnight {
 	pub mod ws;
 }
+mod solana {
+	pub mod http;
+}
 
 mod http {
 	pub mod endpoint_manager;
@@ -39,6 +42,7 @@ pub use ws::{
 pub use error::TransportError;
 pub use evm::http::EVMTransportClient;
 pub use midnight::ws::MidnightTransportClient as MidnightWsTransportClient;
+pub use solana::http::{GetBlockConfig as SolanaGetBlockConfig, SolanaTransportClient};
 pub use stellar::http::StellarTransportClient;
 
 use reqwest_middleware::ClientWithMiddleware;

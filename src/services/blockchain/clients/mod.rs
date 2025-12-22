@@ -4,6 +4,7 @@
 //! - EVM client for Ethereum-compatible chains
 //! - Stellar client for Stellar network
 //! - Midnight client for Midnight network
+//! - Solana client for Solana network
 
 mod evm {
 	pub mod client;
@@ -15,10 +16,16 @@ mod stellar {
 mod midnight {
 	pub mod client;
 }
+mod solana {
+	pub mod client;
+	pub mod error;
+}
 
 pub use evm::client::{EvmClient, EvmClientTrait};
 pub use midnight::client::{
 	MidnightClient, MidnightClientTrait, SubstrateClientTrait as MidnightSubstrateClientTrait,
 };
+pub use solana::client::{SolanaClient, SolanaClientTrait};
+pub use solana::error::SolanaClientError;
 pub use stellar::client::{StellarClient, StellarClientTrait};
 pub use stellar::error::StellarClientError;

@@ -1,13 +1,14 @@
 //! Blockchain-specific model implementations.
 //!
 //! This module contains type definitions and implementations for different
-//! blockchain platforms (EVM, Stellar, Midnight, etc). Each submodule implements the
+//! blockchain platforms (EVM, Stellar, Midnight, Solana, etc). Each submodule implements the
 //! platform-specific logic for blocks, transactions, and event monitoring.
 
 use serde::{Deserialize, Serialize};
 
 pub mod evm;
 pub mod midnight;
+pub mod solana;
 pub mod stellar;
 
 /// Supported blockchain platform types
@@ -20,6 +21,8 @@ pub enum BlockChainType {
 	Stellar,
 	/// Midnight blockchain
 	Midnight,
+	/// Solana blockchain
+	Solana,
 }
 
 /// Block data from different blockchain platforms
@@ -40,6 +43,11 @@ pub enum BlockType {
 	/// # Note
 	/// Box is used here to equalize the enum variants
 	Midnight(Box<midnight::MidnightBlock>),
+	/// Solana slot and transaction data
+	///
+	/// # Note
+	/// Box is used here to equalize the enum variants
+	Solana(Box<solana::SolanaBlock>),
 }
 
 impl BlockType {
@@ -48,6 +56,7 @@ impl BlockType {
 			BlockType::EVM(b) => b.number(),
 			BlockType::Stellar(b) => b.number(),
 			BlockType::Midnight(b) => b.number(),
+			BlockType::Solana(b) => b.number(),
 		}
 	}
 }
@@ -62,6 +71,8 @@ pub enum TransactionType {
 	Stellar(Box<stellar::StellarTransaction>),
 	/// Midnight transaction
 	Midnight(midnight::MidnightTransaction),
+	/// Solana transaction
+	Solana(Box<solana::SolanaTransaction>),
 }
 
 /// Contract spec from different blockchain platforms
@@ -74,6 +85,8 @@ pub enum ContractSpec {
 	Stellar(stellar::StellarContractSpec),
 	/// Midnight contract spec
 	Midnight,
+	/// Solana contract spec (IDL)
+	Solana(solana::SolanaContractSpec),
 }
 
 /// Monitor match results from different blockchain platforms
@@ -94,6 +107,11 @@ pub enum MonitorMatch {
 	/// # Note
 	/// Box is used here to equalize the enum variants
 	Midnight(Box<midnight::MidnightMonitorMatch>),
+	/// Matched conditions from Solana chains
+	///
+	/// # Note
+	/// Box is used here to equalize the enum variants
+	Solana(Box<solana::SolanaMonitorMatch>),
 }
 
 /// Chain-specific configuration
@@ -110,6 +128,10 @@ pub struct ChainConfiguration {
 	/// Stellar-specific configuration
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub stellar: Option<stellar::StellarMonitorConfig>,
+
+	/// Solana-specific configuration
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub solana: Option<solana::SolanaMonitorConfig>,
 }
 
 /// Structure to hold block processing results

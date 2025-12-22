@@ -287,6 +287,7 @@ impl NotificationService {
 					MonitorMatch::EVM(evm_match) => &evm_match.monitor.name,
 					MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.name,
 					MonitorMatch::Midnight(midnight_match) => &midnight_match.monitor.name,
+					MonitorMatch::Solana(solana_match) => &solana_match.monitor.name,
 				};
 				let script_path = match &trigger.config {
 					TriggerTypeConfig::Script { script_path, .. } => script_path,

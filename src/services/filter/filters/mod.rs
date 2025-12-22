@@ -6,6 +6,7 @@
 //! - EVM-specific implementation
 //! - Stellar-specific implementation
 //! - Midnight-specific implementation
+//! - Solana-specific implementation
 
 pub mod evm {
 	pub mod evaluator;
@@ -19,6 +20,12 @@ pub mod stellar {
 }
 
 pub mod midnight {
+	pub mod filter;
+	pub mod helpers;
+}
+
+pub mod solana {
+	pub mod evaluator;
 	pub mod filter;
 	pub mod helpers;
 }

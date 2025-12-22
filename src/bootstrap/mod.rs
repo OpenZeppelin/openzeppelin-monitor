@@ -214,6 +214,26 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 								Err(_) => None,
 							}
 						}
+						BlockChainType::Solana => {
+							match client_pools.get_solana_client(&network).await {
+								Ok(client) => {
+									process_block(
+										client.as_ref(),
+										&network,
+										&block,
+										&applicable_monitors,
+										Some(&contract_specs),
+										&filter_service,
+										&mut shutdown_rx,
+									)
+									.await
+								}
+								Err(e) => {
+									tracing::error!(error = %e, "Failed to get Solana client");
+									None
+								}
+							}
+						}
 					};
 
 					processed_block.processing_results = matches.unwrap_or_default();
@@ -248,7 +268,17 @@ where
 {
 	tokio::select! {
 		result = filter_service.filter_block(client, network, block, applicable_monitors, contract_specs) => {
-			result.ok()
+			match result {
+				Ok(matches) => Some(matches),
+				Err(e) => {
+					tracing::error!(
+						network = %network.slug,
+						error = %e,
+						"Filter error"
+					);
+					None
+				}
+			}
 		}
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");
@@ -501,6 +531,7 @@ async fn run_trigger_filters(
 			MonitorMatch::EVM(evm_match) => &evm_match.monitor.trigger_conditions,
 			MonitorMatch::Stellar(stellar_match) => &stellar_match.monitor.trigger_conditions,
 			MonitorMatch::Midnight(midnight_match) => &midnight_match.monitor.trigger_conditions,
+			MonitorMatch::Solana(solana_match) => &solana_match.monitor.trigger_conditions,
 		};
 
 		for trigger_condition in trigger_conditions {
@@ -508,6 +539,7 @@ async fn run_trigger_filters(
 				MonitorMatch::EVM(evm_match) => evm_match.monitor.name.clone(),
 				MonitorMatch::Stellar(stellar_match) => stellar_match.monitor.name.clone(),
 				MonitorMatch::Midnight(midnight_match) => midnight_match.monitor.name.clone(),
+				MonitorMatch::Solana(solana_match) => solana_match.monitor.name.clone(),
 			};
 
 			let script_content = trigger_scripts
@@ -541,7 +573,8 @@ mod tests {
 	use crate::{
 		models::{
 			EVMMonitorMatch, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt, MatchConditions,
-			Monitor, MonitorMatch, ScriptLanguage, StellarBlock, StellarMonitorMatch,
+			Monitor, MonitorMatch, ScriptLanguage, SolanaBlock, SolanaMonitorMatch,
+			SolanaTransaction, SolanaTransactionInfo, StellarBlock, StellarMonitorMatch,
 			StellarTransaction, StellarTransactionInfo, TriggerConditions,
 		},
 		utils::tests::{builders::evm::monitor::MonitorBuilder, evm::receipt::ReceiptBuilder},
@@ -625,6 +658,21 @@ mod tests {
 		StellarBlock::default()
 	}
 
+	fn create_test_solana_transaction() -> SolanaTransaction {
+		SolanaTransaction::from(SolanaTransactionInfo {
+			signature: "5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+				.to_string(),
+			slot: 123456789,
+			block_time: Some(1234567890),
+			transaction: Default::default(),
+			meta: None,
+		})
+	}
+
+	fn create_test_solana_block() -> SolanaBlock {
+		SolanaBlock::default()
+	}
+
 	fn create_mock_monitor_match_from_path(
 		blockchain_type: BlockChainType,
 		script_path: Option<&str>,
@@ -648,6 +696,18 @@ mod tests {
 				transaction: create_test_stellar_transaction(),
 				ledger: create_test_stellar_block(),
 				network_slug: "stellar_mainnet".to_string(),
+				matched_on: MatchConditions {
+					functions: vec![],
+					events: vec![],
+					transactions: vec![],
+				},
+				matched_on_args: None,
+			})),
+			BlockChainType::Solana => MonitorMatch::Solana(Box::new(SolanaMonitorMatch {
+				monitor: create_test_monitor("test", vec![], false, script_path),
+				transaction: create_test_solana_transaction(),
+				block: create_test_solana_block(),
+				network_slug: "solana_mainnet".to_string(),
 				matched_on: MatchConditions {
 					functions: vec![],
 					events: vec![],
@@ -682,6 +742,18 @@ mod tests {
 				transaction: create_test_stellar_transaction(),
 				ledger: create_test_stellar_block(),
 				network_slug: "stellar_mainnet".to_string(),
+				matched_on: MatchConditions {
+					functions: vec![],
+					events: vec![],
+					transactions: vec![],
+				},
+				matched_on_args: None,
+			})),
+			BlockChainType::Solana => MonitorMatch::Solana(Box::new(SolanaMonitorMatch {
+				monitor,
+				transaction: create_test_solana_transaction(),
+				block: create_test_solana_block(),
+				network_slug: "solana_mainnet".to_string(),
 				matched_on: MatchConditions {
 					functions: vec![],
 					events: vec![],

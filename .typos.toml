@@ -1,2 +1,2 @@
 [files]
-extend-exclude = ["CHANGELOG.md", "docs/changelog.mdx", "docs/*/changelog.mdx"]
+extend-exclude = ["CHANGELOG.md", "docs/changelog.mdx", "docs/*/changelog.mdx", "src/bootstrap/mod.rs", "src/models/blockchain/solana/transaction.rs"]

@@ -3,7 +3,7 @@
 //! This module provides a thread-safe client pooling system that:
 //! - Caches blockchain clients by network
 //! - Creates clients lazily on first use
-//! - Handles EVM, Stellar, and Midnight clients
+//! - Handles EVM, Stellar, Midnight, and Solana clients
 //! - Provides type-safe access to clients
 //! - Manages client lifecycles automatically
 //!
@@ -15,8 +15,9 @@ use crate::{
 	models::{BlockChainType, Network},
 	services::blockchain::{
 		BlockChainClient, BlockFilterFactory, EVMTransportClient, EvmClient, EvmClientTrait,
-		MidnightClient, MidnightClientTrait, MidnightWsTransportClient, StellarClient,
-		StellarClientTrait, StellarTransportClient,
+		MidnightClient, MidnightClientTrait, MidnightWsTransportClient, SolanaClient,
+		SolanaClientTrait, SolanaTransportClient, StellarClient, StellarClientTrait,
+		StellarTransportClient,
 	},
 };
 use anyhow::Context;
@@ -34,6 +35,7 @@ pub trait ClientPoolTrait: Send + Sync {
 	type MidnightClient: MidnightClientTrait
 		+ BlockChainClient
 		+ BlockFilterFactory<Self::MidnightClient>;
+	type SolanaClient: SolanaClientTrait + BlockChainClient + BlockFilterFactory<Self::SolanaClient>;
 
 	async fn get_evm_client(
 		&self,
@@ -47,6 +49,10 @@ pub trait ClientPoolTrait: Send + Sync {
 		&self,
 		network: &Network,
 	) -> Result<Arc<Self::MidnightClient>, anyhow::Error>;
+	async fn get_solana_client(
+		&self,
+		network: &Network,
+	) -> Result<Arc<Self::SolanaClient>, anyhow::Error>;
 }
 
 /// Main client pool manager that handles multiple blockchain types.
@@ -74,6 +80,7 @@ impl ClientPool {
 		pool.register_client_type::<MidnightClient<MidnightWsTransportClient>>(
 			BlockChainType::Midnight,
 		);
+		pool.register_client_type::<SolanaClient<SolanaTransportClient>>(BlockChainType::Solana);
 
 		pool
 	}
@@ -133,6 +140,7 @@ impl ClientPoolTrait for ClientPool {
 	type EvmClient = EvmClient<EVMTransportClient>;
 	type StellarClient = StellarClient<StellarTransportClient>;
 	type MidnightClient = MidnightClient<MidnightWsTransportClient>;
+	type SolanaClient = SolanaClient<SolanaTransportClient>;
 
 	/// Gets or creates an EVM client for the given network.
 	///
@@ -180,6 +188,22 @@ impl ClientPoolTrait for ClientPool {
 		})
 		.await
 		.with_context(|| "Failed to get or create Midnight client")
+	}
+
+	/// Gets or creates a Solana client for the given network.
+	///
+	/// First checks the cache for an existing client. If none exists,
+	/// creates a new client under a write lock.
+	async fn get_solana_client(
+		&self,
+		network: &Network,
+	) -> Result<Arc<Self::SolanaClient>, anyhow::Error> {
+		self.get_or_create_client(BlockChainType::Solana, network, |n| {
+			let network = n.clone();
+			Box::pin(async move { Self::SolanaClient::new(&network).await })
+		})
+		.await
+		.with_context(|| "Failed to get or create Solana client")
 	}
 }
 

@@ -390,6 +390,18 @@ async fn main() -> Result<()> {
 					);
 				}
 			}
+			BlockChainType::Solana => {
+				if let Ok(client) = client_pool.get_solana_client(&network).await {
+					let _ = block_watcher
+						.start_network_watcher(&network, (*client).clone())
+						.await
+						.inspect_err(|e| {
+							error!("Failed to start Solana network watcher: {}", e);
+						});
+				} else {
+					error!("Failed to get Solana client for network: {}", network.slug);
+				}
+			}
 		}
 	}
 
@@ -576,6 +588,26 @@ async fn test_monitor_execution(config: MonitorExecutionTestConfig) -> Result<()
 													.and_then(|h| h.as_str())
 												{
 													info!("Transaction: {}", hash);
+												}
+											}
+										}
+										"Solana" => {
+											// Get slot number from block
+											if let Some(block) = details.get("block") {
+												if let Some(slot) =
+													block.get("slot").and_then(|s| s.as_u64())
+												{
+													info!("Slot: {}", slot);
+												}
+											}
+
+											// Get transaction signature
+											if let Some(transaction) = details.get("transaction") {
+												if let Some(signature) = transaction
+													.get("signature")
+													.and_then(|s| s.as_str())
+												{
+													info!("Transaction: {}", signature);
 												}
 											}
 										}
