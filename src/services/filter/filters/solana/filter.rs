@@ -2,7 +2,6 @@
 //!
 //! This module provides functionality to:
 //! - Filter and match Solana blockchain transactions against monitor conditions
-//! - Process and decode Solana instructions
 //! - Match program logs (events)
 //! - Evaluate complex matching expressions
 
@@ -12,7 +11,7 @@ use async_trait::async_trait;
 
 use crate::{
 	models::{
-		BlockType, ContractSpec, EventCondition, FunctionCondition, Monitor, MonitorMatch, Network,
+		BlockType, ContractSpec, EventCondition, Monitor, MonitorMatch, Network,
 		SolanaContractSpec, SolanaMatchArguments, SolanaMatchParamEntry, SolanaMatchParamsMap,
 		SolanaMonitorMatch, SolanaTransaction, TransactionCondition, TransactionStatus,
 	},
@@ -25,7 +24,7 @@ use crate::{
 	},
 };
 
-use super::{evaluator::SolanaConditionEvaluator, helpers::are_same_signature};
+use super::evaluator::SolanaConditionEvaluator;
 
 /// Implementation of the block filter for Solana blockchain
 pub struct SolanaBlockFilter<T> {
@@ -81,76 +80,6 @@ impl<T> SolanaBlockFilter<T> {
 						}
 					} else {
 						matched_transactions.push(condition.clone());
-					}
-				}
-			}
-		}
-	}
-
-	/// Finds matching instructions (functions) in a transaction
-	/// Note: Full IDL decoding is not yet implemented - matches on parsed instructions only
-	pub fn find_matching_instructions(
-		&self,
-		transaction: &SolanaTransaction,
-		monitor: &Monitor,
-		_contract_spec: Option<&SolanaContractSpec>,
-		matched_functions: &mut Vec<FunctionCondition>,
-		matched_on_args: &mut SolanaMatchArguments,
-	) {
-		if monitor.match_conditions.functions.is_empty() {
-			return;
-		}
-
-		// Check parsed instructions (for known programs like SPL Token)
-		for instruction in &transaction.0.transaction.instructions {
-			if let Some(parsed) = &instruction.parsed {
-				let parsed_signature = format!("{}()", parsed.instruction_type);
-				for condition in &monitor.match_conditions.functions {
-					if are_same_signature(&condition.signature, &parsed_signature)
-						|| condition.signature == parsed.instruction_type
-					{
-						let params = self.build_params_from_parsed(&parsed.info);
-
-						if let Some(expr) = &condition.expression {
-							match self.evaluate_expression(expr, &params) {
-								Ok(true) => {
-									matched_functions.push(FunctionCondition {
-										signature: parsed_signature.clone(),
-										expression: Some(expr.to_string()),
-									});
-
-									if let Some(functions) = &mut matched_on_args.functions {
-										functions.push(SolanaMatchParamsMap {
-											signature: parsed_signature.clone(),
-											args: Some(params.clone()),
-										});
-									}
-									break;
-								}
-								Ok(false) => continue,
-								Err(e) => {
-									tracing::error!(
-										"Failed to evaluate parsed instruction expression '{}': {}",
-										expr,
-										e
-									);
-									continue;
-								}
-							}
-						} else {
-							matched_functions.push(FunctionCondition {
-								signature: parsed_signature.clone(),
-								expression: None,
-							});
-
-							if let Some(functions) = &mut matched_on_args.functions {
-								functions.push(SolanaMatchParamsMap {
-									signature: parsed_signature.clone(),
-									args: Some(params),
-								});
-							}
-							break;
-						}
 					}
 				}
 			}
@@ -264,39 +193,6 @@ impl<T> SolanaBlockFilter<T> {
 		]
 	}
 
-	/// Builds parameters from parsed instruction info
-	fn build_params_from_parsed(&self, info: &serde_json::Value) -> Vec<SolanaMatchParamEntry> {
-		let mut params = Vec::new();
-
-		if let serde_json::Value::Object(map) = info {
-			for (key, value) in map {
-				let (val_str, kind) = match value {
-					serde_json::Value::String(s) => (s.clone(), "string".to_string()),
-					serde_json::Value::Number(n) => {
-						if n.is_u64() {
-							(n.to_string(), "u64".to_string())
-						} else if n.is_i64() {
-							(n.to_string(), "i64".to_string())
-						} else {
-							(n.to_string(), "f64".to_string())
-						}
-					}
-					serde_json::Value::Bool(b) => (b.to_string(), "bool".to_string()),
-					_ => (value.to_string(), "json".to_string()),
-				};
-
-				params.push(SolanaMatchParamEntry {
-					name: key.clone(),
-					value: val_str,
-					kind,
-					indexed: false,
-				});
-			}
-		}
-
-		params
-	}
-
 	/// Gets the Solana contract spec from the generic contract specs
 	fn get_solana_spec<'a>(
 		contract_specs: Option<&'a [(String, ContractSpec)]>,
@@ -364,7 +260,6 @@ impl<T: Send + Sync + Clone + BlockChainClient> BlockFilter for SolanaBlockFilte
 				}
 
 				let mut matched_transactions = Vec::new();
-				let mut matched_functions = Vec::new();
 				let mut matched_events = Vec::new();
 				let mut matched_on_args = SolanaMatchArguments {
 					functions: Some(Vec::new()),
@@ -382,14 +277,6 @@ impl<T: Send + Sync + Clone + BlockChainClient> BlockFilter for SolanaBlockFilte
 
 				self.find_matching_transaction(transaction, monitor, &mut matched_transactions);
 
-				self.find_matching_instructions(
-					transaction,
-					monitor,
-					contract_spec,
-					&mut matched_functions,
-					&mut matched_on_args,
-				);
-
 				self.find_matching_events(
 					transaction,
 					monitor,
@@ -399,15 +286,12 @@ impl<T: Send + Sync + Clone + BlockChainClient> BlockFilter for SolanaBlockFilte
 				);
 
 				let has_transaction_match = !matched_transactions.is_empty();
-				let has_function_match = !matched_functions.is_empty();
 				let has_event_match = !matched_events.is_empty();
 
-				let should_match = if monitor.match_conditions.functions.is_empty()
-					&& monitor.match_conditions.events.is_empty()
-				{
+				let should_match = if monitor.match_conditions.events.is_empty() {
 					has_transaction_match
 				} else {
-					(has_function_match || has_event_match) && has_transaction_match
+					has_event_match && has_transaction_match
 				};
 
 				if !should_match {
@@ -422,7 +306,6 @@ impl<T: Send + Sync + Clone + BlockChainClient> BlockFilter for SolanaBlockFilte
 					is_success = transaction.is_success(),
 					fee = transaction.fee(),
 					matched_transactions = matched_transactions.len(),
-					matched_functions = matched_functions.len(),
 					matched_events = matched_events.len(),
 					"Solana filter: MATCH FOUND!"
 				);
@@ -433,7 +316,7 @@ impl<T: Send + Sync + Clone + BlockChainClient> BlockFilter for SolanaBlockFilte
 					block: (**solana_block).clone(),
 					network_slug: network.slug.clone(),
 					matched_on: crate::models::MatchConditions {
-						functions: matched_functions,
+						functions: Vec::new(),
 						events: matched_events,
 						transactions: matched_transactions,
 					},

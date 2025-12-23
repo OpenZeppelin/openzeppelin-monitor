@@ -268,17 +268,7 @@ where
 {
 	tokio::select! {
 		result = filter_service.filter_block(client, network, block, applicable_monitors, contract_specs) => {
-			match result {
-				Ok(matches) => Some(matches),
-				Err(e) => {
-					tracing::error!(
-						network = %network.slug,
-						error = %e,
-						"Filter error"
-					);
-					None
-				}
-			}
+			result.ok()
 		}
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");
@@ -660,7 +650,7 @@ mod tests {
 
 	fn create_test_solana_transaction() -> SolanaTransaction {
 		SolanaTransaction::from(SolanaTransactionInfo {
-			signature: "5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+			signature: "5wHu1qwD7q5ifaN5nwdcDqNFF53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
 				.to_string(),
 			slot: 123456789,
 			block_time: Some(1234567890),

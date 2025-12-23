@@ -267,7 +267,7 @@ mod tests {
 
 	fn create_test_transaction(success: bool) -> TransactionInfo {
 		TransactionInfo {
-			signature: "5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+			signature: "5wHu1qwD7q5ifaN5nwdcDqNFF53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
 				.to_string(),
 			slot: 123456789,
 			block_time: Some(1234567890),
@@ -315,7 +315,7 @@ mod tests {
 
 		assert_eq!(
 			transaction.signature(),
-			"5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+			"5wHu1qwD7q5ifaN5nwdcDqNFF53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
 		);
 		assert_eq!(transaction.slot(), 123456789);
 		assert!(transaction.is_success());
@@ -351,7 +351,7 @@ mod tests {
 
 		assert_eq!(
 			transaction.signature(),
-			"5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+			"5wHu1qwD7q5ifaN5nwdcDqNFF53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
 		);
 	}
 
@@ -363,7 +363,7 @@ mod tests {
 		// Test that we can access TransactionInfo fields through deref
 		assert_eq!(
 			transaction.signature,
-			"5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+			"5wHu1qwD7q5ifaN5nwdcDqNFF53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
 		);
 		assert_eq!(transaction.slot, 123456789);
 	}
@@ -392,7 +392,7 @@ mod tests {
 
 		assert_eq!(
 			deserialized.signature(),
-			"5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+			"5wHu1qwD7q5ifaN5nwdcDqNFF53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
 		);
 		assert_eq!(deserialized.slot(), 123456789);
 		assert!(deserialized.is_success());
