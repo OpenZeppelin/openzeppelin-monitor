@@ -29,30 +29,70 @@ use super::error::{error_codes, is_slot_unavailable_error, SolanaClientError};
 
 /// Solana RPC method constants
 mod rpc_methods {
-	#[allow(dead_code)]
 	pub const GET_SLOT: &str = "getSlot";
 	pub const GET_BLOCK: &str = "getBlock";
 	pub const GET_BLOCKS: &str = "getBlocks";
-	#[allow(dead_code)]
 	pub const GET_TRANSACTION: &str = "getTransaction";
 	pub const GET_ACCOUNT_INFO: &str = "getAccountInfo";
 	pub const GET_PROGRAM_ACCOUNTS: &str = "getProgramAccounts";
 	pub const GET_SIGNATURES_FOR_ADDRESS: &str = "getSignaturesForAddress";
 }
 
+/// Information about a transaction signature from getSignaturesForAddress
+#[derive(Debug, Clone)]
+pub struct SignatureInfo {
+	/// The transaction signature
+	pub signature: String,
+	/// The slot the transaction was processed in
+	pub slot: u64,
+	/// Whether the transaction had an error (None = success)
+	pub err: Option<serde_json::Value>,
+	/// Block time if available
+	pub block_time: Option<i64>,
+}
+
 /// Client implementation for the Solana blockchain
 ///
 /// Provides high-level access to Solana blockchain data and operations through HTTP transport.
+/// Supports optimized block fetching when monitored addresses are configured.
 #[derive(Clone)]
 pub struct SolanaClient<T: Send + Sync + Clone> {
 	/// The underlying Solana transport client for RPC communication
 	http_client: T,
+	/// Addresses to monitor for optimized block fetching (e.g., program IDs)
+	/// When set, get_blocks uses getSignaturesForAddress instead of getBlock
+	monitored_addresses: Vec<String>,
 }
 
 impl<T: Send + Sync + Clone> SolanaClient<T> {
 	/// Creates a new Solana client instance with a specific transport client
 	pub fn new_with_transport(http_client: T) -> Self {
-		Self { http_client }
+		Self {
+			http_client,
+			monitored_addresses: Vec::new(),
+		}
+	}
+
+	/// Configures the client with addresses to monitor
+	///
+	/// When addresses are set, `get_blocks` will use the optimized
+	/// `getSignaturesForAddress` approach instead of fetching all blocks.
+	///
+	/// # Arguments
+	/// * `addresses` - Program IDs or addresses to monitor
+	pub fn with_monitored_addresses(mut self, addresses: Vec<String>) -> Self {
+		self.monitored_addresses = addresses;
+		self
+	}
+
+	/// Sets the monitored addresses (mutable version)
+	pub fn set_monitored_addresses(&mut self, addresses: Vec<String>) {
+		self.monitored_addresses = addresses;
+	}
+
+	/// Returns the currently monitored addresses
+	pub fn monitored_addresses(&self) -> &[String] {
+		&self.monitored_addresses
 	}
 
 	/// Checks a JSON-RPC response for error information and converts it into a `SolanaClientError` if present.
@@ -392,20 +432,57 @@ pub trait SolanaClientTrait {
 	/// Retrieves transactions for a specific slot
 	async fn get_transactions(&self, slot: u64) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
 
-	/// Retrieves signatures for an address
+	/// Retrieves a single transaction by signature
+	async fn get_transaction(
+		&self,
+		signature: String,
+	) -> Result<Option<SolanaTransaction>, anyhow::Error>;
+
+	/// Retrieves signatures for an address (returns just signature strings)
 	async fn get_signatures_for_address(
 		&self,
-		address: &str,
+		address: String,
 		limit: Option<usize>,
 	) -> Result<Vec<String>, anyhow::Error>;
 
+	/// Retrieves signatures with full info (slot, err, block_time) for an address
+	/// Optionally filter by slot range
+	async fn get_signatures_for_address_with_info(
+		&self,
+		address: String,
+		limit: Option<usize>,
+		min_slot: Option<u64>,
+		until_signature: Option<String>,
+	) -> Result<Vec<SignatureInfo>, anyhow::Error>;
+
+	/// Retrieves transactions for multiple addresses within a slot range
+	/// This is the optimized method that uses getSignaturesForAddress instead of getBlock
+	async fn get_transactions_for_addresses(
+		&self,
+		addresses: &[String],
+		start_slot: u64,
+		end_slot: Option<u64>,
+	) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
+
+	/// Retrieves blocks containing only transactions relevant to the specified addresses
+	/// This is the main optimization: instead of fetching all blocks, we fetch only
+	/// transactions that involve the monitored addresses and group them into virtual blocks
+	///
+	/// Returns BlockType::Solana blocks, compatible with the existing filter infrastructure
+	async fn get_blocks_for_addresses(
+		&self,
+		addresses: &[String],
+		start_slot: u64,
+		end_slot: Option<u64>,
+	) -> Result<Vec<BlockType>, anyhow::Error>;
+
 	/// Retrieves account info for a given public key
-	async fn get_account_info(&self, pubkey: &str) -> Result<serde_json::Value, anyhow::Error>;
+	async fn get_account_info(&self, pubkey: String) -> Result<serde_json::Value, anyhow::Error>;
 
 	/// Retrieves program accounts for a given program ID
 	async fn get_program_accounts(
 		&self,
-		program_id: &str,
+		program_id: String,
 	) -> Result<Vec<serde_json::Value>, anyhow::Error>;
 }
 
@@ -436,12 +513,62 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		Ok(block.transactions.clone())
 	}
 
+	#[instrument(skip(self), fields(signature))]
+	async fn get_transaction(
+		&self,
+		signature: String,
+	) -> Result<Option<SolanaTransaction>, anyhow::Error> {
+		let config = json!({
+			"encoding": "json",
+			"commitment": "finalized",
+			"maxSupportedTransactionVersion": 0
+		});
+		let params = json!([signature, config]);
+
+		let response = self
+			.http_client
+			.send_raw_request(rpc_methods::GET_TRANSACTION, Some(params))
+			.await
+			.with_context(|| format!("Failed to get transaction {}", signature))?;
+
+		// Check for null result (transaction not found)
+		let result = response.get("result");
+		if result.is_none() || result.unwrap().is_null() {
+			return Ok(None);
+		}
+
+		let result = result.unwrap();
+
+		// Extract slot from response
+		let slot = result.get("slot").and_then(|s| s.as_u64()).unwrap_or(0);
+
+		// Parse the transaction using existing parsing logic
+		// We need to wrap it in the format expected by parse_single_transaction
+		let wrapped_tx = json!({
+			"transaction": result.get("transaction"),
+			"meta": result.get("meta")
+		});
+
+		match self.parse_single_transaction(slot, &wrapped_tx) {
+			Ok(Some(mut tx)) => {
+				// Update block_time if available
+				if let Some(block_time) = result.get("blockTime").and_then(|t| t.as_i64()) {
+					tx.0.block_time = Some(block_time);
+				}
+				Ok(Some(tx))
+			}
+			Ok(None) => Ok(None),
+			Err(e) => Err(anyhow::anyhow!(e).context("Failed to parse transaction")),
+		}
+	}
+
 	#[instrument(skip(self), fields(address, limit))]
 	async fn get_signatures_for_address(
 		&self,
-		address: &str,
+		address: String,
 		limit: Option<usize>,
 	) -> Result<Vec<String>, anyhow::Error> {
+		let address = &address;
 		let config = json!({
 			"commitment": "finalized",
 			"limit": limit.unwrap_or(100)
@@ -471,13 +598,154 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		Ok(signatures)
 	}
 
+	#[instrument(skip(self), fields(address, limit, min_slot))]
+	async fn get_signatures_for_address_with_info(
+		&self,
+		address: String,
+		limit: Option<usize>,
+		min_slot: Option<u64>,
+		until_signature: Option<String>,
+	) -> Result<Vec<SignatureInfo>, anyhow::Error> {
+		let address = &address;
+		let until_signature = until_signature.as_deref();
+		let mut config = json!({
+			"commitment": "finalized",
+			"limit": limit.unwrap_or(1000)
+		});
+
+		// Add minContextSlot if specified (helps filter old transactions)
+		if let Some(min) = min_slot {
+			config["minContextSlot"] = json!(min);
+		}
+
+		// Add until signature to paginate
+		if let Some(until) = until_signature {
+			config["until"] = json!(until);
+		}
+
+		let params = json!([address, config]);
+
+		let response = self
+			.http_client
+			.send_raw_request(rpc_methods::GET_SIGNATURES_FOR_ADDRESS, Some(params))
+			.await
+			.with_context(|| format!("Failed to get signatures for address {}", address))?;
+
+		let result = response
+			.get("result")
+			.and_then(|r| r.as_array())
+			.ok_or_else(|| anyhow::anyhow!("Invalid response structure"))?;
+
+		let signatures: Vec<SignatureInfo> = result
+			.iter()
+			.filter_map(|item| {
+				let signature = item.get("signature")?.as_str()?.to_string();
+				let slot = item.get("slot")?.as_u64()?;
+				let err =
+					item.get("err")
+						.and_then(|e| if e.is_null() { None } else { Some(e.clone()) });
+				let block_time = item.get("blockTime").and_then(|t| t.as_i64());
+
+				Some(SignatureInfo {
+					signature,
+					slot,
+					err,
+					block_time,
+				})
+			})
+			.collect();
+
+		Ok(signatures)
+	}
+
+	#[instrument(skip(self), fields(addresses_count = addresses.len(), start_slot, end_slot))]
+	async fn get_transactions_for_addresses(
+		&self,
+		addresses: &[String],
+		start_slot: u64,
+		end_slot: Option<u64>,
+	) -> Result<Vec<SolanaTransaction>, anyhow::Error> {
+		use std::collections::HashSet;
+
+		let end_slot = end_slot.unwrap_or(start_slot);
+
+		if addresses.is_empty() {
+			return Ok(Vec::new());
+		}
+
+		tracing::info!(
+			addresses = ?addresses,
+			start_slot = start_slot,
+			end_slot = end_slot,
+			"Fetching transactions for addresses using signatures approach"
+		);
+
+		// Collect all unique signatures from all addresses within the slot range
+		let mut all_signatures: HashSet<String> = HashSet::new();
+		let mut signature_slots: std::collections::HashMap<String, u64> =
+			std::collections::HashMap::new();
+
+		for address in addresses {
+			let signatures = self
+				.get_signatures_for_address_with_info(
+					address.clone(),
+					Some(1000), // Fetch up to 1000 recent signatures
+					Some(start_slot),
+					None,
+				)
+				.await?;
+
+			tracing::debug!(
+				address = %address,
+				signatures_count = signatures.len(),
+				"Got signatures for address"
+			);
+
+			for sig_info in signatures {
+				// Filter by slot range
+				if sig_info.slot >= start_slot && sig_info.slot <= end_slot {
+					signature_slots.insert(sig_info.signature.clone(), sig_info.slot);
+					all_signatures.insert(sig_info.signature);
+				}
+			}
+		}
+
+		tracing::info!(
+			unique_signatures = all_signatures.len(),
+			"Fetching transactions for unique signatures in slot range"
+		);
+
+		// Fetch each transaction
+		let mut transactions = Vec::with_capacity(all_signatures.len());
+		for signature in all_signatures {
+			match self.get_transaction(signature.clone()).await {
+				Ok(Some(tx)) => {
+					transactions.push(tx);
+				}
+				Ok(None) => {
+					tracing::debug!(signature = %signature, "Transaction not found");
+				}
+				Err(e) => {
+					tracing::warn!(signature = %signature, error = %e, "Failed to fetch transaction");
+				}
+			}
+		}
+
+		tracing::info!(
+			fetched_transactions = transactions.len(),
+			"Successfully fetched transactions"
+		);
+
+		Ok(transactions)
+	}
+
 	#[instrument(skip(self), fields(pubkey))]
-	async fn get_account_info(&self, pubkey: &str) -> Result<serde_json::Value, anyhow::Error> {
+	async fn get_account_info(&self, pubkey: String) -> Result<serde_json::Value, anyhow::Error> {
 		let config = json!({
 			"encoding": "jsonParsed",
 			"commitment": "finalized"
 		});
-		let params = json!([pubkey, config]);
+		let params = json!([&pubkey, config]);
 
 		let response = self
 			.http_client
@@ -496,13 +764,13 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 	#[instrument(skip(self), fields(program_id))]
 	async fn get_program_accounts(
 		&self,
-		program_id: &str,
+		program_id: String,
 	) -> Result<Vec<serde_json::Value>, anyhow::Error> {
 		let config = json!({
 			"encoding": "jsonParsed",
 			"commitment": "finalized"
 		});
-		let params = json!([program_id, config]);
+		let params = json!([&program_id, config]);
 
 		let response = self
 			.http_client
@@ -517,6 +785,56 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			.ok_or_else(|| anyhow::anyhow!("Invalid response structure"))?;
 
 		Ok(result)
+	}
+
+	#[instrument(skip(self), fields(addresses_count = addresses.len(), start_slot, end_slot))]
+	async fn get_blocks_for_addresses(
+		&self,
+		addresses: &[String],
+		start_slot: u64,
+		end_slot: Option<u64>,
+	) -> Result<Vec<BlockType>, anyhow::Error> {
+		use std::collections::BTreeMap;
+
+		// Fetch transactions using the optimized signatures approach
+		let transactions = self
+			.get_transactions_for_addresses(addresses, start_slot, end_slot)
+			.await?;
+
+		if transactions.is_empty() {
+			return Ok(Vec::new());
+		}
+
+		// Group transactions by slot
+		let mut slot_transactions: BTreeMap<u64, Vec<SolanaTransaction>> = BTreeMap::new();
+		for tx in transactions {
+			let slot = tx.slot();
+			slot_transactions.entry(slot).or_default().push(tx);
+		}
+
+		// Create virtual blocks for each slot
+		let blocks: Vec<BlockType> = slot_transactions
+			.into_iter()
+			.map(|(slot, txs)| {
+				let confirmed_block = SolanaConfirmedBlock {
+					slot,
+					blockhash: String::new(), // Not available from getTransaction
+					previous_blockhash: String::new(),
+					parent_slot: slot.saturating_sub(1),
+					block_time: txs.first().and_then(|tx| tx.0.block_time),
+					block_height: None,
+					transactions: txs,
+				};
+				BlockType::Solana(Box::new(SolanaBlock::from(confirmed_block)))
+			})
+			.collect();
+
+		tracing::info!(
+			blocks_count = blocks.len(),
+			"Created virtual blocks from address-filtered transactions"
+		);
+
+		Ok(blocks)
 	}
 }
 
@@ -556,6 +874,24 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
+		// If monitored addresses are configured, use the optimized approach
+		if !self.monitored_addresses.is_empty() {
+			tracing::info!(
+				addresses = ?self.monitored_addresses,
+				start_block = start_block,
+				end_block = ?end_block,
+				"Using optimized getSignaturesForAddress approach"
+			);
+			return SolanaClientTrait::get_blocks_for_addresses(
+				self,
+				&self.monitored_addresses,
+				start_block,
+				end_block,
+			)
+			.await;
+		}
+
+		// Standard approach: fetch all blocks
 		// Validate input parameters
 		if let Some(end_block) = end_block {
 			if start_block > end_block {

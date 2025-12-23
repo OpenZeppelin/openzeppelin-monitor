@@ -53,6 +53,16 @@ pub trait ClientPoolTrait: Send + Sync {
 		&self,
 		network: &Network,
 	) -> Result<Arc<Self::SolanaClient>, anyhow::Error>;
+
+	/// Gets a Solana client configured with specific addresses to monitor
+	///
+	/// This creates a fresh client (not cached) with the optimized
+	/// getSignaturesForAddress approach enabled for the specified addresses.
+	async fn get_solana_client_with_addresses(
+		&self,
+		network: &Network,
+		addresses: Vec<String>,
+	) -> Result<Arc<Self::SolanaClient>, anyhow::Error>;
 }
 
 /// Main client pool manager that handles multiple blockchain types.
@@ -204,6 +214,22 @@ impl ClientPoolTrait for ClientPool {
 		})
 		.await
 		.with_context(|| "Failed to get or create Solana client")
+	}
+
+	/// Gets a Solana client configured with specific addresses to monitor.
+	///
+	/// This creates a fresh client (not cached) with the optimized
+	/// getSignaturesForAddress approach enabled for the specified addresses.
+	async fn get_solana_client_with_addresses(
+		&self,
+		network: &Network,
+		addresses: Vec<String>,
+	) -> Result<Arc<Self::SolanaClient>, anyhow::Error> {
+		let client = Self::SolanaClient::new(network)
+			.await
+			.with_context(|| "Failed to create Solana client")?;
+		let client = client.with_monitored_addresses(addresses);
+		Ok(Arc::new(client))
 	}
 }
 

@@ -25,7 +25,7 @@ pub use evm::client::{EvmClient, EvmClientTrait};
 pub use midnight::client::{
 	MidnightClient, MidnightClientTrait, SubstrateClientTrait as MidnightSubstrateClientTrait,
 };
-pub use solana::client::{SolanaClient, SolanaClientTrait};
+pub use solana::client::{SignatureInfo, SolanaClient, SolanaClientTrait};
 pub use solana::error::SolanaClientError;
 pub use stellar::client::{StellarClient, StellarClientTrait};
 pub use stellar::error::StellarClientError;

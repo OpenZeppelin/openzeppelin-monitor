@@ -117,6 +117,8 @@ where
 	/// * `network` - Network configuration
 	/// * `block_storage` - Storage implementation for blocks
 	/// * `block_handler` - Handler function for processed blocks
+	/// * `trigger_handler` - Trigger handler function
+	/// * `block_tracker` - Block tracker instance
 	///
 	/// # Returns
 	/// * `Result<Self, BlockWatcherError>` - New watcher instance or error
@@ -270,6 +272,7 @@ where
 	///
 	/// # Arguments
 	/// * `network` - Network configuration to start watching
+	/// * `rpc_client` - RPC client for the network
 	pub async fn start_network_watcher<C: BlockChainClient + Send + Clone + 'static>(
 		&self,
 		network: &Network,

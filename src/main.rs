@@ -391,7 +391,33 @@ async fn main() -> Result<()> {
 				}
 			}
 			BlockChainType::Solana => {
-				if let Ok(client) = client_pool.get_solana_client(&network).await {
+				// Extract monitored addresses from all monitors for this network
+				let monitored_addresses: Vec<String> = network_monitors
+					.iter()
+					.filter(|(n, _)| n.slug == network.slug)
+					.flat_map(|(_, monitors)| {
+						monitors
+							.iter()
+							.flat_map(|m| m.addresses.iter().map(|a| a.address.clone()))
+					})
+					.collect::<std::collections::HashSet<_>>()
+					.into_iter()
+					.collect();
+
+				// Use optimized client if addresses are configured
+				let client_result = if !monitored_addresses.is_empty() {
+					info!(
+						"Creating Solana client with optimized address filtering for {} addresses",
+						monitored_addresses.len()
+					);
+					client_pool
+						.get_solana_client_with_addresses(&network, monitored_addresses)
+						.await
+				} else {
+					client_pool.get_solana_client(&network).await
+				};
+
+				if let Ok(client) = client_result {
 					let _ = block_watcher
 						.start_network_watcher(&network, (*client).clone())
 						.await

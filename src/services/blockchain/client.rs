@@ -50,6 +50,30 @@ pub trait BlockChainClient: Send + Sync + Clone {
 	async fn get_contract_spec(&self, _contract_id: &str) -> Result<ContractSpec, anyhow::Error> {
 		Err(anyhow::anyhow!("get_contract_spec not implemented"))
 	}
+
+	/// Retrieves blocks containing only transactions relevant to the specified addresses
+	///
+	/// This is an optimized method for chains that support address-based querying (like Solana).
+	/// For chains that don't support this optimization, the default implementation falls back
+	/// to `get_blocks` which fetches all transactions.
+	///
+	/// # Arguments
+	/// * `addresses` - The addresses to filter transactions by (e.g., program IDs for Solana)
+	/// * `start_block` - The starting block number
+	/// * `end_block` - Optional ending block number
+	///
+	/// # Returns
+	/// * `Result<Vec<BlockType>, anyhow::Error>` - Vector of blocks containing relevant transactions
+	async fn get_blocks_for_addresses(
+		&self,
+		_addresses: &[String],
+		start_block: u64,
+		end_block: Option<u64>,
+	) -> Result<Vec<BlockType>, anyhow::Error> {
+		// Default implementation: fall back to fetching all blocks
+		// Blockchain-specific clients can override this with optimized implementations
+		self.get_blocks(start_block, end_block).await
+	}
 }
 
 /// Defines the factory interface for creating block filters

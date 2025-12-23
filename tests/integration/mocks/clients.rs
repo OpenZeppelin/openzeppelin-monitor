@@ -24,7 +24,7 @@ use openzeppelin_monitor::{
 	services::{
 		blockchain::{
 			BlockChainClient, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
-			MidnightClientTrait, MidnightSubstrateClientTrait, SolanaClientTrait,
+			MidnightClientTrait, MidnightSubstrateClientTrait, SignatureInfo, SolanaClientTrait,
 			StellarClientTrait,
 		},
 		filter::{EVMBlockFilter, MidnightBlockFilter, SolanaBlockFilter, StellarBlockFilter},
@@ -182,16 +182,36 @@ mock! {
 	#[async_trait]
 	impl<T: Send + Sync + Clone + 'static> SolanaClientTrait for SolanaClientTrait<T> {
 		async fn get_transactions(&self, slot: u64) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
+		async fn get_transaction(
+			&self,
+			signature: String,
+		) -> Result<Option<SolanaTransaction>, anyhow::Error>;
 		async fn get_signatures_for_address(
 			&self,
-			address: &str,
+			address: String,
 			limit: Option<usize>,
 		) -> Result<Vec<String>, anyhow::Error>;
-		async fn get_account_info(&self, pubkey: &str) -> Result<serde_json::Value, anyhow::Error>;
-		async fn get_program_accounts(
+		async fn get_signatures_for_address_with_info(
 			&self,
-			program_id: &str,
-		) -> Result<Vec<serde_json::Value>, anyhow::Error>;
+			address: String,
+			limit: Option<usize>,
+			min_slot: Option<u64>,
+			until_signature: Option<String>,
+		) -> Result<Vec<SignatureInfo>, anyhow::Error>;
+		async fn get_transactions_for_addresses(
+			&self,
+			addresses: &[String],
+			start_slot: u64,
+			end_slot: Option<u64>,
+		) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
+		async fn get_blocks_for_addresses(
+			&self,
+			addresses: &[String],
+			start_slot: u64,
+			end_slot: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error>;
+		async fn get_account_info(&self, pubkey: String) -> Result<serde_json::Value, anyhow::Error>;
+		async fn get_program_accounts(&self, program_id: String) -> Result<Vec<serde_json::Value>, anyhow::Error>;
 	}
 
 	impl<T: Send + Sync + Clone + 'static> Clone for SolanaClientTrait<T> {
@@ -259,6 +279,11 @@ mock! {
 		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>,  anyhow::Error>;
 		async fn get_midnight_client(&self, network: &Network) -> Result<Arc<MockMidnightClientTrait<MockMidnightWsTransportClient>>,  anyhow::Error>;
 		async fn get_solana_client(&self, network: &Network) -> Result<Arc<MockSolanaClientTrait<MockSolanaTransportClient>>,  anyhow::Error>;
+		async fn get_solana_client_with_addresses(
+			&self,
+			network: &Network,
+			addresses: Vec<String>,
+		) -> Result<Arc<MockSolanaClientTrait<MockSolanaTransportClient>>, anyhow::Error>;
 	}
 
 	impl Clone for ClientPool {
