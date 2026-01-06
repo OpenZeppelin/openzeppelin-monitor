@@ -1,0 +1,29 @@
+{
+  "name": "Solana Token Transfer with Expression",
+  "paused": false,
+  "networks": [
+    "solana_devnet"
+  ],
+  "addresses": [
+    {
+      "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Transfer",
+        "expression": "amount > 1000"
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "trigger_conditions": [],
+  "triggers": []
+}

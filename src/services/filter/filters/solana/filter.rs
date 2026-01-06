@@ -86,6 +86,12 @@ impl<T> SolanaBlockFilter<T> {
 		}
 	}
 
+	// Note: Instruction matching functionality was removed in commit d0f9ad0.
+	// This feature requires full IDL (Interface Definition Language) parsing
+	// and decoding of arbitrary program instructions, which is not yet implemented.
+	// Currently, only event matching (via program logs) is supported.
+	// TODO: Re-implement instruction matching with proper IDL support
+
 	/// Finds matching events (logs) in a transaction
 	pub fn find_matching_events(
 		&self,

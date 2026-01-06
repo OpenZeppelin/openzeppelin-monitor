@@ -2,17 +2,21 @@
   "name": "Solana Token Transfer Monitor",
   "paused": false,
   "networks": [
-    "solana_mainnet"
+    "solana_devnet"
   ],
   "addresses": [
     {
-      "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-      "contract_spec": []
+      "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
     }
   ],
   "match_conditions": {
     "functions": [],
-    "events": [],
+    "events": [
+      {
+        "signature": "Transfer",
+        "expression": null
+      }
+    ],
     "transactions": [
       {
         "status": "Success",

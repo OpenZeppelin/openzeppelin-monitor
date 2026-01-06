@@ -16,6 +16,9 @@ mod integration {
 			mod midnight {
 				mod client;
 			}
+			mod solana {
+				mod client;
+			}
 		}
 		mod transports {
 			mod evm {
@@ -58,6 +61,9 @@ mod integration {
 			mod filter;
 		}
 		mod midnight {
+			mod filter;
+		}
+		mod solana {
 			mod filter;
 		}
 	}

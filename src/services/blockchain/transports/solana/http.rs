@@ -36,8 +36,6 @@ pub mod rpc_methods {
 	pub const GET_MULTIPLE_ACCOUNTS: &str = "getMultipleAccounts";
 	/// Get program accounts
 	pub const GET_PROGRAM_ACCOUNTS: &str = "getProgramAccounts";
-	/// Get signatures for address
-	pub const GET_SIGNATURES_FOR_ADDRESS: &str = "getSignaturesForAddress";
 	/// Get block height
 	pub const GET_BLOCK_HEIGHT: &str = "getBlockHeight";
 	/// Get block time
@@ -347,43 +345,6 @@ impl SolanaTransportClient {
 		let params = json!([program_id, config]);
 		self.http_client
 			.send_raw_request(rpc_methods::GET_PROGRAM_ACCOUNTS, Some(params))
-			.await
-	}
-
-	/// Gets signatures for an address
-	///
-	/// # Arguments
-	/// * `address` - The address to query (base58 encoded)
-	/// * `limit` - Maximum number of signatures to return
-	/// * `before` - Optional signature to start searching backwards from
-	/// * `until` - Optional signature to search until
-	///
-	/// # Returns
-	/// * `Result<Value, TransportError>` - Array of signature info or error
-	pub async fn get_signatures_for_address(
-		&self,
-		address: &str,
-		limit: Option<usize>,
-		before: Option<&str>,
-		until: Option<&str>,
-	) -> Result<Value, TransportError> {
-		let mut config = json!({
-			"commitment": "finalized"
-		});
-
-		if let Some(l) = limit {
-			config["limit"] = json!(l);
-		}
-		if let Some(b) = before {
-			config["before"] = json!(b);
-		}
-		if let Some(u) = until {
-			config["until"] = json!(u);
-		}
-
-		let params = json!([address, config]);
-		self.http_client
-			.send_raw_request(rpc_methods::GET_SIGNATURES_FOR_ADDRESS, Some(params))
 			.await
 	}
 

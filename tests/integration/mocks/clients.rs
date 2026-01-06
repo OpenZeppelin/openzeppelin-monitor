@@ -186,17 +186,18 @@ mock! {
 			&self,
 			signature: String,
 		) -> Result<Option<SolanaTransaction>, anyhow::Error>;
-		async fn get_signatures_for_address(
-			&self,
-			address: String,
-			limit: Option<usize>,
-		) -> Result<Vec<String>, anyhow::Error>;
 		async fn get_signatures_for_address_with_info(
 			&self,
 			address: String,
 			limit: Option<usize>,
 			min_slot: Option<u64>,
 			until_signature: Option<String>,
+		) -> Result<Vec<SignatureInfo>, anyhow::Error>;
+		async fn get_all_signatures_for_address(
+			&self,
+			address: String,
+			start_slot: u64,
+			end_slot: u64,
 		) -> Result<Vec<SignatureInfo>, anyhow::Error>;
 		async fn get_transactions_for_addresses(
 			&self,

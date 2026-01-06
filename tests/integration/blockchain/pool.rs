@@ -50,7 +50,7 @@ async fn test_get_evm_client_creates_and_caches() {
 
 	// First request should create new client
 	let client1 = pool.get_evm_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
@@ -93,7 +93,7 @@ async fn test_get_stellar_client_creates_and_caches() {
 
 	// First request should create new client
 	let client1 = pool.get_stellar_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
 			.await,
@@ -102,7 +102,7 @@ async fn test_get_stellar_client_creates_and_caches() {
 
 	// Second request should return cached client
 	let client2 = pool.get_stellar_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
 			.await,
@@ -127,7 +127,7 @@ async fn test_get_midnight_client_creates_and_caches() {
 	// First request should create new client
 	let client1 = pool.get_midnight_client(&network).await.unwrap();
 
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<MidnightClient<MidnightWsTransportClient>>(
 			BlockChainType::Midnight
@@ -138,7 +138,7 @@ async fn test_get_midnight_client_creates_and_caches() {
 
 	// Second request should return cached client
 	let client2 = pool.get_midnight_client(&network).await.unwrap();
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<MidnightClient<MidnightWsTransportClient>>(
 			BlockChainType::Midnight
@@ -175,7 +175,7 @@ async fn test_different_evm_networks_get_different_clients() {
 	let client2 = pool.get_evm_client(&network2).await.unwrap();
 
 	// Should have different clients
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
@@ -208,7 +208,7 @@ async fn test_different_stellar_networks_get_different_clients() {
 	let client2 = pool.get_stellar_client(&network2).await.unwrap();
 
 	// Should have different clients
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<StellarClient<StellarTransportClient>>(BlockChainType::Stellar)
 			.await,
@@ -244,7 +244,7 @@ async fn test_different_midnight_networks_get_different_clients() {
 	let client2 = pool.get_midnight_client(&network2).await.unwrap();
 
 	// Should have different clients
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<MidnightClient<MidnightWsTransportClient>>(
 			BlockChainType::Midnight
@@ -286,7 +286,7 @@ async fn test_concurrent_access() {
 		.collect();
 
 	// Should only have created one client
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
@@ -306,7 +306,7 @@ async fn test_concurrent_access() {
 async fn test_default_creates_empty_pool() {
 	let pool: ClientPool = Default::default();
 
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
@@ -358,7 +358,7 @@ async fn test_get_evm_client_handles_errors() {
 	}
 
 	// Pool should remain empty after failed client creation
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
@@ -411,7 +411,7 @@ async fn test_get_stellar_client_handles_errors() {
 	}
 
 	// Pool should remain empty after failed client creation
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,
@@ -450,7 +450,7 @@ async fn test_get_midnight_client_handles_errors() {
 	}
 
 	// Pool should remain empty after failed client creation
-	assert_eq!(pool.storages.len(), 3);
+	assert_eq!(pool.storages.len(), 4);
 	assert_eq!(
 		pool.get_client_count::<EvmClient<EVMTransportClient>>(BlockChainType::EVM)
 			.await,

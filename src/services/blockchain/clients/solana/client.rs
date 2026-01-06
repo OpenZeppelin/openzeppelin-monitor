@@ -438,13 +438,6 @@ pub trait SolanaClientTrait {
 		signature: String,
 	) -> Result<Option<SolanaTransaction>, anyhow::Error>;
 
-	/// Retrieves signatures for an address (returns just signature strings)
-	async fn get_signatures_for_address(
-		&self,
-		address: String,
-		limit: Option<usize>,
-	) -> Result<Vec<String>, anyhow::Error>;
-
 	/// Retrieves signatures with full info (slot, err, block_time) for an address
 	/// Optionally filter by slot range
 	async fn get_signatures_for_address_with_info(
@@ -453,6 +446,15 @@ pub trait SolanaClientTrait {
 		limit: Option<usize>,
 		min_slot: Option<u64>,
 		until_signature: Option<String>,
+	) -> Result<Vec<SignatureInfo>, anyhow::Error>;
+
+	/// Retrieves all signatures for an address within a slot range with automatic pagination
+	/// This method handles pagination internally and returns all signatures up to a safety limit
+	async fn get_all_signatures_for_address(
+		&self,
+		address: String,
+		start_slot: u64,
+		end_slot: u64,
 	) -> Result<Vec<SignatureInfo>, anyhow::Error>;
 
 	/// Retrieves transactions for multiple addresses within a slot range
@@ -562,42 +564,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		}
 	}
 
-	#[instrument(skip(self), fields(address, limit))]
-	async fn get_signatures_for_address(
-		&self,
-		address: String,
-		limit: Option<usize>,
-	) -> Result<Vec<String>, anyhow::Error> {
-		let address = &address;
-		let config = json!({
-			"commitment": "finalized",
-			"limit": limit.unwrap_or(100)
-		});
-		let params = json!([address, config]);
-
-		let response = self
-			.http_client
-			.send_raw_request(rpc_methods::GET_SIGNATURES_FOR_ADDRESS, Some(params))
-			.await
-			.with_context(|| format!("Failed to get signatures for address {}", address))?;
-
-		let result = response
-			.get("result")
-			.and_then(|r| r.as_array())
-			.ok_or_else(|| anyhow::anyhow!("Invalid response structure"))?;
-
-		let signatures: Vec<String> = result
-			.iter()
-			.filter_map(|item| {
-				item.get("signature")
-					.and_then(|s| s.as_str())
-					.map(|s| s.to_string())
-			})
-			.collect();
-
-		Ok(signatures)
-	}
-
 	#[instrument(skip(self), fields(address, limit, min_slot))]
 	async fn get_signatures_for_address_with_info(
 		&self,
@@ -658,6 +624,71 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		Ok(signatures)
 	}
 
+	#[instrument(skip(self), fields(address, start_slot, end_slot))]
+	async fn get_all_signatures_for_address(
+		&self,
+		address: String,
+		start_slot: u64,
+		end_slot: u64,
+	) -> Result<Vec<SignatureInfo>, anyhow::Error> {
+		const PAGE_LIMIT: usize = 1000;
+		const MAX_SIGNATURES: usize = 100_000; // Safety limit
+
+		let mut all_signatures = Vec::new();
+		let mut until_signature: Option<String> = None;
+		let mut iteration = 0;
+
+		loop {
+			let batch = self
+				.get_signatures_for_address_with_info(
+					address.clone(),
+					Some(PAGE_LIMIT),
+					Some(start_slot),
+					until_signature.clone(),
+				)
+				.await?;
+
+			if batch.is_empty() {
+				break;
+			}
+
+			// Filter by slot range and collect
+			let filtered: Vec<SignatureInfo> = batch
+				.into_iter()
+				.filter(|sig| sig.slot >= start_slot && sig.slot <= end_slot)
+				.collect();
+
+			let batch_len = filtered.len();
+			until_signature = filtered.last().map(|s| s.signature.clone());
+			all_signatures.extend(filtered);
+
+			// Break conditions
+			if batch_len < PAGE_LIMIT {
+				break; // Last page
+			}
+
+			if all_signatures.len() >= MAX_SIGNATURES {
+				tracing::warn!(
+					address = %address,
+					count = all_signatures.len(),
+					"Reached maximum signature limit, stopping pagination"
+				);
+				break;
+			}
+
+			iteration += 1;
+		}
+
+		tracing::debug!(
+			address = %address,
+			signatures = all_signatures.len(),
+			iterations = iteration + 1,
+			"Completed signature pagination"
+		);
+
+		Ok(all_signatures)
+	}
+
 	#[instrument(skip(self), fields(addresses_count = addresses.len(), start_slot, end_slot))]
 	async fn get_transactions_for_addresses(
 		&self,
@@ -665,6 +696,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		start_slot: u64,
 		end_slot: Option<u64>,
 	) -> Result<Vec<SolanaTransaction>, anyhow::Error> {
+		use futures::stream::{self, StreamExt};
 		use std::collections::HashSet;
 
 		let end_slot = end_slot.unwrap_or(start_slot);
@@ -682,17 +714,11 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 
 		// Collect all unique signatures from all addresses within the slot range
 		let mut all_signatures: HashSet<String> = HashSet::new();
-		let mut signature_slots: std::collections::HashMap<String, u64> =
-			std::collections::HashMap::new();
 
 		for address in addresses {
+			// Use paginated method to fetch all signatures
 			let signatures = self
-				.get_signatures_for_address_with_info(
-					address.clone(),
-					Some(1000), // Fetch up to 1000 recent signatures
-					Some(start_slot),
-					None,
-				)
+				.get_all_signatures_for_address(address.clone(), start_slot, end_slot)
 				.await?;
 
 			tracing::debug!(
@@ -702,11 +728,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			);
 
 			for sig_info in signatures {
-				// Filter by slot range
-				if sig_info.slot >= start_slot && sig_info.slot <= end_slot {
-					signature_slots.insert(sig_info.signature.clone(), sig_info.slot);
-					all_signatures.insert(sig_info.signature);
-				}
+				all_signatures.insert(sig_info.signature);
 			}
 		}
 
@@ -715,21 +737,26 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			"Fetching transactions for unique signatures in slot range"
 		);
 
-		// Fetch each transaction
-		let mut transactions = Vec::with_capacity(all_signatures.len());
-		for signature in all_signatures {
-			match self.get_transaction(signature.clone()).await {
-				Ok(Some(tx)) => {
-					transactions.push(tx);
+		// Fetch transactions in parallel with controlled concurrency
+		let transactions: Vec<SolanaTransaction> = stream::iter(all_signatures)
+			.map(|signature| async move {
+				let sig = signature.clone();
+				match self.get_transaction(signature).await {
+					Ok(Some(tx)) => Some(tx),
+					Ok(None) => {
+						tracing::debug!(signature = %sig, "Transaction not found");
+						None
+					}
+					Err(e) => {
+						tracing::warn!(signature = %sig, error = %e, "Failed to fetch transaction");
+						None
+					}
 				}
-				Ok(None) => {
-					tracing::debug!(signature = %signature, "Transaction not found");
-				}
-				Err(e) => {
-					tracing::warn!(signature = %signature, error = %e, "Failed to fetch transaction");
-				}
-			}
-		}
+			})
+			.buffer_unordered(20) // 20 concurrent requests
+			.filter_map(|result| async move { result })
+			.collect()
+			.await;
 
 		tracing::info!(
 			fetched_transactions = transactions.len(),
