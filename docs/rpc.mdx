@@ -256,9 +256,8 @@ graph TD
         S1[Network Init] -->|getVersion| S2[Process New Blocks]
         S2 -->|getSlot| S3[For each slot]
         S3 -->|getBlock| S4[Process Block]
-        S4 -->|For each transaction| S5[Get Transaction Details]
-        S5 -->|getSignaturesForAddress| S6[Get Signatures]
-        S6 --> S7[Complete]
+        S4 -->|For each monitored address| S5[getSignaturesForAddress]
+        S5 --> S6[Complete]
     end
 
     subgraph Midnight Network Calls
