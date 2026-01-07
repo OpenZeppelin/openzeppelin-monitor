@@ -65,6 +65,7 @@ The transport clients are implemented as:
 2. **Network-Specific Transports**:
    * `EVMTransportClient` for EVM networks
    * `StellarTransportClient` for Stellar networks
+   * `SolanaTransportClient` for Solana networks
 
 ### Rotation Strategy
 
@@ -251,6 +252,15 @@ graph TD
         L2 --> Q
     end
 
+    subgraph Solana Network Calls
+        S1[Network Init] -->|getVersion| S2[Process New Blocks]
+        S2 -->|getSlot| S3[For each slot]
+        S3 -->|getBlock| S4[Process Block]
+        S4 -->|For each transaction| S5[Get Transaction Details]
+        S5 -->|getSignaturesForAddress| S6[Get Signatures]
+        S6 --> S7[Complete]
+    end
+
     subgraph Midnight Network Calls
         D3[Network Init] -->|system_chain| D4[Process New Blocks]
         D4 -->|chain_getFinalisedHead| E1[Get Finalized Block Hash]
@@ -283,6 +293,13 @@ graph TD
   * Fetching contract WASM code: `getLedgerEntries`
 * Fetching transactions (batched up to 200 in a single request): `getTransactions`
 * Fetching events (batched up to 200 in a single request): `getEvents`
+
+**Solana**
+
+* RPC Client initialization (per active network): `getVersion`
+* Fetching the latest slot (per cron iteration): `getSlot`
+* Fetching block data (per block): `getBlock`
+* Fetching signatures for monitored addresses: `getSignaturesForAddress`
 
 *Midnight*
 

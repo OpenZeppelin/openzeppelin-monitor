@@ -25,6 +25,7 @@ flowchart LR
     subgraph "Blockchain Networks"
         EVMN["EVM Networks"]
         STLN["Stellar Networks"]
+        SOLN["Solana Networks"]
     end
     subgraph "Configuration"
         NETCFG["Network Configs"]
@@ -49,6 +50,7 @@ flowchart LR
     %% Data and config flow
     EVMN --> BWS
     STLN --> BWS
+    SOLN --> BWS
     NETCFG --> BWS
     MONCFG --> FS
     TRICFG --> TS
@@ -67,7 +69,7 @@ flowchart LR
     classDef config fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     classDef mainBlock fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
     classDef notification fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
-    class EVMN,STLN blockchain;
+    class EVMN,STLN,SOLN blockchain;
     class NETCFG,MONCFG,TRICFG config;
     class BWS,FS,TS,NS mainBlock;
     class Slack,Email,Discord,Telegram,Webhook,Scripts notification;
@@ -117,6 +119,7 @@ graph TD
         CP[ClientPool]
         EVMC[EVMClient]
         SC[StellarClient]
+        SOC[SolanaClient]
         MC[MidnightClient]
     end
 
@@ -139,6 +142,7 @@ graph TD
     %% Client Dependencies
     CP --> EVMC
     CP --> SC
+    CP --> SOC
     CP --> MC
     BWS --> CP
 
@@ -162,7 +166,7 @@ graph TD
 
     class BT,BS,BWS,BH blockProcessing
     class MS,NS,TS,FS,TES,NOTS coreServices
-    class CP,EVMC,SC,MC clients
+    class CP,EVMC,SC,SOC,MC clients
 ```
 
 ### Core Components
@@ -178,6 +182,7 @@ graph TD
 * ***ClientPool***: Manages blockchain client instances and provides network connectivity with connection pooling and failover capabilities.
 * ***EVMClient***: Handles communication with Ethereum Virtual Machine compatible networks (Ethereum, Polygon, BSC, etc.).
 * ***StellarClient***: Manages connections to Stellar blockchain networks with protocol-specific optimizations.
+* ***SolanaClient***: Manages connections to Solana blockchain networks with protocol-specific optimizations.
 * ***MidnightClient***: Manages connections to Midnight blockchain networks with WebSocket transport and Substrate-based architecture.
 
 #### Processing Pipeline Components

@@ -54,5 +54,19 @@
         "body": "A call to ${functions.0.signature} was made to the bulletin board | ${transaction.hash}"
       }
     }
+  },
+  "solana_upgrade_slack": {
+    "name": "Program Upgrade Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/A/B/C"
+      },
+      "message": {
+        "title": "solana_upgrade_slack triggered",
+        "body": "${monitor.name} triggered because of a program upgrade on this transaction: https://solscan.io/tx/${transaction.signature}"
+      }
+    }
   }
 }

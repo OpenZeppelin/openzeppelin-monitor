@@ -764,6 +764,147 @@ The monitor will now:
 2. Watch for `post` calls to a bulletin board contract.
 3. Send notifications via Slack when a new post occurs.
 
+### Example 4: Monitor Program Upgrades (Solana)
+
+This example monitors program upgrades on Solana mainnet.
+
+#### Step 1: Network Configuration
+
+Create the Solana mainnet configuration:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/networks/solana_mainnet.json config/networks/solana_mainnet.json
+```
+
+***Key Configuration Details:***
+
+```json
+{
+  "network_type": "Solana",
+  "slug": "solana_mainnet",
+  "name": "Solana Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_RPC_URL_HERE"
+      },
+      "weight": 100
+    }
+  ],
+  "block_time_ms": 400,
+  "confirmation_blocks": 32,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 200,
+  "store_blocks": false
+}
+```
+
+#### Step 2: Monitor Configuration
+
+Set up the token instruction monitor:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/monitors/solana_upgrade.json config/monitors/solana_upgrade.json
+```
+
+***Monitor Configuration Overview:***
+
+```json
+{
+  "name": "Solana Upgrade Monitor",
+  "paused": false,
+  "networks": ["solana_mainnet"],
+  "addresses": [
+    {
+      "address": "BPFLoaderUpgradeab1e11111111111111111111111",
+      "contract_spec": []
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Upgraded program <YOUR_SOLANA_PROGRAM_ADDRESS>",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "trigger_conditions": [],
+  "triggers": ["solana_upgrade_slack"]
+}
+```
+
+<Callout>
+
+
+* Solana monitors track program instructions and events
+* Replace `YOUR_SOLANA_PROGRAM_ADDRESS` with the actual program address you want to monitor
+* The `contract_spec` field is optional for Solana programs
+
+</Callout>
+
+#### Step 3: Notification Setup
+
+Set up Slack notifications for Solana events:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
+```
+
+***Slack Configuration:***
+
+```json
+{
+  "solana_upgrade_slack": {
+    "name": "Program Upgrade Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "slack-webhook-url"
+      },
+      "message": {
+        "title": "solana_upgrade_slack triggered",
+        "body": "${monitor.name} triggered because of a program upgrade on this transaction: https://solscan.io/tx/${transaction.signature}"
+      }
+    }
+  }
+}
+```
+
+#### Step 4: Run the Monitor
+
+***Local Deployment:***
+
+```bash
+./openzeppelin-monitor
+```
+
+***Docker Deployment:***
+
+```bash
+cargo make docker-compose-up
+```
+
+#### What Happens Next
+
+Once running, the monitor will:
+
+1. Check for new Solana blocks every minute
+2. Watch for token instructions on the monitored program
+3. Send notifications via Slack when events occur
+
 ## Next Steps
 
 Now that you have OpenZeppelin Monitor running, here are some suggestions for what to do next:
