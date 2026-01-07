@@ -131,8 +131,8 @@ impl ConditionEvaluator for SolanaConditionEvaluator<'_> {
 		right_literal: &LiteralValue,
 	) -> Result<bool, EvaluationError> {
 		match left_kind.to_lowercase().as_str() {
-			// Numeric types
-			"u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" => {
+			// Unsigned numeric types
+			"u8" | "u16" | "u32" | "u64" | "u128" => {
 				let rhs_str = match right_literal {
 					LiteralValue::Number(n) => *n,
 					LiteralValue::Str(s) => *s,
@@ -144,8 +144,49 @@ impl ConditionEvaluator for SolanaConditionEvaluator<'_> {
 						))
 					}
 				};
-				let left = left_resolved_value.to_string();
-				let right = rhs_str.to_string();
+				let left: u128 = left_resolved_value.parse().map_err(|_| {
+					EvaluationError::type_mismatch(
+						format!("Cannot parse '{}' as unsigned integer", left_resolved_value),
+						None,
+						None,
+					)
+				})?;
+				let right: u128 = rhs_str.parse().map_err(|_| {
+					EvaluationError::type_mismatch(
+						format!("Cannot parse '{}' as unsigned integer", rhs_str),
+						None,
+						None,
+					)
+				})?;
+				compare_ordered_values(&left, operator, &right)
+			}
+			// Signed numeric types
+			"i8" | "i16" | "i32" | "i64" | "i128" => {
+				let rhs_str = match right_literal {
+					LiteralValue::Number(n) => *n,
+					LiteralValue::Str(s) => *s,
+					_ => {
+						return Err(EvaluationError::type_mismatch(
+							format!("Expected number for comparison, got {:?}", right_literal),
+							None,
+							None,
+						))
+					}
+				};
+				let left: i128 = left_resolved_value.parse().map_err(|_| {
+					EvaluationError::type_mismatch(
+						format!("Cannot parse '{}' as signed integer", left_resolved_value),
+						None,
+						None,
+					)
+				})?;
+				let right: i128 = rhs_str.parse().map_err(|_| {
+					EvaluationError::type_mismatch(
+						format!("Cannot parse '{}' as signed integer", rhs_str),
+						None,
+						None,
+					)
+				})?;
 				compare_ordered_values(&left, operator, &right)
 			}
 			// Boolean type
