@@ -173,6 +173,7 @@ impl ConfigLoader for Monitor {
 		}
 
 		// Check if this is a Solana monitor based on network slugs
+		// Note: Assumes Solana network slugs follow the "solana_*" naming convention
 		let is_solana_monitor = self.networks.iter().any(|slug| slug.starts_with("solana_"));
 
 		// Validate function signatures

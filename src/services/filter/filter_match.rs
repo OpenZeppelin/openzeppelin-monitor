@@ -329,7 +329,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				},
 				"transaction": {
 					"signature": transaction.signature().to_string(),
-					"slot": transaction.slot(),
 				},
 				"functions": [],
 				"events": []

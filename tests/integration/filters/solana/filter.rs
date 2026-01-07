@@ -462,10 +462,6 @@ async fn test_handle_match_variable_flattening() -> Result<(), Box<FilterError>>
 		captured_data.contains_key("transaction.signature"),
 		"Should have transaction signature"
 	);
-	assert!(
-		captured_data.contains_key("transaction.slot"),
-		"Should have transaction slot"
-	);
 
 	Ok(())
 }
