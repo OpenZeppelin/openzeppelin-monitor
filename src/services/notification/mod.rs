@@ -341,22 +341,27 @@ mod tests {
 		models::{
 			AddressWithSpec, EVMMonitorMatch, EVMTransactionReceipt, EventCondition,
 			FunctionCondition, MatchConditions, Monitor, MonitorMatch, NotificationMessage,
-			ScriptLanguage, SecretString, SecretValue, TransactionCondition, TriggerType,
+			ScriptLanguage, SecretString, SecretValue, SolanaMonitorMatch, TransactionCondition,
+			TriggerType,
 		},
-		utils::tests::{
-			builders::{evm::monitor::MonitorBuilder, trigger::TriggerBuilder},
-			evm::transaction::TransactionBuilder,
+		utils::tests::builders::{
+			evm::monitor::MonitorBuilder as EVMMonitorBuilder,
+			evm::transaction::TransactionBuilder as EVMTransactionBuilder,
+			solana::block::BlockBuilder as SolanaBlockBuilder,
+			solana::monitor::MonitorBuilder as SolanaMonitorBuilder,
+			solana::transaction::TransactionBuilder as SolanaTransactionBuilder,
+			trigger::TriggerBuilder,
 		},
 	};
 	use std::collections::HashMap;
 
-	fn create_test_monitor(
+	fn create_test_evm_monitor(
 		event_conditions: Vec<EventCondition>,
 		function_conditions: Vec<FunctionCondition>,
 		transaction_conditions: Vec<TransactionCondition>,
 		addresses: Vec<AddressWithSpec>,
 	) -> Monitor {
-		let mut builder = MonitorBuilder::new()
+		let mut builder = EVMMonitorBuilder::new()
 			.name("test")
 			.networks(vec!["evm_mainnet".to_string()]);
 
@@ -379,10 +384,39 @@ mod tests {
 		builder.build()
 	}
 
-	fn create_mock_monitor_match() -> MonitorMatch {
+	fn create_test_solana_monitor(
+		event_conditions: Vec<EventCondition>,
+		function_conditions: Vec<FunctionCondition>,
+		transaction_conditions: Vec<TransactionCondition>,
+		addresses: Vec<AddressWithSpec>,
+	) -> Monitor {
+		let mut builder = SolanaMonitorBuilder::new()
+			.name("test_solana")
+			.networks(vec!["solana_mainnet".to_string()]);
+
+		// Add all conditions
+		for event in event_conditions {
+			builder = builder.event(&event.signature, event.expression);
+		}
+		for function in function_conditions {
+			builder = builder.function(&function.signature, function.expression);
+		}
+		for transaction in transaction_conditions {
+			builder = builder.transaction(transaction.status, transaction.expression);
+		}
+
+		// Add addresses
+		for addr in addresses {
+			builder = builder.address(&addr.address);
+		}
+
+		builder.build()
+	}
+
+	fn create_mock_evm_monitor_match() -> MonitorMatch {
 		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
-			transaction: TransactionBuilder::new().build(),
+			monitor: create_test_evm_monitor(vec![], vec![], vec![], vec![]),
+			transaction: EVMTransactionBuilder::new().build(),
 			receipt: Some(EVMTransactionReceipt::default()),
 			logs: Some(vec![]),
 			network_slug: "evm_mainnet".to_string(),
@@ -393,6 +427,26 @@ mod tests {
 			},
 			matched_on_args: None,
 		}))
+	}
+
+	fn create_mock_solana_monitor_match() -> MonitorMatch {
+		MonitorMatch::Solana(Box::new(SolanaMonitorMatch {
+			monitor: create_test_solana_monitor(vec![], vec![], vec![], vec![]),
+			transaction: SolanaTransactionBuilder::new().build(),
+			block: SolanaBlockBuilder::new().build(),
+			network_slug: "solana_mainnet".to_string(),
+			matched_on: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![],
+			},
+			matched_on_args: None,
+		}))
+	}
+
+	// Keep the old function name for backward compatibility
+	fn create_mock_monitor_match() -> MonitorMatch {
+		create_mock_evm_monitor_match()
 	}
 
 	#[tokio::test]
@@ -719,5 +773,187 @@ mod tests {
 			.build_payload(title, body_template, &HashMap::new());
 		assert!(payload.get("title").is_some());
 		assert!(payload.get("body").is_some());
+	}
+
+	// ============================================================================
+	// Solana equivalent tests - ensuring parity with EVM tests
+	// ============================================================================
+
+	#[tokio::test]
+	async fn test_slack_notification_invalid_config_solana() {
+		let service = NotificationService::new();
+
+		let trigger = TriggerBuilder::new()
+			.name("test_slack_solana")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Slack) // Intentionally wrong config type
+			.build();
+
+		let variables = HashMap::new();
+		let result = service
+			.execute(
+				&trigger,
+				&variables,
+				&create_mock_solana_monitor_match(),
+				&HashMap::new(),
+			)
+			.await;
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx
+					.message
+					.contains("Trigger type is not webhook-compatible"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_email_notification_invalid_config_solana() {
+		let service = NotificationService::new();
+
+		let trigger = TriggerBuilder::new()
+			.name("test_email_solana")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Email) // Intentionally wrong config type
+			.build();
+
+		let variables = HashMap::new();
+		let result = service
+			.execute(
+				&trigger,
+				&variables,
+				&create_mock_solana_monitor_match(),
+				&HashMap::new(),
+			)
+			.await;
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx.message.contains("Invalid email configuration"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_webhook_notification_invalid_config_solana() {
+		let service = NotificationService::new();
+
+		let trigger = TriggerBuilder::new()
+			.name("test_webhook_solana")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Webhook) // Intentionally wrong config type
+			.build();
+
+		let variables = HashMap::new();
+		let result = service
+			.execute(
+				&trigger,
+				&variables,
+				&create_mock_solana_monitor_match(),
+				&HashMap::new(),
+			)
+			.await;
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx
+					.message
+					.contains("Trigger type is not webhook-compatible"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_discord_notification_invalid_config_solana() {
+		let service = NotificationService::new();
+
+		let trigger = TriggerBuilder::new()
+			.name("test_discord_solana")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Discord) // Intentionally wrong config type
+			.build();
+
+		let variables = HashMap::new();
+		let result = service
+			.execute(
+				&trigger,
+				&variables,
+				&create_mock_solana_monitor_match(),
+				&HashMap::new(),
+			)
+			.await;
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx
+					.message
+					.contains("Trigger type is not webhook-compatible"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_telegram_notification_invalid_config_solana() {
+		let service = NotificationService::new();
+
+		let trigger = TriggerBuilder::new()
+			.name("test_telegram_solana")
+			.script("invalid", ScriptLanguage::Python)
+			.trigger_type(TriggerType::Telegram) // Intentionally wrong config type
+			.build();
+
+		let variables = HashMap::new();
+		let result = service
+			.execute(
+				&trigger,
+				&variables,
+				&create_mock_solana_monitor_match(),
+				&HashMap::new(),
+			)
+			.await;
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx
+					.message
+					.contains("Trigger type is not webhook-compatible"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_script_notification_invalid_config_solana() {
+		let service = NotificationService::new();
+
+		let trigger = TriggerBuilder::new()
+			.name("test_script_solana")
+			.telegram("invalid", "invalid", false)
+			.trigger_type(TriggerType::Script) // Intentionally wrong config type
+			.build();
+
+		let variables = HashMap::new();
+
+		let result = service
+			.execute(
+				&trigger,
+				&variables,
+				&create_mock_solana_monitor_match(),
+				&HashMap::new(),
+			)
+			.await;
+
+		assert!(result.is_err());
+		match result {
+			Err(NotificationError::ConfigError(ctx)) => {
+				assert!(ctx.message.contains("Invalid script configuration"));
+			}
+			_ => panic!("Expected ConfigError"),
+		}
 	}
 }
