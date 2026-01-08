@@ -764,9 +764,9 @@ The monitor will now:
 2. Watch for `post` calls to a bulletin board contract.
 3. Send notifications via Slack when a new post occurs.
 
-### Example 4: Monitor Program Upgrades (Solana)
+### Example 4: Monitor Kamino Deposits (Solana)
 
-This example monitors program upgrades on Solana mainnet.
+This example monitors deposit events on the Kamino lending protocol on Solana mainnet.
 
 #### Step 1: Network Configuration
 
@@ -798,31 +798,31 @@ cp examples/config/networks/solana_mainnet.json config/networks/solana_mainnet.j
   ],
   "block_time_ms": 400,
   "confirmation_blocks": 32,
-  "cron_schedule": "0 */1 * * * *",
-  "max_past_blocks": 200,
+  "cron_schedule": "*/10 * * * * *",
+  "max_past_blocks": 100,
   "store_blocks": false
 }
 ```
 
 #### Step 2: Monitor Configuration
 
-Set up the token instruction monitor:
+Set up the Kamino deposit monitor:
 
 ```bash
 # Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
-cp examples/config/monitors/solana_upgrade.json config/monitors/solana_upgrade.json
+cp examples/config/monitors/solana_kamino_deposit.json config/monitors/solana_kamino_deposit.json
 ```
 
 ***Monitor Configuration Overview:***
 
 ```json
 {
-  "name": "Solana Upgrade Monitor",
+  "name": "Solana Kamino Deposit Monitor",
   "paused": false,
   "networks": ["solana_mainnet"],
   "addresses": [
     {
-      "address": "BPFLoaderUpgradeab1e11111111111111111111111",
+      "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
       "contract_spec": []
     }
   ],
@@ -830,7 +830,7 @@ cp examples/config/monitors/solana_upgrade.json config/monitors/solana_upgrade.j
     "functions": [],
     "events": [
       {
-        "signature": "Upgraded program <YOUR_SOLANA_PROGRAM_ADDRESS>",
+        "signature": "Deposit",
         "expression": null
       }
     ],
@@ -842,22 +842,22 @@ cp examples/config/monitors/solana_upgrade.json config/monitors/solana_upgrade.j
     ]
   },
   "trigger_conditions": [],
-  "triggers": ["solana_upgrade_slack"]
+  "triggers": ["solana_kamino_deposit_slack"]
 }
 ```
 
 <Callout>
 
 
-* Solana monitors track program instructions and events
-* Replace `YOUR_SOLANA_PROGRAM_ADDRESS` with the actual program address you want to monitor
+* Solana event signatures use just the event name (e.g., `Deposit`) without parameters
+* The address `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD` is the Kamino lending program on Solana mainnet
 * The `contract_spec` field is optional for Solana programs
 
 </Callout>
 
 #### Step 3: Notification Setup
 
-Set up Slack notifications for Solana events:
+Set up Slack notifications for Kamino deposits:
 
 ```bash
 # Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
@@ -868,8 +868,8 @@ cp examples/config/triggers/slack_notifications.json config/triggers/slack_notif
 
 ```json
 {
-  "solana_upgrade_slack": {
-    "name": "Program Upgrade Slack Notification",
+  "solana_kamino_deposit_slack": {
+    "name": "Kamino Deposit Slack Notification",
     "trigger_type": "slack",
     "config": {
       "slack_url": {
@@ -877,8 +877,8 @@ cp examples/config/triggers/slack_notifications.json config/triggers/slack_notif
         "value": "slack-webhook-url"
       },
       "message": {
-        "title": "solana_upgrade_slack triggered",
-        "body": "${monitor.name} triggered because of a program upgrade on this transaction: https://solscan.io/tx/${transaction.signature}"
+        "title": "solana_kamino_deposit_slack triggered",
+        "body": "A new deposit was made on Kamino | https://solscan.io/tx/${transaction.signature}"
       }
     }
   }
@@ -903,9 +903,9 @@ cargo make docker-compose-up
 
 Once running, the monitor will:
 
-1. Check for new Solana blocks every minute
-2. Watch for token instructions on the monitored program
-3. Send notifications via Slack when events occur
+1. Check for new Solana blocks every 10 seconds
+2. Watch for Deposit events on the Kamino lending program
+3. Send notifications via Slack when deposits occur
 
 ## Next Steps
 

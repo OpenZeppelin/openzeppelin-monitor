@@ -392,7 +392,7 @@ cp examples/config/monitors/stellar_swap_dex.json config/monitors/stellar_swap_d
 cp examples/config/networks/stellar_mainnet.json config/networks/stellar_mainnet.json
 
 # Solana Configuration
-cp examples/config/monitors/solana_upgrade.json config/monitors/solana_upgrade.json
+cp examples/config/monitors/solana_kamino_deposit.json config/monitors/solana_kamino_deposit.json
 cp examples/config/networks/solana_mainnet.json config/networks/solana_mainnet.json
 
 # Notification Configuration
@@ -931,6 +931,117 @@ Match events emitted by monitored contracts:
   ]
 }
 ```
+
+##### Signature Format by Network Type
+
+The `signature` field format varies by blockchain network type:
+
+###### EVM Networks
+
+For EVM networks (Ethereum, Polygon, BSC, etc.), signatures follow the Solidity function/event signature format:
+
+**Functions:**
+```
+functionName(type1,type2,...)
+```
+
+**Events:**
+```
+EventName(type1,type2,type3,...)
+```
+
+| Example | Description |
+| --- | --- |
+| `transfer(address,uint256)` | ERC20 transfer function |
+| `approve(address,uint256)` | ERC20 approve function |
+| `Transfer(address,address,uint256)` | ERC20 Transfer event |
+| `Approval(address,address,uint256)` | ERC20 Approval event |
+| `swap(uint256,uint256,address,bytes)` | Uniswap V2 swap function |
+
+<Callout>
+
+* Use the exact Solidity types (e.g., `uint256` not `uint`, `address` not `addr`)
+* Do not include parameter names, only types
+* Do not include spaces between parameters
+* For indexed event parameters, use the same type format
+
+</Callout>
+
+###### Stellar Networks
+
+For Stellar/Soroban contracts, signatures follow the SEP-48 format with capitalized type names:
+
+**Functions:**
+```
+functionName(Type1,Type2,...)
+```
+
+| Example | Description |
+| --- | --- |
+| `swap(Address,U32,U32,U128,U128)` | DEX swap function |
+| `transfer(Address,Address,I128)` | Token transfer function |
+| `deposit(Address,I128)` | Deposit function |
+
+<Callout>
+
+* Use capitalized type names: `Address`, `U32`, `U64`, `U128`, `I32`, `I64`, `I128`, `Bool`, `String`, `Bytes`, `Symbol`, `Vec`, `Map`
+* The contract specification (SEP-48) can be auto-fetched from the chain if not provided
+
+</Callout>
+
+###### Solana Networks
+
+For Solana programs, signatures use a simplified format:
+
+**Events:**
+```
+EventName
+```
+
+or with program-specific context:
+```
+Event description with program address
+```
+
+| Example | Description |
+| --- | --- |
+| `Deposit` | Simple event name for Anchor-based programs |
+| `Withdraw` | Simple withdrawal event |
+| `Upgraded program <PROGRAM_ADDRESS>` | BPF Loader upgrade event for a specific program |
+
+**Functions:**
+Solana function filtering is not currently supported. Use event filtering instead.
+
+<Callout>
+
+* For Anchor-based programs, use the event name directly (e.g., `Deposit`, `Withdraw`)
+* For BPF Loader upgrade monitoring, use the format `Upgraded program <PROGRAM_ADDRESS>` where `<PROGRAM_ADDRESS>` is the actual program address you want to monitor
+* Event names are case-sensitive
+* **Tip:** To find the exact event names emitted by a Solana program, inspect any transaction on [Solscan](https://solscan.io) or [Solana Explorer](https://explorer.solana.com) and check the "Program Logs" section to see the log messages and event names
+
+</Callout>
+
+###### Midnight Networks
+
+For Midnight networks, function signatures are simplified:
+
+**Functions:**
+```
+functionName()
+```
+
+| Example | Description |
+| --- | --- |
+| `post()` | Bulletin board post function |
+| `transfer()` | Transfer function |
+
+<Callout>
+
+* Due to Midnight's privacy-focused design, all argument variations are treated identically
+* `post`, `post()`, and `post(x, y, z)` are equivalent
+* Event monitoring is not currently supported on Midnight
+
+</Callout>
 
 ##### Transaction Conditions
 Match transaction properties. The available fields and expression syntax depend on the network type (EVM/Stellar)

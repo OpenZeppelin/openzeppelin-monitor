@@ -68,5 +68,19 @@
         "body": "${monitor.name} triggered because of a program upgrade on this transaction: https://solscan.io/tx/${transaction.signature}"
       }
     }
+  },
+  "solana_kamino_deposit_slack": {
+    "name": "Kamino Deposit Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/A/B/C"
+      },
+      "message": {
+        "title": "solana_kamino_deposit_slack triggered",
+        "body": "A new deposit was made on Kamino | https://solscan.io/tx/${transaction.signature}"
+      }
+    }
   }
 }
