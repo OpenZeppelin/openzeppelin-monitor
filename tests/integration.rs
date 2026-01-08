@@ -33,6 +33,9 @@ mod integration {
 				mod transport;
 				mod ws;
 			}
+			mod solana {
+				mod http;
+			}
 
 			mod http {
 				mod endpoint_manager;

@@ -761,6 +761,7 @@ mod tests {
 			(MonitorMatch::Stellar(a), MonitorMatch::Stellar(b)) => {
 				a.monitor.name == b.monitor.name
 			}
+			(MonitorMatch::Solana(a), MonitorMatch::Solana(b)) => a.monitor.name == b.monitor.name,
 			_ => false,
 		}
 	}
@@ -1269,5 +1270,143 @@ print(result)
 		let matches = vec![match_item.clone()];
 		let filtered = run_trigger_filters(&matches, "stellar_mainnet", &trigger_scripts).await;
 		assert_eq!(filtered.len(), 0); // Match should be filtered out because condition2 returns true
+	}
+
+	// Solana trigger filter tests
+	#[tokio::test]
+	async fn test_run_trigger_filters_solana_empty_matches() {
+		let matches: Vec<MonitorMatch> = vec![];
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|test.py".to_string(),
+			(
+				ScriptLanguage::Python,
+				r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print(False)
+"#
+				.to_string(),
+			),
+		);
+
+		let filtered = run_trigger_filters(&matches, "solana_mainnet", &trigger_scripts).await;
+		assert!(filtered.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_solana_true_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_json = sys.argv[1]
+data = json.loads(input_json)
+print("debugging...")
+def test():
+	return True
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			format!("test|{}", temp_file.path().to_str().unwrap()),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::Solana,
+			Some(temp_file.path().to_str().unwrap()),
+		);
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "solana_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+		assert!(matches_equal(&filtered[0], &match_item));
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_solana_multiple_conditions() {
+		let monitor = MonitorBuilder::new()
+			.name("monitor_test")
+			.networks(vec!["solana_mainnet".to_string()])
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.build();
+
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::Solana, monitor);
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(True)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "solana_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 0); // Match should be filtered out because condition2 returns true
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_solana_false_condition() {
+		let script_content = r#"
+import sys
+import json
+
+input_data = sys.stdin.read()
+data = json.loads(input_data)
+print("debugging...")
+def test():
+	return False
+result = test()
+print(result)
+"#;
+		let temp_file = create_temp_script(script_content);
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			format!("test|{}", temp_file.path().to_str().unwrap()),
+			(ScriptLanguage::Python, script_content.to_string()),
+		);
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::Solana,
+			Some(temp_file.path().to_str().unwrap()),
+		);
+		let matches = vec![match_item.clone()];
+
+		let filtered = run_trigger_filters(&matches, "solana_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1);
+	}
+
+	#[tokio::test]
+	async fn test_run_trigger_filters_solana_multiple_conditions_keep_match() {
+		let monitor = MonitorBuilder::new()
+			.name("monitor_test")
+			.networks(vec!["solana_mainnet".to_string()])
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.build();
+
+		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::Solana, monitor);
+
+		let mut trigger_scripts = HashMap::new();
+		trigger_scripts.insert(
+			"monitor_test|condition1.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+		trigger_scripts.insert(
+			"monitor_test|condition2.py".to_string(),
+			(ScriptLanguage::Python, "print(False)".to_string()),
+		);
+
+		let matches = vec![match_item.clone()];
+		let filtered = run_trigger_filters(&matches, "solana_mainnet", &trigger_scripts).await;
+		assert_eq!(filtered.len(), 1); // Match should be kept because all conditions return false
 	}
 }
