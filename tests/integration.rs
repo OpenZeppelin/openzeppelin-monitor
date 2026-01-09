@@ -35,6 +35,7 @@ mod integration {
 			}
 			mod solana {
 				mod http;
+				mod transport;
 			}
 
 			mod http {
