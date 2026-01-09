@@ -11,19 +11,23 @@
 //! These mocks allow testing blockchain-related functionality without actual
 //! network connections.
 
-use super::{MockEVMTransportClient, MockMidnightWsTransportClient, MockStellarTransportClient};
+use super::{
+	MockEVMTransportClient, MockMidnightWsTransportClient, MockSolanaTransportClient,
+	MockStellarTransportClient,
+};
 
 use openzeppelin_monitor::{
 	models::{
 		BlockType, ContractSpec, EVMReceiptLog, EVMTransactionReceipt, MidnightEvent, Network,
-		StellarEvent, StellarTransaction,
+		SolanaTransaction, StellarEvent, StellarTransaction,
 	},
 	services::{
 		blockchain::{
 			BlockChainClient, BlockFilterFactory, ClientPoolTrait, EvmClientTrait,
-			MidnightClientTrait, MidnightSubstrateClientTrait, StellarClientTrait,
+			MidnightClientTrait, MidnightSubstrateClientTrait, SignatureInfo, SolanaClientTrait,
+			StellarClientTrait,
 		},
-		filter::{EVMBlockFilter, MidnightBlockFilter, StellarBlockFilter},
+		filter::{EVMBlockFilter, MidnightBlockFilter, SolanaBlockFilter, StellarBlockFilter},
 	},
 };
 
@@ -156,6 +160,68 @@ mock! {
 	}
 }
 
+mock! {
+	/// Mock implementation of the Solana client trait.
+	///
+	/// This mock allows testing Solana-specific functionality by simulating blockchain
+	/// responses without actual network calls.
+	pub SolanaClientTrait<T: Send + Sync + Clone + 'static> {
+		pub fn new_with_transport(transport: T, network: &Network) -> Self;
+	}
+
+	#[async_trait]
+	impl<T: Send + Sync + Clone + 'static> BlockChainClient for SolanaClientTrait<T> {
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error>;
+		async fn get_blocks(
+			&self,
+			start_block: u64,
+			end_block: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error>;
+	}
+
+	#[async_trait]
+	impl<T: Send + Sync + Clone + 'static> SolanaClientTrait for SolanaClientTrait<T> {
+		async fn get_transactions(&self, slot: u64) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
+		async fn get_transaction(
+			&self,
+			signature: String,
+		) -> Result<Option<SolanaTransaction>, anyhow::Error>;
+		async fn get_signatures_for_address_with_info(
+			&self,
+			address: String,
+			limit: Option<usize>,
+			min_slot: Option<u64>,
+			until_signature: Option<String>,
+		) -> Result<Vec<SignatureInfo>, anyhow::Error>;
+		async fn get_all_signatures_for_address(
+			&self,
+			address: String,
+			start_slot: u64,
+			end_slot: u64,
+		) -> Result<Vec<SignatureInfo>, anyhow::Error>;
+		async fn get_transactions_for_addresses(
+			&self,
+			addresses: &[String],
+			start_slot: u64,
+			end_slot: Option<u64>,
+		) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
+		async fn get_blocks_for_addresses(
+			&self,
+			addresses: &[String],
+			start_slot: u64,
+			end_slot: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error>;
+		async fn get_account_info(&self, pubkey: String) -> Result<serde_json::Value, anyhow::Error>;
+		async fn get_program_accounts(&self, program_id: String) -> Result<Vec<serde_json::Value>, anyhow::Error>;
+	}
+
+	impl<T: Send + Sync + Clone + 'static> Clone for SolanaClientTrait<T> {
+		fn clone(&self) -> Self {
+			Self{}
+		}
+	}
+}
+
 impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockMidnightClientTrait<T>>
 	for MockMidnightClientTrait<T>
 {
@@ -189,6 +255,17 @@ impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockEvmClientTrait<T>>
 	}
 }
 
+impl<T: Send + Sync + Clone + 'static> BlockFilterFactory<MockSolanaClientTrait<T>>
+	for MockSolanaClientTrait<T>
+{
+	type Filter = SolanaBlockFilter<MockSolanaClientTrait<T>>;
+	fn filter() -> Self::Filter {
+		SolanaBlockFilter {
+			_client: PhantomData,
+		}
+	}
+}
+
 mock! {
 	#[derive(Debug)]
 	pub ClientPool {}
@@ -198,9 +275,16 @@ mock! {
 		type EvmClient = MockEvmClientTrait<MockEVMTransportClient>;
 		type StellarClient = MockStellarClientTrait<MockStellarTransportClient>;
 		type MidnightClient = MockMidnightClientTrait<MockMidnightWsTransportClient>;
+		type SolanaClient = MockSolanaClientTrait<MockSolanaTransportClient>;
 		async fn get_evm_client(&self, network: &Network) -> Result<Arc<MockEvmClientTrait<MockEVMTransportClient>>,  anyhow::Error>;
 		async fn get_stellar_client(&self, network: &Network) -> Result<Arc<MockStellarClientTrait<MockStellarTransportClient>>,  anyhow::Error>;
 		async fn get_midnight_client(&self, network: &Network) -> Result<Arc<MockMidnightClientTrait<MockMidnightWsTransportClient>>,  anyhow::Error>;
+		async fn get_solana_client(&self, network: &Network) -> Result<Arc<MockSolanaClientTrait<MockSolanaTransportClient>>,  anyhow::Error>;
+		async fn get_solana_client_with_addresses(
+			&self,
+			network: &Network,
+			addresses: Vec<String>,
+		) -> Result<Arc<MockSolanaClientTrait<MockSolanaTransportClient>>, anyhow::Error>;
 	}
 
 	impl Clone for ClientPool {

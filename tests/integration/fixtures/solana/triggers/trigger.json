@@ -1,0 +1,16 @@
+{
+  "example_trigger_slack": {
+    "name": "Example Trigger Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "https://hooks.slack.com/services/AAA/BBB/CCC"
+      },
+      "message": {
+        "title": "example_trigger_slack triggered",
+        "body": "${monitor.name} triggered for transaction ${transaction.signature} with status ${transaction.status}"
+      }
+    }
+  }
+}

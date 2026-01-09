@@ -19,6 +19,10 @@ mod properties {
 			mod filter;
 			mod helpers;
 		}
+		mod solana {
+			mod filter;
+			mod helpers;
+		}
 	}
 	mod notifications {
 		mod email;

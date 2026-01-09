@@ -23,6 +23,7 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 - **EVM-Compatible Networks**
 - **Stellar**
+- **Solana**
 * **Midnight (Partially Supported)**
 
 ## Notification Channels
@@ -82,6 +83,7 @@ end
         CP[ClientPool]
         EVMC[EVMClient]
         SC[StellarClient]
+        SOC[SolanaClient]
         MC[MidnightClient]
     end
 
@@ -104,6 +106,7 @@ end
     %% Client Dependencies
     CP --> EVMC
     CP --> SC
+    CP --> SOC
     CP --> MC
     BWS --> CP
 
@@ -127,7 +130,7 @@ end
 
     class BT,BS,BWS,BH blockProcessing
     class MS,NS,TS,FS,TES,NOTS coreServices
-    class CP,EVMC,SC,MC clients
+    class CP,EVMC,SC,SOC,MC clients
 ```
 
 ### Project Structure

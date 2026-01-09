@@ -23,6 +23,11 @@ pub use filters::{
 		helpers as evm_helpers,
 	},
 	midnight::{filter::MidnightBlockFilter, helpers as midnight_helpers},
+	solana::{
+		evaluator::{SolanaArgs, SolanaConditionEvaluator},
+		filter::SolanaBlockFilter,
+		helpers as solana_helpers,
+	},
 	stellar::{
 		evaluator::{StellarArgs, StellarConditionEvaluator},
 		filter::{EventMap, StellarBlockFilter},

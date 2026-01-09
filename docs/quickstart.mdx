@@ -764,6 +764,149 @@ The monitor will now:
 2. Watch for `post` calls to a bulletin board contract.
 3. Send notifications via Slack when a new post occurs.
 
+### Example 4: Monitor Kamino Deposits (Solana)
+
+This example monitors deposit events on the Kamino lending protocol on Solana mainnet.
+
+#### Step 1: Network Configuration
+
+Create the Solana mainnet configuration:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/networks/solana_mainnet.json config/networks/solana_mainnet.json
+```
+
+*Note: The example uses Solana's public RPC endpoint for demonstration. For production monitoring, use a dedicated RPC provider (Alchemy, QuickNode, Helius, or self-hosted) to avoid rate limiting.*
+
+***Key Configuration Details:***
+
+```json
+{
+  "network_type": "Solana",
+  "slug": "solana_mainnet",
+  "name": "Solana Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "YOUR_RPC_URL_HERE"
+      },
+      "weight": 100
+    }
+  ],
+  "block_time_ms": 400,
+  "confirmation_blocks": 32,
+  "cron_schedule": "*/10 * * * * *",
+  "max_past_blocks": 100,
+  "store_blocks": false
+}
+```
+
+#### Step 2: Monitor Configuration
+
+Set up the Kamino deposit monitor:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/monitors/solana_kamino_deposit.json config/monitors/solana_kamino_deposit.json
+```
+
+***Monitor Configuration Overview:***
+
+```json
+{
+  "name": "Solana Kamino Deposit Monitor",
+  "paused": false,
+  "networks": ["solana_mainnet"],
+  "addresses": [
+    {
+      "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+      "contract_spec": []
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Deposit",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "trigger_conditions": [],
+  "triggers": ["solana_kamino_deposit_slack"]
+}
+```
+
+<Callout>
+
+
+* Solana event signatures use just the event name (e.g., `Deposit`) without parameters
+* The address `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD` is the Kamino lending program on Solana mainnet
+* The `contract_spec` field is optional for Solana programs
+
+</Callout>
+
+#### Step 3: Notification Setup
+
+Set up Slack notifications for Kamino deposits:
+
+```bash
+# Only necessary if you haven't already run the automated setup script (Option 1: Automated Setup)
+cp examples/config/triggers/slack_notifications.json config/triggers/slack_notifications.json
+```
+
+***Slack Configuration:***
+
+```json
+{
+  "solana_kamino_deposit_slack": {
+    "name": "Kamino Deposit Slack Notification",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "plain",
+        "value": "slack-webhook-url"
+      },
+      "message": {
+        "title": "solana_kamino_deposit_slack triggered",
+        "body": "A new deposit was made on Kamino | https://solscan.io/tx/${transaction.signature}"
+      }
+    }
+  }
+}
+```
+
+#### Step 4: Run the Monitor
+
+***Local Deployment:***
+
+```bash
+./openzeppelin-monitor
+```
+
+***Docker Deployment:***
+
+```bash
+cargo make docker-compose-up
+```
+
+#### What Happens Next
+
+Once running, the monitor will:
+
+1. Check for new Solana blocks every 10 seconds
+2. Watch for Deposit events on the Kamino lending program
+3. Send notifications via Slack when deposits occur
+
 ## Next Steps
 
 Now that you have OpenZeppelin Monitor running, here are some suggestions for what to do next:

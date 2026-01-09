@@ -312,6 +312,61 @@ pub async fn execute_monitor<
 						)
 					})?
 			}
+			BlockChainType::Solana => {
+				let client = config
+					.client_pool
+					.get_solana_client(&network)
+					.await
+					.map_err(|e| {
+						MonitorExecutionError::execution_error(
+							format!("Failed to get Solana client: {}", e),
+							None,
+							None,
+						)
+					})?;
+
+				// If block number is not provided, get the latest slot number
+				let slot_number = match config.block_number {
+					Some(slot_number) => slot_number,
+					None => client.get_latest_block_number().await.map_err(|e| {
+						MonitorExecutionError::execution_error(e.to_string(), None, None)
+					})?,
+				};
+
+				let blocks = client.get_blocks(slot_number, None).await.map_err(|e| {
+					MonitorExecutionError::execution_error(
+						format!("Failed to get slot {}: {}", slot_number, e),
+						None,
+						None,
+					)
+				})?;
+
+				let block = blocks.first().ok_or_else(|| {
+					MonitorExecutionError::not_found(
+						format!("Slot {} not found", slot_number),
+						None,
+						None,
+					)
+				})?;
+
+				config
+					.filter_service
+					.filter_block(
+						&*client,
+						&network,
+						block,
+						std::slice::from_ref(&monitor),
+						Some(&contract_specs),
+					)
+					.await
+					.map_err(|e| {
+						MonitorExecutionError::execution_error(
+							format!("Failed to filter block: {}", e),
+							None,
+							None,
+						)
+					})?
+			}
 		};
 
 		tracing::debug!(matches_count = matches.len(), "Found matches for network");

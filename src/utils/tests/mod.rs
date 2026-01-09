@@ -23,6 +23,12 @@ pub mod builders {
 		pub mod transaction;
 	}
 
+	pub mod solana {
+		pub mod block;
+		pub mod monitor;
+		pub mod transaction;
+	}
+
 	// Chain agnostic test helpers
 	pub mod network;
 	pub mod trigger;

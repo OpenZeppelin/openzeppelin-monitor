@@ -172,9 +172,16 @@ impl ConfigLoader for Monitor {
 			));
 		}
 
+		// Check if this is a Solana monitor based on network slugs
+		// Note: Assumes Solana network slugs follow the "solana_*" naming convention
+		let is_solana_monitor = self.networks.iter().any(|slug| slug.starts_with("solana_"));
+
 		// Validate function signatures
 		for func in &self.match_conditions.functions {
-			if !func.signature.contains('(') || !func.signature.contains(')') {
+			// Solana monitors don't require parentheses in function signatures
+			if !is_solana_monitor
+				&& (!func.signature.contains('(') || !func.signature.contains(')'))
+			{
 				return Err(ConfigError::validation_error(
 					format!("Invalid function signature format: {}", func.signature),
 					None,
@@ -185,7 +192,10 @@ impl ConfigLoader for Monitor {
 
 		// Validate event signatures
 		for event in &self.match_conditions.events {
-			if !event.signature.contains('(') || !event.signature.contains(')') {
+			// Solana monitors don't require parentheses in event signatures
+			if !is_solana_monitor
+				&& (!event.signature.contains('(') || !event.signature.contains(')'))
+			{
 				return Err(ConfigError::validation_error(
 					format!("Invalid event signature format: {}", event.signature),
 					None,

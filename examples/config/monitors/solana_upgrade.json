@@ -1,0 +1,30 @@
+{
+  "name": "Solana Upgrade Monitor",
+  "paused": false,
+  "networks": [
+    "solana_devnet"
+  ],
+  "addresses": [
+    {
+      "address": "BPFLoaderUpgradeab1e11111111111111111111111",
+      "contract_spec": []
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Upgraded program GvRL8cfTy3Qd3oY2eFqiGXrSKjATDBhbsHAFjqLXBkX5",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "trigger_conditions": [],
+  "triggers": ["solana_upgrade_slack"]
+}

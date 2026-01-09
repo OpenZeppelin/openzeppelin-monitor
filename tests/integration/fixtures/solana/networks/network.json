@@ -1,0 +1,21 @@
+{
+  "network_type": "Solana",
+  "slug": "solana_devnet",
+  "name": "Solana Devnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "https://api.devnet.solana.com"
+      },
+      "weight": 100
+    }
+  ],
+  "network_passphrase": "",
+  "block_time_ms": 400,
+  "confirmation_blocks": 1,
+  "cron_schedule": "*/10 * * * * *",
+  "max_past_blocks": 50,
+  "store_blocks": true
+}

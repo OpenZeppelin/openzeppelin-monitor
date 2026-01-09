@@ -1,0 +1,30 @@
+{
+  "name": "Solana Kamino Deposit Monitor",
+  "paused": false,
+  "networks": [
+    "solana_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+      "contract_spec": []
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Deposit",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "trigger_conditions": [],
+  "triggers": ["solana_kamino_deposit_slack"]
+}

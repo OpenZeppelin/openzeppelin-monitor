@@ -1,0 +1,20 @@
+{
+  "network_type": "Solana",
+  "slug": "solana_mainnet",
+  "name": "Solana Mainnet",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "https://api.mainnet-beta.solana.com"
+      },
+      "weight": 100
+    }
+  ],
+  "block_time_ms": 400,
+  "confirmation_blocks": 32,
+  "cron_schedule": "*/10 * * * * *",
+  "max_past_blocks": 100,
+  "store_blocks": false
+}

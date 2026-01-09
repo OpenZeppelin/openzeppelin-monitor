@@ -5,14 +5,17 @@ use crate::integration::{
 	mocks::{
 		create_test_network, MockClientPool, MockEVMTransportClient, MockEvmClientTrait,
 		MockFilterService, MockMidnightClientTrait, MockMidnightWsTransportClient,
-		MockNetworkRepository, MockStellarClientTrait, MockStellarTransportClient,
-		MockTriggerRepository,
+		MockNetworkRepository, MockSolanaClientTrait, MockSolanaTransportClient,
+		MockStellarClientTrait, MockStellarTransportClient, MockTriggerRepository,
 	},
 };
 use mockall::predicate;
 use openzeppelin_monitor::{
 	models::{
-		BlockChainType, EVMTransactionReceipt, Monitor, ScriptLanguage, Trigger, TriggerConditions,
+		AddressWithSpec, BlockChainType, BlockType, EVMTransactionReceipt, MatchConditions,
+		Monitor, ScriptLanguage, SolanaBlock, SolanaConfirmedBlock, SolanaInstruction,
+		SolanaTransaction, SolanaTransactionInfo, SolanaTransactionMessage, SolanaTransactionMeta,
+		TransactionStatus, Trigger, TriggerConditions,
 	},
 	repositories::{
 		MonitorRepository, MonitorRepositoryTrait, NetworkRepository, NetworkService,
@@ -135,6 +138,81 @@ fn create_test_trigger(name: &str) -> Trigger {
 		)
 		.message("Alert", "Something happened!")
 		.build()
+}
+
+// Solana test helpers
+fn create_solana_test_monitor() -> Monitor {
+	Monitor {
+		name: "Test Solana Monitor".to_string(),
+		paused: false,
+		networks: vec!["solana_devnet".to_string()],
+		addresses: vec![AddressWithSpec {
+			address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+			contract_spec: None,
+		}],
+		match_conditions: MatchConditions {
+			functions: vec![],
+			events: vec![],
+			transactions: vec![openzeppelin_monitor::models::TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: None,
+			}],
+		},
+		trigger_conditions: vec![],
+		triggers: vec![],
+		chain_configurations: vec![],
+	}
+}
+
+fn create_solana_test_transaction() -> SolanaTransaction {
+	SolanaTransaction::from(SolanaTransactionInfo {
+		signature: "5wHu1qwD7q5ifaN5nwdcDqNFF53GJqa7nLp2BLPASe7FPYoWZL3YBrJmVL6nrMtwKjNFin1F"
+			.to_string(),
+		slot: 123456789,
+		block_time: Some(1234567890),
+		transaction: SolanaTransactionMessage {
+			account_keys: vec![
+				"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				"11111111111111111111111111111111".to_string(),
+			],
+			recent_blockhash: "ABC123".to_string(),
+			instructions: vec![SolanaInstruction {
+				program_id_index: 0,
+				accounts: vec![1, 2],
+				data: "3Bxs4h24hBtQy9rw".to_string(),
+				parsed: None,
+				program: Some("spl-token".to_string()),
+				program_id: Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string()),
+			}],
+			address_table_lookups: vec![],
+		},
+		meta: Some(SolanaTransactionMeta {
+			err: None,
+			fee: 5000,
+			pre_balances: vec![1000000000],
+			post_balances: vec![999000000],
+			inner_instructions: vec![],
+			log_messages: vec![
+				"Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [1]".to_string(),
+				"Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success".to_string(),
+			],
+			pre_token_balances: vec![],
+			post_token_balances: vec![],
+			compute_units_consumed: None,
+		}),
+	})
+}
+
+fn create_solana_test_block(transactions: Vec<SolanaTransaction>) -> BlockType {
+	BlockType::Solana(Box::new(SolanaBlock::from(SolanaConfirmedBlock {
+		slot: 123456789,
+		blockhash: "ABC123".to_string(),
+		previous_blockhash: "ZYX987".to_string(),
+		parent_slot: 123456788,
+		block_time: Some(1234567890),
+		block_height: Some(123456789),
+		transactions,
+	})))
 }
 
 fn create_test_monitor(
@@ -1987,6 +2065,363 @@ async fn test_filter_block_failure_stellar() {
 		path: test_data.monitor.name.clone(),
 		network_slug: Some("stellar_testnet".to_string()),
 		block_number: Some(11243),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(mock_filter_service),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to filter block"));
+}
+
+// Solana execution tests
+#[tokio::test]
+async fn test_execute_monitor_solana() {
+	let monitor = create_solana_test_monitor();
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_network_service("Solana", "solana_devnet", BlockChainType::Solana);
+
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockSolanaClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"solana_large_transfer_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	let transaction = create_solana_test_transaction();
+	let block = create_solana_test_block(vec![transaction.clone()]);
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(123456789u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(vec![block]));
+
+	mock_client
+		.expect_get_transactions()
+		.returning(move |_| Ok(vec![transaction.clone()]));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_solana_client()
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let block_number = 123456789;
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: monitor.name.clone(),
+		network_slug: Some("solana_devnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(
+		result.is_ok(),
+		"Monitor execution failed: {:?}",
+		result.err()
+	);
+}
+
+#[tokio::test]
+async fn test_execute_monitor_solana_failed_to_get_block() {
+	let monitor = create_solana_test_monitor();
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_network_service("Solana", "solana_devnet", BlockChainType::Solana);
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockSolanaClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"solana_large_transfer_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(123456789u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(vec![]));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_solana_client()
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let block_number = 123456789;
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: monitor.name.clone(),
+		network_slug: Some("solana_devnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result.unwrap_err().to_string().contains("not found"));
+}
+
+#[tokio::test]
+async fn test_execute_monitor_solana_failed_to_get_solana_client() {
+	let monitor = create_solana_test_monitor();
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_network_service("Solana", "solana_devnet", BlockChainType::Solana);
+	let mut mock_pool = MockClientPool::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"solana_large_transfer_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	mock_pool
+		.expect_get_solana_client()
+		.returning(move |_| Err(anyhow::anyhow!("Failed to get solana client")));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let block_number = 123456789;
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: monitor.name.clone(),
+		network_slug: Some("solana_devnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to get solana client"));
+}
+
+#[tokio::test]
+async fn test_execute_monitor_solana_failed_to_get_blocks() {
+	let monitor = create_solana_test_monitor();
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mock_network_service =
+		setup_mocked_network_service("Solana", "solana_devnet", BlockChainType::Solana);
+	let mut mock_pool = MockClientPool::new();
+	let mut mock_client = MockSolanaClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"solana_large_transfer_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(123456789u64), predicate::eq(None))
+		.return_once(move |_, _| Err(anyhow::anyhow!("Failed to get block")));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_solana_client()
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let block_number = 123456789;
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: monitor.name.clone(),
+		network_slug: Some("solana_devnet".to_string()),
+		block_number: Some(block_number),
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to get block"));
+}
+
+#[tokio::test]
+async fn test_execute_monitor_solana_failed_to_get_latest_block_number() {
+	let monitor = create_solana_test_monitor();
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_network_service("Solana", "solana_devnet", BlockChainType::Solana);
+	let mut mock_client = MockSolanaClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"solana_large_transfer_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	mock_client
+		.expect_get_latest_block_number()
+		.return_once(move || Err(anyhow::anyhow!("Failed to get latest block number")));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_solana_client()
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: monitor.name.clone(),
+		network_slug: Some("solana_devnet".to_string()),
+		block_number: None,
+		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
+		network_service: Arc::new(Mutex::new(mock_network_service)),
+		filter_service: Arc::new(FilterService::new()),
+		trigger_execution_service: Arc::new(trigger_execution_service),
+		active_monitors_trigger_scripts: HashMap::new(),
+		client_pool,
+	})
+	.await;
+
+	assert!(result.is_err());
+	assert!(result
+		.unwrap_err()
+		.to_string()
+		.contains("Failed to get latest block number"));
+}
+
+#[tokio::test]
+async fn test_filter_block_failure_solana() {
+	let monitor = create_solana_test_monitor();
+	let mut mocked_monitors = HashMap::new();
+	mocked_monitors.insert("monitor".to_string(), monitor.clone());
+	let mock_monitor_service = setup_monitor_service(mocked_monitors);
+
+	let mut mock_pool = MockClientPool::new();
+	let mock_network_service =
+		setup_mocked_network_service("Solana", "solana_devnet", BlockChainType::Solana);
+	let mut mock_client = MockSolanaClientTrait::new();
+
+	let mut mocked_triggers = HashMap::new();
+	mocked_triggers.insert(
+		"solana_large_transfer_slack".to_string(),
+		create_test_trigger("test"),
+	);
+	let trigger_service = setup_trigger_service(mocked_triggers);
+	let notification_service = NotificationService::new();
+	let trigger_execution_service =
+		TriggerExecutionService::new(trigger_service, notification_service);
+
+	let transaction = create_solana_test_transaction();
+	let block = create_solana_test_block(vec![transaction]);
+
+	mock_client
+		.expect_get_blocks()
+		.with(predicate::eq(123456789u64), predicate::eq(None))
+		.return_once(move |_, _| Ok(vec![block]));
+
+	let mock_client = Arc::new(mock_client);
+
+	mock_pool
+		.expect_get_solana_client()
+		.times(1)
+		.returning(move |_| Ok(mock_client.clone()));
+
+	let client_pool = Arc::new(mock_pool);
+
+	let mut mock_filter_service = MockFilterService::new();
+
+	mock_filter_service
+		.expect_filter_block::<MockSolanaClientTrait<MockSolanaTransportClient>>()
+		.returning(
+			move |_: &MockSolanaClientTrait<MockSolanaTransportClient>, _, _, _| {
+				Err(FilterError::internal_error(
+					"Internal Error".to_string(),
+					None,
+					None,
+				))
+			},
+		);
+
+	let result = execute_monitor(MonitorExecutionConfig {
+		path: monitor.name.clone(),
+		network_slug: Some("solana_devnet".to_string()),
+		block_number: Some(123456789),
 		monitor_service: Arc::new(Mutex::new(mock_monitor_service)),
 		network_service: Arc::new(Mutex::new(mock_network_service)),
 		filter_service: Arc::new(mock_filter_service),

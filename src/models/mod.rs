@@ -41,6 +41,49 @@ pub use blockchain::midnight::{
 	MidnightTopics, MidnightTransaction, MidnightTxAppliedDetails,
 };
 
+pub use blockchain::solana::{
+	SolanaBlock,
+	SolanaConfirmedBlock,
+	SolanaContractEvent,
+	SolanaContractEventParam,
+	SolanaContractFunction,
+	SolanaContractInput,
+	SolanaContractSpec,
+	SolanaDecodedParamEntry,
+	SolanaFormattedContractSpec,
+	// IDL types
+	SolanaIdlAccount,
+	SolanaIdlAccountItem,
+	SolanaIdlEnumVariant,
+	SolanaIdlError,
+	SolanaIdlEvent,
+	SolanaIdlEventField,
+	SolanaIdlField,
+	SolanaIdlInstruction,
+	SolanaIdlInstructionAccount,
+	SolanaIdlInstructionAccounts,
+	SolanaIdlMetadata,
+	SolanaIdlPda,
+	SolanaIdlSeed,
+	SolanaIdlType,
+	SolanaIdlTypeComplex,
+	SolanaIdlTypeDef,
+	SolanaIdlTypeDefTy,
+	// Other Solana types
+	SolanaInstruction,
+	SolanaMatchArguments,
+	SolanaMatchParamEntry,
+	SolanaMatchParamsMap,
+	SolanaMonitorConfig,
+	SolanaMonitorMatch,
+	SolanaParsedInstruction,
+	SolanaParsedInstructionResult,
+	SolanaTransaction,
+	SolanaTransactionInfo,
+	SolanaTransactionMessage,
+	SolanaTransactionMeta,
+};
+
 // Re-export core types
 pub use core::{
 	AddressWithSpec, EventCondition, FunctionCondition, MatchConditions, Monitor, Network,

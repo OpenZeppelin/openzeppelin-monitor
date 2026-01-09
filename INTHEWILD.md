@@ -5,4 +5,3 @@ the world know they are using OpenZeppelin Monitor. If you are a user and want t
 all you have to do is file a simple PR — [just click here](https://github.com/OpenZeppelin/openzeppelin-monitor/edit/main/INTHEWILD.md) to do so. If you think
 the categorization is inaccurate, please file a PR with your correction as well.
 Join our growing community!
-
