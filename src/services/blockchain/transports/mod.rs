@@ -42,7 +42,10 @@ pub use ws::{
 pub use error::TransportError;
 pub use evm::http::EVMTransportClient;
 pub use midnight::ws::MidnightTransportClient as MidnightWsTransportClient;
-pub use solana::http::{GetBlockConfig as SolanaGetBlockConfig, SolanaTransportClient};
+pub use solana::http::{
+	Commitment as SolanaCommitment, GetBlockConfig as SolanaGetBlockConfig,
+	GetTransactionConfig as SolanaGetTransactionConfig, SolanaTransportClient,
+};
 pub use stellar::http::StellarTransportClient;
 
 use reqwest_middleware::ClientWithMiddleware;

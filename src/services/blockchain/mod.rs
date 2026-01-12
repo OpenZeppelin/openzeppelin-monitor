@@ -25,6 +25,7 @@ pub use error::BlockChainError;
 pub use pool::{ClientPool, ClientPoolTrait};
 pub use transports::{
 	BlockchainTransport, EVMTransportClient, HttpEndpointManager, HttpTransportClient,
-	MidnightWsTransportClient, RotatingTransport, SolanaTransportClient, StellarTransportClient,
+	MidnightWsTransportClient, RotatingTransport, SolanaCommitment, SolanaGetBlockConfig,
+	SolanaGetTransactionConfig, SolanaTransportClient, StellarTransportClient,
 	TransientErrorRetryStrategy, TransportError, WsConfig, WsEndpointManager, WsTransportClient,
 };
