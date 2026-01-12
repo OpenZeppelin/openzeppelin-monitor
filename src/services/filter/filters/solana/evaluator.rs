@@ -409,4 +409,657 @@ mod tests {
 			"null"
 		);
 	}
+
+	// ============================================================================
+	// Signed integer tests
+	// ============================================================================
+
+	#[test]
+	fn test_signed_integer_i8_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Positive i8
+		assert!(evaluator
+			.compare_final_values(
+				"i8",
+				"100",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("100")
+			)
+			.unwrap());
+
+		// Negative i8
+		assert!(evaluator
+			.compare_final_values(
+				"i8",
+				"-50",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("-50")
+			)
+			.unwrap());
+
+		// i8 less than
+		assert!(evaluator
+			.compare_final_values(
+				"i8",
+				"-100",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("50")
+			)
+			.unwrap());
+
+		// i8 greater than
+		assert!(evaluator
+			.compare_final_values(
+				"i8",
+				"50",
+				&ComparisonOperator::Gt,
+				&LiteralValue::Number("-100")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_signed_integer_i16_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Positive i16
+		assert!(evaluator
+			.compare_final_values(
+				"i16",
+				"10000",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("10000")
+			)
+			.unwrap());
+
+		// Negative i16
+		assert!(evaluator
+			.compare_final_values(
+				"i16",
+				"-5000",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_signed_integer_i32_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Large positive i32
+		assert!(evaluator
+			.compare_final_values(
+				"i32",
+				"1000000000",
+				&ComparisonOperator::Gt,
+				&LiteralValue::Number("999999999")
+			)
+			.unwrap());
+
+		// Large negative i32
+		assert!(evaluator
+			.compare_final_values(
+				"i32",
+				"-1000000000",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("-999999999")
+			)
+			.unwrap());
+
+		// Negative not equal
+		assert!(evaluator
+			.compare_final_values(
+				"i32",
+				"-12345",
+				&ComparisonOperator::Ne,
+				&LiteralValue::Number("12345")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_signed_integer_i64_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Very large positive i64
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"9223372036854775807",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("9223372036854775807")
+			)
+			.unwrap());
+
+		// Very large negative i64
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"-9223372036854775808",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_signed_integer_i128_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Very large i128 (beyond i64 range)
+		assert!(evaluator
+			.compare_final_values(
+				"i128",
+				"170141183460469231731687303715884105727",
+				&ComparisonOperator::Gt,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+
+		// Negative i128
+		assert!(evaluator
+			.compare_final_values(
+				"i128",
+				"-170141183460469231731687303715884105728",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+	}
+
+	// ============================================================================
+	// Gte and Lte operator tests
+	// ============================================================================
+
+	#[test]
+	fn test_gte_operator_unsigned() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Greater than or equal (greater)
+		assert!(evaluator
+			.compare_final_values(
+				"u64",
+				"1000000",
+				&ComparisonOperator::Gte,
+				&LiteralValue::Number("500000")
+			)
+			.unwrap());
+
+		// Greater than or equal (equal)
+		assert!(evaluator
+			.compare_final_values(
+				"u64",
+				"1000000",
+				&ComparisonOperator::Gte,
+				&LiteralValue::Number("1000000")
+			)
+			.unwrap());
+
+		// Greater than or equal (less - should be false)
+		assert!(!evaluator
+			.compare_final_values(
+				"u64",
+				"500000",
+				&ComparisonOperator::Gte,
+				&LiteralValue::Number("1000000")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_lte_operator_unsigned() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Less than or equal (less)
+		assert!(evaluator
+			.compare_final_values(
+				"u64",
+				"500000",
+				&ComparisonOperator::Lte,
+				&LiteralValue::Number("1000000")
+			)
+			.unwrap());
+
+		// Less than or equal (equal)
+		assert!(evaluator
+			.compare_final_values(
+				"u64",
+				"1000000",
+				&ComparisonOperator::Lte,
+				&LiteralValue::Number("1000000")
+			)
+			.unwrap());
+
+		// Less than or equal (greater - should be false)
+		assert!(!evaluator
+			.compare_final_values(
+				"u64",
+				"1000000",
+				&ComparisonOperator::Lte,
+				&LiteralValue::Number("500000")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_gte_operator_signed() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Gte with negative numbers
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"-100",
+				&ComparisonOperator::Gte,
+				&LiteralValue::Number("-100")
+			)
+			.unwrap());
+
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"0",
+				&ComparisonOperator::Gte,
+				&LiteralValue::Number("-100")
+			)
+			.unwrap());
+
+		assert!(!evaluator
+			.compare_final_values(
+				"i64",
+				"-200",
+				&ComparisonOperator::Gte,
+				&LiteralValue::Number("-100")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_lte_operator_signed() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Lte with negative numbers
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"-200",
+				&ComparisonOperator::Lte,
+				&LiteralValue::Number("-100")
+			)
+			.unwrap());
+
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"-100",
+				&ComparisonOperator::Lte,
+				&LiteralValue::Number("-100")
+			)
+			.unwrap());
+
+		assert!(!evaluator
+			.compare_final_values(
+				"i64",
+				"0",
+				&ComparisonOperator::Lte,
+				&LiteralValue::Number("-100")
+			)
+			.unwrap());
+	}
+
+	// ============================================================================
+	// Additional unsigned integer type tests
+	// ============================================================================
+
+	#[test]
+	fn test_unsigned_integer_u8_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		assert!(evaluator
+			.compare_final_values(
+				"u8",
+				"255",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("255")
+			)
+			.unwrap());
+
+		assert!(evaluator
+			.compare_final_values(
+				"u8",
+				"0",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("255")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_unsigned_integer_u16_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		assert!(evaluator
+			.compare_final_values(
+				"u16",
+				"65535",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("65535")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_unsigned_integer_u32_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		assert!(evaluator
+			.compare_final_values(
+				"u32",
+				"4294967295",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("4294967295")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_unsigned_integer_u128_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Very large u128 (beyond u64 range)
+		assert!(evaluator
+			.compare_final_values(
+				"u128",
+				"340282366920938463463374607431768211455",
+				&ComparisonOperator::Gt,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+	}
+
+	// ============================================================================
+	// Type mismatch and error tests
+	// ============================================================================
+
+	#[test]
+	fn test_type_mismatch_unsigned_parse_error() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Invalid unsigned integer (negative)
+		let result = evaluator.compare_final_values(
+			"u64",
+			"-100",
+			&ComparisonOperator::Eq,
+			&LiteralValue::Number("100"),
+		);
+		assert!(result.is_err());
+		let err_msg = format!("{:?}", result.unwrap_err());
+		assert!(err_msg.contains("unsigned integer") || err_msg.contains("parse"));
+	}
+
+	#[test]
+	fn test_type_mismatch_signed_parse_error() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Invalid signed integer (non-numeric)
+		let result = evaluator.compare_final_values(
+			"i64",
+			"not_a_number",
+			&ComparisonOperator::Eq,
+			&LiteralValue::Number("100"),
+		);
+		assert!(result.is_err());
+		let err_msg = format!("{:?}", result.unwrap_err());
+		assert!(err_msg.contains("signed integer") || err_msg.contains("parse"));
+	}
+
+	#[test]
+	fn test_type_mismatch_bool_invalid_literal() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Invalid boolean literal type
+		let result = evaluator.compare_final_values(
+			"bool",
+			"true",
+			&ComparisonOperator::Eq,
+			&LiteralValue::Number("123"),
+		);
+		assert!(result.is_err());
+		let err_msg = format!("{:?}", result.unwrap_err());
+		assert!(err_msg.contains("boolean") || err_msg.contains("Expected"));
+	}
+
+	#[test]
+	fn test_type_mismatch_bool_parse_error() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Invalid boolean value
+		let result = evaluator.compare_final_values(
+			"bool",
+			"not_bool",
+			&ComparisonOperator::Eq,
+			&LiteralValue::Bool(true),
+		);
+		assert!(result.is_err());
+		let err_msg = format!("{:?}", result.unwrap_err());
+		assert!(err_msg.contains("boolean") || err_msg.contains("parse"));
+	}
+
+	#[test]
+	fn test_type_mismatch_numeric_with_bool_literal() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Numeric comparison with boolean literal
+		let result = evaluator.compare_final_values(
+			"u64",
+			"100",
+			&ComparisonOperator::Eq,
+			&LiteralValue::Bool(true),
+		);
+		assert!(result.is_err());
+		let err_msg = format!("{:?}", result.unwrap_err());
+		assert!(err_msg.contains("Expected") || err_msg.contains("number"));
+	}
+
+	#[test]
+	fn test_string_unsupported_operator() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// String with Gt operator (not supported)
+		let result = evaluator.compare_final_values(
+			"string",
+			"hello",
+			&ComparisonOperator::Gt,
+			&LiteralValue::Str("world"),
+		);
+		assert!(result.is_err());
+		let err_msg = format!("{:?}", result.unwrap_err());
+		assert!(err_msg.contains("not supported") || err_msg.contains("Operator"));
+	}
+
+	#[test]
+	fn test_bool_unsupported_operator() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Boolean with Gt operator (not supported)
+		let result = evaluator.compare_final_values(
+			"bool",
+			"true",
+			&ComparisonOperator::Gt,
+			&LiteralValue::Bool(false),
+		);
+		assert!(result.is_err());
+		let err_msg = format!("{:?}", result.unwrap_err());
+		assert!(err_msg.contains("not supported") || err_msg.contains("Operator"));
+	}
+
+	// ============================================================================
+	// Bytes type tests
+	// ============================================================================
+
+	#[test]
+	fn test_bytes_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Bytes equal
+		assert!(evaluator
+			.compare_final_values(
+				"bytes",
+				"0x123456",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("0x123456")
+			)
+			.unwrap());
+
+		// Bytes not equal
+		assert!(evaluator
+			.compare_final_values(
+				"bytes",
+				"0x123456",
+				&ComparisonOperator::Ne,
+				&LiteralValue::Str("0xabcdef")
+			)
+			.unwrap());
+
+		// Bytes contains
+		assert!(evaluator
+			.compare_final_values(
+				"bytes",
+				"0x123456789abc",
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("345678")
+			)
+			.unwrap());
+	}
+
+	// ============================================================================
+	// Edge case tests
+	// ============================================================================
+
+	#[test]
+	fn test_zero_comparison() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Zero unsigned
+		assert!(evaluator
+			.compare_final_values(
+				"u64",
+				"0",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+
+		// Zero signed
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"0",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+
+		// Zero comparison with negative
+		assert!(evaluator
+			.compare_final_values(
+				"i64",
+				"0",
+				&ComparisonOperator::Gt,
+				&LiteralValue::Number("-1")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_boundary_values() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// i8 boundaries
+		assert!(evaluator
+			.compare_final_values(
+				"i8",
+				"-128",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("127")
+			)
+			.unwrap());
+
+		// u8 boundaries
+		assert!(evaluator
+			.compare_final_values(
+				"u8",
+				"0",
+				&ComparisonOperator::Lte,
+				&LiteralValue::Number("255")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_string_with_number_literal() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// String comparison can accept Number literal (it's treated as string)
+		assert!(evaluator
+			.compare_final_values(
+				"string",
+				"12345",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("12345")
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_bool_with_string_literal() {
+		let args = create_test_args();
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		// Boolean comparison with string literal "true"
+		assert!(evaluator
+			.compare_final_values(
+				"bool",
+				"true",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("true")
+			)
+			.unwrap());
+
+		// Boolean comparison with string literal "false"
+		assert!(evaluator
+			.compare_final_values(
+				"bool",
+				"false",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("false")
+			)
+			.unwrap());
+	}
 }

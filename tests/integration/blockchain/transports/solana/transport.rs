@@ -770,3 +770,453 @@ async fn test_block_not_available_error() {
 			|| err_str.contains("Block")
 	);
 }
+
+// ============================================================================
+// Monitored addresses tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_monitored_addresses_builder_pattern() {
+	let mock_solana = MockSolanaTransportClient::new();
+
+	// Test builder pattern
+	let addresses = vec![
+		"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+		"11111111111111111111111111111111".to_string(),
+	];
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana)
+		.with_monitored_addresses(addresses.clone());
+
+	assert_eq!(client.monitored_addresses(), addresses.as_slice());
+}
+
+#[tokio::test]
+async fn test_monitored_addresses_setter() {
+	let mock_solana = MockSolanaTransportClient::new();
+
+	let mut client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+
+	// Initially empty
+	assert!(client.monitored_addresses().is_empty());
+
+	// Set addresses
+	let addresses = vec!["TestAddress123".to_string()];
+	client.set_monitored_addresses(addresses.clone());
+	assert_eq!(client.monitored_addresses(), addresses.as_slice());
+
+	// Update addresses
+	let new_addresses = vec!["NewAddress456".to_string(), "AnotherAddress789".to_string()];
+	client.set_monitored_addresses(new_addresses.clone());
+	assert_eq!(client.monitored_addresses(), new_addresses.as_slice());
+
+	// Clear addresses
+	client.set_monitored_addresses(Vec::new());
+	assert!(client.monitored_addresses().is_empty());
+}
+
+#[tokio::test]
+async fn test_get_blocks_uses_optimized_mode_with_monitored_addresses() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let address = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+	let start_slot = 100u64;
+	let end_slot = 105u64;
+
+	// When monitored_addresses is set, get_blocks should call getSignaturesForAddress
+	// instead of getBlocks + getBlock
+	mock_solana
+		.expect_send_raw_request()
+		.withf(|method: &str, _params: &Option<Vec<Value>>| method == "getSignaturesForAddress")
+		.times(1)
+		.returning(move |_: &str, _: Option<Vec<Value>>| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"result": [
+					create_mock_signature_info(start_slot, "sig1"),
+					create_mock_signature_info(end_slot, "sig2")
+				],
+				"id": 1
+			}))
+		});
+
+	// Then it should fetch individual transactions
+	mock_solana
+		.expect_send_raw_request()
+		.withf(|method: &str, _params: &Option<Vec<Value>>| method == "getTransaction")
+		.times(2)
+		.returning(move |_: &str, params: Option<Vec<Value>>| {
+			let sig = params
+				.as_ref()
+				.and_then(|p| p.first())
+				.and_then(|v| v.as_str())
+				.unwrap_or("unknown");
+			let slot = if sig == "sig1" { start_slot } else { end_slot };
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"result": create_mock_transaction(slot, sig),
+				"id": 1
+			}))
+		});
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana)
+		.with_monitored_addresses(vec![address.to_string()]);
+
+	let result = client.get_blocks(start_slot, Some(end_slot)).await;
+
+	assert!(result.is_ok());
+	let blocks = result.unwrap();
+	// Should have 2 virtual blocks (one for each slot with transactions)
+	assert_eq!(blocks.len(), 2);
+}
+
+#[tokio::test]
+async fn test_get_blocks_uses_standard_mode_without_monitored_addresses() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let slot = 123456789u64;
+
+	// Without monitored_addresses, should use standard getBlock approach
+	mock_solana
+		.expect_send_raw_request()
+		.withf(|method: &str, _params: &Option<Vec<Value>>| method == "getBlock")
+		.times(1)
+		.returning(move |_: &str, _: Option<Vec<Value>>| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"result": create_mock_block(slot),
+				"id": 1
+			}))
+		});
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	// No monitored addresses set
+
+	let result = client.get_blocks(slot, None).await;
+
+	assert!(result.is_ok());
+	let blocks = result.unwrap();
+	assert_eq!(blocks.len(), 1);
+}
+
+#[tokio::test]
+async fn test_get_blocks_for_addresses_empty_addresses() {
+	let mock_solana = MockSolanaTransportClient::new();
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+
+	// Empty addresses should return empty result without making any RPC calls
+	let result = SolanaClientTrait::get_blocks_for_addresses(&client, &[], 100, Some(200)).await;
+
+	assert!(result.is_ok());
+	assert!(result.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_get_blocks_for_addresses_no_signatures_found() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| {
+			Ok(json!({
+				"jsonrpc": "2.0",
+				"result": [],
+				"id": 1
+			}))
+		});
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+
+	let result = SolanaClientTrait::get_blocks_for_addresses(
+		&client,
+		&["TestAddress".to_string()],
+		100,
+		Some(200),
+	)
+	.await;
+
+	assert!(result.is_ok());
+	assert!(result.unwrap().is_empty());
+}
+
+// ============================================================================
+// Additional RPC error code tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_slot_skipped_error_code_32009() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	// Test with error code -32009 (slot skipped - alternative code)
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"error": {
+			"code": -32009,
+			"message": "Slot 123456789 was skipped"
+		},
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_transactions(123456789).await;
+
+	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_generic_rpc_error() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	// Test with a generic RPC error code
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"error": {
+			"code": -32600,
+			"message": "Invalid Request"
+		},
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_transactions(123456789).await;
+
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	let err_str = err.to_string();
+	assert!(err_str.contains("RPC") || err_str.contains("error"));
+}
+
+#[tokio::test]
+async fn test_get_blocks_invalid_range() {
+	let mock_solana = MockSolanaTransportClient::new();
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+
+	// start_block > end_block should fail
+	let result = client.get_blocks(200, Some(100)).await;
+
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	let err_str = format!("{:?}", err); // Use debug format for full chain
+									 // Error should mention the validation failure
+	assert!(err_str.contains("cannot be greater") || err_str.contains("Invalid input"));
+}
+
+// ============================================================================
+// get_program_accounts tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_program_accounts_success() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let program_id = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"result": [
+			{
+				"pubkey": "Account1",
+				"account": create_mock_account_info()
+			},
+			{
+				"pubkey": "Account2",
+				"account": create_mock_account_info()
+			}
+		],
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.with(
+			predicate::eq("getProgramAccounts"),
+			predicate::function(move |params: &Option<Vec<Value>>| {
+				if let Some(p) = params {
+					!p.is_empty() && p[0].as_str() == Some(program_id)
+				} else {
+					false
+				}
+			}),
+		)
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_program_accounts(program_id.to_string()).await;
+
+	assert!(result.is_ok());
+	let accounts = result.unwrap();
+	assert_eq!(accounts.len(), 2);
+}
+
+#[tokio::test]
+async fn test_get_program_accounts_empty() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"result": [],
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_program_accounts("TestProgram".to_string()).await;
+
+	assert!(result.is_ok());
+	assert!(result.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_get_program_accounts_invalid_response() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"result": "not_an_array",
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_program_accounts("TestProgram".to_string()).await;
+
+	assert!(result.is_err());
+	assert!(result.unwrap_err().to_string().contains("Invalid"));
+}
+
+// ============================================================================
+// Parsing edge case tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_parse_transaction_with_null_meta() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"result": {
+			"slot": 123,
+			"transaction": {
+				"signatures": ["sig1"],
+				"message": {
+					"accountKeys": ["key1"],
+					"recentBlockhash": "hash1",
+					"instructions": []
+				}
+			},
+			"meta": null
+		},
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_transaction("sig1".to_string()).await;
+
+	assert!(result.is_ok());
+	let tx = result.unwrap();
+	assert!(tx.is_some());
+	let tx = tx.unwrap();
+	assert_eq!(tx.signature(), "sig1");
+	// With null meta, is_success should be determined appropriately
+}
+
+#[tokio::test]
+async fn test_parse_block_with_null_result() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	// Some slots are skipped and return null result
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"result": null,
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_transactions(123456789).await;
+
+	// Should fail because block data is null
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	let err_str = format!("{:?}", err); // Use debug format to get full error chain
+									 // Error should indicate the slot and that parsing failed
+	assert!(err_str.contains("parse") || err_str.contains("slot") || err_str.contains("block"));
+}
+
+#[tokio::test]
+async fn test_parse_transaction_with_parsed_instructions() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"result": {
+			"slot": 123,
+			"transaction": {
+				"signatures": ["sig1"],
+				"message": {
+					"accountKeys": [
+						{"pubkey": "key1", "signer": true, "writable": true}
+					],
+					"recentBlockhash": "hash1",
+					"instructions": [
+						{
+							"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+							"program": "spl-token",
+							"parsed": {
+								"type": "transfer",
+								"info": {
+									"source": "addr1",
+									"destination": "addr2",
+									"amount": "1000000"
+								}
+							}
+						}
+					]
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [1000000],
+				"postBalances": [995000],
+				"logMessages": ["Program log: Transfer"]
+			}
+		},
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_transaction("sig1".to_string()).await;
+
+	assert!(result.is_ok());
+	let tx = result.unwrap();
+	assert!(tx.is_some());
+	let tx = tx.unwrap();
+	// Verify transaction was parsed correctly
+	assert_eq!(tx.signature(), "sig1");
+}

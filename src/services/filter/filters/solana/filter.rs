@@ -371,4 +371,801 @@ mod tests {
 		assert!(params.iter().any(|p| p.name == "fee"));
 		assert!(params.iter().any(|p| p.name == "is_success"));
 	}
+
+	// ============================================================================
+	// Expression evaluation tests
+	// ============================================================================
+
+	#[test]
+	fn test_evaluate_expression_simple_equality() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000000".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+
+		let result = filter.evaluate_expression("amount == 1000000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_simple_inequality() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000000".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+
+		let result = filter.evaluate_expression("amount != 500000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_greater_than() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000000".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+
+		// Greater than should be true
+		let result = filter.evaluate_expression("amount > 500000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// Greater than should be false
+		let result = filter.evaluate_expression("amount > 2000000", &args);
+		assert!(result.is_ok());
+		assert!(!result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_less_than() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000000".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+
+		// Less than should be true
+		let result = filter.evaluate_expression("amount < 2000000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// Less than should be false
+		let result = filter.evaluate_expression("amount < 500000", &args);
+		assert!(result.is_ok());
+		assert!(!result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_gte_lte() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000000".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+
+		// Gte (equal case)
+		let result = filter.evaluate_expression("amount >= 1000000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// Gte (greater case)
+		let result = filter.evaluate_expression("amount >= 500000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// Lte (equal case)
+		let result = filter.evaluate_expression("amount <= 1000000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// Lte (less case)
+		let result = filter.evaluate_expression("amount <= 2000000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_string_equality() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "recipient".to_string(),
+			value: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+			kind: "pubkey".to_string(),
+			indexed: false,
+		}];
+
+		let result = filter.evaluate_expression(
+			"recipient == \"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"",
+			&args,
+		);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_boolean() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "is_initialized".to_string(),
+			value: "true".to_string(),
+			kind: "bool".to_string(),
+			indexed: false,
+		}];
+
+		let result = filter.evaluate_expression("is_initialized == true", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		let result = filter.evaluate_expression("is_initialized != false", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_and_condition() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![
+			SolanaMatchParamEntry {
+				name: "amount".to_string(),
+				value: "1000000".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			SolanaMatchParamEntry {
+				name: "fee".to_string(),
+				value: "5000".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+		];
+
+		// Both conditions true (use AND keyword, not &&)
+		let result = filter.evaluate_expression("amount > 500000 AND fee < 10000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// One condition false
+		let result = filter.evaluate_expression("amount > 500000 AND fee > 10000", &args);
+		assert!(result.is_ok());
+		assert!(!result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_or_condition() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![
+			SolanaMatchParamEntry {
+				name: "amount".to_string(),
+				value: "1000000".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+			SolanaMatchParamEntry {
+				name: "fee".to_string(),
+				value: "5000".to_string(),
+				kind: "u64".to_string(),
+				indexed: false,
+			},
+		];
+
+		// One condition true (use OR keyword, not ||)
+		let result = filter.evaluate_expression("amount > 2000000 OR fee < 10000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// Both conditions false
+		let result = filter.evaluate_expression("amount > 2000000 OR fee > 10000", &args);
+		assert!(result.is_ok());
+		assert!(!result.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_empty() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![];
+
+		let result = filter.evaluate_expression("", &args);
+		assert!(result.is_err());
+		let err_str = format!("{:?}", result.unwrap_err());
+		assert!(err_str.contains("empty") || err_str.contains("Expression"));
+	}
+
+	#[test]
+	fn test_evaluate_expression_whitespace_only() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![];
+
+		let result = filter.evaluate_expression("   ", &args);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_evaluate_expression_unknown_param() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000000".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+
+		// Unknown parameter should fail
+		let result = filter.evaluate_expression("unknown_param == 100", &args);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_evaluate_expression_invalid_syntax() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "amount".to_string(),
+			value: "1000000".to_string(),
+			kind: "u64".to_string(),
+			indexed: false,
+		}];
+
+		// Invalid expression syntax
+		let result = filter.evaluate_expression("amount ===", &args);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_evaluate_expression_signed_integer() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let args = vec![SolanaMatchParamEntry {
+			name: "balance".to_string(),
+			value: "-500".to_string(),
+			kind: "i64".to_string(),
+			indexed: false,
+		}];
+
+		// Negative comparison
+		let result = filter.evaluate_expression("balance < 0", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+
+		// Compare negative to negative
+		let result = filter.evaluate_expression("balance > -1000", &args);
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	// ============================================================================
+	// Event matching tests
+	// ============================================================================
+
+	fn create_test_monitor_with_events(event_signatures: Vec<&str>) -> Monitor {
+		use crate::models::{AddressWithSpec, MatchConditions, TransactionCondition};
+
+		Monitor {
+			name: "test_monitor".to_string(),
+			paused: false,
+			networks: vec!["solana_mainnet".to_string()],
+			addresses: vec![AddressWithSpec {
+				address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				contract_spec: None,
+			}],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: event_signatures
+					.into_iter()
+					.map(|sig| EventCondition {
+						signature: sig.to_string(),
+						expression: None,
+					})
+					.collect(),
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Any,
+					expression: None,
+				}],
+			},
+			trigger_conditions: vec![],
+			triggers: vec![],
+			chain_configurations: vec![],
+		}
+	}
+
+	fn create_test_transaction_with_logs(logs: Vec<&str>) -> SolanaTransaction {
+		use crate::models::{
+			SolanaInstruction, SolanaTransactionInfo, SolanaTransactionMessage,
+			SolanaTransactionMeta,
+		};
+
+		let meta = SolanaTransactionMeta {
+			fee: 5000,
+			pre_balances: vec![],
+			post_balances: vec![],
+			log_messages: logs.iter().map(|s| s.to_string()).collect(),
+			err: None,
+			inner_instructions: vec![],
+			pre_token_balances: vec![],
+			post_token_balances: vec![],
+			compute_units_consumed: Some(1000),
+		};
+
+		let tx_info = SolanaTransactionInfo {
+			signature: "test_sig".to_string(),
+			slot: 123456789,
+			block_time: Some(1234567890),
+			transaction: SolanaTransactionMessage {
+				account_keys: vec!["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string()],
+				recent_blockhash: "4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn".to_string(),
+				instructions: vec![SolanaInstruction {
+					program_id_index: 0,
+					accounts: vec![],
+					data: "".to_string(),
+					parsed: None,
+					program: None,
+					program_id: None,
+				}],
+				address_table_lookups: vec![],
+			},
+			meta: Some(meta),
+		};
+
+		SolanaTransaction::from(tx_info)
+	}
+
+	#[test]
+	fn test_find_matching_events_single_match() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_events(vec!["Transfer"]);
+		let transaction = create_test_transaction_with_logs(vec![
+			"Program log: Instruction: Transfer",
+			"Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+		]);
+
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = SolanaMatchArguments {
+			functions: Some(Vec::new()),
+			events: Some(Vec::new()),
+		};
+
+		filter.find_matching_events(
+			&transaction,
+			&monitor,
+			None,
+			&mut matched_events,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_events.len(), 1);
+		assert_eq!(matched_events[0].signature, "Transfer");
+	}
+
+	#[test]
+	fn test_find_matching_events_multiple_patterns() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_events(vec!["Transfer", "MintTo"]);
+		let transaction = create_test_transaction_with_logs(vec![
+			"Program log: Instruction: Transfer",
+			"Program log: Instruction: MintTo",
+			"Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+		]);
+
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = SolanaMatchArguments {
+			functions: Some(Vec::new()),
+			events: Some(Vec::new()),
+		};
+
+		filter.find_matching_events(
+			&transaction,
+			&monitor,
+			None,
+			&mut matched_events,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_events.len(), 2);
+	}
+
+	#[test]
+	fn test_find_matching_events_no_match() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_events(vec!["Burn"]);
+		let transaction = create_test_transaction_with_logs(vec![
+			"Program log: Instruction: Transfer",
+			"Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+		]);
+
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = SolanaMatchArguments {
+			functions: Some(Vec::new()),
+			events: Some(Vec::new()),
+		};
+
+		filter.find_matching_events(
+			&transaction,
+			&monitor,
+			None,
+			&mut matched_events,
+			&mut matched_on_args,
+		);
+
+		assert!(matched_events.is_empty());
+	}
+
+	#[test]
+	fn test_find_matching_events_empty_logs() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_events(vec!["Transfer"]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = SolanaMatchArguments {
+			functions: Some(Vec::new()),
+			events: Some(Vec::new()),
+		};
+
+		filter.find_matching_events(
+			&transaction,
+			&monitor,
+			None,
+			&mut matched_events,
+			&mut matched_on_args,
+		);
+
+		assert!(matched_events.is_empty());
+	}
+
+	#[test]
+	fn test_find_matching_events_with_parentheses_signature() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		// Signature with parentheses should still match
+		let monitor = create_test_monitor_with_events(vec!["MintTo()"]);
+		let transaction = create_test_transaction_with_logs(vec![
+			"Program log: Instruction: MintTo",
+			"Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+		]);
+
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = SolanaMatchArguments {
+			functions: Some(Vec::new()),
+			events: Some(Vec::new()),
+		};
+
+		filter.find_matching_events(
+			&transaction,
+			&monitor,
+			None,
+			&mut matched_events,
+			&mut matched_on_args,
+		);
+
+		assert_eq!(matched_events.len(), 1);
+	}
+
+	#[test]
+	fn test_find_matching_events_captures_log_in_args() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_events(vec!["Transfer"]);
+		let transaction = create_test_transaction_with_logs(vec![
+			"Program log: Instruction: Transfer amount=1000000",
+		]);
+
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = SolanaMatchArguments {
+			functions: Some(Vec::new()),
+			events: Some(Vec::new()),
+		};
+
+		filter.find_matching_events(
+			&transaction,
+			&monitor,
+			None,
+			&mut matched_events,
+			&mut matched_on_args,
+		);
+
+		assert!(!matched_events.is_empty());
+
+		// Check that the log was captured in matched_on_args
+		let events = matched_on_args.events.unwrap();
+		assert!(!events.is_empty());
+		let args = events[0].args.as_ref().unwrap();
+		assert!(args
+			.iter()
+			.any(|a| a.name == "log" && a.value.contains("Transfer")));
+	}
+
+	// ============================================================================
+	// Transaction matching tests
+	// ============================================================================
+
+	fn create_test_monitor_with_transactions(
+		conditions: Vec<(TransactionStatus, Option<&str>)>,
+	) -> Monitor {
+		use crate::models::{AddressWithSpec, MatchConditions};
+
+		Monitor {
+			name: "test_monitor".to_string(),
+			paused: false,
+			networks: vec!["solana_mainnet".to_string()],
+			addresses: vec![AddressWithSpec {
+				address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				contract_spec: None,
+			}],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: conditions
+					.into_iter()
+					.map(|(status, expr)| TransactionCondition {
+						status,
+						expression: expr.map(|e| e.to_string()),
+					})
+					.collect(),
+			},
+			trigger_conditions: vec![],
+			triggers: vec![],
+			chain_configurations: vec![],
+		}
+	}
+
+	#[test]
+	fn test_find_matching_transaction_empty_conditions() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_transactions(vec![]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_transactions = Vec::new();
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		// Empty conditions should match any transaction
+		assert_eq!(matched_transactions.len(), 1);
+		assert_eq!(matched_transactions[0].status, TransactionStatus::Any);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_status_any() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_transactions(vec![(TransactionStatus::Any, None)]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_transactions = Vec::new();
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_status_success() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		// Transaction with no error is success
+		let monitor =
+			create_test_monitor_with_transactions(vec![(TransactionStatus::Success, None)]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_transactions = Vec::new();
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+		assert_eq!(matched_transactions[0].status, TransactionStatus::Success);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_with_expression() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_transactions(vec![(
+			TransactionStatus::Any,
+			Some("slot > 100000000"),
+		)]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_transactions = Vec::new();
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		// Slot is 123456789 which is > 100000000
+		assert_eq!(matched_transactions.len(), 1);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_expression_false() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_transactions(vec![(
+			TransactionStatus::Any,
+			Some("slot > 200000000"),
+		)]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_transactions = Vec::new();
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		// Slot is 123456789 which is < 200000000
+		assert!(matched_transactions.is_empty());
+	}
+
+	#[test]
+	fn test_find_matching_transaction_expression_fee() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_transactions(vec![(
+			TransactionStatus::Any,
+			Some("fee <= 10000"),
+		)]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_transactions = Vec::new();
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		// Fee is 5000 which is <= 10000
+		assert_eq!(matched_transactions.len(), 1);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_is_success_expression() {
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = create_test_monitor_with_transactions(vec![(
+			TransactionStatus::Any,
+			Some("is_success == true"),
+		)]);
+		let transaction = create_test_transaction_with_logs(vec![]);
+
+		let mut matched_transactions = Vec::new();
+		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+		// Transaction has no error so is_success is true
+		assert_eq!(matched_transactions.len(), 1);
+	}
+
+	// ============================================================================
+	// get_solana_spec tests
+	// ============================================================================
+
+	#[test]
+	fn test_get_solana_spec_found() {
+		let solana_spec = SolanaContractSpec::default();
+
+		let specs: Vec<(String, ContractSpec)> = vec![(
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+			ContractSpec::Solana(solana_spec),
+		)];
+
+		let result = SolanaBlockFilter::<()>::get_solana_spec(
+			Some(&specs),
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+		);
+
+		assert!(result.is_some());
+	}
+
+	#[test]
+	fn test_get_solana_spec_not_found() {
+		let solana_spec = SolanaContractSpec::default();
+
+		let specs: Vec<(String, ContractSpec)> = vec![(
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+			ContractSpec::Solana(solana_spec),
+		)];
+
+		let result = SolanaBlockFilter::<()>::get_solana_spec(
+			Some(&specs),
+			"11111111111111111111111111111111",
+		);
+
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn test_get_solana_spec_none_specs() {
+		let result = SolanaBlockFilter::<()>::get_solana_spec(
+			None,
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+		);
+
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn test_get_solana_spec_case_insensitive() {
+		let solana_spec = SolanaContractSpec::default();
+
+		let specs: Vec<(String, ContractSpec)> = vec![(
+			"tokenkegqfezyinwajbnbgkpfxcwubvf9ss623vq5da".to_string(),
+			ContractSpec::Solana(solana_spec),
+		)];
+
+		let result = SolanaBlockFilter::<()>::get_solana_spec(
+			Some(&specs),
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+		);
+
+		assert!(result.is_some());
+	}
 }
