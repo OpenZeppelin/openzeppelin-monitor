@@ -48,6 +48,17 @@ pub struct NotificationMessage {
 	pub body: String,
 }
 
+/// Payload mode for webhook triggers
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WebhookPayloadMode {
+	/// Use title/body templates with variable substitution (default)
+	#[default]
+	Template,
+	/// Send the raw MonitorMatch as the JSON payload
+	Raw,
+}
+
 /// Type-specific configuration for triggers
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -93,8 +104,12 @@ pub enum TriggerTypeConfig {
 		secret: Option<SecretValue>,
 		/// Optional HTTP headers
 		headers: Option<std::collections::HashMap<String, String>>,
-		/// Notification message
+		/// Notification message (required for template mode, optional for raw mode)
+		#[serde(default)]
 		message: NotificationMessage,
+		/// Payload mode: "template" (default) or "raw"
+		#[serde(default)]
+		payload_mode: WebhookPayloadMode,
 		/// Retry policy for HTTP requests
 		#[serde(default)]
 		retry_policy: RetryConfig,

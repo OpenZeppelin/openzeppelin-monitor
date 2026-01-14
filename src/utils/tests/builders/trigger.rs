@@ -5,7 +5,7 @@
 use crate::{
 	models::{
 		NotificationMessage, ScriptLanguage, SecretString, SecretValue, Trigger, TriggerType,
-		TriggerTypeConfig,
+		TriggerTypeConfig, WebhookPayloadMode,
 	},
 	utils::RetryConfig,
 };
@@ -34,6 +34,7 @@ impl Default for TriggerBuilder {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
 				},
+				payload_mode: WebhookPayloadMode::default(),
 				retry_policy: RetryConfig::default(),
 			},
 		}
@@ -66,6 +67,7 @@ impl TriggerBuilder {
 				title: "Alert".to_string(),
 				body: "Test message".to_string(),
 			},
+			payload_mode: WebhookPayloadMode::default(),
 			retry_policy: RetryConfig::default(),
 		};
 		self
@@ -241,6 +243,13 @@ impl TriggerBuilder {
 		self
 	}
 
+	pub fn webhook_payload_mode(mut self, mode: WebhookPayloadMode) -> Self {
+		if let TriggerTypeConfig::Webhook { payload_mode, .. } = &mut self.config {
+			*payload_mode = mode;
+		}
+		self
+	}
+
 	pub fn url(mut self, url: SecretValue) -> Self {
 		self.config = match self.config {
 			TriggerTypeConfig::Webhook {
@@ -249,6 +258,7 @@ impl TriggerBuilder {
 				headers,
 				secret,
 				message,
+				payload_mode,
 				retry_policy,
 			} => TriggerTypeConfig::Webhook {
 				url,
@@ -256,6 +266,7 @@ impl TriggerBuilder {
 				headers,
 				secret,
 				message,
+				payload_mode,
 				retry_policy,
 			},
 			TriggerTypeConfig::Discord {
@@ -325,6 +336,7 @@ mod tests {
 					title: "Alert".to_string(),
 					body: "Test message".to_string(),
 				},
+				payload_mode: WebhookPayloadMode::default(),
 				retry_policy: RetryConfig::default(),
 			})
 			.build();
@@ -388,6 +400,7 @@ mod tests {
 				secret,
 				headers: h,
 				message,
+				payload_mode,
 				retry_policy: _,
 			} => {
 				assert_eq!(url.as_ref().to_string(), "https://webhook.example.com");
@@ -399,6 +412,7 @@ mod tests {
 				assert_eq!(h, Some(headers));
 				assert_eq!(message.title, "Custom Alert");
 				assert_eq!(message.body, "Something happened!");
+				assert_eq!(payload_mode, WebhookPayloadMode::default());
 			}
 			_ => panic!("Expected webhook config"),
 		}

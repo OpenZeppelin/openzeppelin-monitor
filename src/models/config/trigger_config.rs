@@ -11,7 +11,7 @@ use std::{collections::HashMap, fs, path::Path};
 use crate::{
 	models::{
 		config::error::ConfigError, ConfigLoader, SecretValue, Trigger, TriggerType,
-		TriggerTypeConfig,
+		TriggerTypeConfig, WebhookPayloadMode,
 	},
 	services::trigger::validate_script_config,
 	utils::normalize_string,
@@ -433,6 +433,7 @@ impl ConfigLoader for Trigger {
 					url,
 					method,
 					message,
+					payload_mode,
 					..
 				} = &self.config
 				{
@@ -457,20 +458,23 @@ impl ConfigLoader for Trigger {
 							}
 						}
 					}
-					// Validate message
-					if message.title.trim().is_empty() {
-						return Err(ConfigError::validation_error(
-							"Title cannot be empty",
-							None,
-							None,
-						));
-					}
-					if message.body.trim().is_empty() {
-						return Err(ConfigError::validation_error(
-							"Body cannot be empty",
-							None,
-							None,
-						));
+					// Validate message only in template mode
+					// In raw mode, message is not used as the MonitorMatch is sent directly
+					if *payload_mode == WebhookPayloadMode::Template {
+						if message.title.trim().is_empty() {
+							return Err(ConfigError::validation_error(
+								"Title cannot be empty",
+								None,
+								None,
+							));
+						}
+						if message.body.trim().is_empty() {
+							return Err(ConfigError::validation_error(
+								"Body cannot be empty",
+								None,
+								None,
+							));
+						}
 					}
 				}
 			}
@@ -908,7 +912,7 @@ mod tests {
 
 	#[test]
 	fn test_webhook_trigger_validation() {
-		// Valid trigger
+		// Valid trigger with template mode (default)
 		let valid_trigger = TriggerBuilder::new()
 			.name("test_webhook")
 			.webhook("https://api.example.com/webhook")
@@ -923,7 +927,7 @@ mod tests {
 			.build();
 		assert!(invalid_url.validate().is_err());
 
-		// Empty title
+		// Empty title in template mode - should fail
 		let invalid_title = TriggerBuilder::new()
 			.name("test_webhook")
 			.webhook("https://api.example.com/webhook")
@@ -931,13 +935,70 @@ mod tests {
 			.build();
 		assert!(invalid_title.validate().is_err());
 
-		// Empty body
+		// Empty body in template mode - should fail
 		let invalid_body = TriggerBuilder::new()
 			.name("test_webhook")
 			.webhook("https://api.example.com/webhook")
 			.message("Alert", "")
 			.build();
 		assert!(invalid_body.validate().is_err());
+	}
+
+	#[test]
+	fn test_webhook_trigger_validation_raw_mode() {
+		use crate::models::WebhookPayloadMode;
+
+		// Valid trigger with raw payload mode - empty message is OK
+		let valid_raw_trigger = TriggerBuilder::new()
+			.name("test_webhook_raw")
+			.webhook("https://api.example.com/webhook")
+			.webhook_payload_mode(WebhookPayloadMode::Raw)
+			.message("", "") // Empty message is valid in raw mode
+			.build();
+		assert!(valid_raw_trigger.validate().is_ok());
+
+		// Invalid URL in raw mode - should still fail
+		let invalid_url_raw = TriggerBuilder::new()
+			.name("test_webhook_raw")
+			.webhook("invalid-url")
+			.webhook_payload_mode(WebhookPayloadMode::Raw)
+			.build();
+		assert!(invalid_url_raw.validate().is_err());
+
+		// Valid URL with raw mode and non-empty message
+		let valid_raw_with_message = TriggerBuilder::new()
+			.name("test_webhook_raw")
+			.webhook("https://api.example.com/webhook")
+			.webhook_payload_mode(WebhookPayloadMode::Raw)
+			.message("Alert", "Test message")
+			.build();
+		assert!(valid_raw_with_message.validate().is_ok());
+	}
+
+	#[test]
+	fn test_webhook_payload_mode_serialization() {
+		use crate::models::WebhookPayloadMode;
+
+		// Test serialization
+		let template_mode = WebhookPayloadMode::Template;
+		let raw_mode = WebhookPayloadMode::Raw;
+
+		assert_eq!(
+			serde_json::to_string(&template_mode).unwrap(),
+			"\"template\""
+		);
+		assert_eq!(serde_json::to_string(&raw_mode).unwrap(), "\"raw\"");
+
+		// Test deserialization
+		let deserialized_template: WebhookPayloadMode =
+			serde_json::from_str("\"template\"").unwrap();
+		let deserialized_raw: WebhookPayloadMode = serde_json::from_str("\"raw\"").unwrap();
+
+		assert_eq!(deserialized_template, WebhookPayloadMode::Template);
+		assert_eq!(deserialized_raw, WebhookPayloadMode::Raw);
+
+		// Test default
+		assert_eq!(WebhookPayloadMode::default(), WebhookPayloadMode::Template);
 	}
 
 	#[test]

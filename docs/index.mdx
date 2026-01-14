@@ -625,8 +625,48 @@ A Trigger defines actions to take when monitored conditions are met. Triggers ca
 | `**config.secret.type**` | `String` | Secret type (**"Plain"**, **"Environment"**, or **"HashicorpCloudVault"**) |
 | `**config.secret.value**` | `String` | Secret value (HMAC secret, environment variable name, or vault secret name) |
 | `**config.headers**` | `Object` | Headers to include in the webhook request |
-| `**config.message.title**` | `String` | Title that appears in the webhook message |
-| `**config.message.body**` | `String` | Message template with variable substitution |
+| `**config.payload_mode**` | `String` | Payload mode: **"template"** (default) or **"raw"** |
+| `**config.message.title**` | `String` | Title that appears in the webhook message (required for template mode) |
+| `**config.message.body**` | `String` | Message template with variable substitution (required for template mode) |
+
+##### Webhook Payload Modes
+
+Webhooks support two payload modes that determine how data is sent to your endpoint:
+
+**Template Mode (default)**
+
+In template mode, the webhook sends a formatted JSON payload with `title` and `body` fields, where variables are substituted from the monitor match data:
+
+```json
+{
+  "title": "Monitor Alert triggered",
+  "body": "Large transfer detected from 0x123... to 0x456..."
+}
+```
+
+**Raw Mode**
+
+In raw mode, the webhook sends the complete `MonitorMatch` object directly as the JSON payload. This is useful when you want to receive all blockchain event data without formatting, allowing your receiving service to process the raw data as needed.
+
+```json
+{
+  "raw_webhook": {
+    "name": "Raw Payload Webhook",
+    "trigger_type": "webhook",
+    "config": {
+      "url": { "type": "plain", "value": "https://api.example.com/events" },
+      "method": "POST",
+      "payload_mode": "raw",
+      "message": { "title": "", "body": "" }
+    }
+  }
+}
+```
+
+When using raw mode:
+* The `message.title` and `message.body` fields can be empty
+* The payload contains the full monitor match including: monitor configuration, transaction details, receipt, logs, matched conditions, and decoded arguments
+* This is particularly useful for integrations that need to process the complete event data programmatically
 
 ##### Discord Notifications
 ```json

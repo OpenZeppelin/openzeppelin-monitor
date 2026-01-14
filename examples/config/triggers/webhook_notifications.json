@@ -64,5 +64,24 @@
         "body": "${monitor.name} triggered because of a large swap of ${functions.0.args.out_min} tokens | https://stellar.expert/explorer/public/tx/${transaction.hash}"
       }
     }
+  },
+  "raw_payload_webhook": {
+    "name": "Raw Payload Webhook",
+    "trigger_type": "webhook",
+    "config": {
+      "url": {
+        "type": "plain",
+        "value": "https://api.example.com/events"
+      },
+      "method": "POST",
+      "secret": {
+        "type": "plain",
+        "value": "webhook-secret"
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "payload_mode": "raw"
+    }
   }
 }

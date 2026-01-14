@@ -548,11 +548,7 @@ impl<T> EVMBlockFilter<T> {
 		{
 			Some(event) => event,
 			None => {
-				FilterError::internal_error(
-					format!("No matching event found for log topic: {:?}", log.topics[0]),
-					None,
-					None,
-				);
+				tracing::debug!("No matching event found for log topic: {:?}", log.topics[0]);
 				return None;
 			}
 		};

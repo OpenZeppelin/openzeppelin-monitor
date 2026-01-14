@@ -1,6 +1,8 @@
 use mockito::{Matcher, Server};
 use openzeppelin_monitor::{
-	models::{EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, TriggerType},
+	models::{
+		EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, TriggerType, WebhookPayloadMode,
+	},
 	services::notification::{
 		GenericWebhookPayloadBuilder, NotificationError, NotificationService, WebhookConfig,
 		WebhookNotifier, WebhookPayloadBuilder,
@@ -270,6 +272,83 @@ async fn test_notify_json_with_url_params() {
 	let notifier = WebhookNotifier::new(config, http_client).unwrap();
 	let payload = serde_json::json!({"test": "data"});
 	let result = notifier.notify_json(&payload).await;
+
+	assert!(result.is_ok());
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_notification_service_webhook_raw_payload_mode() {
+	let notification_service = NotificationService::new();
+	let mut server = Server::new_async().await;
+
+	// Setup mock webhook server that expects the raw MonitorMatch JSON
+	// Use PartialJson to verify the payload contains the expected EVM structure
+	let mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.match_body(Matcher::PartialJson(serde_json::json!({
+			"EVM": {
+				"monitor": {
+					"name": "test_monitor"
+				}
+			}
+		})))
+		.create_async()
+		.await;
+
+	// Create a webhook trigger with raw payload mode
+	let trigger = TriggerBuilder::new()
+		.name("test_raw_webhook")
+		.webhook(&server.url())
+		.webhook_payload_mode(WebhookPayloadMode::Raw)
+		.message("", "") // Empty message since raw mode doesn't use it
+		.build();
+
+	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
+
+	let result = notification_service
+		.execute(&trigger, &HashMap::new(), &monitor_match, &HashMap::new())
+		.await;
+
+	assert!(result.is_ok());
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_notification_service_webhook_template_mode_default() {
+	let notification_service = NotificationService::new();
+	let mut server = Server::new_async().await;
+
+	// Setup mock webhook server that expects the templated payload format
+	let mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.match_body(Matcher::Json(serde_json::json!({
+			"title": "Test Alert",
+			"body": "Test message with value: 42"
+		})))
+		.create_async()
+		.await;
+
+	// Create a webhook trigger with default (template) payload mode
+	let trigger = TriggerBuilder::new()
+		.name("test_template_webhook")
+		.webhook(&server.url())
+		// payload_mode defaults to Template
+		.message("Test Alert", "Test message with value: ${value}")
+		.build();
+
+	let mut variables = HashMap::new();
+	variables.insert("value".to_string(), "42".to_string());
+
+	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
+
+	let result = notification_service
+		.execute(&trigger, &variables, &monitor_match, &HashMap::new())
+		.await;
 
 	assert!(result.is_ok());
 	mock.assert();

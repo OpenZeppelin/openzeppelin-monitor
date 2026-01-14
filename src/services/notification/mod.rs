@@ -18,6 +18,7 @@ mod webhook;
 use crate::{
 	models::{
 		MonitorMatch, NotificationMessage, ScriptLanguage, Trigger, TriggerType, TriggerTypeConfig,
+		WebhookPayloadMode,
 	},
 	utils::{normalize_string, RetryConfig},
 };
@@ -212,6 +213,15 @@ impl NotificationService {
 			| TriggerType::Discord
 			| TriggerType::Webhook
 			| TriggerType::Telegram => {
+				// Check if this is a webhook trigger with raw payload mode
+				let is_raw_mode = matches!(
+					&trigger.config,
+					TriggerTypeConfig::Webhook {
+						payload_mode: WebhookPayloadMode::Raw,
+						..
+					}
+				);
+
 				// Use the Webhookable trait to get config, retry policy and payload builder
 				let components = trigger.config.as_webhook_components()?;
 
@@ -228,12 +238,24 @@ impl NotificationService {
 						)
 					})?;
 
-				// Build the payload
-				let payload = components.builder.build_payload(
-					&components.config.title,
-					&components.config.body_template,
-					variables,
-				);
+				// Build the payload based on the mode
+				let payload = if is_raw_mode {
+					// In raw mode, serialize the MonitorMatch directly
+					serde_json::to_value(monitor_match).map_err(|e| {
+						NotificationError::internal_error(
+							format!("Failed to serialize MonitorMatch: {}", e),
+							Some(e.into()),
+							None,
+						)
+					})?
+				} else {
+					// In template mode, use the payload builder
+					components.builder.build_payload(
+						&components.config.title,
+						&components.config.body_template,
+						variables,
+					)
+				};
 
 				// Create the notifier
 				let notifier = WebhookNotifier::new(components.config, http_client)?;
@@ -752,6 +774,7 @@ mod tests {
 				"my-secret".to_string(),
 			))),
 			headers: Some([("X-Custom".to_string(), "Value".to_string())].into()),
+			payload_mode: WebhookPayloadMode::default(),
 			retry_policy: RetryConfig::default(),
 		};
 

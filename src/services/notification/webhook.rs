@@ -273,7 +273,7 @@ impl WebhookNotifier {
 #[cfg(test)]
 mod tests {
 	use crate::{
-		models::{NotificationMessage, SecretString, SecretValue},
+		models::{NotificationMessage, SecretString, SecretValue, WebhookPayloadMode},
 		services::notification::{GenericWebhookPayloadBuilder, WebhookPayloadBuilder},
 		utils::{tests::create_test_http_client, RetryConfig},
 	};
@@ -311,6 +311,7 @@ mod tests {
 				title: "Test Alert".to_string(),
 				body: "Test message ${value}".to_string(),
 			},
+			payload_mode: WebhookPayloadMode::default(),
 			retry_policy: RetryConfig::default(),
 		}
 	}

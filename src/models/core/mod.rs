@@ -14,4 +14,6 @@ pub use monitor::{
 	TransactionCondition, TransactionStatus, TriggerConditions, SCRIPT_LANGUAGE_EXTENSIONS,
 };
 pub use network::{Network, RpcUrl};
-pub use trigger::{NotificationMessage, Trigger, TriggerType, TriggerTypeConfig};
+pub use trigger::{
+	NotificationMessage, Trigger, TriggerType, TriggerTypeConfig, WebhookPayloadMode,
+};

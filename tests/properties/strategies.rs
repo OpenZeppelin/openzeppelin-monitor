@@ -4,7 +4,7 @@ use openzeppelin_monitor::{
 		AddressWithSpec, BlockChainType, EventCondition, FunctionCondition, MatchConditions,
 		Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage, SecretString, SecretValue,
 		TransactionCondition, TransactionStatus, Trigger, TriggerConditions, TriggerType,
-		TriggerTypeConfig,
+		TriggerTypeConfig, WebhookPayloadMode,
 	},
 	utils::{
 		tests::{evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder},
@@ -163,6 +163,7 @@ pub fn trigger_strategy() -> impl Strategy<Value = Trigger> {
 						headers,
 						secret: secret.map(|s| SecretValue::Plain(SecretString::new(s))),
 						message,
+						payload_mode: WebhookPayloadMode::default(),
 						retry_policy: RetryConfig::default(),
 					}
 				})

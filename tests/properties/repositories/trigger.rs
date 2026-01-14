@@ -3,7 +3,7 @@ use crate::properties::strategies::trigger_strategy;
 use openzeppelin_monitor::{
 	models::{
 		ConfigLoader, NotificationMessage, SecretString, SecretValue, TriggerType,
-		TriggerTypeConfig,
+		TriggerTypeConfig, WebhookPayloadMode,
 	},
 	repositories::{TriggerRepository, TriggerRepositoryTrait},
 };
@@ -150,7 +150,7 @@ proptest! {
 					}
 				}
 				TriggerType::Webhook => {
-					if let TriggerTypeConfig::Webhook { url: _, method: _, headers: _, secret: _, message: _, retry_policy: _ } = &trigger.config {
+					if let TriggerTypeConfig::Webhook { url: _, method: _, headers: _, secret: _, message: _, payload_mode: _, retry_policy: _ } = &trigger.config {
 						// Test invalid method
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Webhook { method: m, .. } = &mut invalid_trigger.config {
@@ -165,9 +165,10 @@ proptest! {
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
 
-						// Test empty title
+						// Test empty title in template mode (only fails in template mode)
 						invalid_trigger = trigger.clone();
-						if let TriggerTypeConfig::Webhook { message: m, .. } = &mut invalid_trigger.config {
+						if let TriggerTypeConfig::Webhook { message: m, payload_mode: pm, .. } = &mut invalid_trigger.config {
+							*pm = WebhookPayloadMode::Template;
 							*m = NotificationMessage {
 								title: "".to_string(),
 								body: "test".to_string(),
@@ -175,15 +176,27 @@ proptest! {
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
 
-						// Test empty body
+						// Test empty body in template mode (only fails in template mode)
 						invalid_trigger = trigger.clone();
-						if let TriggerTypeConfig::Webhook { message: m, .. } = &mut invalid_trigger.config {
+						if let TriggerTypeConfig::Webhook { message: m, payload_mode: pm, .. } = &mut invalid_trigger.config {
+							*pm = WebhookPayloadMode::Template;
 							*m = NotificationMessage {
 								title: "Alert".to_string(),
 								body: "".to_string(),
 							};
 						}
 						prop_assert!(invalid_trigger.validate().is_err());
+
+						// Test empty title/body in raw mode (should succeed)
+						invalid_trigger = trigger.clone();
+						if let TriggerTypeConfig::Webhook { message: m, payload_mode: pm, .. } = &mut invalid_trigger.config {
+							*pm = WebhookPayloadMode::Raw;
+							*m = NotificationMessage {
+								title: "".to_string(),
+								body: "".to_string(),
+							};
+						}
+						prop_assert!(invalid_trigger.validate().is_ok());
 					}
 				}
 				TriggerType::Discord => {
