@@ -714,7 +714,8 @@ The monitor uses a structured JSON format with nested objects for template varia
 | **Variable** | **Description** |
 | --- | --- |
 | `**monitor.name**` | Name of the triggered monitor |
-| `**transaction.hash**` | Hash of the transaction |
+| `**transaction.hash**` | Hash of the transaction (or `transaction.signature` for Solana) |
+| `**network.slug**` | Network identifier (e.g., `ethereum_mainnet`, `stellar_mainnet`) |
 | `**functions**` | All functions matched and their parameters |
 | `**events**` | All events matched and their parameters |
 
@@ -724,8 +725,13 @@ The monitor uses a structured JSON format with nested objects for template varia
 | **Variable** | **Description** |
 | --- | --- |
 | `**transaction.from**` | Sender address |
-| `**transaction.to**` | Recipient address |
-| `**transaction.value**` | Transaction value |
+| `**transaction.to**` | Recipient address (omitted for contract creation) |
+| `**transaction.value**` | Transaction value in wei |
+| `**transaction.blockNumber**` | Block number (omitted for pending transactions) |
+| `**transaction.nonce**` | Transaction nonce |
+| `**transaction.gasLimit**` | Gas limit for the transaction |
+| `**transaction.gasPrice**` | Gas price (omitted for EIP-1559 transactions) |
+| `**transaction.input**` | Transaction input/calldata |
 | `**events.[index].signature**` | Event signature |
 | `**events.[index].args.[param]**` | Event parameters by name |
 | `**functions.[index].signature**` | Function signature |
@@ -734,16 +740,169 @@ The monitor uses a structured JSON format with nested objects for template varia
 ###### Stellar Variables
 | **Variable** | **Description** |
 | --- | --- |
+| `**transaction.ledgerSequence**` | Ledger sequence number containing the transaction |
 | `**events.[index].args.[position]**` | Event parameters by position |
 | `**events.[index].args.[param]**` | Event parameters by name (only in case the contract supports event parameters name) |
 | `**functions.[index].args.[param]**` | Function parameters by name |
 
 <Callout>
 
-
 Transaction-related variables (`transaction.from`, `transaction.to`, `transaction.value`) are not available for Stellar networks.
 
 </Callout>
+
+###### Solana Variables
+| **Variable** | **Description** |
+| --- | --- |
+| `**transaction.signature**` | Transaction signature (equivalent to hash) |
+| `**transaction.slot**` | Slot number containing the transaction |
+| `**functions.[index].signature**` | Instruction signature |
+| `**functions.[index].args.[param]**` | Instruction parameters by name |
+| `**events.[index].signature**` | Log/event signature |
+| `**events.[index].args.[param]**` | Log/event parameters by name |
+
+###### Midnight Variables
+| **Variable** | **Description** |
+| --- | --- |
+| `**transaction.hash**` | Transaction hash |
+| `**functions.[index].signature**` | Function signature |
+| `**functions.[index].args.[param]**` | Function parameters by name |
+| `**events.[index].signature**` | Event signature |
+| `**events.[index].args.[param]**` | Event parameters by name |
+
+##### Full Monitor Match Access
+
+For advanced use cases requiring complete transaction data, the full `MonitorMatch` object is available via the `monitor_match` prefix. This provides access to all fields that script triggers receive.
+
+| **Variable Pattern** | **Description** |
+| --- | --- |
+| `**monitor_match.EVM.***` | Full EVM monitor match data |
+| `**monitor_match.Stellar.***` | Full Stellar monitor match data |
+| `**monitor_match.Solana.***` | Full Solana monitor match data |
+| `**monitor_match.Midnight.***` | Full Midnight monitor match data |
+
+Example paths for EVM:
+- `monitor_match.EVM.transaction.hash` - Transaction hash
+- `monitor_match.EVM.logs.0.address` - First log's contract address
+- `monitor_match.EVM.network_slug` - Network identifier
+- `monitor_match.EVM.monitor.name` - Monitor name from config
+
+###### MonitorMatch Object Structure
+
+The `MonitorMatch` object varies by blockchain type. Below are the structures for each supported blockchain:
+
+**EVM MonitorMatch** (`monitor_match.EVM.*`)
+```json
+{
+  "monitor": {
+    "name": "string",
+    "addresses": [...],
+    "match_conditions": {...}
+  },
+  "transaction": {
+    "hash": "0x...",
+    "nonce": "0x...",
+    "blockHash": "0x...",
+    "blockNumber": "0x...",
+    "transactionIndex": "0x...",
+    "from": "0x...",
+    "to": "0x...",
+    "value": "0x...",
+    "gasPrice": "0x...",
+    "gas": "0x...",
+    "input": "0x..."
+  },
+  "receipt": {
+    "transactionHash": "0x...",
+    "blockHash": "0x...",
+    "blockNumber": "0x...",
+    "gasUsed": "0x...",
+    "status": "0x1",
+    "contractAddress": "0x... or null",
+    "logs": [...]
+  },
+  "logs": [
+    {
+      "address": "0x...",
+      "topics": ["0x...", ...],
+      "data": "0x...",
+      "logIndex": "0x...",
+      "transactionIndex": "0x..."
+    }
+  ],
+  "network_slug": "ethereum_mainnet",
+  "matched_on": {
+    "functions": [...],
+    "events": [...],
+    "transactions": [...]
+  },
+  "matched_on_args": {
+    "functions": [...],
+    "events": [...]
+  }
+}
+```
+
+> **Note:** The `receipt` field may be `null` if the monitor doesn't require receipt data. Receipt is only fetched when the monitor has transaction conditions using `gas_used` in an expression or when status validation is needed without logs.
+
+**Stellar MonitorMatch** (`monitor_match.Stellar.*`)
+```json
+{
+  "monitor": {...},
+  "transaction": {
+    "status": "SUCCESS",
+    "txHash": "...",
+    "applicationOrder": 1,
+    "feeBump": false,
+    "ledger": 123456,
+    "envelopeXdr": "...",
+    "resultXdr": "..."
+  },
+  "ledger": {
+    "hash": "...",
+    "sequence": 123456,
+    "ledger_close_time": "2024-01-01T00:00:00Z"
+  },
+  "network_slug": "stellar_mainnet",
+  "matched_on": {...},
+  "matched_on_args": {...}
+}
+```
+
+**Solana MonitorMatch** (`monitor_match.Solana.*`)
+```json
+{
+  "monitor": {...},
+  "transaction": {
+    "signature": "...",
+    "slot": 123456789,
+    "blockTime": 1234567890
+  },
+  "block": {
+    "slot": 123456789,
+    "blockhash": "...",
+    "parentSlot": 123456788
+  },
+  "network_slug": "solana_mainnet",
+  "matched_on": {...},
+  "matched_on_args": {...}
+}
+```
+
+**Midnight MonitorMatch** (`monitor_match.Midnight.*`)
+```json
+{
+  "monitor": {...},
+  "transaction": {
+    "tx_hash": "...",
+    "operations": [...],
+    "identifiers": [...]
+  },
+  "network_slug": "midnight_mainnet",
+  "matched_on": {...},
+  "matched_on_args": {...}
+}
+```
 
 #### Message Formatting
 

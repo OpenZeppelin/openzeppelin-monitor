@@ -54,13 +54,17 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 	trigger_service: &T,
 	trigger_scripts: &HashMap<String, (ScriptLanguage, String)>,
 ) -> Result<(), FilterError> {
+	// Serialize the full MonitorMatch for complete access via monitor_match.*
+	let monitor_match_json =
+		serde_json::to_value(&matching_monitor).unwrap_or(serde_json::Value::Null);
+
 	match &matching_monitor {
 		MonitorMatch::EVM(evm_monitor_match) => {
 			let transaction = evm_monitor_match.transaction.clone();
 			// If sender does not exist, we replace with 0x0000000000000000000000000000000000000000
 			let sender = transaction.sender().unwrap_or(&Address::ZERO);
 
-			// Create structured JSON data
+			// Create structured JSON data with individual fields for convenient access
 			let mut data_json = json!({
 				"monitor": {
 					"name": evm_monitor_match.monitor.name.clone(),
@@ -69,14 +73,27 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"hash": b256_to_string(*transaction.hash()),
 					"from": h160_to_string(*sender),
 					"value": transaction.value().to_string(),
+					"nonce": transaction.nonce().to_string(),
+					"gasLimit": transaction.gas().to_string(),
+					"input": format!("{}", transaction.0.input),
+				},
+				"network": {
+					"slug": evm_monitor_match.network_slug.clone(),
 				},
 				"functions": [],
-				"events": []
+				"events": [],
+				"monitor_match": monitor_match_json.clone(),
 			});
 
-			// Add 'to' address if present
+			// Add optional transaction fields if present
 			if let Some(to) = transaction.to() {
 				data_json["transaction"]["to"] = json!(h160_to_string(*to));
+			}
+			if let Some(block_number) = transaction.0.block_number {
+				data_json["transaction"]["blockNumber"] = json!(block_number.to_string());
+			}
+			if let Some(gas_price) = transaction.gas_price() {
+				data_json["transaction"]["gasPrice"] = json!(gas_price.to_string());
 			}
 
 			// Process matched functions
@@ -152,16 +169,21 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 		MonitorMatch::Stellar(stellar_monitor_match) => {
 			let transaction = stellar_monitor_match.transaction.clone();
 
-			// Create structured JSON data
+			// Create structured JSON data with individual fields for convenient access
 			let mut data_json = json!({
 				"monitor": {
 					"name": stellar_monitor_match.monitor.name.clone(),
 				},
 				"transaction": {
 					"hash": transaction.hash().to_string(),
+					"ledgerSequence": stellar_monitor_match.ledger.sequence.to_string(),
+				},
+				"network": {
+					"slug": stellar_monitor_match.network_slug.clone(),
 				},
 				"functions": [],
-				"events": []
+				"events": [],
+				"monitor_match": monitor_match_json.clone(),
 			});
 
 			// Process matched functions
@@ -237,7 +259,7 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 		MonitorMatch::Midnight(midnight_monitor_match) => {
 			let transaction = midnight_monitor_match.transaction.clone();
 
-			// Create structured JSON data
+			// Create structured JSON data with individual fields for convenient access
 			let mut data_json = json!({
 				"monitor": {
 					"name": midnight_monitor_match.monitor.name.clone(),
@@ -245,8 +267,12 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				"transaction": {
 					"hash": transaction.hash().to_string(),
 				},
+				"network": {
+					"slug": midnight_monitor_match.network_slug.clone(),
+				},
 				"functions": [],
-				"events": []
+				"events": [],
+				"monitor_match": monitor_match_json.clone(),
 			});
 
 			// Process matched functions
@@ -322,16 +348,21 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 		MonitorMatch::Solana(solana_monitor_match) => {
 			let transaction = solana_monitor_match.transaction.clone();
 
-			// Create structured JSON data
+			// Create structured JSON data with individual fields for convenient access
 			let mut data_json = json!({
 				"monitor": {
 					"name": solana_monitor_match.monitor.name.clone(),
 				},
 				"transaction": {
 					"signature": transaction.signature().to_string(),
+					"slot": transaction.slot().to_string(),
+				},
+				"network": {
+					"slug": solana_monitor_match.network_slug.clone(),
 				},
 				"functions": [],
-				"events": []
+				"events": [],
+				"monitor_match": monitor_match_json.clone(),
 			});
 
 			// Process matched functions (instructions)
@@ -699,5 +730,190 @@ mod tests {
 		let mut result8 = HashMap::new();
 		insert_primitive("", &mut result8, JsonValue::Null);
 		assert_eq!(result8["value"], "null");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_evm_extended_fields() {
+		// Test EVM-specific extended fields (blockNumber, nonce, gasLimit, gasPrice, input, network)
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"transaction": {
+				"hash": "0x1234567890abcdef",
+				"from": "0xabcdef1234567890",
+				"to": "0x0987654321fedcba",
+				"value": "1000000000000000000",
+				"blockNumber": "12345678",
+				"nonce": "42",
+				"gasLimit": "21000",
+				"gasPrice": "20000000000",
+				"input": "0xa9059cbb",
+			},
+			"network": {
+				"slug": "ethereum_mainnet",
+			},
+			"functions": [],
+			"events": [],
+		});
+
+		let hashmap = json_to_hashmap(&json);
+		assert_eq!(hashmap["monitor.name"], "Test Monitor");
+		assert_eq!(hashmap["transaction.hash"], "0x1234567890abcdef");
+		assert_eq!(hashmap["transaction.from"], "0xabcdef1234567890");
+		assert_eq!(hashmap["transaction.to"], "0x0987654321fedcba");
+		assert_eq!(hashmap["transaction.value"], "1000000000000000000");
+		assert_eq!(hashmap["transaction.blockNumber"], "12345678");
+		assert_eq!(hashmap["transaction.nonce"], "42");
+		assert_eq!(hashmap["transaction.gasLimit"], "21000");
+		assert_eq!(hashmap["transaction.gasPrice"], "20000000000");
+		assert_eq!(hashmap["transaction.input"], "0xa9059cbb");
+		assert_eq!(hashmap["network.slug"], "ethereum_mainnet");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_stellar_extended_fields() {
+		// Test Stellar-specific extended fields (ledgerSequence, network)
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"transaction": {
+				"hash": "stellar_tx_hash_123",
+				"ledgerSequence": "45678901",
+			},
+			"network": {
+				"slug": "stellar_mainnet",
+			},
+			"functions": [],
+			"events": [],
+		});
+
+		let hashmap = json_to_hashmap(&json);
+		assert_eq!(hashmap["monitor.name"], "Test Monitor");
+		assert_eq!(hashmap["transaction.hash"], "stellar_tx_hash_123");
+		assert_eq!(hashmap["transaction.ledgerSequence"], "45678901");
+		assert_eq!(hashmap["network.slug"], "stellar_mainnet");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_solana_extended_fields() {
+		// Test Solana-specific extended fields (slot, network)
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"transaction": {
+				"signature": "solana_sig_123abc",
+				"slot": "123456789",
+			},
+			"network": {
+				"slug": "solana_mainnet",
+			},
+			"functions": [],
+			"events": [],
+		});
+
+		let hashmap = json_to_hashmap(&json);
+		assert_eq!(hashmap["monitor.name"], "Test Monitor");
+		assert_eq!(hashmap["transaction.signature"], "solana_sig_123abc");
+		assert_eq!(hashmap["transaction.slot"], "123456789");
+		assert_eq!(hashmap["network.slug"], "solana_mainnet");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_midnight_network_slug() {
+		// Test Midnight network slug field
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"transaction": {
+				"hash": "midnight_tx_hash_123",
+			},
+			"network": {
+				"slug": "midnight_testnet",
+			},
+			"functions": [],
+			"events": [],
+		});
+
+		let hashmap = json_to_hashmap(&json);
+		assert_eq!(hashmap["monitor.name"], "Test Monitor");
+		assert_eq!(hashmap["transaction.hash"], "midnight_tx_hash_123");
+		assert_eq!(hashmap["network.slug"], "midnight_testnet");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_monitor_match_object() {
+		// Test that the full monitor_match object is properly flattened
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"transaction": {
+				"hash": "0x1234",
+			},
+			"monitor_match": {
+				"EVM": {
+					"transaction": {
+						"hash": "0x1234567890abcdef",
+						"blockNumber": "12345678",
+						"nonce": "42",
+					},
+					"network_slug": "ethereum_mainnet",
+					"monitor": {
+						"name": "Full Monitor Name",
+					},
+				},
+			},
+		});
+
+		let hashmap = json_to_hashmap(&json);
+
+		// Verify individual fields
+		assert_eq!(hashmap["monitor.name"], "Test Monitor");
+		assert_eq!(hashmap["transaction.hash"], "0x1234");
+
+		// Verify full monitor_match access via enum
+		assert_eq!(
+			hashmap["monitor_match.EVM.transaction.hash"],
+			"0x1234567890abcdef"
+		);
+		assert_eq!(
+			hashmap["monitor_match.EVM.transaction.blockNumber"],
+			"12345678"
+		);
+		assert_eq!(hashmap["monitor_match.EVM.transaction.nonce"], "42");
+		assert_eq!(
+			hashmap["monitor_match.EVM.network_slug"],
+			"ethereum_mainnet"
+		);
+		assert_eq!(
+			hashmap["monitor_match.EVM.monitor.name"],
+			"Full Monitor Name"
+		);
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_null_optional_fields() {
+		// Test json_to_hashmap behavior when receiving explicit null values.
+		// Note: The individual template fields (blockNumber, gasPrice, to) are now
+		// omitted entirely when not present. However, the full monitor_match object
+		// serialization may still contain null values (e.g., receipt), so this test
+		// ensures the flattening function handles nulls correctly by converting them
+		// to the string "null".
+		let json = json!({
+			"transaction": {
+				"blockNumber": null,
+				"gasPrice": null,
+			},
+			"receipt": null,
+		});
+
+		let hashmap = json_to_hashmap(&json);
+		assert_eq!(hashmap["transaction.blockNumber"], "null");
+		assert_eq!(hashmap["transaction.gasPrice"], "null");
+		assert_eq!(hashmap["receipt"], "null");
 	}
 }
