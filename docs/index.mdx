@@ -656,15 +656,14 @@ In raw mode, the webhook sends the complete `MonitorMatch` object directly as th
     "config": {
       "url": { "type": "plain", "value": "https://api.example.com/events" },
       "method": "POST",
-      "payload_mode": "raw",
-      "message": { "title": "", "body": "" }
+      "payload_mode": "raw"
     }
   }
 }
 ```
 
 When using raw mode:
-* The `message.title` and `message.body` fields can be empty
+* The `message` field is ignored
 * The payload contains the full monitor match including: monitor configuration, transaction details, receipt, logs, matched conditions, and decoded arguments
 * This is particularly useful for integrations that need to process the complete event data programmatically
 
