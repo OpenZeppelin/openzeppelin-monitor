@@ -714,36 +714,69 @@ The monitor uses a structured JSON format with nested objects for template varia
 | **Variable** | **Description** |
 | --- | --- |
 | `**monitor.name**` | Name of the triggered monitor |
-| `**transaction.hash**` | Hash of the transaction |
-| `**functions**` | All functions matched and their parameters |
-| `**events**` | All events matched and their parameters |
+| `**network.slug**` | Network identifier (e.g., `ethereum_mainnet`, `stellar_mainnet`) |
+| `**functions.[index].signature**` | Function signature |
+| `**functions.[index].args.[param]**` | Function parameters by name |
+| `**events.[index].signature**` | Event signature |
+| `**events.[index].args.[param]**` | Event parameters by name |
 
 ##### Network-Specific Variables
 
 ###### EVM Variables
 | **Variable** | **Description** |
 | --- | --- |
+| `**transaction.hash**` | Transaction hash |
 | `**transaction.from**` | Sender address |
 | `**transaction.to**` | Recipient address |
-| `**transaction.value**` | Transaction value |
-| `**events.[index].signature**` | Event signature |
-| `**events.[index].args.[param]**` | Event parameters by name |
-| `**functions.[index].signature**` | Function signature |
-| `**functions.[index].args.[param]**` | Function parameters by name |
+| `**transaction.value**` | Transaction value in wei |
+| `**transaction.nonce**` | Sender nonce |
+| `**transaction.gas**` | Gas limit |
+| `**transaction.gasPrice**` | Gas price (legacy transactions) |
+| `**transaction.maxFeePerGas**` | Max fee per gas (EIP-1559) |
+| `**transaction.maxPriorityFeePerGas**` | Max priority fee (EIP-1559) |
+| `**transaction.blockNumber**` | Block number |
+| `**transaction.blockHash**` | Block hash |
+| `**transaction.transactionIndex**` | Index in block |
+| `**transaction.input**` | Transaction input data (hex) |
+| `**transaction.type**` | Transaction type |
+| `**receipt.blockNumber**` | Block number from receipt |
+| `**receipt.blockHash**` | Block hash from receipt |
+| `**receipt.gasUsed**` | Actual gas used |
+| `**receipt.cumulativeGasUsed**` | Cumulative gas used in block |
+| `**receipt.effectiveGasPrice**` | Effective gas price paid |
+| `**receipt.status**` | Transaction status (1 = success) |
+| `**receipt.contractAddress**` | Contract address (for deployments) |
+| `**receipt.transactionIndex**` | Transaction index in block |
 
 ###### Stellar Variables
 | **Variable** | **Description** |
 | --- | --- |
+| `**transaction.hash**` | Transaction hash |
+| `**transaction.ledger**` | Ledger sequence number |
+| `**transaction.ledgerCloseTime**` | Ledger close time |
+| `**transaction.status**` | Transaction status |
+| `**transaction.applicationOrder**` | Application order in ledger |
+| `**ledger.sequence**` | Ledger sequence number |
+| `**ledger.hash**` | Ledger hash |
+| `**ledger.closeTime**` | Ledger close time |
 | `**events.[index].args.[position]**` | Event parameters by position |
-| `**events.[index].args.[param]**` | Event parameters by name (only in case the contract supports event parameters name) |
-| `**functions.[index].args.[param]**` | Function parameters by name |
 
-<Callout>
+###### Solana Variables
+| **Variable** | **Description** |
+| --- | --- |
+| `**transaction.signature**` | Transaction signature |
+| `**transaction.slot**` | Slot number |
+| `**transaction.blockTime**` | Block time (if available) |
+| `**block.slot**` | Block slot |
+| `**block.blockhash**` | Block hash |
+| `**block.parentSlot**` | Parent slot |
+| `**block.blockTime**` | Block time (if available) |
+| `**block.blockHeight**` | Block height (if available) |
 
-
-Transaction-related variables (`transaction.from`, `transaction.to`, `transaction.value`) are not available for Stellar networks.
-
-</Callout>
+###### Midnight Variables
+| **Variable** | **Description** |
+| --- | --- |
+| `**transaction.hash**` | Transaction hash |
 
 #### Message Formatting
 

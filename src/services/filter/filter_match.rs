@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 
 use alloy::primitives::Address;
+use hex;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -36,14 +37,24 @@ use crate::{
 /// # Returns
 /// Result indicating success or failure of trigger execution
 ///
-/// # Example
+/// # Example (EVM)
 /// The function converts blockchain data into template variables like:
 /// ```text
 /// "monitor.name": "Transfer USDT Token"
+/// "network.slug": "ethereum_mainnet"
 /// "transaction.hash": "0x99139c8f64b9b939678e261e1553660b502d9fd01c2ab1516e699ee6c8cc5791"
 /// "transaction.from": "0xf401346fd255e034a2e43151efe1d68c1e0f8ca5"
 /// "transaction.to": "0x0000000000001ff3684f28c67538d4d072c22734"
 /// "transaction.value": "24504000000000000"
+/// "transaction.nonce": "42"
+/// "transaction.gas": "21000"
+/// "transaction.gasPrice": "20000000000"
+/// "transaction.blockNumber": "12345678"
+/// "transaction.blockHash": "0x..."
+/// "transaction.input": "0xa9059cbb..."
+/// "receipt.blockNumber": "12345678"
+/// "receipt.gasUsed": "21000"
+/// "receipt.status": "1"
 /// "events.0.signature": "Transfer(address,address,uint256)"
 /// "events.0.args.to": "0x70bf6634ee8cb27d04478f184b9b8bb13e5f4710"
 /// "events.0.args.from": "0x2e8135be71230c6b1b4045696d41c09db0414226"
@@ -65,18 +76,74 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				"monitor": {
 					"name": evm_monitor_match.monitor.name.clone(),
 				},
+				"network": {
+					"slug": evm_monitor_match.network_slug.clone()
+				},
 				"transaction": {
 					"hash": b256_to_string(*transaction.hash()),
 					"from": h160_to_string(*sender),
 					"value": transaction.value().to_string(),
+					"nonce": transaction.nonce().to_string(),
+					"gas": transaction.gas().to_string(),
+					"input": format!("0x{}", hex::encode(transaction.0.input.as_ref())),
 				},
+				"receipt": {},
 				"functions": [],
 				"events": []
 			});
 
-			// Add 'to' address if present
 			if let Some(to) = transaction.to() {
 				data_json["transaction"]["to"] = json!(h160_to_string(*to));
+			}
+			if let Some(gas_price) = transaction.gas_price() {
+				data_json["transaction"]["gasPrice"] = json!(gas_price.to_string());
+			}
+			if let Some(block_number) = transaction.0.block_number {
+				data_json["transaction"]["blockNumber"] = json!(block_number.to_string());
+			}
+			if let Some(block_hash) = transaction.0.block_hash {
+				data_json["transaction"]["blockHash"] = json!(b256_to_string(block_hash));
+			}
+			if let Some(transaction_index) = &transaction.0.transaction_index {
+				data_json["transaction"]["transactionIndex"] =
+					json!(transaction_index.0.to_string());
+			}
+			if let Some(tx_type) = transaction.0.transaction_type {
+				data_json["transaction"]["type"] = json!(tx_type.to_string());
+			}
+			if let Some(max_fee_per_gas) = transaction.0.max_fee_per_gas {
+				data_json["transaction"]["maxFeePerGas"] = json!(max_fee_per_gas.to_string());
+			}
+			if let Some(max_priority_fee_per_gas) = transaction.0.max_priority_fee_per_gas {
+				data_json["transaction"]["maxPriorityFeePerGas"] =
+					json!(max_priority_fee_per_gas.to_string());
+			}
+
+			if let Some(receipt) = &evm_monitor_match.receipt {
+				if let Some(block_number) = receipt.0.block_number {
+					data_json["receipt"]["blockNumber"] = json!(block_number.to_string());
+				}
+				if let Some(block_hash) = receipt.0.block_hash {
+					data_json["receipt"]["blockHash"] = json!(b256_to_string(block_hash));
+				}
+				if let Some(gas_used) = receipt.0.gas_used {
+					data_json["receipt"]["gasUsed"] = json!(gas_used.to_string());
+				}
+				if let Some(status) = receipt.0.status {
+					data_json["receipt"]["status"] = json!(status.to_string());
+				}
+				if let Some(contract_address) = receipt.0.contract_address {
+					data_json["receipt"]["contractAddress"] =
+						json!(h160_to_string(contract_address));
+				}
+				if let Some(effective_gas_price) = receipt.0.effective_gas_price {
+					data_json["receipt"]["effectiveGasPrice"] =
+						json!(effective_gas_price.to_string());
+				}
+				data_json["receipt"]["cumulativeGasUsed"] =
+					json!(receipt.0.cumulative_gas_used.to_string());
+				data_json["receipt"]["transactionIndex"] =
+					json!(receipt.0.transaction_index.0.to_string());
 			}
 
 			// Process matched functions
@@ -87,7 +154,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add function arguments if present
 				if let Some(args) = &evm_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
 						for func_arg in func_args {
@@ -114,7 +180,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add event arguments if present
 				if let Some(args) = &evm_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
 						for event_arg in event_args {
@@ -151,14 +216,27 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 		}
 		MonitorMatch::Stellar(stellar_monitor_match) => {
 			let transaction = stellar_monitor_match.transaction.clone();
+			let ledger = &stellar_monitor_match.ledger;
 
 			// Create structured JSON data
 			let mut data_json = json!({
 				"monitor": {
 					"name": stellar_monitor_match.monitor.name.clone(),
 				},
+				"network": {
+					"slug": stellar_monitor_match.network_slug.clone()
+				},
 				"transaction": {
 					"hash": transaction.hash().to_string(),
+					"ledger": ledger.sequence.to_string(),
+					"ledgerCloseTime": ledger.ledger_close_time.clone(),
+					"status": transaction.0.status.clone(),
+					"applicationOrder": transaction.0.application_order.to_string(),
+				},
+				"ledger": {
+					"sequence": ledger.sequence.to_string(),
+					"hash": ledger.hash.clone(),
+					"closeTime": ledger.ledger_close_time.clone(),
 				},
 				"functions": [],
 				"events": []
@@ -172,7 +250,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add function arguments if present
 				if let Some(args) = &stellar_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
 						for func_arg in func_args {
@@ -199,7 +276,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add event arguments if present
 				if let Some(args) = &stellar_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
 						for event_arg in event_args {
@@ -242,6 +318,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				"monitor": {
 					"name": midnight_monitor_match.monitor.name.clone(),
 				},
+				"network": {
+					"slug": midnight_monitor_match.network_slug.clone()
+				},
 				"transaction": {
 					"hash": transaction.hash().to_string(),
 				},
@@ -257,7 +336,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add function arguments if present
 				if let Some(args) = &midnight_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
 						for func_arg in func_args {
@@ -284,7 +362,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add event arguments if present
 				if let Some(args) = &midnight_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
 						for event_arg in event_args {
@@ -321,18 +398,38 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 		}
 		MonitorMatch::Solana(solana_monitor_match) => {
 			let transaction = solana_monitor_match.transaction.clone();
+			let block = &solana_monitor_match.block;
 
 			// Create structured JSON data
 			let mut data_json = json!({
 				"monitor": {
 					"name": solana_monitor_match.monitor.name.clone(),
 				},
+				"network": {
+					"slug": solana_monitor_match.network_slug.clone()
+				},
 				"transaction": {
 					"signature": transaction.signature().to_string(),
+					"slot": transaction.0.slot.to_string(),
+				},
+				"block": {
+					"slot": block.slot.to_string(),
+					"blockhash": block.blockhash.clone(),
+					"parentSlot": block.parent_slot.to_string(),
 				},
 				"functions": [],
 				"events": []
 			});
+
+			if let Some(block_time) = transaction.0.block_time {
+				data_json["transaction"]["blockTime"] = json!(block_time.to_string());
+			}
+			if let Some(block_time) = block.block_time {
+				data_json["block"]["blockTime"] = json!(block_time.to_string());
+			}
+			if let Some(block_height) = block.block_height {
+				data_json["block"]["blockHeight"] = json!(block_height.to_string());
+			}
 
 			// Process matched functions (instructions)
 			let functions = data_json["functions"].as_array_mut().unwrap();
@@ -342,7 +439,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add function arguments if present
 				if let Some(args) = &solana_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
 						for func_arg in func_args {
@@ -369,7 +465,6 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 					"args": {}
 				});
 
-				// Add event arguments if present
 				if let Some(args) = &solana_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
 						for event_arg in event_args {
@@ -699,5 +794,160 @@ mod tests {
 		let mut result8 = HashMap::new();
 		insert_primitive("", &mut result8, JsonValue::Null);
 		assert_eq!(result8["value"], "null");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_full_evm_structure() {
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"network": {
+				"slug": "ethereum_mainnet"
+			},
+			"transaction": {
+				"hash": "0x1234567890abcdef",
+				"from": "0xabc",
+				"to": "0xdef",
+				"value": "1000000000000000000",
+				"nonce": "42",
+				"gas": "21000",
+				"gasPrice": "20000000000",
+				"blockNumber": "12345678",
+				"blockHash": "0xblockhash",
+				"transactionIndex": "5",
+				"input": "0xa9059cbb",
+				"type": "2",
+				"maxFeePerGas": "30000000000",
+				"maxPriorityFeePerGas": "1000000000"
+			},
+			"receipt": {
+				"blockNumber": "12345678",
+				"blockHash": "0xblockhash",
+				"gasUsed": "21000",
+				"status": "1",
+				"contractAddress": "0xcontract",
+				"effectiveGasPrice": "25000000000",
+				"cumulativeGasUsed": "500000",
+				"transactionIndex": "5"
+			},
+			"functions": [],
+			"events": []
+		});
+
+		let hashmap = json_to_hashmap(&json);
+
+		assert_eq!(hashmap["network.slug"], "ethereum_mainnet");
+		assert_eq!(hashmap["transaction.hash"], "0x1234567890abcdef");
+		assert_eq!(hashmap["transaction.nonce"], "42");
+		assert_eq!(hashmap["transaction.gas"], "21000");
+		assert_eq!(hashmap["transaction.gasPrice"], "20000000000");
+		assert_eq!(hashmap["transaction.blockNumber"], "12345678");
+		assert_eq!(hashmap["transaction.blockHash"], "0xblockhash");
+		assert_eq!(hashmap["transaction.transactionIndex"], "5");
+		assert_eq!(hashmap["transaction.input"], "0xa9059cbb");
+		assert_eq!(hashmap["transaction.type"], "2");
+		assert_eq!(hashmap["transaction.maxFeePerGas"], "30000000000");
+		assert_eq!(hashmap["transaction.maxPriorityFeePerGas"], "1000000000");
+		assert_eq!(hashmap["receipt.blockNumber"], "12345678");
+		assert_eq!(hashmap["receipt.gasUsed"], "21000");
+		assert_eq!(hashmap["receipt.status"], "1");
+		assert_eq!(hashmap["receipt.contractAddress"], "0xcontract");
+		assert_eq!(hashmap["receipt.effectiveGasPrice"], "25000000000");
+		assert_eq!(hashmap["receipt.cumulativeGasUsed"], "500000");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_stellar_structure() {
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"network": {
+				"slug": "stellar_mainnet"
+			},
+			"transaction": {
+				"hash": "abc123",
+				"ledger": "12345",
+				"ledgerCloseTime": "2024-03-20T12:00:00Z",
+				"status": "SUCCESS",
+				"applicationOrder": "1"
+			},
+			"ledger": {
+				"sequence": "12345",
+				"hash": "ledgerhash",
+				"closeTime": "2024-03-20T12:00:00Z"
+			},
+			"functions": [],
+			"events": []
+		});
+
+		let hashmap = json_to_hashmap(&json);
+
+		assert_eq!(hashmap["network.slug"], "stellar_mainnet");
+		assert_eq!(hashmap["transaction.ledger"], "12345");
+		assert_eq!(hashmap["transaction.status"], "SUCCESS");
+		assert_eq!(hashmap["ledger.sequence"], "12345");
+		assert_eq!(hashmap["ledger.hash"], "ledgerhash");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_solana_structure() {
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"network": {
+				"slug": "solana_mainnet"
+			},
+			"transaction": {
+				"signature": "abc123",
+				"slot": "123456789",
+				"blockTime": "1234567890"
+			},
+			"block": {
+				"slot": "123456789",
+				"blockhash": "4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn",
+				"parentSlot": "123456788",
+				"blockTime": "1234567890",
+				"blockHeight": "100000000"
+			},
+			"functions": [],
+			"events": []
+		});
+
+		let hashmap = json_to_hashmap(&json);
+
+		assert_eq!(hashmap["network.slug"], "solana_mainnet");
+		assert_eq!(hashmap["transaction.signature"], "abc123");
+		assert_eq!(hashmap["transaction.slot"], "123456789");
+		assert_eq!(hashmap["block.slot"], "123456789");
+		assert_eq!(
+			hashmap["block.blockhash"],
+			"4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn"
+		);
+		assert_eq!(hashmap["block.blockHeight"], "100000000");
+	}
+
+	#[test]
+	fn test_json_to_hashmap_with_midnight_structure() {
+		let json = json!({
+			"monitor": {
+				"name": "Test Monitor",
+			},
+			"network": {
+				"slug": "midnight_testnet"
+			},
+			"transaction": {
+				"hash": "midnight_tx_hash_123"
+			},
+			"functions": [],
+			"events": []
+		});
+
+		let hashmap = json_to_hashmap(&json);
+
+		assert_eq!(hashmap["network.slug"], "midnight_testnet");
+		assert_eq!(hashmap["transaction.hash"], "midnight_tx_hash_123");
 	}
 }
