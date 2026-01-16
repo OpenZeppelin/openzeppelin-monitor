@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.1.0...v1.2.0) (2026-01-16)
+
+
+### 🚀 Features
+
+* Add payload mode for webhooks ([#417](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/417)) ([9ace8f2](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/9ace8f293382573c089d5032fca3d6f8555da294))
+* Add Solana ([#408](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/408)) ([ed80cc6](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/ed80cc6cc745bbd388b694435dd9454e10fc4960))
+* create INTHEWILD.md ([#399](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/399)) ([30e5994](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/30e5994ae4ccce65ec5a5d3372512e347f65221f))
+* Integrate Midnight network support ([#175](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/175)) ([3cbd91f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/3cbd91fd3c4a062725277f5d1819f7ef02710799))
+
+
+### 🐛 Bug Fixes
+
+* Fix block processing bottleneck ([#395](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/395)) ([a0e2838](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/a0e283875f925947b3480c486309ca6e2b9a8da6))
+* place the gh release app token setup after docker build step ([#400](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/400)) ([da8fc14](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/da8fc1471f5f226e4905ec88f69f9f005270e938))
+* Fix: Update rust docs workflow ([#420](https://github.com/OpenZeppelin/openzeppelin-monitor/pull/420))([a878372](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/a878372e5f7d8b19529bf67ebed074fbed332932))
+
 ## [1.1.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.0.0...v1.1.0) (2025-10-22)
 
 
