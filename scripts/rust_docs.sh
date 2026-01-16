@@ -6,8 +6,6 @@ set -euo pipefail
 # Base directories
 REPO_ROOT="$PWD"
 DOCS_DIR="$REPO_ROOT/docs"
-NAME=$(grep '^name:' "$DOCS_DIR/antora.yml" | awk '{print $2}')
-VERSION=$(grep '^version:' "$DOCS_DIR/antora.yml" | awk '{print $2}')
 BUILD_DIR="$DOCS_DIR/build/site"
 RUST_DOCS_DIR="$DOCS_DIR/rust_docs"
 
