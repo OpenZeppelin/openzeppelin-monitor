@@ -25,6 +25,32 @@ pub enum BlockChainType {
 	Solana,
 }
 
+/// Rules for validating function and event signatures per blockchain type
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignatureRules {
+	/// Whether signatures must contain parentheses (e.g., `transfer(address,uint256)`)
+	pub requires_parentheses: bool,
+}
+
+impl BlockChainType {
+	/// Returns the signature validation rules for this blockchain type
+	///
+	/// This provides a single source of truth for per-chain signature validation behavior.
+	/// The exhaustive match ensures new blockchain types must define their rules.
+	pub fn signature_rules(&self) -> SignatureRules {
+		match self {
+			BlockChainType::EVM | BlockChainType::Stellar | BlockChainType::Midnight => {
+				SignatureRules {
+					requires_parentheses: true,
+				}
+			}
+			BlockChainType::Solana => SignatureRules {
+				requires_parentheses: false,
+			},
+		}
+	}
+}
+
 /// Block data from different blockchain platforms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlockType {

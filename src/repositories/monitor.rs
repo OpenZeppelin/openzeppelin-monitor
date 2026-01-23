@@ -19,6 +19,57 @@ use crate::{
 	},
 };
 
+/// Validates function and event signatures for a monitor based on network-specific rules.
+///
+/// This function checks that signatures conform to the requirements of their target
+/// blockchain type. For example, EVM networks require parentheses in signatures
+/// like `transfer(address,uint256)`, while Solana allows simple names like `transfer`.
+fn validate_monitor_signatures(
+	monitor: &Monitor,
+	monitor_name: &str,
+	networks: &HashMap<String, Network>,
+	validation_errors: &mut Vec<String>,
+	metadata: &mut HashMap<String, String>,
+) {
+	for network_slug in &monitor.networks {
+		if let Some(network) = networks.get(network_slug) {
+			let rules = network.network_type.signature_rules();
+
+			if rules.requires_parentheses {
+				// Validate function signatures
+				for func in &monitor.match_conditions.functions {
+					if !func.signature.contains('(') || !func.signature.contains(')') {
+						validation_errors.push(format!(
+							"Monitor '{}' has invalid function signature '{}' for {:?} network '{}': \
+							 signatures must contain parentheses (e.g., 'transfer(address,uint256)')",
+							monitor_name, func.signature, network.network_type, network_slug
+						));
+						metadata.insert(
+							format!("monitor_{}_invalid_function_signature", monitor_name),
+							func.signature.clone(),
+						);
+					}
+				}
+
+				// Validate event signatures
+				for event in &monitor.match_conditions.events {
+					if !event.signature.contains('(') || !event.signature.contains(')') {
+						validation_errors.push(format!(
+							"Monitor '{}' has invalid event signature '{}' for {:?} network '{}': \
+							 signatures must contain parentheses (e.g., 'Transfer(address,address,uint256)')",
+							monitor_name, event.signature, network.network_type, network_slug
+						));
+						metadata.insert(
+							format!("monitor_{}_invalid_event_signature", monitor_name),
+							event.signature.clone(),
+						);
+					}
+				}
+			}
+		}
+	}
+}
+
 /// Repository for storing and retrieving monitor configurations
 #[derive(Clone)]
 pub struct MonitorRepository<
@@ -99,6 +150,15 @@ impl<
 					);
 				}
 			}
+
+			// Validate function and event signatures based on network-specific rules
+			validate_monitor_signatures(
+				monitor,
+				monitor_name,
+				networks,
+				&mut validation_errors,
+				&mut metadata,
+			);
 
 			// Validate custom trigger conditions
 			for condition in &monitor.trigger_conditions {
@@ -625,5 +685,111 @@ mod tests {
 			}
 			_ => panic!("Expected RepositoryError::LoadError"),
 		}
+	}
+
+	#[test]
+	fn test_validate_solana_network_type_detection() {
+		use crate::models::BlockChainType;
+		use crate::utils::tests::builders::network::NetworkBuilder;
+
+		// Test Case 1: Custom-named Solana network (not following solana_* convention)
+		// This tests that we properly detect Solana networks by BlockChainType, not by name
+		let mut networks = HashMap::new();
+		let solana_network = NetworkBuilder::new()
+			.slug("my-custom-solana")
+			.network_type(BlockChainType::Solana)
+			.build();
+		networks.insert("my-custom-solana".to_string(), solana_network);
+
+		let mut monitors = HashMap::new();
+		let monitor = MonitorBuilder::new()
+			.name("test_solana_monitor")
+			.networks(vec!["my-custom-solana".to_string()])
+			// Solana monitors allow function signatures without parentheses
+			.function("transfer", None)
+			.build();
+		monitors.insert("test_solana_monitor".to_string(), monitor);
+
+		let triggers = HashMap::new();
+
+		// Should pass because we properly detect Solana network type via BlockChainType
+		let result =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			);
+		assert!(result.is_ok());
+
+		// Test Case 2: Misleading network name (contains "solana_" but is EVM)
+		// This tests that we use BlockChainType, not name prefix matching
+		let mut networks2 = HashMap::new();
+		let evm_network = NetworkBuilder::new()
+			.slug("solana_like_evm")
+			.network_type(BlockChainType::EVM)
+			.build();
+		networks2.insert("solana_like_evm".to_string(), evm_network);
+
+		let mut monitors2 = HashMap::new();
+		let monitor2 = MonitorBuilder::new()
+			.name("test_evm_monitor")
+			.networks(vec!["solana_like_evm".to_string()])
+			// EVM monitors require parentheses in signatures
+			.function("transfer", None)
+			.build();
+		monitors2.insert("test_evm_monitor".to_string(), monitor2);
+
+		// Should fail because it's actually an EVM network requiring proper signature format
+		let result2 =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors2, &triggers, &networks2,
+			);
+		assert!(result2.is_err());
+		assert!(result2
+			.unwrap_err()
+			.to_string()
+			.contains("invalid function signature"));
+
+		// Test Case 3: Actual Solana network with conventional name
+		let mut networks3 = HashMap::new();
+		let solana_network3 = NetworkBuilder::new()
+			.slug("solana_mainnet")
+			.network_type(BlockChainType::Solana)
+			.build();
+		networks3.insert("solana_mainnet".to_string(), solana_network3);
+
+		let mut monitors3 = HashMap::new();
+		let monitor3 = MonitorBuilder::new()
+			.name("test_conventional_solana")
+			.networks(vec!["solana_mainnet".to_string()])
+			.function("transfer", None)
+			.build();
+		monitors3.insert("test_conventional_solana".to_string(), monitor3);
+
+		// Should pass with conventional name too
+		let result3 =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors3, &triggers, &networks3,
+			);
+		assert!(result3.is_ok());
+	}
+
+	#[test]
+	fn test_signature_rules() {
+		use crate::models::BlockChainType;
+
+		// EVM requires parentheses
+		let evm_rules = BlockChainType::EVM.signature_rules();
+		assert!(evm_rules.requires_parentheses);
+
+		// Stellar requires parentheses
+		let stellar_rules = BlockChainType::Stellar.signature_rules();
+		assert!(stellar_rules.requires_parentheses);
+
+		// Midnight requires parentheses
+		let midnight_rules = BlockChainType::Midnight.signature_rules();
+		assert!(midnight_rules.requires_parentheses);
+
+		// Solana does NOT require parentheses
+		let solana_rules = BlockChainType::Solana.signature_rules();
+		assert!(!solana_rules.requires_parentheses);
 	}
 }
