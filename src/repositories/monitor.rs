@@ -79,9 +79,17 @@ impl<
 				continue;
 			}
 
+			let has_parens = |sig: &str| {
+				let sig = sig.trim();
+				match (sig.find('('), sig.rfind(')')) {
+					(Some(open), Some(close)) if open < close && close == sig.len() - 1 => true,
+					_ => false,
+				}
+			};
+
 			// Validate function signatures
 			for func in &monitor.match_conditions.functions {
-				if !func.signature.contains('(') || !func.signature.contains(')') {
+				if !has_parens(&func.signature) {
 					validation_errors.push(format!(
 						"Monitor '{}' has invalid function signature '{}' for {} network '{}' \
 						 (expected format: 'functionName(type1,type2)')",
@@ -92,7 +100,7 @@ impl<
 
 			// Validate event signatures
 			for event in &monitor.match_conditions.events {
-				if !event.signature.contains('(') || !event.signature.contains(')') {
+				if !has_parens(&event.signature) {
 					validation_errors.push(format!(
 						"Monitor '{}' has invalid event signature '{}' for {} network '{}' \
 						 (expected format: 'EventName(type1,type2)')",
