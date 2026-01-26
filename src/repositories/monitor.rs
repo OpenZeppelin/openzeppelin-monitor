@@ -62,6 +62,47 @@ impl<
 		}
 	}
 
+	/// Validates function and event signatures for a monitor based on its target network types.
+	fn validate_monitor_signatures(
+		monitor_name: &str,
+		monitor: &Monitor,
+		networks: &HashMap<String, Network>,
+		validation_errors: &mut Vec<String>,
+	) {
+		for network_slug in &monitor.networks {
+			let Some(network) = networks.get(network_slug) else {
+				continue; // Network reference errors are handled separately
+			};
+
+			let rules = network.network_type.signature_rules();
+			if !rules.requires_parentheses {
+				continue;
+			}
+
+			// Validate function signatures
+			for func in &monitor.match_conditions.functions {
+				if !func.signature.contains('(') || !func.signature.contains(')') {
+					validation_errors.push(format!(
+						"Monitor '{}' has invalid function signature '{}' for {} network '{}' \
+						 (expected format: 'functionName(type1,type2)')",
+						monitor_name, func.signature, network.network_type, network_slug
+					));
+				}
+			}
+
+			// Validate event signatures
+			for event in &monitor.match_conditions.events {
+				if !event.signature.contains('(') || !event.signature.contains(')') {
+					validation_errors.push(format!(
+						"Monitor '{}' has invalid event signature '{}' for {} network '{}' \
+						 (expected format: 'EventName(type1,type2)')",
+						monitor_name, event.signature, network.network_type, network_slug
+					));
+				}
+			}
+		}
+	}
+
 	/// Returns an error if any monitor references a non-existent network or trigger.
 	pub fn validate_monitor_references(
 		monitors: &HashMap<String, Monitor>,
@@ -99,6 +140,14 @@ impl<
 					);
 				}
 			}
+
+			// Validate signatures based on network type
+			Self::validate_monitor_signatures(
+				monitor_name,
+				monitor,
+				networks,
+				&mut validation_errors,
+			);
 
 			// Validate custom trigger conditions
 			for condition in &monitor.trigger_conditions {
@@ -625,5 +674,165 @@ mod tests {
 			}
 			_ => panic!("Expected RepositoryError::LoadError"),
 		}
+	}
+
+	#[test]
+	fn test_signature_validation_with_network_types() {
+		use crate::models::{BlockChainType, EventCondition, FunctionCondition, MatchConditions};
+		use crate::utils::tests::builders::network::NetworkBuilder;
+
+		// Create networks of different types
+		let mut networks = HashMap::new();
+
+		// EVM network
+		networks.insert(
+			"ethereum_mainnet".to_string(),
+			NetworkBuilder::new()
+				.name("Ethereum Mainnet")
+				.slug("ethereum_mainnet")
+				.network_type(BlockChainType::EVM)
+				.chain_id(1)
+				.build(),
+		);
+
+		// Solana network (without "solana_" prefix to test proper type detection)
+		networks.insert(
+			"mainnet_beta".to_string(),
+			NetworkBuilder::new()
+				.name("Solana Mainnet Beta")
+				.slug("mainnet_beta")
+				.network_type(BlockChainType::Solana)
+				.build(),
+		);
+
+		// Another Solana network with traditional prefix
+		networks.insert(
+			"solana_devnet".to_string(),
+			NetworkBuilder::new()
+				.name("Solana Devnet")
+				.slug("solana_devnet")
+				.network_type(BlockChainType::Solana)
+				.build(),
+		);
+
+		let triggers = HashMap::new();
+		let mut monitors = HashMap::new();
+
+		// Test 1: EVM monitor with invalid signatures (missing parentheses)
+		let evm_monitor_invalid = MonitorBuilder::new()
+			.name("evm_monitor_invalid")
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.match_conditions(MatchConditions {
+				functions: vec![FunctionCondition {
+					signature: "transfer".to_string(), // Invalid: missing parentheses
+					expression: None,
+				}],
+				events: vec![EventCondition {
+					signature: "Transfer".to_string(), // Invalid: missing parentheses
+					expression: None,
+				}],
+				transactions: vec![],
+			})
+			.build();
+		monitors.insert("evm_monitor_invalid".to_string(), evm_monitor_invalid);
+
+		let result =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			);
+
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(err
+			.to_string()
+			.contains("invalid function signature 'transfer' for EVM network"));
+		assert!(err
+			.to_string()
+			.contains("invalid event signature 'Transfer' for EVM network"));
+
+		// Test 2: Solana monitor with valid signatures (no parentheses required)
+		monitors.clear();
+		let solana_monitor_valid = MonitorBuilder::new()
+			.name("solana_monitor_valid")
+			.networks(vec!["mainnet_beta".to_string()]) // Non-prefixed Solana network
+			.match_conditions(MatchConditions {
+				functions: vec![FunctionCondition {
+					signature: "transfer".to_string(), // Valid for Solana
+					expression: None,
+				}],
+				events: vec![EventCondition {
+					signature: "TransferEvent".to_string(), // Valid for Solana
+					expression: None,
+				}],
+				transactions: vec![],
+			})
+			.build();
+		monitors.insert("solana_monitor_valid".to_string(), solana_monitor_valid);
+
+		let result =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			);
+
+		// Should pass - Solana doesn't require parentheses
+		assert!(result.is_ok());
+
+		// Test 3: EVM monitor with valid signatures
+		monitors.clear();
+		let evm_monitor_valid = MonitorBuilder::new()
+			.name("evm_monitor_valid")
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.match_conditions(MatchConditions {
+				functions: vec![FunctionCondition {
+					signature: "transfer(address,uint256)".to_string(), // Valid
+					expression: None,
+				}],
+				events: vec![EventCondition {
+					signature: "Transfer(address,address,uint256)".to_string(), // Valid
+					expression: None,
+				}],
+				transactions: vec![],
+			})
+			.build();
+		monitors.insert("evm_monitor_valid".to_string(), evm_monitor_valid);
+
+		let result =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			);
+
+		// Should pass
+		assert!(result.is_ok());
+
+		// Test 4: Mixed network monitor (EVM + Solana)
+		monitors.clear();
+		let mixed_monitor = MonitorBuilder::new()
+			.name("mixed_monitor")
+			.networks(vec![
+				"ethereum_mainnet".to_string(),
+				"mainnet_beta".to_string(),
+			])
+			.match_conditions(MatchConditions {
+				functions: vec![FunctionCondition {
+					signature: "transfer".to_string(), // Invalid for EVM, valid for Solana
+					expression: None,
+				}],
+				events: vec![],
+				transactions: vec![],
+			})
+			.build();
+		monitors.insert("mixed_monitor".to_string(), mixed_monitor);
+
+		let result =
+			MonitorRepository::<NetworkRepository, TriggerRepository>::validate_monitor_references(
+				&monitors, &triggers, &networks,
+			);
+
+		// Should fail because of EVM network requirement
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(err
+			.to_string()
+			.contains("invalid function signature 'transfer' for EVM network 'ethereum_mainnet'"));
 	}
 }

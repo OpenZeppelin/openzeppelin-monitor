@@ -172,38 +172,6 @@ impl ConfigLoader for Monitor {
 			));
 		}
 
-		// Check if this is a Solana monitor based on network slugs
-		// Note: Assumes Solana network slugs follow the "solana_*" naming convention
-		let is_solana_monitor = self.networks.iter().any(|slug| slug.starts_with("solana_"));
-
-		// Validate function signatures
-		for func in &self.match_conditions.functions {
-			// Solana monitors don't require parentheses in function signatures
-			if !is_solana_monitor
-				&& (!func.signature.contains('(') || !func.signature.contains(')'))
-			{
-				return Err(ConfigError::validation_error(
-					format!("Invalid function signature format: {}", func.signature),
-					None,
-					None,
-				));
-			}
-		}
-
-		// Validate event signatures
-		for event in &self.match_conditions.events {
-			// Solana monitors don't require parentheses in event signatures
-			if !is_solana_monitor
-				&& (!event.signature.contains('(') || !event.signature.contains(')'))
-			{
-				return Err(ConfigError::validation_error(
-					format!("Invalid event signature format: {}", event.signature),
-					None,
-					None,
-				));
-			}
-		}
-
 		// Validate trigger conditions (focus on script path, timeout, and language)
 		for trigger_condition in &self.trigger_conditions {
 			validate_script_config(

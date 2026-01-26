@@ -5,11 +5,19 @@
 //! platform-specific logic for blocks, transactions, and event monitoring.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 pub mod evm;
 pub mod midnight;
 pub mod solana;
 pub mod stellar;
+
+/// Rules for function and event signature validation
+#[derive(Debug, Clone)]
+pub struct SignatureRules {
+	/// Whether the blockchain requires parentheses in signatures
+	pub requires_parentheses: bool,
+}
 
 /// Supported blockchain platform types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -23,6 +31,37 @@ pub enum BlockChainType {
 	Midnight,
 	/// Solana blockchain
 	Solana,
+}
+
+impl BlockChainType {
+	/// Returns the signature validation rules for this blockchain type.
+	///
+	/// Different blockchains have different signature formats:
+	/// - EVM-style chains require signatures like `transfer(address,uint256)`
+	/// - Solana allows raw instruction names like `transfer`
+	pub fn signature_rules(&self) -> SignatureRules {
+		match self {
+			BlockChainType::EVM | BlockChainType::Stellar | BlockChainType::Midnight => {
+				SignatureRules {
+					requires_parentheses: true,
+				}
+			}
+			BlockChainType::Solana => SignatureRules {
+				requires_parentheses: false,
+			},
+		}
+	}
+}
+
+impl fmt::Display for BlockChainType {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			BlockChainType::EVM => write!(f, "EVM"),
+			BlockChainType::Stellar => write!(f, "Stellar"),
+			BlockChainType::Midnight => write!(f, "Midnight"),
+			BlockChainType::Solana => write!(f, "Solana"),
+		}
+	}
 }
 
 /// Block data from different blockchain platforms
@@ -228,5 +267,32 @@ mod tests {
 		// Test that different types are not equal
 		assert_ne!(BlockChainType::EVM, BlockChainType::Solana);
 		assert_ne!(BlockChainType::Stellar, BlockChainType::Midnight);
+	}
+
+	#[test]
+	fn test_signature_rules() {
+		// Test EVM requires parentheses
+		let evm_rules = BlockChainType::EVM.signature_rules();
+		assert!(evm_rules.requires_parentheses);
+
+		// Test Stellar requires parentheses
+		let stellar_rules = BlockChainType::Stellar.signature_rules();
+		assert!(stellar_rules.requires_parentheses);
+
+		// Test Midnight requires parentheses
+		let midnight_rules = BlockChainType::Midnight.signature_rules();
+		assert!(midnight_rules.requires_parentheses);
+
+		// Test Solana does not require parentheses
+		let solana_rules = BlockChainType::Solana.signature_rules();
+		assert!(!solana_rules.requires_parentheses);
+	}
+
+	#[test]
+	fn test_blockchain_type_display() {
+		assert_eq!(format!("{}", BlockChainType::EVM), "EVM");
+		assert_eq!(format!("{}", BlockChainType::Stellar), "Stellar");
+		assert_eq!(format!("{}", BlockChainType::Midnight), "Midnight");
+		assert_eq!(format!("{}", BlockChainType::Solana), "Solana");
 	}
 }
