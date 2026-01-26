@@ -81,10 +81,7 @@ impl<
 
 			let has_parens = |sig: &str| {
 				let sig = sig.trim();
-				match (sig.find('('), sig.rfind(')')) {
-					(Some(open), Some(close)) if open < close && close == sig.len() - 1 => true,
-					_ => false,
-				}
+				matches!((sig.find('('), sig.rfind(')')), (Some(open), Some(close)) if open < close && close == sig.len() - 1)
 			};
 
 			// Validate function signatures
