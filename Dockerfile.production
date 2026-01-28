@@ -1,5 +1,5 @@
 # Base image with latest-dev tag digest
-FROM cgr.dev/chainguard/rust@sha256:74aa2608956c114e507dfde8fe31b1e4d42157dad67c29e06337680dedd940e9 AS base
+FROM cgr.dev/chainguard/rust:latest-dev@sha256:a3f989c28db9b8439e5c319441345ad3407cd468cda371285829cc357bd2430d AS base
 
 WORKDIR /usr/app
 
@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install --root /usr/app --path . --profile release --locked
 
 # Wolfi image with latest tag digest
-FROM cgr.dev/chainguard/wolfi-base@sha256:9608820b6ea4da8bcf16989dac37a280f8f1fa0022efc45b5ed4b1ac1f634a79
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:17ab0709456ce1a2aedd85e95f72e58d73133bb70c33ae945a4d4b2424e984f1
 
 ARG version=3.12
 
