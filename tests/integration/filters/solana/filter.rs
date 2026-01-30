@@ -138,6 +138,7 @@ fn create_test_solana_transaction(success: bool, fee: u64, logs: Vec<String>) ->
 			pre_token_balances: vec![],
 			post_token_balances: vec![],
 			compute_units_consumed: None,
+			loaded_addresses: None,
 		}),
 	})
 }

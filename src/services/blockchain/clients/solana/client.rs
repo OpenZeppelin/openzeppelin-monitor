@@ -332,6 +332,7 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				inner_instructions: Vec::new(),
 				log_messages,
 				compute_units_consumed: m.get("computeUnitsConsumed").and_then(|c| c.as_u64()),
+				loaded_addresses: None,
 			}
 		});
 

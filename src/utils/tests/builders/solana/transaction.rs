@@ -174,6 +174,7 @@ impl TransactionBuilder {
 				inner_instructions: vec![],
 				log_messages: self.log_messages.unwrap_or_default(),
 				compute_units_consumed: self.compute_units_consumed,
+				loaded_addresses: None,
 			}),
 		};
 

@@ -134,6 +134,23 @@ pub struct TransactionMeta {
 	/// Compute units consumed
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub compute_units_consumed: Option<u64>,
+
+	/// Addresses loaded from address lookup tables (for v0 transactions)
+	#[serde(default)]
+	pub loaded_addresses: Option<LoadedAddresses>,
+}
+
+/// Addresses loaded from address lookup tables in versioned transactions
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadedAddresses {
+	/// Writable addresses loaded from lookup tables
+	#[serde(default)]
+	pub writable: Vec<String>,
+
+	/// Readonly addresses loaded from lookup tables
+	#[serde(default)]
+	pub readonly: Vec<String>,
 }
 
 /// Token balance information
@@ -245,6 +262,33 @@ impl Transaction {
 			})
 			.collect()
 	}
+
+	/// Get the fee payer address (first account in account_keys by Solana convention)
+	/// Returns None if account_keys is empty
+	pub fn fee_payer(&self) -> Option<&str> {
+		self.0
+			.transaction
+			.account_keys
+			.first()
+			.filter(|s| !s.is_empty())
+			.map(|s| s.as_str())
+	}
+
+	/// Get all account addresses involved in the transaction
+	/// Includes both static account_keys and addresses loaded from lookup tables (ALTs)
+	pub fn accounts(&self) -> Vec<String> {
+		let mut accounts = self.0.transaction.account_keys.clone();
+
+		// Include addresses loaded from address lookup tables (v0 transactions)
+		if let Some(meta) = &self.0.meta {
+			if let Some(loaded) = &meta.loaded_addresses {
+				accounts.extend(loaded.writable.iter().cloned());
+				accounts.extend(loaded.readonly.iter().cloned());
+			}
+		}
+
+		accounts
+	}
 }
 
 impl From<TransactionInfo> for Transaction {
@@ -304,6 +348,7 @@ mod tests {
 					"Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success".to_string(),
 				],
 				compute_units_consumed: Some(2000),
+				loaded_addresses: None,
 			}),
 		}
 	}
@@ -377,6 +422,56 @@ mod tests {
 		assert!(!transaction.is_success());
 		assert_eq!(transaction.fee(), 0);
 		assert!(transaction.logs().is_empty());
+		assert!(transaction.fee_payer().is_none());
+		assert!(transaction.accounts().is_empty());
+	}
+
+	#[test]
+	fn test_fee_payer() {
+		let tx_info = create_test_transaction(true);
+		let transaction = Transaction(tx_info);
+
+		// First account key is the fee payer by Solana convention
+		let fee_payer = transaction.fee_payer();
+		assert!(fee_payer.is_some());
+		assert_eq!(
+			fee_payer.unwrap(),
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+		);
+	}
+
+	#[test]
+	fn test_accounts() {
+		let tx_info = create_test_transaction(true);
+		let transaction = Transaction(tx_info);
+
+		let accounts = transaction.accounts();
+		assert_eq!(accounts.len(), 2);
+		assert_eq!(accounts[0], "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+		assert_eq!(accounts[1], "11111111111111111111111111111111");
+	}
+
+	#[test]
+	fn test_accounts_with_loaded_addresses() {
+		let mut tx_info = create_test_transaction(true);
+
+		// Add loaded addresses from address lookup tables (ALTs)
+		if let Some(ref mut meta) = tx_info.meta {
+			meta.loaded_addresses = Some(LoadedAddresses {
+				writable: vec!["WritableALTAddress111111111111111111".to_string()],
+				readonly: vec!["ReadonlyALTAddress111111111111111111".to_string()],
+			});
+		}
+
+		let transaction = Transaction(tx_info);
+		let accounts = transaction.accounts();
+
+		// Should include both static account_keys and loaded addresses
+		assert_eq!(accounts.len(), 4);
+		assert_eq!(accounts[0], "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+		assert_eq!(accounts[1], "11111111111111111111111111111111");
+		assert_eq!(accounts[2], "WritableALTAddress111111111111111111");
+		assert_eq!(accounts[3], "ReadonlyALTAddress111111111111111111");
 	}
 
 	#[test]
