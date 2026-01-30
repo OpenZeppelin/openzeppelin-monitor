@@ -391,16 +391,14 @@ impl BlockStorage for FileBlockStorage {
 
 		// Find and update the entry
 		if let Some(entry) = entries.iter_mut().find(|e| e.block_number == block_number) {
+			// Increment retry count when status transitions to Pending (retry) or Failed (gave up)
+			if status == MissedBlockStatus::Pending || status == MissedBlockStatus::Failed {
+				entry.retry_count += 1;
+			}
 			entry.status = status;
 			entry.last_attempt_at = Some(Utc::now().timestamp());
 			if error.is_some() {
 				entry.last_error = error;
-			}
-			// Increment retry count when transitioning from Recovering
-			if entry.status == MissedBlockStatus::Pending
-				|| entry.status == MissedBlockStatus::Failed
-			{
-				entry.retry_count += 1;
 			}
 		}
 
