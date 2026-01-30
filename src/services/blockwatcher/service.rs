@@ -528,8 +528,9 @@ pub async fn process_new_blocks<
 			missed_blocks
 		);
 
-		// Save missed blocks in batch
-		if network.store_blocks.unwrap_or(false) {
+		// Save missed blocks in batch (enabled if store_blocks OR recovery is enabled)
+		let recovery_enabled = network.recovery_config.as_ref().is_some_and(|c| c.enabled);
+		if network.store_blocks.unwrap_or(false) || recovery_enabled {
 			block_storage
 				.save_missed_blocks(&network.slug, &missed_blocks)
 				.await

@@ -195,6 +195,27 @@ mod tests {
 	}
 
 	#[test]
+	fn test_recovery_error_formatting() {
+		let error = BlockWatcherError::recovery_error("test error", None, None);
+		assert_eq!(error.to_string(), "Recovery error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockWatcherError::recovery_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Recovery error: test error [key1=value1]"
+		);
+
+		// Test trace_id for RecoveryError variant
+		let error = BlockWatcherError::recovery_error("trace test", None, None);
+		assert!(!error.trace_id().is_empty());
+	}
+
+	#[test]
 	fn test_from_anyhow_error() {
 		let anyhow_error = anyhow::anyhow!("test anyhow error");
 		let block_watcher_error: BlockWatcherError = anyhow_error.into();

@@ -1738,7 +1738,7 @@ async fn test_missed_block_detection_store_disabled() {
 		.returning(|_| Ok(Some(100)))
 		.times(1);
 
-	// save_missed_blocks should NOT be called when store_blocks is false
+	// save_missed_blocks should NOT be called when store_blocks is false and recovery is not enabled
 	block_storage.expect_save_missed_blocks().times(0);
 
 	block_storage
@@ -2108,7 +2108,7 @@ async fn test_missed_blocks_with_store_blocks_none() {
 		.returning(|_| Ok(Some(100)))
 		.times(1);
 
-	// save_missed_blocks should NOT be called when store_blocks is None
+	// save_missed_blocks should NOT be called when store_blocks is None and recovery is not enabled
 	block_storage.expect_save_missed_blocks().times(0);
 
 	block_storage
