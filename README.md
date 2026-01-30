@@ -41,11 +41,11 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 - View the [Installation](https://docs.openzeppelin.com/monitor#getting_started) documentation for detailed information. For a quicker introduction, check out the [Quickstart](https://docs.openzeppelin.com/monitor/quickstart) guide.
 
-- As a Pre-requisite, copy example configuration files to `./config` directory and modify according to your needs. See [examples](https://docs.openzeppelin.com/monitor/quickstart#examples) for more information.
+- **Prerequisites:** Copy example configuration files to `./config` directory and modify according to your needs. See [examples](https://docs.openzeppelin.com/monitor/quickstart#examples) for more information.
 
-### Usage
+### Running the Monitor
 
-View the [Usage](https://docs.openzeppelin.com/monitor#running_the_monitor) documentation for more information.
+View the [Running the Monitor](https://docs.openzeppelin.com/monitor#running_the_monitor) documentation for more information.
 
 ## For Developers
 
@@ -156,7 +156,7 @@ openzeppelin-monitor/
 
 ### Development Environment Setup
 
-#### Linux
+#### System Dependencies (Linux)
 
 To get started on Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures):
 
@@ -228,7 +228,7 @@ pre-commit install --install-hooks -t commit-msg -t pre-commit -t pre-push
 rustup component add rustfmt
 ```
 
-### Run Tests
+### Running Tests
 
 To run tests, use the following commands:
 
@@ -280,7 +280,7 @@ We welcome contributions from the community! Before contributing, please note th
 ### Key Requirements
 
 - **Contributor License Agreement (CLA)**: All contributors must sign the CLA before contributing
-- **GPG-signed commits**: All commits must be GPG-signed for security
+- **Signed Commits**: All commits must be GPG-signed for security
 - **Pre-commit hooks**: Required for code quality checks including `rustfmt`, `clippy`, and commit message validation
 
 ### Getting Started
@@ -296,7 +296,7 @@ If you are looking for a good place to start, find a good first issue [here](htt
 
 You can open an issue for a [bug report](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml), [feature request](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-feature%2CS-needs-triage&projects=&template=feature.yml), or [documentation request](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-documentation%2CS-needs-triage&projects=&template=docs.yml).
 
-For complete details including GitHub workflow, labeling guidelines, and advanced topics, see our [Contributing](CONTRIBUTING.md) guide.
+For complete details including GitHub workflow, labeling guidelines, and advanced topics, see our [Contributing](CONTRIBUTING.md) guide. For the full contribution workflow and standards, see also the [Contribution guidelines](https://docs.openzeppelin.com/monitor/contribution) on the docs site.
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and check the [Security Policy](SECURITY.md) for reporting vulnerabilities.
 
