@@ -804,6 +804,9 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_monitor_execution_without_network_slug_with_block_number() {
+		// Set environment variable for Solana RPC URL (required by config/networks/solana_mainnet.json)
+		std::env::set_var("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com");
+
 		// Initialize services
 		let (filter_service, trigger_execution_service, _, _, monitor_service, network_service, _) =
 			initialize_services::<
@@ -843,6 +846,9 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_monitor_execution_with_invalid_path() {
+		// Set environment variable for Solana RPC URL (required by config/networks/solana_mainnet.json)
+		std::env::set_var("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com");
+
 		// Initialize services
 		let (filter_service, trigger_execution_service, _, _, monitor_service, network_service, _) =
 			initialize_services::<

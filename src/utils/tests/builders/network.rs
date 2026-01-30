@@ -2,7 +2,9 @@
 //!
 //! - `NetworkBuilder`: Builder for creating test Network instances
 
-use crate::models::{BlockChainType, Network, RpcUrl, SecretString, SecretValue};
+use crate::models::{
+	BlockChainType, BlockRecoveryConfig, Network, RpcUrl, SecretString, SecretValue,
+};
 
 /// Builder for creating test Network instances
 pub struct NetworkBuilder {
@@ -17,6 +19,7 @@ pub struct NetworkBuilder {
 	confirmation_blocks: u64,
 	cron_schedule: String,
 	max_past_blocks: Option<u64>,
+	recovery_config: Option<BlockRecoveryConfig>,
 }
 
 impl Default for NetworkBuilder {
@@ -33,6 +36,7 @@ impl Default for NetworkBuilder {
 			confirmation_blocks: 1,
 			cron_schedule: "0 */5 * * * *".to_string(),
 			max_past_blocks: Some(10),
+			recovery_config: None,
 		}
 	}
 }
@@ -148,6 +152,11 @@ impl NetworkBuilder {
 		self
 	}
 
+	pub fn recovery_config(mut self, config: BlockRecoveryConfig) -> Self {
+		self.recovery_config = Some(config);
+		self
+	}
+
 	pub fn build(self) -> Network {
 		Network {
 			name: self.name,
@@ -161,6 +170,7 @@ impl NetworkBuilder {
 			confirmation_blocks: self.confirmation_blocks,
 			cron_schedule: self.cron_schedule,
 			max_past_blocks: self.max_past_blocks,
+			recovery_config: self.recovery_config,
 		}
 	}
 }

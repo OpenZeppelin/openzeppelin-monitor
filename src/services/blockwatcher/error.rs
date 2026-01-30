@@ -31,6 +31,10 @@ pub enum BlockWatcherError {
 	#[error("Block tracker error: {0}")]
 	BlockTrackerError(ErrorContext),
 
+	/// Errors related to missed block recovery operations
+	#[error("Recovery error: {0}")]
+	RecoveryError(ErrorContext),
+
 	/// Other errors that don't fit into the categories above
 	#[error(transparent)]
 	Other(#[from] anyhow::Error),
@@ -81,6 +85,15 @@ impl BlockWatcherError {
 	) -> Self {
 		Self::BlockTrackerError(ErrorContext::new_with_log(msg, source, metadata))
 	}
+
+	// Recovery error
+	pub fn recovery_error(
+		msg: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		Self::RecoveryError(ErrorContext::new_with_log(msg, source, metadata))
+	}
 }
 
 impl TraceableError for BlockWatcherError {
@@ -91,6 +104,7 @@ impl TraceableError for BlockWatcherError {
 			Self::ProcessingError(ctx) => ctx.trace_id.clone(),
 			Self::StorageError(ctx) => ctx.trace_id.clone(),
 			Self::BlockTrackerError(ctx) => ctx.trace_id.clone(),
+			Self::RecoveryError(ctx) => ctx.trace_id.clone(),
 			Self::Other(_) => Uuid::new_v4().to_string(),
 		}
 	}
@@ -178,6 +192,27 @@ mod tests {
 			error.to_string(),
 			"Block tracker error: test error [key1=value1]"
 		);
+	}
+
+	#[test]
+	fn test_recovery_error_formatting() {
+		let error = BlockWatcherError::recovery_error("test error", None, None);
+		assert_eq!(error.to_string(), "Recovery error: test error");
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = BlockWatcherError::recovery_error(
+			"test error",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		assert_eq!(
+			error.to_string(),
+			"Recovery error: test error [key1=value1]"
+		);
+
+		// Test trace_id for RecoveryError variant
+		let error = BlockWatcherError::recovery_error("trace test", None, None);
+		assert!(!error.trace_id().is_empty());
 	}
 
 	#[test]

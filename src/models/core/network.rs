@@ -2,6 +2,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::{BlockChainType, SecretValue};
 
+/// Configuration for missed block recovery job.
+///
+/// Defines parameters for the background job that retries fetching and processing
+/// blocks that were missed during normal monitoring cycles.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BlockRecoveryConfig {
+	/// Whether the recovery job is enabled
+	pub enabled: bool,
+
+	/// Cron schedule for the recovery job (e.g., "0 */5 * * * *" for every 5 minutes)
+	pub cron_schedule: String,
+
+	/// Maximum number of blocks to attempt recovery per execution
+	pub max_blocks_per_run: u64,
+
+	/// Maximum age of missed blocks to consider (in blocks from current)
+	/// Blocks older than this are pruned and not recovered
+	pub max_block_age: u64,
+
+	/// Maximum number of retry attempts per block before marking as failed
+	pub max_retries: u32,
+
+	/// Delay in milliseconds between retry attempts for failed blocks
+	pub retry_delay_ms: u64,
+}
+
 /// Configuration for connecting to and interacting with a blockchain network.
 ///
 /// Defines connection details and operational parameters for a specific blockchain network.
@@ -40,6 +67,9 @@ pub struct Network {
 
 	/// Whether to store processed blocks
 	pub store_blocks: Option<bool>,
+
+	/// Configuration for missed block recovery job
+	pub recovery_config: Option<BlockRecoveryConfig>,
 }
 
 /// RPC endpoint configuration with load balancing weight

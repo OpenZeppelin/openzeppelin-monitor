@@ -36,6 +36,7 @@ fn create_test_network() -> Network {
 		cron_schedule: "*/10 * * * * *".to_string(),
 		max_past_blocks: Some(50),
 		store_blocks: Some(true),
+		recovery_config: None,
 	}
 }
 
