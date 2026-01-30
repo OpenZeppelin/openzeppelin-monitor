@@ -19,6 +19,7 @@ use crate::{
 		blockchain::BlockChainClient,
 		blockwatcher::{
 			error::BlockWatcherError,
+			recovery::process_missed_blocks,
 			storage::BlockStorage,
 			tracker::{BlockCheckResult, BlockTracker, BlockTrackerTrait},
 		},
@@ -152,8 +153,38 @@ where
 	/// Starts the network watcher
 	///
 	/// Initializes the scheduler and begins watching for new blocks according
-	/// to the network's cron schedule.
+	/// to the network's cron schedule. Also starts the recovery job if enabled.
 	pub async fn start<C: BlockChainClient + Clone + Send + 'static>(
+		&mut self,
+		rpc_client: C,
+	) -> Result<(), BlockWatcherError> {
+		// Start main block watcher job
+		self.start_main_watcher(rpc_client.clone()).await?;
+
+		// Start recovery job if enabled
+		if let Some(ref config) = self.network.recovery_config {
+			if config.enabled {
+				self.start_recovery_job(rpc_client).await?;
+			}
+		}
+
+		self.scheduler.start().await.map_err(|e| {
+			BlockWatcherError::scheduler_error(
+				e.to_string(),
+				Some(e),
+				Some(HashMap::from([(
+					"network".to_string(),
+					self.network.slug.clone(),
+				)])),
+			)
+		})?;
+
+		tracing::info!("Started block watcher for network: {}", self.network.slug);
+		Ok(())
+	}
+
+	/// Starts the main block watcher job
+	async fn start_main_watcher<C: BlockChainClient + Clone + Send + 'static>(
 		&mut self,
 		rpc_client: C,
 	) -> Result<(), BlockWatcherError> {
@@ -192,7 +223,7 @@ where
 				});
 			})
 		})
-		.with_context(|| "Failed to create job")?;
+		.with_context(|| "Failed to create main watcher job")?;
 
 		self.scheduler.add(job).await.map_err(|e| {
 			BlockWatcherError::scheduler_error(
@@ -205,7 +236,71 @@ where
 			)
 		})?;
 
-		self.scheduler.start().await.map_err(|e| {
+		Ok(())
+	}
+
+	/// Starts the recovery job for missed blocks
+	async fn start_recovery_job<C: BlockChainClient + Clone + Send + 'static>(
+		&mut self,
+		rpc_client: C,
+	) -> Result<(), BlockWatcherError> {
+		let recovery_config = self
+			.network
+			.recovery_config
+			.as_ref()
+			.ok_or_else(|| {
+				BlockWatcherError::recovery_error(
+					"Recovery config is required but not found".to_string(),
+					None,
+					Some(HashMap::from([(
+						"network".to_string(),
+						self.network.slug.clone(),
+					)])),
+				)
+			})?
+			.clone();
+
+		let network = self.network.clone();
+		let block_storage = self.block_storage.clone();
+		let block_handler = self.block_handler.clone();
+		let trigger_handler = self.trigger_handler.clone();
+		let block_tracker = self.block_tracker.clone();
+
+		let cron_schedule = recovery_config.cron_schedule.clone();
+		let job = Job::new_async(cron_schedule.as_str(), move |_uuid, _l| {
+			let network = network.clone();
+			let recovery_config = recovery_config.clone();
+			let block_storage = block_storage.clone();
+			let block_handler = block_handler.clone();
+			let block_tracker = block_tracker.clone();
+			let rpc_client = rpc_client.clone();
+			let trigger_handler = trigger_handler.clone();
+			Box::pin(async move {
+				let _ = process_missed_blocks(
+					&network,
+					&recovery_config,
+					&rpc_client,
+					block_storage,
+					block_handler,
+					trigger_handler,
+					block_tracker,
+				)
+				.await
+				.map_err(|e| {
+					BlockWatcherError::recovery_error(
+						"Failed to process missed blocks".to_string(),
+						Some(e.into()),
+						Some(HashMap::from([(
+							"network".to_string(),
+							network.slug.clone(),
+						)])),
+					)
+				});
+			})
+		})
+		.with_context(|| "Failed to create recovery job")?;
+
+		self.scheduler.add(job).await.map_err(|e| {
 			BlockWatcherError::scheduler_error(
 				e.to_string(),
 				Some(e),
@@ -216,7 +311,15 @@ where
 			)
 		})?;
 
-		tracing::info!("Started block watcher for network: {}", self.network.slug);
+		tracing::info!(
+			"Started recovery job for network: {} with schedule: {}",
+			self.network.slug,
+			self.network
+				.recovery_config
+				.as_ref()
+				.map(|c| c.cron_schedule.as_str())
+				.unwrap_or("unknown")
+		);
 		Ok(())
 	}
 

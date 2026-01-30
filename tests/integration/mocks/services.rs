@@ -7,7 +7,10 @@ use openzeppelin_monitor::{
 	repositories::{TriggerRepositoryTrait, TriggerService},
 	services::{
 		blockchain::BlockFilterFactory,
-		blockwatcher::{BlockCheckResult, BlockStorage, BlockTrackerTrait, JobSchedulerTrait},
+		blockwatcher::{
+			BlockCheckResult, BlockStorage, BlockTrackerTrait, JobSchedulerTrait, MissedBlockEntry,
+			MissedBlockStatus,
+		},
 		filter::{FilterError, FilterServiceTrait},
 		notification::NotificationService,
 		trigger::{TriggerError, TriggerExecutionServiceTrait},
@@ -67,6 +70,10 @@ mock! {
 		async fn get_last_processed_block(&self, network_slug: &str) -> Result<Option<u64>, anyhow::Error>;
 		async fn save_blocks(&self, network_slug: &str, blocks: &[BlockType]) -> Result<(), anyhow::Error>;
 		async fn delete_blocks(&self, network_slug: &str) -> Result<(), anyhow::Error>;
+		async fn get_missed_blocks(&self, network_id: &str, max_block_age: u64, current_block: u64) -> Result<Vec<MissedBlockEntry>, anyhow::Error>;
+		async fn update_missed_block_status(&self, network_id: &str, block_number: u64, status: MissedBlockStatus, error: Option<String>) -> Result<(), anyhow::Error>;
+		async fn remove_recovered_blocks(&self, network_id: &str, block_numbers: &[u64]) -> Result<(), anyhow::Error>;
+		async fn prune_old_missed_blocks(&self, network_id: &str, max_block_age: u64, current_block: u64) -> Result<usize, anyhow::Error>;
 	}
 
 	impl Clone for BlockStorage {

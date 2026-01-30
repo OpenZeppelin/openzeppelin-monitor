@@ -1183,6 +1183,10 @@ async fn test_network_block_watcher_start_stop() {
 		.expect_get_latest_block_number()
 		.returning(|| Ok(100))
 		.times(0);
+	rpc_client
+		.expect_clone()
+		.times(1)
+		.returning(MockEvmClientTrait::new);
 
 	let mut watcher = watcher.unwrap();
 	// Test start
@@ -1226,10 +1230,15 @@ async fn test_block_watcher_service_start_stop_network() {
 		.returning(|| Ok(100))
 		.times(0);
 
-	rpc_client
-		.expect_clone()
-		.times(2)
-		.returning(MockEvmClientTrait::new);
+	// Clone expectations:
+	// - Test calls rpc_client.clone() for first start_network_watcher -> returns mock1
+	// - Test calls rpc_client.clone() for second start_network_watcher (returns early)
+	// mock1 is cloned inside start() for start_main_watcher, so returned clones need clone expectations
+	rpc_client.expect_clone().times(2).returning(|| {
+		let mut cloned = MockEvmClientTrait::new();
+		cloned.expect_clone().returning(MockEvmClientTrait::new);
+		cloned
+	});
 
 	let service = service.unwrap();
 
