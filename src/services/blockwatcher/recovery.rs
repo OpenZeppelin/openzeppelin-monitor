@@ -98,18 +98,18 @@ where
 		);
 	}
 
-	// Get eligible missed blocks
+	// Get eligible missed blocks (filtered by age, status, and max_retries)
 	let mut missed_blocks = block_storage
 		.get_missed_blocks(
 			&network.slug,
 			recovery_config.max_block_age,
 			current_confirmed,
+			recovery_config.max_retries,
 		)
 		.await
 		.with_context(|| "Failed to get missed blocks for recovery")?;
 
-	// Filter by max_retries and sort by block number (oldest first)
-	missed_blocks.retain(|b| b.retry_count < recovery_config.max_retries);
+	// Sort by block number (oldest first)
 	missed_blocks.sort_by_key(|b| b.block_number);
 
 	// Limit to max_blocks_per_run
@@ -503,7 +503,7 @@ mod tests {
 
 		// Verify blocks were removed from storage
 		let remaining = storage
-			.get_missed_blocks("test_network", 1000, 1000)
+			.get_missed_blocks("test_network", 1000, 1000, 3)
 			.await
 			.unwrap();
 		assert!(remaining.is_empty());
@@ -585,7 +585,7 @@ mod tests {
 
 		// Should have 3 blocks remaining
 		let remaining = storage
-			.get_missed_blocks("test_network", 1000, 1000)
+			.get_missed_blocks("test_network", 1000, 1000, 3)
 			.await
 			.unwrap();
 		assert_eq!(remaining.len(), 3);

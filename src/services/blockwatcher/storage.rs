@@ -137,6 +137,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 	/// * `network_id` - Unique identifier for the network
 	/// * `max_block_age` - Maximum age in blocks from current_block
 	/// * `current_block` - The current block number
+	/// * `max_retries` - Maximum retry attempts; blocks with retry_count >= max_retries are excluded
 	///
 	/// # Returns
 	/// * `Result<Vec<MissedBlockEntry>, anyhow::Error>` - Eligible missed blocks
@@ -145,6 +146,7 @@ pub trait BlockStorage: Clone + Send + Sync {
 		network_id: &str,
 		max_block_age: u64,
 		current_block: u64,
+		max_retries: u32,
 	) -> Result<Vec<MissedBlockEntry>, anyhow::Error>;
 
 	/// Updates the status of a missed block
@@ -358,16 +360,21 @@ impl BlockStorage for FileBlockStorage {
 		network_id: &str,
 		max_block_age: u64,
 		current_block: u64,
+		max_retries: u32,
 	) -> Result<Vec<MissedBlockEntry>, anyhow::Error> {
 		let entries = self.load_missed_blocks_json(network_id).await?;
 
 		// Calculate the minimum block number we'll consider
 		let min_block = current_block.saturating_sub(max_block_age);
 
-		// Filter to blocks within age range and with Pending status
+		// Filter to blocks within age range, with Pending status, and below max retries
 		let eligible: Vec<MissedBlockEntry> = entries
 			.into_iter()
-			.filter(|e| e.block_number >= min_block && e.status == MissedBlockStatus::Pending)
+			.filter(|e| {
+				e.block_number >= min_block
+					&& e.status == MissedBlockStatus::Pending
+					&& e.retry_count < max_retries
+			})
 			.collect();
 
 		Ok(eligible)
@@ -757,7 +764,10 @@ mod tests {
 			.unwrap();
 
 		// Call get_missed_blocks which should trigger migration
-		let result = storage.get_missed_blocks("test", 1000, 1000).await.unwrap();
+		let result = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
 
 		// Should have 3 unique entries (deduplicated during migration)
 		assert_eq!(result.len(), 3);
@@ -786,9 +796,12 @@ mod tests {
 			.await
 			.unwrap();
 
-		// Get blocks with max_block_age=200, current_block=500
-		// Should return blocks >= 300 (500 - 200)
-		let result = storage.get_missed_blocks("test", 200, 500).await.unwrap();
+		// Get blocks with max_block_age=200, current_block=500, max_retries=3
+		// Should return blocks >= 300 (500 - 200) with retry_count < 3
+		let result = storage
+			.get_missed_blocks("test", 200, 500, 3)
+			.await
+			.unwrap();
 
 		assert_eq!(result.len(), 3);
 		let block_numbers: Vec<u64> = result.iter().map(|e| e.block_number).collect();
@@ -905,7 +918,7 @@ mod tests {
 
 		// Get from non-existent network should return empty
 		let result = storage
-			.get_missed_blocks("nonexistent", 1000, 1000)
+			.get_missed_blocks("nonexistent", 1000, 1000, 3)
 			.await
 			.unwrap();
 		assert!(result.is_empty());
@@ -928,8 +941,11 @@ mod tests {
 			.await
 			.unwrap();
 
-		// Get missed blocks - should only return Pending ones
-		let result = storage.get_missed_blocks("test", 1000, 1000).await.unwrap();
+		// Get missed blocks - should only return Pending ones with retry_count < 3
+		let result = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
 
 		assert_eq!(result.len(), 2);
 		for entry in &result {
