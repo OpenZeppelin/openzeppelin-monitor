@@ -1121,6 +1121,16 @@ Match transaction properties. The available fields and expression syntax depend 
 | `**from**` | `address` | Source account address of the **first** relevant operation (e.g., payment sender). Case-insensitive comparison. |
 | `**to**` | `address` | Destination account address of the **first** relevant operation (e.g., payment recipient or invoked contract). Case-insensitive comparison. |
 
+#### Available Transaction Fields (Solana)
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**signature**` | `string` | Transaction signature (base58 encoded) |
+| `**slot**` | `u64` | Slot number where the transaction was processed |
+| `**fee**` | `u64` | Transaction fee in lamports |
+| `**is_success**` | `bool` | Whether the transaction succeeded |
+| `**fee_payer**` | `pubkey` | Address that paid the transaction fee (first account in account_keys). Only present if defined. |
+| `**accounts**` | `string` | All accounts involved in the transaction, including addresses loaded from lookup tables (ALTs). Format: `\|account1\|account2\|...\|` with pipe delimiters. Use `accounts contains "\|<address>\|"` for exact matching. |
+
 #### Matching Rules
 
 * If no conditions are specified, all transactions match

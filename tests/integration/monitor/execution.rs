@@ -199,6 +199,7 @@ fn create_solana_test_transaction() -> SolanaTransaction {
 			pre_token_balances: vec![],
 			post_token_balances: vec![],
 			compute_units_consumed: None,
+			loaded_addresses: None,
 		}),
 	})
 }
