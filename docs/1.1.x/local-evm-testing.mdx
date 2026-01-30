@@ -1,0 +1,139 @@
+---
+title: Local EVM Testing with Foundry
+---
+
+## Overview
+
+Testing monitors against a local EVM node is faster, free, and gives you full control over blocks and transactions. You can iterate on monitor behavior without using public testnets or mainnet RPC.
+
+This guide uses the **Foundry** stack:
+
+* ***Anvil*** – Local Ethereum node (default: `http://127.0.0.1:8545`, chain ID `31337`)
+* ***Forge*** – Build, test, and deploy Solidity contracts
+* ***Cast*** – Send transactions and query the chain from the command line
+
+## Prerequisites
+
+Install [Foundry](https://book.getfoundry.sh/getting-started/installation) (Anvil, Forge, Cast). For example:
+
+```bash
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+```
+
+Verify:
+
+```bash
+anvil --version
+forge --version
+cast --version
+```
+
+## Start Anvil
+
+In a terminal, start a local node:
+
+```bash
+anvil
+```
+
+Default endpoint: `http://127.0.0.1:8545`, chain ID `31337`. Anvil prints a list of prefunded accounts and private keys; use the first one (e.g. `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`) for deploying and sending transactions.
+
+## Deploy the Test Contract
+
+The repository includes a minimal Foundry project under `examples/contracts/` with an ERC-20-style token for local testing.
+
+1. **Install Forge std** (if not already present):
+
+   ```bash
+   cd examples/contracts
+   forge install foundry-rs/forge-std
+   ```
+
+2. **Run tests** (optional but recommended):
+
+   ```bash
+   forge test
+   ```
+
+3. **Deploy** (with Anvil running in another terminal):
+
+   ```bash
+   forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+   ```
+
+   In the deploy output, find the line that looks like:
+
+   ```text
+   TestToken 0x5FbDB2315678afecb367f032d93F642f64180aa3
+   ```
+
+   The hex value after `TestToken` is your **token contract address**. Copy it; you will need it for the monitor config and for the trigger command below.
+
+## Configure the Monitor
+
+1. **Copy the example configs** into your `config/` directory:
+
+   ```bash
+   cp examples/config/networks/anvil_local.json config/networks/
+   cp examples/config/monitors/evm_transfer_local.json config/monitors/
+   cp examples/config/triggers/script_notifications.json config/triggers/
+   mkdir -p config/triggers/scripts
+   cp examples/config/triggers/scripts/custom_notification.sh config/triggers/scripts/
+   ```
+
+2. **Set the contract address** in `config/monitors/evm_transfer_local.json`: replace the placeholder address (`0x0000000000000000000000000000000000000000`) with the token address from the deploy output (the hex value from the `TestToken 0x...` line).
+
+## Run the Monitor
+
+From the project root:
+
+```bash
+./openzeppelin-monitor
+```
+
+Or point to your config explicitly. Confirm in the logs that the monitor connects to Anvil and processes blocks.
+
+***Tip:*** While the monitor is running, the Anvil terminal will show repeated RPC calls (`eth_blockNumber`, `eth_getBlockByNumber`, `eth_getLogs`, etc.). This is normal; the monitor polls every second.
+
+To validate configuration without starting the service:
+
+```bash
+./openzeppelin-monitor --check
+```
+
+## Trigger a Condition
+
+Use Cast to send a transfer so the monitor can match it. Run this in a **new terminal** (Anvil and the monitor should stay running in their own terminals).
+
+**What you need:**
+
+| What | Where to find it |
+|------|------------------|
+| Token address | Deploy output: the line `TestToken 0x...` (use the `0x...` part) |
+| Private key | Anvil startup output: under "Private Keys", the first one `(0)` |
+| Recipient (optional) | Anvil startup: under "Available Accounts", e.g. `(1)` for the second account |
+
+***Note:*** The private key below is Anvil’s default first-account key. It is for **local use only** and has no value on mainnet or other real networks.
+
+**Command**: Replace `YOUR_TOKEN_ADDRESS` with the address from the deploy output (`TestToken 0x...`):
+
+```bash
+cast send YOUR_TOKEN_ADDRESS "transfer(address,uint256)" 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 1000000000000000000 --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+```
+
+Alternatively, with line continuation:
+
+```bash
+cast send YOUR_TOKEN_ADDRESS "transfer(address,uint256)" 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 1000000000000000000 \
+  --rpc-url http://127.0.0.1:8545 \
+  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+```
+
+When the monitor processes the block containing this transaction, it should fire and run the configured trigger (e.g. script trigger logs in the monitor terminal).
+
+## Next Steps
+
+* Adjust `match_conditions` or expressions in `evm_transfer_local.json` to experiment with filters.
+* Use [Testing your configuration](/monitor/1.1.x#testing-your-configuration) (e.g. `--monitor-path` and `--network` / `--block`) to test against specific blocks.
+* See the [Quickstart](/monitor/1.1.x/quickstart) and main [Configuration](/monitor/1.1.x#configuration-guidelines) docs for more options.
