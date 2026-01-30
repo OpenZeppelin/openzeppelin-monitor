@@ -44,12 +44,13 @@ To get started immediately, see [Quickstart](/monitor/quickstart).
 
 * Use ***Rust 2024 edition***, version `1.90` or later.
 * ***Docker*** (optional, for containerized deployment)
+* ***Python 3.11 (3.10+)*** - For pre-commit hooks; we recommend [pyenv](https://github.com/pyenv/pyenv) for version management (see [Contribution guidelines](/monitor/contribution#recommended-python-setup-pyenv))
 
 #### System Dependencies (Linux)
 
 For Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures), install required packages:
 
-***Note:*** Python 3.9+ is required for pre-commit hooks compatibility.
+***Note:*** Python 3.11 is recommended; 3.10+ is the minimum for pre-commit hooks.
 
 ```bash
 # Install required packages directly
@@ -67,14 +68,13 @@ sudo apt install -y \
     python3-pip
 ```
 
-Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
+Or use the provided system package script (installs Python 3.11 if your system Python is below 3.10):
 
 ```bash
-chmod +x ./scripts/linux/sys_pkgs_core.sh
 chmod +x ./scripts/linux/sys_pkgs_dev.sh
 # Installs required packages and ensures compatible Python version
-./scripts/linux/sys_pkgs_core.sh   // For runtime dependencies only
-./scripts/linux/sys_pkgs_dev.sh    // For Python/dev dependencies (calls core script)
+./scripts/linux/sys_pkgs_dev.sh    # For Python/dev dependencies (includes runtime deps)
+# Or, for runtime-only (no Python/dev tools): ./scripts/linux/sys_pkgs_core.sh
 ```
 
 ### Local Installation

@@ -39,13 +39,25 @@ Before contributing, ensure you have:
 
 * ***Rust 2024 edition*** - Required for development
 * ***Git*** - For version control
-* ***Python/pip*** - For pre-commit hooks
+* ***Python 3.11 (3.10+ minimum)*** - For pre-commit hooks (and optional custom scripts)
+
+### Recommended Python setup (pyenv)
+
+We recommend [pyenv](https://github.com/pyenv/pyenv) for a consistent Python version on macOS and Linux. Install pyenv following the [installation instructions](https://github.com/pyenv/pyenv#installation), then:
+
+```bash
+pyenv install 3.11    # Install Python 3.11
+pyenv local 3.11      # Set this repo to use 3.11 (creates .python-version)
+python --version      # Verify: should show Python 3.11.x
+```
+
+The repo includes a `.python-version` file. If you have pyenv installed, simply run `pyenv install` (if needed) when you clone the repo, and pyenv will automatically use the correct version.
 
 ### System Dependencies (Linux)
 
 For Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures), install required packages:
 
-***Note:*** Python 3.9+ is required for pre-commit hooks compatibility.
+***Note:*** Python 3.11 is recommended; 3.10+ is the minimum for pre-commit hooks.
 
 ```bash
 # Install required packages directly
@@ -63,14 +75,13 @@ sudo apt install -y \
     python3-pip
 ```
 
-Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
+Or use the provided system package script (installs Python 3.11 if your system Python is below 3.10):
 
 ```bash
-chmod +x ./scripts/linux/sys_pkgs_core.sh
 chmod +x ./scripts/linux/sys_pkgs_dev.sh
 # Installs required packages and ensures compatible Python version
-./scripts/linux/sys_pkgs_core.sh   // For runtime dependencies only
-./scripts/linux/sys_pkgs_dev.sh    // For Python/dev dependencies (calls core script)
+./scripts/linux/sys_pkgs_dev.sh    # For Python/dev dependencies (includes runtime deps)
+# Or, for runtime-only (no Python/dev tools): ./scripts/linux/sys_pkgs_core.sh
 ```
 
 ### Initial Setup
@@ -112,7 +123,7 @@ RUST_TEST_THREADS=1 cargo test properties
 
 #### Installing Pre-commit Hooks
 
-Install and configure pre-commit hooks to ensure code quality:
+Ensure Python 3.10+ (e.g. via pyenv or system). Install and configure pre-commit hooks to ensure code quality:
 
 ```bash
 # Install pre-commit (use pipx for global installation if preferred)
