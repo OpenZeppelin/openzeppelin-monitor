@@ -17,6 +17,7 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 - **Multi-notification Support**: Send alerts via Slack, Discord, Email, Telegram, Webhooks, or custom scripts
 - **Configurable Scheduling**: Set custom monitoring schedules using cron expressions
 - **Data Persistence**: Store monitoring data and resume from checkpoints
+- **Missed Block Recovery**: Automatically retry fetching and processing blocks that were missed due to RPC failures
 - **Extensible Architecture**: Easy to add support for new blockchains and notification types
 
 ## Supported Networks
@@ -68,6 +69,7 @@ end
         BS[BlockStorage]
         BWS[BlockWatcherService]
         BH[create_block_handler]
+        BR[BlockRecovery]
     end
 
     subgraph Core Services
@@ -122,13 +124,18 @@ end
     BH --> FS
     BWS --> BH
 
+    %% Recovery Connection
+    BWS --> BR
+    BR --> BS
+    BR --> CP
+
     style MAIN fill:#e1f5fe,stroke:#01579b,color:#333333
     style BOOTSTRAP fill:#fff3e0,stroke:#ef6c00,color:#333333
     classDef blockProcessing fill:#e8f5e9,stroke:#2e7d32,color:#333333
     classDef coreServices fill:#f3e5f5,stroke:#7b1fa2,color:#333333
     classDef clients fill:#fce4ec,stroke:#c2185b,color:#333333
 
-    class BT,BS,BWS,BH blockProcessing
+    class BT,BS,BWS,BH,BR blockProcessing
     class MS,NS,TS,FS,TES,NOTS coreServices
     class CP,EVMC,SC,SOC,MC clients
 ```
@@ -264,6 +271,35 @@ RUST_TEST_THREADS=1 cargo +stable llvm-cov
 - Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. Ideally, you should increase the open file descriptor limit to at least 2,048 or higher for optimal performance.
   - Security Risk: Only run scripts that you trust and fully understand. Malicious scripts can harm your system or expose sensitive data. Always review script contents and verify their source before execution.
   - HTTP requests to RPC endpoints may consume file descriptors for each connection. The number of concurrent connections can increase significantly when processing blocks with many transactions, as each transaction may require multiple RPC calls.
+
+### Missed Block Recovery
+
+When RPC failures or network issues cause blocks to be missed during normal monitoring cycles, the missed block recovery feature can automatically retry fetching and processing them. This runs as a separate background job to avoid impacting the main monitoring loop.
+
+To enable recovery, add a `recovery_config` to your network configuration:
+
+```json
+{
+  "recovery_config": {
+    "enabled": true,
+    "cron_schedule": "0 */5 * * * *",
+    "max_blocks_per_run": 10,
+    "max_block_age": 1000,
+    "max_retries": 3,
+    "retry_delay_ms": 1000
+  }
+}
+```
+
+Configuration options:
+- `enabled` - Whether the recovery job is active
+- `cron_schedule` - When to run recovery (separate from main monitor schedule)
+- `max_blocks_per_run` - Maximum blocks to attempt per recovery cycle (limits RPC load)
+- `max_block_age` - Blocks older than this (in blocks from current) are pruned and not recovered
+- `max_retries` - Maximum retry attempts before marking a block as failed
+- `retry_delay_ms` - Delay between retry attempts
+
+See the example network configurations in `examples/config/networks/` for recommended settings per chain.
 
 ### Notification Considerations
 

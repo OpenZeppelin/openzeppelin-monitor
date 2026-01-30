@@ -429,9 +429,9 @@ The monitor uses file-based storage by default.
 When `store_blocks` is enabled in the network configuration, the monitor stores:
 
 * Processed blocks: `./data/<network_slug>_blocks_<timestamp>.json`
-* Missed blocks: `./data/<network_slug>_missed_blocks.txt` (used to store missed blocks)
+* Missed blocks: `./data/<network_slug>_missed_blocks.json` (JSON format with block status tracking)
 
-The content of the `missed_blocks.txt` file may help to determine the right `max_past_blocks` value based on the network’s block time and the monitor’s cron schedule.
+The missed blocks file tracks blocks that failed to be fetched or processed, including their status (Pending, Recovering, Recovered, Failed), retry count, and error information. When `recovery_config` is enabled, this file is used by the recovery job to retry failed blocks.
 
 Additionally, the monitor will always store:
 
@@ -484,6 +484,37 @@ A Network configuration defines connection details and operational parameters fo
 | `**cron_schedule**` | `String` | Monitor scheduling in cron format |
 | `**max_past_blocks**` | `Number` | Maximum number of past blocks to process |
 | `**store_blocks**` | `Boolean` | Whether to store processed blocks (defaults output to `./data/` directory) |
+| `**recovery_config**` | `Object` | Optional configuration for missed block recovery (see below) |
+
+#### Missed Block Recovery
+
+When RPC failures or network issues cause blocks to be missed during normal monitoring cycles, the missed block recovery feature can automatically retry fetching and processing them. This runs as a separate background job to avoid impacting the main monitoring loop.
+
+**Example Recovery Configuration**
+
+```json
+{
+  "recovery_config": {
+    "enabled": true,
+    "cron_schedule": "0 */5 * * * *",
+    "max_blocks_per_run": 10,
+    "max_block_age": 1000,
+    "max_retries": 3,
+    "retry_delay_ms": 1000
+  }
+}
+```
+
+**Recovery Config Fields**
+
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**enabled**` | `Boolean` | Whether the recovery job is active |
+| `**cron_schedule**` | `String` | When to run recovery (separate from main monitor schedule) |
+| `**max_blocks_per_run**` | `Number` | Maximum blocks to attempt per recovery cycle (limits RPC load) |
+| `**max_block_age**` | `Number` | Blocks older than this (in blocks from current) are pruned and not recovered |
+| `**max_retries**` | `Number` | Maximum retry attempts before marking a block as failed |
+| `**retry_delay_ms**` | `Number` | Delay in milliseconds between retry attempts |
 
 #### Important Considerations
 
