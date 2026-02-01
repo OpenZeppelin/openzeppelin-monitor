@@ -46,7 +46,7 @@ midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-l
 midnight-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-6.1.0-alpha.3" }
 midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-6.1.0-alpha.3" }
 midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "ledger-6.1.0-alpha.3" }
-midnight-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-6.1.0-alpha.3" }
+midnight-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-7.0.0" }
 midnight-node-ledger = { git = "https://github.com/midnightntwrk/midnight-node", package = "midnight-node-ledger", tag = "node-0.17.0-rc.4" }
 midnight-node-ledger-helpers = { git = "https://github.com/midnightntwrk/midnight-node", package = "midnight-node-ledger-helpers", tag = "node-0.17.0-rc.4" }
 oz-keystore = "0.1.4"
