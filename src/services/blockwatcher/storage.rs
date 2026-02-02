@@ -950,4 +950,305 @@ mod tests {
 			assert_eq!(entry.status, MissedBlockStatus::Pending);
 		}
 	}
+
+	#[tokio::test]
+	async fn test_load_empty_json_file() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Create an empty JSON file
+		let json_path = temp_dir.path().join("test_missed_blocks.json");
+		tokio::fs::write(&json_path, "").await.unwrap();
+
+		// Should return empty vector for empty file
+		let result = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(result.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_load_whitespace_only_json_file() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Create a JSON file with only whitespace
+		let json_path = temp_dir.path().join("test_missed_blocks.json");
+		tokio::fs::write(&json_path, "   \n\t  ").await.unwrap();
+
+		// Should return empty vector for whitespace-only file
+		let result = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(result.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_migration_with_empty_lines() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Create an old-format text file with empty lines and whitespace
+		let txt_path = temp_dir.path().join("test_missed_blocks.txt");
+		tokio::fs::write(&txt_path, "\n100\n\n101\n  \n102\n")
+			.await
+			.unwrap();
+
+		// Call get_missed_blocks which should trigger migration
+		let result = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+
+		// Should have 3 entries (empty lines ignored)
+		assert_eq!(result.len(), 3);
+
+		// Verify JSON file was created
+		let json_path = temp_dir.path().join("test_missed_blocks.json");
+		assert!(json_path.exists());
+
+		// Verify text file was removed
+		assert!(!txt_path.exists());
+	}
+
+	#[tokio::test]
+	async fn test_migration_handles_invalid_numbers() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Create an old-format text file with some invalid entries
+		let txt_path = temp_dir.path().join("test_missed_blocks.txt");
+		tokio::fs::write(&txt_path, "100\nnot_a_number\n101\nabc\n102\n")
+			.await
+			.unwrap();
+
+		// Call get_missed_blocks which should trigger migration
+		let result = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+
+		// Should only have 3 valid entries (invalid lines skipped)
+		assert_eq!(result.len(), 3);
+		let block_numbers: Vec<u64> = result.iter().map(|e| e.block_number).collect();
+		assert!(block_numbers.contains(&100));
+		assert!(block_numbers.contains(&101));
+		assert!(block_numbers.contains(&102));
+	}
+
+	#[tokio::test]
+	async fn test_update_status_block_not_found() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Save some missed blocks
+		storage.save_missed_blocks("test", &[100]).await.unwrap();
+
+		// Update status for a block that doesn't exist (should not error)
+		let result = storage
+			.update_missed_block_status("test", 999, MissedBlockStatus::Recovered, None)
+			.await;
+		assert!(result.is_ok());
+
+		// Verify original block is unchanged
+		let entries = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert_eq!(entries.len(), 1);
+		assert_eq!(entries[0].block_number, 100);
+		assert_eq!(entries[0].status, MissedBlockStatus::Pending);
+	}
+
+	#[tokio::test]
+	async fn test_update_status_preserves_existing_error() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Save a missed block
+		storage.save_missed_blocks("test", &[100]).await.unwrap();
+
+		// Update with an error
+		storage
+			.update_missed_block_status(
+				"test",
+				100,
+				MissedBlockStatus::Failed,
+				Some("First error".to_string()),
+			)
+			.await
+			.unwrap();
+
+		// Update again without error (should preserve existing error)
+		storage
+			.update_missed_block_status("test", 100, MissedBlockStatus::Pending, None)
+			.await
+			.unwrap();
+
+		// Verify error was preserved
+		let json_path = temp_dir.path().join("test_missed_blocks.json");
+		let content = tokio::fs::read_to_string(&json_path).await.unwrap();
+		let entries: Vec<MissedBlockEntry> = serde_json::from_str(&content).unwrap();
+		assert_eq!(entries[0].last_error, Some("First error".to_string()));
+	}
+
+	#[tokio::test]
+	async fn test_remove_recovered_blocks_empty_list() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Save some missed blocks
+		storage
+			.save_missed_blocks("test", &[100, 101, 102])
+			.await
+			.unwrap();
+
+		// Remove empty list (should be no-op)
+		let result = storage.remove_recovered_blocks("test", &[]).await;
+		assert!(result.is_ok());
+
+		// Verify all blocks still exist
+		let entries = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert_eq!(entries.len(), 3);
+	}
+
+	#[tokio::test]
+	async fn test_prune_with_no_blocks_to_prune() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Save blocks that are all within the age range
+		storage
+			.save_missed_blocks("test", &[900, 950, 1000])
+			.await
+			.unwrap();
+
+		// Prune with a large max_block_age
+		let pruned = storage
+			.prune_old_missed_blocks("test", 500, 1000)
+			.await
+			.unwrap();
+
+		assert_eq!(pruned, 0);
+
+		// Verify all blocks still exist
+		let entries = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert_eq!(entries.len(), 3);
+	}
+
+	#[tokio::test]
+	async fn test_prune_empty_storage() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Prune on empty storage
+		let pruned = storage
+			.prune_old_missed_blocks("test", 100, 1000)
+			.await
+			.unwrap();
+
+		assert_eq!(pruned, 0);
+	}
+
+	#[tokio::test]
+	async fn test_get_missed_blocks_filters_by_max_retries() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Save some missed blocks
+		storage
+			.save_missed_blocks("test", &[100, 101, 102])
+			.await
+			.unwrap();
+
+		// Simulate retries on block 100 (will have retry_count = 3 after 3 status updates)
+		for _ in 0..3 {
+			storage
+				.update_missed_block_status("test", 100, MissedBlockStatus::Pending, None)
+				.await
+				.unwrap();
+		}
+
+		// Get missed blocks with max_retries = 3
+		let result = storage
+			.get_missed_blocks("test", 1000, 1000, 3)
+			.await
+			.unwrap();
+
+		// Block 100 should be excluded (retry_count >= max_retries)
+		assert_eq!(result.len(), 2);
+		let block_numbers: Vec<u64> = result.iter().map(|e| e.block_number).collect();
+		assert!(!block_numbers.contains(&100));
+		assert!(block_numbers.contains(&101));
+		assert!(block_numbers.contains(&102));
+	}
+
+	#[tokio::test]
+	async fn test_missed_block_entry_new() {
+		let entry = MissedBlockEntry::new(12345);
+		assert_eq!(entry.block_number, 12345);
+		assert_eq!(entry.retry_count, 0);
+		assert_eq!(entry.status, MissedBlockStatus::Pending);
+		assert!(entry.last_attempt_at.is_none());
+		assert!(entry.last_error.is_none());
+		// first_missed_at should be set to current timestamp
+		assert!(entry.first_missed_at > 0);
+	}
+
+	#[tokio::test]
+	async fn test_file_block_storage_default() {
+		let storage = FileBlockStorage::default();
+		// Default path should be "data"
+		assert_eq!(storage.storage_path, std::path::PathBuf::from("data"));
+	}
+
+	#[tokio::test]
+	async fn test_update_status_recovering_does_not_increment_retry() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Save a missed block
+		storage.save_missed_blocks("test", &[100]).await.unwrap();
+
+		// Update to Recovering status (should NOT increment retry_count)
+		storage
+			.update_missed_block_status("test", 100, MissedBlockStatus::Recovering, None)
+			.await
+			.unwrap();
+
+		let json_path = temp_dir.path().join("test_missed_blocks.json");
+		let content = tokio::fs::read_to_string(&json_path).await.unwrap();
+		let entries: Vec<MissedBlockEntry> = serde_json::from_str(&content).unwrap();
+		assert_eq!(entries[0].retry_count, 0); // Should still be 0
+		assert_eq!(entries[0].status, MissedBlockStatus::Recovering);
+	}
+
+	#[tokio::test]
+	async fn test_update_status_recovered_does_not_increment_retry() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+
+		// Save a missed block
+		storage.save_missed_blocks("test", &[100]).await.unwrap();
+
+		// Update to Recovered status (should NOT increment retry_count)
+		storage
+			.update_missed_block_status("test", 100, MissedBlockStatus::Recovered, None)
+			.await
+			.unwrap();
+
+		let json_path = temp_dir.path().join("test_missed_blocks.json");
+		let content = tokio::fs::read_to_string(&json_path).await.unwrap();
+		let entries: Vec<MissedBlockEntry> = serde_json::from_str(&content).unwrap();
+		assert_eq!(entries[0].retry_count, 0); // Should still be 0
+		assert_eq!(entries[0].status, MissedBlockStatus::Recovered);
+	}
 }

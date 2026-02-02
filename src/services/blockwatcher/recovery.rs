@@ -333,7 +333,9 @@ where
 mod tests {
 	use super::*;
 	use crate::models::{BlockChainType, RpcUrl, SecretString, SecretValue};
-	use crate::services::blockwatcher::storage::FileBlockStorage;
+	use crate::services::blockwatcher::storage::{
+		BlockStorage, FileBlockStorage, MissedBlockEntry,
+	};
 	use crate::services::blockwatcher::tracker::BlockTracker;
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use tempfile::tempdir;
@@ -377,6 +379,53 @@ mod tests {
 		}
 	}
 
+	/// Mock RPC client that can return empty responses for specific blocks
+	#[derive(Clone)]
+	struct MockRpcClientWithEmptyResponse {
+		latest_block: u64,
+		fail_blocks: Vec<u64>,
+		empty_response_blocks: Vec<u64>,
+		call_count: Arc<AtomicUsize>,
+	}
+
+	impl MockRpcClientWithEmptyResponse {
+		fn new(latest_block: u64, fail_blocks: Vec<u64>, empty_response_blocks: Vec<u64>) -> Self {
+			Self {
+				latest_block,
+				fail_blocks,
+				empty_response_blocks,
+				call_count: Arc::new(AtomicUsize::new(0)),
+			}
+		}
+	}
+
+	#[async_trait::async_trait]
+	impl BlockChainClient for MockRpcClientWithEmptyResponse {
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
+			Ok(self.latest_block)
+		}
+
+		async fn get_blocks(
+			&self,
+			start: u64,
+			_end: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error> {
+			self.call_count.fetch_add(1, Ordering::SeqCst);
+
+			if self.fail_blocks.contains(&start) {
+				return Err(anyhow::anyhow!("Simulated RPC failure for block {}", start));
+			}
+
+			if self.empty_response_blocks.contains(&start) {
+				// Return empty response (block not found)
+				return Ok(vec![]);
+			}
+
+			// Return a mock EVM block
+			Ok(vec![BlockType::EVM(Box::default())])
+		}
+	}
+
 	// Mock RPC client for testing
 	#[derive(Clone)]
 	struct MockRpcClient {
@@ -414,6 +463,125 @@ mod tests {
 
 			// Return a mock EVM block
 			Ok(vec![BlockType::EVM(Box::default())])
+		}
+	}
+
+	/// Mock storage that fails on specific operations
+	#[derive(Clone)]
+	struct MockFailingStorage {
+		inner: FileBlockStorage,
+		fail_update_status: bool,
+		fail_remove_recovered: bool,
+	}
+
+	impl MockFailingStorage {
+		fn new(storage_path: std::path::PathBuf) -> Self {
+			Self {
+				inner: FileBlockStorage::new(storage_path),
+				fail_update_status: false,
+				fail_remove_recovered: false,
+			}
+		}
+
+		fn with_failing_update_status(mut self) -> Self {
+			self.fail_update_status = true;
+			self
+		}
+
+		fn with_failing_remove_recovered(mut self) -> Self {
+			self.fail_remove_recovered = true;
+			self
+		}
+	}
+
+	#[async_trait::async_trait]
+	impl BlockStorage for MockFailingStorage {
+		async fn get_last_processed_block(
+			&self,
+			network_id: &str,
+		) -> Result<Option<u64>, anyhow::Error> {
+			self.inner.get_last_processed_block(network_id).await
+		}
+
+		async fn save_last_processed_block(
+			&self,
+			network_id: &str,
+			block: u64,
+		) -> Result<(), anyhow::Error> {
+			self.inner
+				.save_last_processed_block(network_id, block)
+				.await
+		}
+
+		async fn save_blocks(
+			&self,
+			network_id: &str,
+			blocks: &[BlockType],
+		) -> Result<(), anyhow::Error> {
+			self.inner.save_blocks(network_id, blocks).await
+		}
+
+		async fn delete_blocks(&self, network_id: &str) -> Result<(), anyhow::Error> {
+			self.inner.delete_blocks(network_id).await
+		}
+
+		async fn save_missed_blocks(
+			&self,
+			network_id: &str,
+			blocks: &[u64],
+		) -> Result<(), anyhow::Error> {
+			self.inner.save_missed_blocks(network_id, blocks).await
+		}
+
+		async fn get_missed_blocks(
+			&self,
+			network_id: &str,
+			max_block_age: u64,
+			current_block: u64,
+			max_retries: u32,
+		) -> Result<Vec<MissedBlockEntry>, anyhow::Error> {
+			self.inner
+				.get_missed_blocks(network_id, max_block_age, current_block, max_retries)
+				.await
+		}
+
+		async fn update_missed_block_status(
+			&self,
+			network_id: &str,
+			block_number: u64,
+			status: MissedBlockStatus,
+			error: Option<String>,
+		) -> Result<(), anyhow::Error> {
+			if self.fail_update_status {
+				return Err(anyhow::anyhow!("Simulated update status failure"));
+			}
+			self.inner
+				.update_missed_block_status(network_id, block_number, status, error)
+				.await
+		}
+
+		async fn remove_recovered_blocks(
+			&self,
+			network_id: &str,
+			block_numbers: &[u64],
+		) -> Result<(), anyhow::Error> {
+			if self.fail_remove_recovered {
+				return Err(anyhow::anyhow!("Simulated remove recovered failure"));
+			}
+			self.inner
+				.remove_recovered_blocks(network_id, block_numbers)
+				.await
+		}
+
+		async fn prune_old_missed_blocks(
+			&self,
+			network_id: &str,
+			max_block_age: u64,
+			current_block: u64,
+		) -> Result<usize, anyhow::Error> {
+			self.inner
+				.prune_old_missed_blocks(network_id, max_block_age, current_block)
+				.await
 		}
 	}
 
@@ -627,5 +795,310 @@ mod tests {
 		// Block should be pruned (current is 1000, block 10 is way older than 100 blocks)
 		assert_eq!(result.pruned, 1);
 		assert_eq!(result.attempted, 0); // No blocks to attempt after pruning
+	}
+
+	#[tokio::test]
+	async fn test_recovery_handles_empty_rpc_response_with_retry() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		// Add a missed block that will return empty response
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.max_retries = 3; // Multiple retries so it won't fail immediately
+		recovery_config.retry_delay_ms = 10; // Short delay for testing
+
+		// Block 100 will return empty response (block not found)
+		let rpc_client = MockRpcClientWithEmptyResponse::new(1000, vec![], vec![100]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		// Block should be attempted but not recovered (empty response)
+		assert_eq!(result.attempted, 1);
+		assert_eq!(result.recovered, 0);
+		assert_eq!(result.failed, 0); // Not failed yet, will retry
+
+		// Verify block is still in storage with incremented retry count
+		let remaining = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert_eq!(remaining.len(), 1);
+		assert_eq!(remaining[0].retry_count, 1);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_handles_empty_rpc_response_max_retries() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		// Add a missed block that will return empty response
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.max_retries = 1; // Only 1 retry so it fails immediately
+		recovery_config.retry_delay_ms = 10;
+
+		// Block 100 will return empty response (block not found)
+		let rpc_client = MockRpcClientWithEmptyResponse::new(1000, vec![], vec![100]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage,
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		// Block should fail after max retries with empty response
+		assert_eq!(result.attempted, 1);
+		assert_eq!(result.recovered, 0);
+		assert_eq!(result.failed, 1);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_handles_rpc_failure_with_retry() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		// Add a missed block that will fail
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.max_retries = 3; // Multiple retries
+		recovery_config.retry_delay_ms = 10;
+
+		let rpc_client = MockRpcClient::new(1000, vec![100]); // Block 100 will fail
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		// Block should be attempted but not recovered, not failed (will retry)
+		assert_eq!(result.attempted, 1);
+		assert_eq!(result.recovered, 0);
+		assert_eq!(result.failed, 0);
+
+		// Verify retry count was incremented
+		let remaining = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert_eq!(remaining.len(), 1);
+		assert_eq!(remaining[0].retry_count, 1);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_continues_on_update_status_error_recovering() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(
+			MockFailingStorage::new(temp_dir.path().to_path_buf()).with_failing_update_status(),
+		);
+
+		// First save the missed block using the inner storage
+		storage
+			.inner
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let recovery_config = create_recovery_config();
+		let rpc_client = MockRpcClient::new(1000, vec![]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		// Recovery should continue despite status update errors
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage,
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		// Recovery still proceeds even with status update failures
+		assert_eq!(result.attempted, 1);
+		// The block is still processed through handlers even if status update fails
+		assert_eq!(result.recovered, 1);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_continues_on_remove_recovered_error() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(
+			MockFailingStorage::new(temp_dir.path().to_path_buf()).with_failing_remove_recovered(),
+		);
+
+		// First save the missed block using the inner storage
+		storage
+			.inner
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let recovery_config = create_recovery_config();
+		let rpc_client = MockRpcClient::new(1000, vec![]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		// Recovery should complete even if remove_recovered fails
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage,
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(result.attempted, 1);
+		assert_eq!(result.recovered, 1);
+		assert_eq!(result.failed, 0);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_logs_pruned_blocks() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		// Add multiple old blocks that will be pruned
+		storage
+			.save_missed_blocks("test_network", &[10, 20, 30])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.max_block_age = 100;
+
+		let rpc_client = MockRpcClient::new(1000, vec![]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage,
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		// All blocks should be pruned (they're all older than current - max_age)
+		assert_eq!(result.pruned, 3);
+		assert_eq!(result.attempted, 0);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_mixed_success_and_failures() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		// Add multiple missed blocks
+		storage
+			.save_missed_blocks("test_network", &[100, 101, 102])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.max_retries = 1;
+		recovery_config.retry_delay_ms = 10;
+
+		// Block 101 will fail
+		let rpc_client = MockRpcClient::new(1000, vec![101]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(result.attempted, 3);
+		assert_eq!(result.recovered, 2); // 100 and 102 succeed
+		assert_eq!(result.failed, 1); // 101 fails
+
+		// Verify only block 101 remains in storage
+		let json_path = temp_dir.path().join("test_network_missed_blocks.json");
+		let content = tokio::fs::read_to_string(&json_path).await.unwrap();
+		let entries: Vec<MissedBlockEntry> = serde_json::from_str(&content).unwrap();
+		assert_eq!(entries.len(), 1);
+		assert_eq!(entries[0].block_number, 101);
+		assert_eq!(entries[0].status, MissedBlockStatus::Failed);
 	}
 }
