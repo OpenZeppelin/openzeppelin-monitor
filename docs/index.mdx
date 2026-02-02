@@ -1133,6 +1133,48 @@ Match transaction properties. The available fields and expression syntax depend 
 
 > **Note:** Solana uses base58-encoded addresses which are case-sensitive, unlike EVM hex addresses. Ensure your filter expressions match the exact casing of Solana addresses.
 
+**Solana Filtering Examples:**
+
+// Filter transactions by fee payer
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "fee_payer == 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'"
+    }
+  ]
+}
+
+// Filter transactions involving a specific account
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "accounts contains '|JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4|'"
+    }
+  ]
+}
+
+// Combine fee payer and account filters
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "fee_payer == 'So11111111111111111111111111111111111111112' AND accounts contains '|TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA|'"
+    }
+  ]
+}
+
+// Filter transactions with minimum fee threshold
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "fee > 5000"
+    }
+  ]
+}
+
 #### Matching Rules
 
 * If no conditions are specified, all transactions match
