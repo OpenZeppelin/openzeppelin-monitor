@@ -39,11 +39,7 @@ Before contributing, ensure you have:
 
 * ***Rust 2021 edition*** - Required for development
 * ***Git*** - For version control
-* ***Python 3.11 (3.10+ minimum)*** - For pre-commit hooks (and optional custom scripts)
-
-### Recommended Python setup (pyenv)
-
-We recommend [pyenv](https://github.com/pyenv/pyenv) for a consistent Python version. See the [Contribution guidelines](/monitor/contribution#recommended-python-setup-pyenv) for full setup instructions.
+* ***Python/pip*** - For pre-commit hooks
 
 ### Initial Setup
 
@@ -84,7 +80,7 @@ RUST_TEST_THREADS=1 cargo test properties
 
 #### Installing Pre-commit Hooks
 
-Ensure Python 3.10+ (e.g. via pyenv or system). Install and configure pre-commit hooks to ensure code quality:
+Install and configure pre-commit hooks to ensure code quality:
 
 ```bash
 # Install pre-commit (use pipx for global installation if preferred)
