@@ -11,6 +11,9 @@ use openzeppelin_monitor::services::blockchain::{
 
 use crate::integration::mocks::{AlwaysFailsToUpdateClientTransport, MockTransport};
 
+/// Default network slug for test cases
+const TEST_NETWORK_SLUG: &str = "test-network";
+
 fn get_mock_client_builder() -> ClientWithMiddleware {
 	ClientBuilder::new(reqwest::Client::new()).build()
 }
@@ -32,6 +35,7 @@ async fn test_endpoint_rotation() {
 		get_mock_client_builder(),
 		server1.url().as_ref(),
 		vec![server2.url(), server3.url()],
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -63,8 +67,12 @@ async fn test_send_raw_request() {
 		.create_async()
 		.await;
 
-	let manager =
-		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+	);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -103,6 +111,7 @@ async fn test_rotation_on_error() {
 		get_mock_client_builder(),
 		primary_server.url().as_ref(),
 		vec![fallback_server.url()],
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -131,8 +140,12 @@ async fn test_no_fallback_urls_available() {
 		.create_async()
 		.await;
 
-	let manager =
-		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+	);
 	let transport = MockTransport::new();
 
 	let result = manager
@@ -197,8 +210,12 @@ async fn test_rotate_url_no_fallbacks() {
 	let server = Server::new_async().await;
 
 	// Create manager with no fallback URLs
-	let manager =
-		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+	);
 	let transport = MockTransport::new();
 
 	// Attempt to rotate
@@ -228,6 +245,7 @@ async fn test_rotate_url_all_urls_match_active() {
 		get_mock_client_builder(),
 		active_url.as_ref(),
 		vec![active_url.clone(), active_url.clone()],
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -265,6 +283,7 @@ async fn test_rotate_url_connection_failure() {
 		get_mock_client_builder(),
 		server.url().as_ref(),
 		vec![invalid_url.to_string()],
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -301,6 +320,7 @@ async fn test_rotate_url_update_client_failure() {
 		get_mock_client_builder(),
 		server1.url().as_ref(),
 		vec![server2.url()],
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = AlwaysFailsToUpdateClientTransport {
 		current_url: Arc::new(RwLock::new(server1.url())),
@@ -330,6 +350,7 @@ async fn test_rotate_url_all_urls_fail_returns_url_rotation_error() {
 		get_mock_client_builder(),
 		invalid_url1,
 		vec![invalid_url2.to_string()],
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -356,8 +377,12 @@ async fn test_update_client() {
 		.create_async()
 		.await;
 
-	let mut manager =
-		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let mut manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+	);
 
 	// Test initial client
 	let transport = MockTransport::new();
@@ -415,6 +440,7 @@ async fn test_send_raw_request_network_error() {
 		get_mock_client_builder(),
 		invalid_url,
 		vec![valid_server.url()], // Add valid fallback URL
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -441,6 +467,7 @@ async fn test_send_raw_request_network_error_no_fallback() {
 		get_mock_client_builder(),
 		invalid_url,
 		vec![], // No fallback URLs
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -470,8 +497,12 @@ async fn test_send_raw_request_response_parse_error() {
 		.create_async()
 		.await;
 
-	let manager =
-		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+	);
 	let transport = MockTransport::new();
 
 	// Send request - should fail with parse error
@@ -498,6 +529,7 @@ async fn test_send_raw_request_all_urls_fail_returns_network_error() {
 		get_mock_client_builder(),
 		invalid_url1,
 		vec![invalid_url2.to_string(), invalid_url3.to_string()],
+		TEST_NETWORK_SLUG.to_string(),
 	);
 	let transport = MockTransport::new();
 
@@ -522,8 +554,12 @@ async fn test_send_raw_request_returns_http_error_if_non_transient() {
 		.create_async()
 		.await;
 
-	let manager =
-		HttpEndpointManager::new(get_mock_client_builder(), server.url().as_ref(), vec![]);
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+	);
 	let transport = MockTransport::new();
 
 	let result = manager

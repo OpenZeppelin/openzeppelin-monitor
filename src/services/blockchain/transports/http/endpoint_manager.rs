@@ -6,6 +6,7 @@ use reqwest_middleware::ClientWithMiddleware;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::RwLock;
 
 use crate::services::blockchain::transports::{
@@ -22,12 +23,14 @@ use crate::services::blockchain::transports::{
 /// * `fallback_urls` - A list of fallback URLs to rotate to
 /// * `client` - The client to use for the endpoint manager
 /// * `rotation_lock` - A lock for managing the rotation process
+/// * `network_slug` - The network identifier for metrics labeling
 #[derive(Clone, Debug)]
 pub struct EndpointManager {
 	pub active_url: Arc<RwLock<String>>,
 	pub fallback_urls: Arc<RwLock<Vec<String>>>,
 	client: ClientWithMiddleware,
 	rotation_lock: Arc<tokio::sync::Mutex<()>>,
+	network_slug: String,
 }
 
 /// Represents the outcome of a `EndpointManager::attempt_request_on_url` method call
@@ -50,14 +53,21 @@ impl EndpointManager {
 	/// * `client` - The client to use for the endpoint manager
 	/// * `active_url` - The initial active URL
 	/// * `fallback_urls` - A list of fallback URLs to rotate to
+	/// * `network_slug` - The network identifier for metrics labeling
 	///
 	/// # Returns
-	pub fn new(client: ClientWithMiddleware, active_url: &str, fallback_urls: Vec<String>) -> Self {
+	pub fn new(
+		client: ClientWithMiddleware,
+		active_url: &str,
+		fallback_urls: Vec<String>,
+		network_slug: String,
+	) -> Self {
 		Self {
 			active_url: Arc::new(RwLock::new(active_url.to_string())),
 			fallback_urls: Arc::new(RwLock::new(fallback_urls)),
 			rotation_lock: Arc::new(tokio::sync::Mutex::new(())),
 			client,
+			network_slug,
 		}
 	}
 
@@ -252,6 +262,11 @@ impl EndpointManager {
 		method: &str,
 		params: Option<P>,
 	) -> Result<Value, TransportError> {
+		let start = Instant::now();
+
+		// Record the RPC request
+		crate::utils::metrics::record_rpc_request(&self.network_slug, method);
+
 		loop {
 			let current_url_snapshot = self.active_url.read().await.clone();
 
@@ -270,6 +285,10 @@ impl EndpointManager {
 				SingleRequestAttemptOutcome::Success(response) => {
 					let status = response.status();
 					if status.is_success() {
+						// Record successful request duration
+						let duration = start.elapsed().as_secs_f64();
+						crate::utils::metrics::observe_rpc_duration(&self.network_slug, duration);
+
 						// Successful response, parse JSON
 						return response.json().await.map_err(|e| {
 							TransportError::response_parse(
@@ -281,6 +300,15 @@ impl EndpointManager {
 					} else {
 						// HTTP error
 						let error_body = response.text().await.unwrap_or_default();
+						let status_code = status.as_u16();
+
+						// Record HTTP error metric
+						crate::utils::metrics::record_rpc_error(
+							&self.network_slug,
+							&status_code.to_string(),
+							"http",
+						);
+
 						tracing::warn!(
 							"Request to {} failed with status {}: {}",
 							current_url_snapshot,
@@ -289,11 +317,23 @@ impl EndpointManager {
 						);
 
 						// Check if we should rotate based on status code
-						if ROTATE_ON_ERROR_CODES.contains(&status.as_u16()) {
+						if ROTATE_ON_ERROR_CODES.contains(&status_code) {
+							// Record rate limit metric (429)
+							crate::utils::metrics::record_rate_limit(
+								&self.network_slug,
+								&current_url_snapshot,
+							);
+
 							tracing::debug!(
 								"send_raw_request: HTTP status {} on '{}' triggers URL rotation attempt",
 								status,
 								current_url_snapshot
+							);
+
+							// Record endpoint rotation due to rate limit
+							crate::utils::metrics::record_endpoint_rotation(
+								&self.network_slug,
+								"rate_limit",
 							);
 
 							match self.try_rotate_url(transport).await {
@@ -330,10 +370,19 @@ impl EndpointManager {
 				}
 				// Handle network error, try rotation
 				SingleRequestAttemptOutcome::NetworkError(network_error) => {
+					// Record network error metric
+					crate::utils::metrics::record_rpc_error(&self.network_slug, "0", "network");
+
 					tracing::warn!(
 						"Network error for {}: {}",
 						current_url_snapshot,
 						network_error,
+					);
+
+					// Record endpoint rotation due to network error
+					crate::utils::metrics::record_endpoint_rotation(
+						&self.network_slug,
+						"network_error",
 					);
 
 					// Always attempt rotation on network errors
