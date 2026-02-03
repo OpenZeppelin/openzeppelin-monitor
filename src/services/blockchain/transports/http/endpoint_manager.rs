@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
+use url::Url;
 
 use crate::services::blockchain::transports::{
 	RotatingTransport, TransportError, ROTATE_ON_ERROR_CODES,
@@ -262,12 +263,12 @@ impl EndpointManager {
 		method: &str,
 		params: Option<P>,
 	) -> Result<Value, TransportError> {
-		let start = Instant::now();
-
-		// Record the RPC request
-		crate::utils::metrics::record_rpc_request(&self.network_slug, method);
-
 		loop {
+			let attempt_start = Instant::now();
+
+			// Record each attempt so error rates stay consistent
+			crate::utils::metrics::record_rpc_request(&self.network_slug, method);
+
 			let current_url_snapshot = self.active_url.read().await.clone();
 
 			tracing::debug!(
@@ -286,7 +287,7 @@ impl EndpointManager {
 					let status = response.status();
 					if status.is_success() {
 						// Record successful request duration
-						let duration = start.elapsed().as_secs_f64();
+						let duration = attempt_start.elapsed().as_secs_f64();
 						crate::utils::metrics::observe_rpc_duration(&self.network_slug, duration);
 
 						// Successful response, parse JSON
@@ -318,10 +319,15 @@ impl EndpointManager {
 
 						// Check if we should rotate based on status code
 						if ROTATE_ON_ERROR_CODES.contains(&status_code) {
-							// Record rate limit metric (429)
+							// Record rate limit metric (429) with sanitized endpoint (host only, no API keys)
+							let endpoint_label = Url::parse(&current_url_snapshot)
+								.ok()
+								.and_then(|u| u.host_str().map(|h| h.to_string()))
+								.unwrap_or_else(|| "unknown".to_string());
+
 							crate::utils::metrics::record_rate_limit(
 								&self.network_slug,
-								&current_url_snapshot,
+								&endpoint_label,
 							);
 
 							tracing::debug!(
