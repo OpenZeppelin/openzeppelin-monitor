@@ -6118,7 +6118,7 @@ dependencies = [
 
 [[package]]
 name = "openzeppelin-monitor"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "actix-rt",
  "actix-web",
