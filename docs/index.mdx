@@ -38,18 +38,25 @@ To get started immediately, see [Quickstart](/monitor/quickstart).
 
 </Callout>
 
+<Callout>
+
+To test monitors against a local EVM node (no testnet required), see [Local EVM Testing](/monitor/local-evm-testing).
+
+</Callout>
+
 ## Installation
 
 ### Prerequisites
 
 * Use ***Rust 2024 edition***, version `1.90` or later.
 * ***Docker*** (optional, for containerized deployment)
+* ***Python 3.11 (3.10+)*** - For pre-commit hooks; we recommend [pyenv](https://github.com/pyenv/pyenv) for version management (see [Contribution guidelines](/monitor/contribution#recommended-python-setup-pyenv))
 
 #### System Dependencies (Linux)
 
 For Ubuntu 22.04+ or Debian-based systems (both x86 and ARM64 architectures), install required packages:
 
-***Note:*** Python 3.9+ is required for pre-commit hooks compatibility.
+***Note:*** Python 3.11 is recommended; 3.10+ is the minimum for pre-commit hooks.
 
 ```bash
 # Install required packages directly
@@ -67,14 +74,13 @@ sudo apt install -y \
     python3-pip
 ```
 
-Or use the provided system package script (automatically ensures Python 3.9+ compatibility):
+Or use the provided system package script (installs Python 3.11 if your system Python is below 3.10):
 
 ```bash
-chmod +x ./scripts/linux/sys_pkgs_core.sh
 chmod +x ./scripts/linux/sys_pkgs_dev.sh
 # Installs required packages and ensures compatible Python version
-./scripts/linux/sys_pkgs_core.sh   // For runtime dependencies only
-./scripts/linux/sys_pkgs_dev.sh    // For Python/dev dependencies (calls core script)
+./scripts/linux/sys_pkgs_dev.sh    # For Python/dev dependencies (includes runtime deps)
+# Or, for runtime-only (no Python/dev tools): ./scripts/linux/sys_pkgs_core.sh
 ```
 
 ### Local Installation
@@ -429,9 +435,9 @@ The monitor uses file-based storage by default.
 When `store_blocks` is enabled in the network configuration, the monitor stores:
 
 * Processed blocks: `./data/<network_slug>_blocks_<timestamp>.json`
-* Missed blocks: `./data/<network_slug>_missed_blocks.txt` (used to store missed blocks)
+* Missed blocks: `./data/<network_slug>_missed_blocks.json` (JSON format with block status tracking)
 
-The content of the `missed_blocks.txt` file may help to determine the right `max_past_blocks` value based on the network’s block time and the monitor’s cron schedule.
+The missed blocks file tracks blocks that failed to be fetched or processed, including their status (Pending, Recovering, Recovered, Failed), retry count, and error information. When `recovery_config` is enabled, this file is used by the recovery job to retry failed blocks.
 
 Additionally, the monitor will always store:
 
@@ -484,6 +490,37 @@ A Network configuration defines connection details and operational parameters fo
 | `**cron_schedule**` | `String` | Monitor scheduling in cron format |
 | `**max_past_blocks**` | `Number` | Maximum number of past blocks to process |
 | `**store_blocks**` | `Boolean` | Whether to store processed blocks (defaults output to `./data/` directory) |
+| `**recovery_config**` | `Object` | Optional configuration for missed block recovery (see below) |
+
+#### Missed Block Recovery
+
+When RPC failures or network issues cause blocks to be missed during normal monitoring cycles, the missed block recovery feature can automatically retry fetching and processing them. This runs as a separate background job to avoid impacting the main monitoring loop.
+
+**Example Recovery Configuration**
+
+```json
+{
+  "recovery_config": {
+    "enabled": true,
+    "cron_schedule": "0 */5 * * * *",
+    "max_blocks_per_run": 10,
+    "max_block_age": 1000,
+    "max_retries": 3,
+    "retry_delay_ms": 1000
+  }
+}
+```
+
+**Recovery Config Fields**
+
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**enabled**` | `Boolean` | Whether the recovery job is active |
+| `**cron_schedule**` | `String` | When to run recovery (separate from main monitor schedule) |
+| `**max_blocks_per_run**` | `Number` | Maximum blocks to attempt per recovery cycle (limits RPC load) |
+| `**max_block_age**` | `Number` | Blocks older than this (in blocks from current) are pruned and not recovered |
+| `**max_retries**` | `Number` | Maximum retry attempts before marking a block as failed |
+| `**retry_delay_ms**` | `Number` | Delay in milliseconds between retry attempts |
 
 #### Important Considerations
 
@@ -1120,6 +1157,60 @@ Match transaction properties. The available fields and expression syntax depend 
 | `**value**` | `i64` | Value associated with the **first** relevant operation (e.g., payment amount). Defaults to 0 if no relevant operation or value is found. |
 | `**from**` | `address` | Source account address of the **first** relevant operation (e.g., payment sender). Case-insensitive comparison. |
 | `**to**` | `address` | Destination account address of the **first** relevant operation (e.g., payment recipient or invoked contract). Case-insensitive comparison. |
+
+#### Available Transaction Fields (Solana)
+| **Field** | **Type** | **Description** |
+| --- | --- | --- |
+| `**signature**` | `string` | Transaction signature (base58 encoded). Comparisons are case-sensitive. |
+| `**slot**` | `u64` | Slot number where the transaction was processed |
+| `**fee**` | `u64` | Transaction fee in lamports |
+| `**is_success**` | `bool` | Whether the transaction succeeded |
+| `**fee_payer**` | `pubkey` | Address that paid the transaction fee (first account in account_keys). Only present if defined. Comparisons are case-sensitive. |
+| `**accounts**` | `string` | All accounts involved in the transaction, including addresses loaded from lookup tables (ALTs). Format: `\|account1\|account2\|...\|` with pipe delimiters. Use `accounts contains "\|<address>\|"` for exact matching. Comparisons are case-sensitive. |
+
+> **Note:** Solana uses base58-encoded addresses which are case-sensitive, unlike EVM hex addresses. Ensure your filter expressions match the exact casing of Solana addresses.
+
+**Solana Filtering Examples:**
+
+// Filter transactions by fee payer
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "fee_payer == 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'"
+    }
+  ]
+}
+
+// Filter transactions involving a specific account
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "accounts contains '|JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4|'"
+    }
+  ]
+}
+
+// Combine fee payer and account filters
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "fee_payer == 'So11111111111111111111111111111111111111112' AND accounts contains '|TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA|'"
+    }
+  ]
+}
+
+// Filter transactions with minimum fee threshold
+{
+  "transactions": [
+    {
+      "status": "Success",
+      "expression": "fee > 5000"
+    }
+  ]
+}
 
 #### Matching Rules
 

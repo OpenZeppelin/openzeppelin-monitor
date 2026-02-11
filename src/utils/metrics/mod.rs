@@ -5,7 +5,9 @@
 
 pub mod server;
 use lazy_static::lazy_static;
-use prometheus::{Encoder, Gauge, GaugeVec, Opts, Registry, TextEncoder};
+use prometheus::{
+	CounterVec, Encoder, Gauge, GaugeVec, HistogramOpts, HistogramVec, Opts, Registry, TextEncoder,
+};
 use sysinfo::{Disks, System};
 
 lazy_static! {
@@ -134,6 +136,71 @@ lazy_static! {
 		REGISTRY.register(Box::new(gauge.clone())).unwrap();
 		gauge
 	};
+
+	// ============================================================
+	// RPC Operational Metrics
+	// ============================================================
+
+	/// Counter for total RPC requests.
+	///
+	/// Tracks the total number of RPC requests made, labeled by network and method.
+	pub static ref RPC_REQUESTS_TOTAL: CounterVec = {
+		let counter = CounterVec::new(
+			Opts::new("rpc_requests_total", "Total number of RPC requests"),
+			&["network", "method"]
+		).unwrap();
+		REGISTRY.register(Box::new(counter.clone())).unwrap();
+		counter
+	};
+
+	/// Counter for RPC request errors.
+	///
+	/// Tracks the total number of failed RPC requests, labeled by network, HTTP status code, and error type.
+	pub static ref RPC_REQUEST_ERRORS_TOTAL: CounterVec = {
+		let counter = CounterVec::new(
+			Opts::new("rpc_request_errors_total", "Total number of RPC request errors"),
+			&["network", "status_code", "error_type"]
+		).unwrap();
+		REGISTRY.register(Box::new(counter.clone())).unwrap();
+		counter
+	};
+
+	/// Histogram for RPC request duration.
+	///
+	/// Tracks the duration of successful RPC requests in seconds, labeled by network.
+	pub static ref RPC_REQUEST_DURATION_SECONDS: HistogramVec = {
+		let histogram = HistogramVec::new(
+			HistogramOpts::new("rpc_request_duration_seconds", "RPC request duration in seconds")
+				.buckets(vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
+			&["network"]
+		).unwrap();
+		REGISTRY.register(Box::new(histogram.clone())).unwrap();
+		histogram
+	};
+
+	/// Counter for RPC endpoint rotations.
+	///
+	/// Tracks the total number of endpoint rotations, labeled by network and reason.
+	pub static ref RPC_ENDPOINT_ROTATIONS_TOTAL: CounterVec = {
+		let counter = CounterVec::new(
+			Opts::new("rpc_endpoint_rotations_total", "Total number of RPC endpoint rotations"),
+			&["network", "reason"]
+		).unwrap();
+		REGISTRY.register(Box::new(counter.clone())).unwrap();
+		counter
+	};
+
+	/// Counter for RPC rate limit responses (HTTP 429).
+	///
+	/// Tracks the total number of rate limit responses received, labeled by network and endpoint.
+	pub static ref RPC_RATE_LIMITS_TOTAL: CounterVec = {
+		let counter = CounterVec::new(
+			Opts::new("rpc_rate_limits_total", "Total number of RPC rate limit responses (HTTP 429)"),
+			&["network", "endpoint"]
+		).unwrap();
+		REGISTRY.register(Box::new(counter.clone())).unwrap();
+		counter
+	};
 }
 
 /// Gather all metrics and encode into the provided format.
@@ -259,6 +326,95 @@ pub fn update_monitoring_metrics(
 	}
 }
 
+// ============================================================
+// RPC Metrics Helper Functions
+// ============================================================
+
+/// Records an RPC request.
+///
+/// # Arguments
+/// * `network` - The network slug (e.g., "ethereum", "polygon")
+/// * `method` - The RPC method name (e.g., "eth_getBlockByNumber")
+pub fn record_rpc_request(network: &str, method: &str) {
+	RPC_REQUESTS_TOTAL
+		.with_label_values(&[network, method])
+		.inc();
+}
+
+/// Records an RPC request error.
+///
+/// # Arguments
+/// * `network` - The network slug
+/// * `status_code` - The HTTP status code as a string (e.g., "429", "500", or "0" for network errors)
+/// * `error_type` - The type of error (e.g., "http", "network", "timeout")
+pub fn record_rpc_error(network: &str, status_code: &str, error_type: &str) {
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, status_code, error_type])
+		.inc();
+}
+
+/// Observes the duration of an RPC request.
+///
+/// # Arguments
+/// * `network` - The network slug
+/// * `duration_secs` - The request duration in seconds
+pub fn observe_rpc_duration(network: &str, duration_secs: f64) {
+	RPC_REQUEST_DURATION_SECONDS
+		.with_label_values(&[network])
+		.observe(duration_secs);
+}
+
+/// Records an RPC endpoint rotation event.
+///
+/// # Arguments
+/// * `network` - The network slug
+/// * `reason` - The reason for rotation (e.g., "rate_limit", "network_error")
+pub fn record_endpoint_rotation(network: &str, reason: &str) {
+	RPC_ENDPOINT_ROTATIONS_TOTAL
+		.with_label_values(&[network, reason])
+		.inc();
+}
+
+/// Records an RPC rate limit response (HTTP 429).
+///
+/// # Arguments
+/// * `network` - The network slug
+/// * `endpoint` - The endpoint URL that returned the rate limit
+pub fn record_rate_limit(network: &str, endpoint: &str) {
+	RPC_RATE_LIMITS_TOTAL
+		.with_label_values(&[network, endpoint])
+		.inc();
+}
+
+/// Initializes RPC metrics for a network so they appear in Prometheus output with 0 values.
+///
+/// This should be called when a transport client is created for a network.
+/// Ensures metrics are visible in dashboards even before any errors occur.
+///
+/// # Arguments
+/// * `network` - The network slug
+pub fn init_rpc_metrics_for_network(network: &str) {
+	// Initialize error counters with common status codes
+	// These will show as 0 until actual errors occur
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "429", "http"])
+		.inc_by(0.0);
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "500", "http"])
+		.inc_by(0.0);
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "0", "network"])
+		.inc_by(0.0);
+
+	// Initialize rotation counters
+	RPC_ENDPOINT_ROTATIONS_TOTAL
+		.with_label_values(&[network, "rate_limit"])
+		.inc_by(0.0);
+	RPC_ENDPOINT_ROTATIONS_TOTAL
+		.with_label_values(&[network, "network_error"])
+		.inc_by(0.0);
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -294,6 +450,13 @@ mod tests {
 		CONTRACTS_MONITORED.set(0.0);
 		NETWORKS_MONITORED.set(0.0);
 		NETWORK_MONITORS.reset();
+
+		// RPC metrics
+		RPC_REQUESTS_TOTAL.reset();
+		RPC_REQUEST_ERRORS_TOTAL.reset();
+		RPC_REQUEST_DURATION_SECONDS.reset();
+		RPC_ENDPOINT_ROTATIONS_TOTAL.reset();
+		RPC_RATE_LIMITS_TOTAL.reset();
 	}
 
 	// Helper function to create a test network
@@ -363,6 +526,23 @@ mod tests {
 		NETWORKS_MONITORED.set(2.0);
 		NETWORK_MONITORS.with_label_values(&["test"]).set(1.0);
 
+		// Initialize RPC metrics
+		RPC_REQUESTS_TOTAL
+			.with_label_values(&["ethereum", "eth_getBlockByNumber"])
+			.inc();
+		RPC_REQUEST_ERRORS_TOTAL
+			.with_label_values(&["ethereum", "429", "http"])
+			.inc();
+		RPC_REQUEST_DURATION_SECONDS
+			.with_label_values(&["ethereum"])
+			.observe(0.5);
+		RPC_ENDPOINT_ROTATIONS_TOTAL
+			.with_label_values(&["ethereum", "rate_limit"])
+			.inc();
+		RPC_RATE_LIMITS_TOTAL
+			.with_label_values(&["ethereum", "https://rpc.example.com"])
+			.inc();
+
 		let metrics = gather_metrics().expect("failed to gather metrics");
 		let output = String::from_utf8(metrics).expect("metrics output is not valid UTF-8");
 
@@ -382,6 +562,13 @@ mod tests {
 		assert!(output.contains("contracts_monitored"));
 		assert!(output.contains("networks_monitored"));
 		assert!(output.contains("network_monitors"));
+
+		// Check for RPC metrics
+		assert!(output.contains("rpc_requests_total"));
+		assert!(output.contains("rpc_request_errors_total"));
+		assert!(output.contains("rpc_request_duration_seconds"));
+		assert!(output.contains("rpc_endpoint_rotations_total"));
+		assert!(output.contains("rpc_rate_limits_total"));
 	}
 
 	#[test]
@@ -714,5 +901,129 @@ mod tests {
 			.get_metric_with_label_values(&["test"])
 			.unwrap();
 		assert_eq!(test_network.get(), 0.0);
+	}
+
+	#[test]
+	fn test_rpc_metrics_helper_functions() {
+		let _lock = TEST_MUTEX.lock().unwrap();
+		reset_all_metrics();
+
+		// Test record_rpc_request
+		record_rpc_request("ethereum", "eth_getBlockByNumber");
+		record_rpc_request("ethereum", "eth_getBlockByNumber");
+		record_rpc_request("polygon", "eth_call");
+
+		let eth_requests = RPC_REQUESTS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "eth_getBlockByNumber"])
+			.unwrap();
+		assert_eq!(eth_requests.get(), 2.0);
+
+		let polygon_requests = RPC_REQUESTS_TOTAL
+			.get_metric_with_label_values(&["polygon", "eth_call"])
+			.unwrap();
+		assert_eq!(polygon_requests.get(), 1.0);
+
+		// Test record_rpc_error
+		record_rpc_error("ethereum", "429", "http");
+		record_rpc_error("ethereum", "500", "http");
+		record_rpc_error("ethereum", "0", "network");
+
+		let rate_limit_errors = RPC_REQUEST_ERRORS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "429", "http"])
+			.unwrap();
+		assert_eq!(rate_limit_errors.get(), 1.0);
+
+		let server_errors = RPC_REQUEST_ERRORS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "500", "http"])
+			.unwrap();
+		assert_eq!(server_errors.get(), 1.0);
+
+		let network_errors = RPC_REQUEST_ERRORS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "0", "network"])
+			.unwrap();
+		assert_eq!(network_errors.get(), 1.0);
+
+		// Test observe_rpc_duration
+		observe_rpc_duration("ethereum", 0.5);
+		observe_rpc_duration("ethereum", 1.5);
+
+		let duration_histogram = RPC_REQUEST_DURATION_SECONDS
+			.get_metric_with_label_values(&["ethereum"])
+			.unwrap();
+		assert_eq!(duration_histogram.get_sample_count(), 2);
+
+		// Test record_endpoint_rotation
+		record_endpoint_rotation("ethereum", "rate_limit");
+		record_endpoint_rotation("ethereum", "network_error");
+		record_endpoint_rotation("polygon", "rate_limit");
+
+		let eth_rate_limit_rotations = RPC_ENDPOINT_ROTATIONS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "rate_limit"])
+			.unwrap();
+		assert_eq!(eth_rate_limit_rotations.get(), 1.0);
+
+		let eth_network_rotations = RPC_ENDPOINT_ROTATIONS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "network_error"])
+			.unwrap();
+		assert_eq!(eth_network_rotations.get(), 1.0);
+
+		// Test record_rate_limit
+		record_rate_limit("ethereum", "https://rpc1.example.com");
+		record_rate_limit("ethereum", "https://rpc1.example.com");
+		record_rate_limit("ethereum", "https://rpc2.example.com");
+
+		let rpc1_rate_limits = RPC_RATE_LIMITS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "https://rpc1.example.com"])
+			.unwrap();
+		assert_eq!(rpc1_rate_limits.get(), 2.0);
+
+		let rpc2_rate_limits = RPC_RATE_LIMITS_TOTAL
+			.get_metric_with_label_values(&["ethereum", "https://rpc2.example.com"])
+			.unwrap();
+		assert_eq!(rpc2_rate_limits.get(), 1.0);
+	}
+
+	#[test]
+	fn test_init_rpc_metrics_for_network() {
+		let _lock = TEST_MUTEX.lock().unwrap();
+		reset_all_metrics();
+
+		// Initialize metrics for a new network
+		init_rpc_metrics_for_network("arbitrum");
+
+		// Verify error counters are initialized with 0
+		let http_429 = RPC_REQUEST_ERRORS_TOTAL
+			.get_metric_with_label_values(&["arbitrum", "429", "http"])
+			.unwrap();
+		assert_eq!(http_429.get(), 0.0);
+
+		let http_500 = RPC_REQUEST_ERRORS_TOTAL
+			.get_metric_with_label_values(&["arbitrum", "500", "http"])
+			.unwrap();
+		assert_eq!(http_500.get(), 0.0);
+
+		let network_error = RPC_REQUEST_ERRORS_TOTAL
+			.get_metric_with_label_values(&["arbitrum", "0", "network"])
+			.unwrap();
+		assert_eq!(network_error.get(), 0.0);
+
+		// Verify rotation counters are initialized with 0
+		let rate_limit_rotation = RPC_ENDPOINT_ROTATIONS_TOTAL
+			.get_metric_with_label_values(&["arbitrum", "rate_limit"])
+			.unwrap();
+		assert_eq!(rate_limit_rotation.get(), 0.0);
+
+		let network_rotation = RPC_ENDPOINT_ROTATIONS_TOTAL
+			.get_metric_with_label_values(&["arbitrum", "network_error"])
+			.unwrap();
+		assert_eq!(network_rotation.get(), 0.0);
+
+		// Verify metrics appear in gathered output
+		let metrics = gather_metrics().expect("failed to gather metrics");
+		let output = String::from_utf8(metrics).expect("metrics output is not valid UTF-8");
+
+		assert!(output.contains("rpc_request_errors_total"));
+		assert!(output.contains("arbitrum"));
+		assert!(output.contains("rpc_endpoint_rotations_total"));
 	}
 }

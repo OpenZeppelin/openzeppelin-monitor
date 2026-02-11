@@ -17,5 +17,13 @@
   "confirmation_blocks": 1,
   "cron_schedule": "0 */1 * * * *",
   "max_past_blocks": 20,
-  "store_blocks": false
+  "store_blocks": false,
+  "recovery_config": {
+    "enabled": false,
+    "cron_schedule": "0 */5 * * * *",
+    "max_blocks_per_run": 20,
+    "max_block_age": 500,
+    "max_retries": 3,
+    "retry_delay_ms": 2000
+  }
 }

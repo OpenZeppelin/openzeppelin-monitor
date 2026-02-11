@@ -127,6 +127,11 @@ impl HttpTransportClient {
 						.map(|url| url.url.as_ref().to_string())
 						.collect();
 
+					let network_slug = network.slug.clone();
+
+					// Initialize RPC metrics for this network so they appear in Prometheus
+					crate::utils::metrics::init_rpc_metrics_for_network(&network_slug);
+
 					// Successfully connected - create and return the client
 					return Ok(Self {
 						client: retryable_client.clone(),
@@ -134,6 +139,7 @@ impl HttpTransportClient {
 							retryable_client,
 							rpc_url.url.as_ref(),
 							fallback_urls,
+							network_slug,
 						),
 						test_connection_payload,
 					});

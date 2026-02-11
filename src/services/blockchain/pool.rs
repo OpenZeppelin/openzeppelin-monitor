@@ -127,6 +127,13 @@ impl ClientPool {
 
 		// Slow path: create new client
 		let mut clients = storage.clients.write().await;
+
+		// Double-check client was not created while waiting for the write lock
+		if let Some(client) = clients.get(&network.slug) {
+			return Ok(client.clone());
+		}
+
+		// Create and insert
 		let client = Arc::new(create_fn(network).await?);
 		clients.insert(network.slug.clone(), client.clone());
 		Ok(client)

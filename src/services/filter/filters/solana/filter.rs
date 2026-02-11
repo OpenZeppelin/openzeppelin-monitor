@@ -170,7 +170,7 @@ impl<T> SolanaBlockFilter<T> {
 		&self,
 		transaction: &SolanaTransaction,
 	) -> Vec<SolanaMatchParamEntry> {
-		vec![
+		let mut params = vec![
 			SolanaMatchParamEntry {
 				name: "signature".to_string(),
 				value: transaction.signature().to_string(),
@@ -195,7 +195,30 @@ impl<T> SolanaBlockFilter<T> {
 				kind: "bool".to_string(),
 				indexed: false,
 			},
-		]
+		];
+
+		// Only include fee_payer if it's defined
+		if let Some(fee_payer) = transaction.fee_payer() {
+			params.push(SolanaMatchParamEntry {
+				name: "fee_payer".to_string(),
+				value: fee_payer.to_string(),
+				kind: "pubkey".to_string(),
+				indexed: false,
+			});
+		}
+
+		// Include accounts with pipe delimiters for exact matching
+		let accounts = transaction.accounts();
+		if !accounts.is_empty() {
+			params.push(SolanaMatchParamEntry {
+				name: "accounts".to_string(),
+				value: format!("|{}|", accounts.join("|")),
+				kind: "string".to_string(),
+				indexed: false,
+			});
+		}
+
+		params
 	}
 
 	/// Gets the Solana contract spec from the generic contract specs
@@ -370,6 +393,317 @@ mod tests {
 		assert!(params.iter().any(|p| p.name == "slot"));
 		assert!(params.iter().any(|p| p.name == "fee"));
 		assert!(params.iter().any(|p| p.name == "is_success"));
+		// fee_payer and accounts are omitted when empty
+		assert!(!params.iter().any(|p| p.name == "fee_payer"));
+		assert!(!params.iter().any(|p| p.name == "accounts"));
+	}
+
+	#[test]
+	fn test_build_transaction_params_with_accounts() {
+		use crate::models::{
+			SolanaInstruction, SolanaTransactionInfo, SolanaTransactionMessage,
+			SolanaTransactionMeta,
+		};
+
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let fee_payer = "WaLLeT123abcdefghijklmnopqrstuvwxyz12345678";
+		let token_account = "TokenAccount456abcdefghijklmnopqrstuvwxy";
+		let program_id = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+		let tx_info = SolanaTransactionInfo {
+			signature: "test_sig".to_string(),
+			slot: 123456789,
+			block_time: Some(1234567890),
+			transaction: SolanaTransactionMessage {
+				account_keys: vec![
+					fee_payer.to_string(),
+					token_account.to_string(),
+					program_id.to_string(),
+				],
+				recent_blockhash: "4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn".to_string(),
+				instructions: vec![SolanaInstruction {
+					program_id_index: 2,
+					accounts: vec![0, 1],
+					data: "".to_string(),
+					parsed: None,
+					program: None,
+					program_id: None,
+				}],
+				address_table_lookups: vec![],
+			},
+			meta: Some(SolanaTransactionMeta {
+				fee: 5000,
+				pre_balances: vec![],
+				post_balances: vec![],
+				log_messages: vec![],
+				err: None,
+				inner_instructions: vec![],
+				pre_token_balances: vec![],
+				post_token_balances: vec![],
+				compute_units_consumed: Some(1000),
+				loaded_addresses: None,
+			}),
+		};
+
+		let tx = SolanaTransaction::from(tx_info);
+		let params = filter.build_transaction_params(&tx);
+
+		// Verify fee_payer is set correctly
+		let fee_payer_param = params.iter().find(|p| p.name == "fee_payer").unwrap();
+		assert_eq!(fee_payer_param.value, fee_payer);
+		assert_eq!(fee_payer_param.kind, "pubkey");
+
+		// Verify accounts contains all account keys with pipe delimiters for exact matching
+		let accounts_param = params.iter().find(|p| p.name == "accounts").unwrap();
+		// Format is |account1|account2|account3| to prevent substring false positives
+		assert!(accounts_param.value.contains(&format!("|{}|", fee_payer)));
+		assert!(accounts_param
+			.value
+			.contains(&format!("|{}|", token_account)));
+		assert!(accounts_param.value.contains(&format!("|{}|", program_id)));
+	}
+
+	#[test]
+	fn test_fee_payer_expression_matching() {
+		use crate::models::{
+			AddressWithSpec, MatchConditions, SolanaInstruction, SolanaTransactionInfo,
+			SolanaTransactionMessage, SolanaTransactionMeta,
+		};
+
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let fee_payer = "WaLLeT123abcdefghijklmnopqrstuvwxyz12345678";
+
+		let monitor = Monitor {
+			name: "test_monitor".to_string(),
+			paused: false,
+			networks: vec!["solana_mainnet".to_string()],
+			addresses: vec![AddressWithSpec {
+				address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				contract_spec: None,
+			}],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Any,
+					expression: Some(format!("fee_payer == \"{}\"", fee_payer)),
+				}],
+			},
+			trigger_conditions: vec![],
+			triggers: vec![],
+			chain_configurations: vec![],
+		};
+
+		let tx_info = SolanaTransactionInfo {
+			signature: "test_sig".to_string(),
+			slot: 123456789,
+			block_time: Some(1234567890),
+			transaction: SolanaTransactionMessage {
+				account_keys: vec![
+					fee_payer.to_string(),
+					"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				],
+				recent_blockhash: "4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn".to_string(),
+				instructions: vec![SolanaInstruction {
+					program_id_index: 1,
+					accounts: vec![0],
+					data: "".to_string(),
+					parsed: None,
+					program: None,
+					program_id: None,
+				}],
+				address_table_lookups: vec![],
+			},
+			meta: Some(SolanaTransactionMeta {
+				fee: 5000,
+				pre_balances: vec![],
+				post_balances: vec![],
+				log_messages: vec![],
+				err: None,
+				inner_instructions: vec![],
+				pre_token_balances: vec![],
+				post_token_balances: vec![],
+				compute_units_consumed: Some(1000),
+				loaded_addresses: None,
+			}),
+		};
+
+		let tx = SolanaTransaction::from(tx_info);
+		let mut matched_transactions = Vec::new();
+
+		filter.find_matching_transaction(&tx, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+		assert!(matched_transactions[0]
+			.expression
+			.as_ref()
+			.unwrap()
+			.contains("fee_payer"));
+	}
+
+	#[test]
+	fn test_accounts_contains_expression_matching() {
+		use crate::models::{
+			AddressWithSpec, MatchConditions, SolanaInstruction, SolanaTransactionInfo,
+			SolanaTransactionMessage, SolanaTransactionMeta,
+		};
+
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let token_account = "TokenAccount456abcdefghijklmnopqrstuvwxy";
+
+		let monitor = Monitor {
+			name: "test_monitor".to_string(),
+			paused: false,
+			networks: vec!["solana_mainnet".to_string()],
+			addresses: vec![AddressWithSpec {
+				address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				contract_spec: None,
+			}],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Any,
+					expression: Some(format!("accounts contains \"|{}|\"", token_account)),
+				}],
+			},
+			trigger_conditions: vec![],
+			triggers: vec![],
+			chain_configurations: vec![],
+		};
+
+		let tx_info = SolanaTransactionInfo {
+			signature: "test_sig".to_string(),
+			slot: 123456789,
+			block_time: Some(1234567890),
+			transaction: SolanaTransactionMessage {
+				account_keys: vec![
+					"WaLLeT123abcdefghijklmnopqrstuvwxyz12345678".to_string(),
+					token_account.to_string(),
+					"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				],
+				recent_blockhash: "4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn".to_string(),
+				instructions: vec![SolanaInstruction {
+					program_id_index: 2,
+					accounts: vec![0, 1],
+					data: "".to_string(),
+					parsed: None,
+					program: None,
+					program_id: None,
+				}],
+				address_table_lookups: vec![],
+			},
+			meta: Some(SolanaTransactionMeta {
+				fee: 5000,
+				pre_balances: vec![],
+				post_balances: vec![],
+				log_messages: vec![],
+				err: None,
+				inner_instructions: vec![],
+				pre_token_balances: vec![],
+				post_token_balances: vec![],
+				compute_units_consumed: Some(1000),
+				loaded_addresses: None,
+			}),
+		};
+
+		let tx = SolanaTransaction::from(tx_info);
+		let mut matched_transactions = Vec::new();
+
+		filter.find_matching_transaction(&tx, &monitor, &mut matched_transactions);
+
+		assert_eq!(matched_transactions.len(), 1);
+		assert!(matched_transactions[0]
+			.expression
+			.as_ref()
+			.unwrap()
+			.contains("accounts"));
+	}
+
+	#[test]
+	fn test_fee_payer_expression_no_match() {
+		use crate::models::{
+			AddressWithSpec, MatchConditions, SolanaInstruction, SolanaTransactionInfo,
+			SolanaTransactionMessage, SolanaTransactionMeta,
+		};
+
+		let filter: SolanaBlockFilter<()> = SolanaBlockFilter {
+			_client: PhantomData,
+		};
+
+		let monitor = Monitor {
+			name: "test_monitor".to_string(),
+			paused: false,
+			networks: vec!["solana_mainnet".to_string()],
+			addresses: vec![AddressWithSpec {
+				address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				contract_spec: None,
+			}],
+			match_conditions: MatchConditions {
+				functions: vec![],
+				events: vec![],
+				transactions: vec![TransactionCondition {
+					status: TransactionStatus::Any,
+					expression: Some(
+						"fee_payer == \"DifferentWallet999999999999999999999999\"".to_string(),
+					),
+				}],
+			},
+			trigger_conditions: vec![],
+			triggers: vec![],
+			chain_configurations: vec![],
+		};
+
+		let tx_info = SolanaTransactionInfo {
+			signature: "test_sig".to_string(),
+			slot: 123456789,
+			block_time: Some(1234567890),
+			transaction: SolanaTransactionMessage {
+				account_keys: vec![
+					"WaLLeT123abcdefghijklmnopqrstuvwxyz12345678".to_string(),
+					"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+				],
+				recent_blockhash: "4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn".to_string(),
+				instructions: vec![SolanaInstruction {
+					program_id_index: 1,
+					accounts: vec![0],
+					data: "".to_string(),
+					parsed: None,
+					program: None,
+					program_id: None,
+				}],
+				address_table_lookups: vec![],
+			},
+			meta: Some(SolanaTransactionMeta {
+				fee: 5000,
+				pre_balances: vec![],
+				post_balances: vec![],
+				log_messages: vec![],
+				err: None,
+				inner_instructions: vec![],
+				pre_token_balances: vec![],
+				post_token_balances: vec![],
+				compute_units_consumed: Some(1000),
+				loaded_addresses: None,
+			}),
+		};
+
+		let tx = SolanaTransaction::from(tx_info);
+		let mut matched_transactions = Vec::new();
+
+		filter.find_matching_transaction(&tx, &monitor, &mut matched_transactions);
+
+		// Should not match because fee_payer is different
+		assert!(matched_transactions.is_empty());
 	}
 
 	// ============================================================================
@@ -738,6 +1072,7 @@ mod tests {
 			pre_token_balances: vec![],
 			post_token_balances: vec![],
 			compute_units_consumed: Some(1000),
+			loaded_addresses: None,
 		};
 
 		let tx_info = SolanaTransactionInfo {

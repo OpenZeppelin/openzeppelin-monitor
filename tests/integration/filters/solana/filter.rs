@@ -36,6 +36,7 @@ fn create_test_network() -> Network {
 		cron_schedule: "*/10 * * * * *".to_string(),
 		max_past_blocks: Some(50),
 		store_blocks: Some(true),
+		recovery_config: None,
 	}
 }
 
@@ -138,6 +139,7 @@ fn create_test_solana_transaction(success: bool, fee: u64, logs: Vec<String>) ->
 			pre_token_balances: vec![],
 			post_token_balances: vec![],
 			compute_units_consumed: None,
+			loaded_addresses: None,
 		}),
 	})
 }

@@ -332,6 +332,7 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				inner_instructions: Vec::new(),
 				log_messages,
 				compute_units_consumed: m.get("computeUnitsConsumed").and_then(|c| c.as_u64()),
+				loaded_addresses: None,
 			}
 		});
 
@@ -705,7 +706,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			return Ok(Vec::new());
 		}
 
-		tracing::info!(
+		tracing::debug!(
 			addresses = ?addresses,
 			start_slot = start_slot,
 			end_slot = end_slot,
@@ -732,7 +733,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			}
 		}
 
-		tracing::info!(
+		tracing::debug!(
 			unique_signatures = all_signatures.len(),
 			"Fetching transactions for unique signatures in slot range"
 		);
@@ -758,7 +759,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			.collect()
 			.await;
 
-		tracing::info!(
+		tracing::debug!(
 			fetched_transactions = transactions.len(),
 			"Successfully fetched transactions"
 		);
@@ -856,7 +857,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			})
 			.collect();
 
-		tracing::info!(
+		tracing::debug!(
 			blocks_count = blocks.len(),
 			"Created virtual blocks from address-filtered transactions"
 		);
@@ -903,7 +904,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 	) -> Result<Vec<BlockType>, anyhow::Error> {
 		// If monitored addresses are configured, use the optimized approach
 		if !self.monitored_addresses.is_empty() {
-			tracing::info!(
+			tracing::debug!(
 				addresses = ?self.monitored_addresses,
 				start_block = start_block,
 				end_block = ?end_block,

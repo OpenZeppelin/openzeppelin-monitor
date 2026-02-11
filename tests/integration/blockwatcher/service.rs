@@ -1183,6 +1183,10 @@ async fn test_network_block_watcher_start_stop() {
 		.expect_get_latest_block_number()
 		.returning(|| Ok(100))
 		.times(0);
+	rpc_client
+		.expect_clone()
+		.times(1)
+		.returning(MockEvmClientTrait::new);
 
 	let mut watcher = watcher.unwrap();
 	// Test start
@@ -1226,10 +1230,15 @@ async fn test_block_watcher_service_start_stop_network() {
 		.returning(|| Ok(100))
 		.times(0);
 
-	rpc_client
-		.expect_clone()
-		.times(2)
-		.returning(MockEvmClientTrait::new);
+	// Clone expectations:
+	// - Test calls rpc_client.clone() for first start_network_watcher -> returns mock1
+	// - Test calls rpc_client.clone() for second start_network_watcher (returns early)
+	// mock1 is cloned inside start() for start_main_watcher, so returned clones need clone expectations
+	rpc_client.expect_clone().times(2).returning(|| {
+		let mut cloned = MockEvmClientTrait::new();
+		cloned.expect_clone().returning(MockEvmClientTrait::new);
+		cloned
+	});
 
 	let service = service.unwrap();
 
@@ -1501,6 +1510,542 @@ async fn test_scheduler_errors() {
 			BlockWatcherError::SchedulerError { .. }
 		));
 	}
+
+	// =========================================================================
+	// Recovery Job Test Cases
+	// =========================================================================
+
+	use openzeppelin_monitor::models::BlockRecoveryConfig;
+	use openzeppelin_monitor::utils::tests::builders::network::NetworkBuilder;
+	use std::sync::atomic::{AtomicU32, Ordering};
+
+	// Test case 5: Recovery job is added when enabled (expects 2 jobs)
+	{
+		let network_with_recovery = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test-network-recovery")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			// Expect add() twice - once for main watcher, once for recovery
+			scheduler.expect_add().times(2).returning(|_| Ok(()));
+			scheduler.expect_start().times(1).returning(|| Ok(()));
+			Ok(scheduler)
+		});
+
+		let mut watcher = NetworkBlockWatcher::<_, _, _, MockJobScheduler>::new(
+			network_with_recovery.clone(),
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result = watcher.start(rpc_client).await;
+		assert!(
+			result.is_ok(),
+			"Watcher should start successfully with recovery job enabled"
+		);
+	}
+
+	// Test case 6: Recovery job is skipped when disabled (expects 1 job)
+	{
+		let network_recovery_disabled = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test-network-no-recovery")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: false,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			// Expect add() once - only for main watcher
+			scheduler.expect_add().times(1).returning(|_| Ok(()));
+			scheduler.expect_start().times(1).returning(|| Ok(()));
+			Ok(scheduler)
+		});
+
+		let mut watcher = NetworkBlockWatcher::<_, _, _, MockJobScheduler>::new(
+			network_recovery_disabled.clone(),
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result = watcher.start(rpc_client).await;
+		assert!(
+			result.is_ok(),
+			"Watcher should start successfully without recovery job"
+		);
+	}
+
+	// Test case 7: Recovery job is skipped when no config (expects 1 job)
+	{
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			scheduler.expect_add().times(1).returning(|_| Ok(()));
+			scheduler.expect_start().times(1).returning(|| Ok(()));
+			Ok(scheduler)
+		});
+
+		let mut watcher = NetworkBlockWatcher::<_, _, _, MockJobScheduler>::new(
+			network.clone(),
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result = watcher.start(rpc_client).await;
+		assert!(
+			result.is_ok(),
+			"Watcher should start successfully without recovery config"
+		);
+	}
+
+	// Test case 8: Recovery job add failure (main succeeds, recovery fails)
+	{
+		let network_with_recovery = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test-network-recovery-fail")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			let call_count = Arc::new(AtomicU32::new(0));
+			scheduler.expect_add().times(2).returning(move |_| {
+				let count = call_count.fetch_add(1, Ordering::SeqCst);
+				if count == 0 {
+					Ok(()) // First call (main watcher) succeeds
+				} else {
+					Err("Failed to add recovery job".into()) // Second call fails
+				}
+			});
+			Ok(scheduler)
+		});
+
+		let mut watcher = NetworkBlockWatcher::<_, _, _, MockJobScheduler>::new(
+			network_with_recovery.clone(),
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result = watcher.start(rpc_client).await;
+		assert!(
+			matches!(
+				result.unwrap_err(),
+				BlockWatcherError::SchedulerError { .. }
+			),
+			"Should return SchedulerError when recovery job add fails"
+		);
+	}
+
+	// Test case 9: Scheduler start failure with recovery enabled
+	{
+		let network_with_recovery = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test-network-start-fail")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			scheduler.expect_add().times(2).returning(|_| Ok(()));
+			scheduler
+				.expect_start()
+				.times(1)
+				.returning(|| Err("Failed to start scheduler".into()));
+			Ok(scheduler)
+		});
+
+		let mut watcher = NetworkBlockWatcher::<_, _, _, MockJobScheduler>::new(
+			network_with_recovery.clone(),
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result = watcher.start(rpc_client).await;
+		assert!(
+			matches!(
+				result.unwrap_err(),
+				BlockWatcherError::SchedulerError { .. }
+			),
+			"Should return SchedulerError when scheduler start fails"
+		);
+	}
+
+	// Test case 10: Stop with recovery enabled
+	{
+		let network_with_recovery = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test-network-stop")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			scheduler.expect_add().times(2).returning(|_| Ok(()));
+			scheduler.expect_start().times(1).returning(|| Ok(()));
+			scheduler.expect_shutdown().times(1).returning(|| Ok(()));
+			Ok(scheduler)
+		});
+
+		let mut watcher = NetworkBlockWatcher::<_, _, _, MockJobScheduler>::new(
+			network_with_recovery.clone(),
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		watcher.start(rpc_client).await.unwrap();
+		let stop_result = watcher.stop().await;
+		assert!(
+			stop_result.is_ok(),
+			"Watcher with recovery should stop cleanly"
+		);
+	}
+
+	// Test case 11: Shutdown failure with recovery enabled
+	{
+		let network_with_recovery = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test-network-shutdown-fail")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			scheduler.expect_add().times(2).returning(|_| Ok(()));
+			scheduler.expect_start().times(1).returning(|| Ok(()));
+			scheduler
+				.expect_shutdown()
+				.times(1)
+				.returning(|| Err("Shutdown failed".into()));
+			Ok(scheduler)
+		});
+
+		let mut watcher = NetworkBlockWatcher::<_, _, _, MockJobScheduler>::new(
+			network_with_recovery.clone(),
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		watcher.start(rpc_client).await.unwrap();
+		let stop_result = watcher.stop().await;
+		assert!(
+			matches!(
+				stop_result.unwrap_err(),
+				BlockWatcherError::SchedulerError { .. }
+			),
+			"Should return SchedulerError when shutdown fails"
+		);
+	}
+
+	// Test case 12: Service starts network with recovery
+	{
+		let network_with_recovery = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test-network-service")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		ctx.expect().returning(|| {
+			let mut scheduler = MockJobScheduler::default();
+			scheduler.expect_add().times(2).returning(|_| Ok(()));
+			scheduler.expect_start().times(1).returning(|| Ok(()));
+			Ok(scheduler)
+		});
+
+		let service = BlockWatcherService::<_, _, _, MockJobScheduler>::new(
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result = service
+			.start_network_watcher(&network_with_recovery, rpc_client)
+			.await;
+		assert!(
+			result.is_ok(),
+			"Service should start network watcher with recovery"
+		);
+
+		let watchers = service.active_watchers.read().await;
+		assert!(watchers.contains_key(&network_with_recovery.slug));
+	}
+
+	// Test case 13: Multiple networks with different recovery configs
+	{
+		let network1 = NetworkBuilder::new()
+			.name("Network 1")
+			.slug("network-1")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8545")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(1)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let network2 = NetworkBuilder::new()
+			.name("Network 2")
+			.slug("network-2")
+			.network_type(BlockChainType::EVM)
+			.rpc_url("http://localhost:8546")
+			.cron_schedule("*/5 * * * * *")
+			.confirmation_blocks(1)
+			.store_blocks(false)
+			.chain_id(2)
+			.block_time_ms(1000)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: false,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 1000,
+			})
+			.build();
+
+		let ctx = MockJobScheduler::new_context();
+		let call_count = Arc::new(AtomicU32::new(0));
+		let call_count_clone = call_count.clone();
+		ctx.expect().returning(move || {
+			let count = call_count_clone.fetch_add(1, Ordering::SeqCst);
+			let mut scheduler = MockJobScheduler::default();
+			if count == 0 {
+				// First network: recovery enabled, expect 2 jobs
+				scheduler.expect_add().times(2).returning(|_| Ok(()));
+			} else {
+				// Second network: recovery disabled, expect 1 job
+				scheduler.expect_add().times(1).returning(|_| Ok(()));
+			}
+			scheduler.expect_start().times(1).returning(|| Ok(()));
+			Ok(scheduler)
+		});
+
+		let service = BlockWatcherService::<_, _, _, MockJobScheduler>::new(
+			block_storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await
+		.unwrap();
+
+		let mut rpc_client1 = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client1
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result1 = service.start_network_watcher(&network1, rpc_client1).await;
+		assert!(result1.is_ok(), "Network 1 (with recovery) should start");
+
+		let mut rpc_client2 = MockEvmClientTrait::<MockEVMTransportClient>::new();
+		rpc_client2
+			.expect_clone()
+			.times(1)
+			.returning(MockEvmClientTrait::<MockEVMTransportClient>::new);
+
+		let result2 = service.start_network_watcher(&network2, rpc_client2).await;
+		assert!(result2.is_ok(), "Network 2 (without recovery) should start");
+
+		let watchers = service.active_watchers.read().await;
+		assert_eq!(watchers.len(), 2);
+		assert!(watchers.contains_key(&network1.slug));
+		assert!(watchers.contains_key(&network2.slug));
+	}
 }
 
 #[tokio::test]
@@ -1729,7 +2274,7 @@ async fn test_missed_block_detection_store_disabled() {
 		.returning(|_| Ok(Some(100)))
 		.times(1);
 
-	// save_missed_blocks should NOT be called when store_blocks is false
+	// save_missed_blocks should NOT be called when store_blocks is false and recovery is not enabled
 	block_storage.expect_save_missed_blocks().times(0);
 
 	block_storage
@@ -2099,7 +2644,7 @@ async fn test_missed_blocks_with_store_blocks_none() {
 		.returning(|_| Ok(Some(100)))
 		.times(1);
 
-	// save_missed_blocks should NOT be called when store_blocks is None
+	// save_missed_blocks should NOT be called when store_blocks is None and recovery is not enabled
 	block_storage.expect_save_missed_blocks().times(0);
 
 	block_storage
