@@ -1,6 +1,7 @@
 use crate::properties::strategies::process_output_strategy;
 use openzeppelin_monitor::services::trigger::process_script_output;
 use proptest::{prelude::*, test_runner::Config};
+#[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 
 proptest! {
@@ -51,7 +52,10 @@ proptest! {
 		};
 
 		let output = std::process::Output {
+			#[cfg(unix)]
 			status: std::process::ExitStatus::from_raw(0),
+			#[cfg(windows)]
+			status: std::os::windows::process::ExitStatusExt::from_raw(0),
 			stdout: final_output.into_bytes(),
 			stderr: Vec::new(),
 		};
@@ -72,7 +76,10 @@ proptest! {
 		exit_code in 1..255i32
 	) {
 		let output = std::process::Output {
+			#[cfg(unix)]
 			status: std::process::ExitStatus::from_raw(exit_code),
+			#[cfg(windows)]
+			status: std::os::windows::process::ExitStatusExt::from_raw(exit_code as u32),	// No underflow as `exit_code` between 1 >= exit_code <= 255
 			stdout: Vec::new(),
 			stderr: error_msg.clone().into_bytes(),
 		};
@@ -102,14 +109,12 @@ proptest! {
 		spaces_after in " *",
 		value in prop::bool::ANY
 	) {
-		let output_str = format!("{}{}{}",
-			spaces_before,
-			value,
-			spaces_after
-		);
-
+		let output_str = format!("{}{}{}", spaces_before, value, spaces_after);
 		let output = std::process::Output {
+			#[cfg(unix)]
 			status: std::process::ExitStatus::from_raw(0),
+			#[cfg(windows)]
+			status: std::os::windows::process::ExitStatusExt::from_raw(0),
 			stdout: output_str.into_bytes(),
 			stderr: Vec::new(),
 		};
@@ -127,7 +132,10 @@ proptest! {
 		let output_content = lines.join("\n");
 
 		let output = std::process::Output {
+			#[cfg(unix)]
 			status: std::process::ExitStatus::from_raw(exit_code),
+			#[cfg(windows)]
+			status: std::os::windows::process::ExitStatusExt::from_raw(exit_code as u32),	// No underflow as: 1 >= exit_code <= 255
 			stdout: output_content.into_bytes(),
 			stderr: Vec::new(),
 		};

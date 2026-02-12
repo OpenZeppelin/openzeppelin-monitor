@@ -29,6 +29,7 @@ pub trait ScriptExecutor: Send + Sync + Any {
 		input: MonitorMatch,
 		timeout_ms: &u32,
 		args: Option<&[String]>,
+		runtime_flags: Option<&[String]>,
 		from_custom_notification: bool,
 	) -> Result<bool, anyhow::Error>;
 }
@@ -49,16 +50,19 @@ impl ScriptExecutor for PythonScriptExecutor {
 		input: MonitorMatch,
 		timeout_ms: &u32,
 		args: Option<&[String]>,
+		runtime_flags: Option<&[String]>,
 		from_custom_notification: bool,
 	) -> Result<bool, anyhow::Error> {
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
-			"args": args
+			"args": args,
+			"runtime_flags": runtime_flags
 		});
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
 		let cmd = tokio::process::Command::new("python3")
+			.args(runtime_flags.unwrap_or(&[]))
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -87,17 +91,20 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		input: MonitorMatch,
 		timeout_ms: &u32,
 		args: Option<&[String]>,
+		runtime_flags: Option<&[String]>,
 		from_custom_notification: bool,
 	) -> Result<bool, anyhow::Error> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
-			"args": args
+			"args": args,
+			"runtime_flags": runtime_flags.unwrap_or(&[])
 		});
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
 		let cmd = tokio::process::Command::new("node")
+			.args(runtime_flags.unwrap_or(&[]))
 			.arg("-e")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -125,18 +132,21 @@ impl ScriptExecutor for BashScriptExecutor {
 		input: MonitorMatch,
 		timeout_ms: &u32,
 		args: Option<&[String]>,
+		runtime_flags: Option<&[String]>,
 		from_custom_notification: bool,
 	) -> Result<bool, anyhow::Error> {
 		// Create a combined input with both the monitor match and arguments
 		let combined_input = serde_json::json!({
 			"monitor_match": input,
-			"args": args
+			"args": args,
+			"runtime_flags": runtime_flags
 		});
 
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
 		let cmd = tokio::process::Command::new("sh")
+			.args(runtime_flags.unwrap_or(&[]))
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -175,14 +185,16 @@ pub fn process_script_output(
 		));
 	}
 
-	// If the script is from a custom notification and the status is success, we don't need to check
-	// the output
+	// If the script is from a custom notification (a Trigger Script) and the status is success, we don't need to check
+	// the output.
 	if from_custom_notification {
 		return Ok(true);
 	}
 
-	let stdout = String::from_utf8_lossy(&output.stdout);
+	// Note: We continue processing as script is a Filter Script (additional trigger condition),
+	// and a result of "true" or "false" is expected.
 
+	let stdout = String::from_utf8_lossy(&output.stdout);
 	if stdout.trim().is_empty() {
 		return Err(anyhow::anyhow!("Script produced no output"));
 	}
@@ -332,7 +344,7 @@ print(result)
 		let input = create_mock_monitor_match();
 
 		let timeout = 1000;
-		let result = executor.execute(input, &timeout, None, false).await;
+		let result = executor.execute(input, &timeout, None, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -354,7 +366,7 @@ print(result)
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
@@ -388,7 +400,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -426,7 +438,68 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &5000, None, false).await;
+		let result = executor.execute(input, &5000, None, None, false).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_javascript_script_executor_runtime_flags_success() {
+		let script_content = r#"
+		// Read input from stdin
+		(async () => {
+			let input = '';
+
+			// process.stdin.setEncoding('utf8'); // optional but recommended
+
+			for await (const chunk of process.stdin) {
+				input += chunk;
+			}
+			let data;
+			try {
+				data = JSON.parse(input);
+			} catch (err) {
+				console.log("JSON PARSE ERROR:", err);
+			}
+
+			const expected_flags = ["--cpu-prof", "--env-file-if-exists=ozmonitor.env"];
+            // The process.execArgv property returns the set of Node.js-specific
+            // command-line options passed when the Node.js process was launched.
+            // https://nodejs.org/docs/latest/api/process.html#processexecargv
+            console.log("CONSOLE_LOG_ExecArgv=", process.execArgv);
+
+            // Check if expected arguments are present
+            const foundArgs = expected_flags.every(arg => process.execArgv.includes(arg));
+
+            // Assert that expected arguments are present
+            if (!foundArgs) {
+              console.log('CONSOLE_LOG: Expected arguments were not found in process.execArgv');
+              console.log("false");
+            } else {
+              console.log("CONSOLE_LOG_: Expected arguments found");
+              console.log("true");
+            }
+		})();
+		"#;
+
+		let executor = JavaScriptScriptExecutor {
+			script_content: script_content.to_string(),
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor
+			.execute(
+				input,
+				&5000,
+				None,
+				Some(&[
+					"--cpu-prof".to_string(),
+					"--env-file-if-exists=ozmonitor.env".to_string(),
+				]),
+				false,
+			)
+			.await;
+		println!("Result: {:?}", result);
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -459,7 +532,7 @@ print("true")
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &5000, None, false).await;
+		let result = executor.execute(input, &5000, None, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
@@ -485,7 +558,7 @@ echo "true"
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -506,7 +579,7 @@ echo "not a boolean"
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
@@ -533,7 +606,7 @@ input_json = sys.stdin.read()
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 
 		match result {
 			Err(e) => {
@@ -557,7 +630,7 @@ print("     true    ")  # Should handle whitespace correctly
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -582,7 +655,7 @@ print("     true    ")  # Should handle whitespace correctly
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_err());
 	}
 
@@ -608,7 +681,7 @@ print("true")
 
 		let input = create_mock_monitor_match();
 
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -639,7 +712,7 @@ else:
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(!result.unwrap());
 	}
 
@@ -674,7 +747,7 @@ else:
 		// Test with matching argument
 		let args = vec![String::from("test_argument")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &1000, Some(&args), None, false)
 			.await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
@@ -682,7 +755,7 @@ else:
 		// Test with non-matching argument
 		let args = vec![String::from("--verbose"), String::from("--other-arg")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &1000, Some(&args), None, false)
 			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -722,7 +795,7 @@ else:
 			String::from("--test"),
 		];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &1000, Some(&args), None, false)
 			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -730,7 +803,7 @@ else:
 		// Test with wrong argument
 		let args = vec![String::from("wrong_arg")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &1000, Some(&args), None, false)
 			.await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
@@ -743,7 +816,7 @@ else:
 		let input = create_mock_monitor_match();
 		let args = vec![String::from("--verbose")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &1000, Some(&args), None, false)
 			.await;
 
 		assert!(result.is_ok());
@@ -758,7 +831,7 @@ else:
 		let input = create_mock_monitor_match();
 		let args = vec![String::from("--wrong_arg"), String::from("--test")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &1000, Some(&args), None, false)
 			.await;
 
 		assert!(result.is_ok());
@@ -777,7 +850,7 @@ input_json = sys.stdin.read()
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, true).await;
+		let result = executor.execute(input, &1000, None, None, true).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -796,7 +869,7 @@ sys.exit(1)
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, true).await;
+		let result = executor.execute(input, &1000, None, None, true).await;
 
 		assert!(result.is_err());
 		match result {
@@ -824,7 +897,7 @@ time.sleep(0.3)
 
 		let input = create_mock_monitor_match();
 		let start_time = Instant::now();
-		let result = executor.execute(input, &1000, None, true).await;
+		let result = executor.execute(input, &1000, None, None, true).await;
 		let elapsed = start_time.elapsed();
 
 		assert!(result.is_ok());
@@ -849,7 +922,7 @@ time.sleep(0.5)
 
 		let input = create_mock_monitor_match();
 		let start_time = Instant::now();
-		let result = executor.execute(input, &400, None, true).await;
+		let result = executor.execute(input, &400, None, None, true).await;
 		let elapsed = start_time.elapsed();
 
 		assert!(result.is_err());
@@ -872,7 +945,7 @@ sys.exit(1)
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 
 		assert!(result.is_err());
 		match result {
@@ -912,7 +985,7 @@ sys.exit(1)
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 
 		assert!(result.is_err());
 		match result {
@@ -940,7 +1013,7 @@ exit 1
 		};
 
 		let input = create_mock_monitor_match();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &1000, None, None, false).await;
 		assert!(result.is_err());
 		match result {
 			Err(e) => {

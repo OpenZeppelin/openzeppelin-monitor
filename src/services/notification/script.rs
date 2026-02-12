@@ -43,6 +43,7 @@ impl ScriptExecutor for ScriptNotifier {
 				script_path: _,
 				language,
 				arguments,
+				runtime_flags,
 				timeout_ms,
 			} => {
 				let executor = ScriptExecutorFactory::create(language, &script_content.1);
@@ -52,6 +53,7 @@ impl ScriptExecutor for ScriptNotifier {
 						monitor_match.clone(),
 						timeout_ms,
 						arguments.as_deref(),
+						runtime_flags.as_deref(),
 						true,
 					)
 					.await;
@@ -102,6 +104,7 @@ mod tests {
 			language: ScriptLanguage::Python,
 			script_path: "test_script.py".to_string(),
 			arguments: Some(vec!["arg1".to_string(), "arg2".to_string()]),
+			runtime_flags: None,
 			timeout_ms: 1000,
 		}
 	}
@@ -177,6 +180,7 @@ mod tests {
 			language: ScriptLanguage::Python,
 			script_path: "test_script.py".to_string(),
 			arguments: None,
+			runtime_flags: None,
 			timeout_ms: 1000, // Timeout longer than sleep time
 		};
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
@@ -206,6 +210,7 @@ mod tests {
 			language: ScriptLanguage::Python,
 			script_path: "test_script.py".to_string(),
 			arguments: None,
+			runtime_flags: None,
 			timeout_ms: 400, // Set timeout lower than the sleep time
 		};
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
@@ -254,6 +259,7 @@ mod tests {
 			language: ScriptLanguage::Python,
 			script_path: "non_existent_script.py".to_string(), // This path won't be in the map
 			arguments: None,
+			runtime_flags: None,
 			timeout_ms: 1000,
 		};
 		let trigger = TriggerBuilder::new()

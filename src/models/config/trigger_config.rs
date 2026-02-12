@@ -630,6 +630,7 @@ impl ConfigLoader for Trigger {
 				}
 			}
 			TriggerTypeConfig::Telegram { .. } => {}
+			#[allow(unused_variables)]
 			TriggerTypeConfig::Script { script_path, .. } => {
 				// Check script file permissions on Unix systems
 				#[cfg(unix)]
@@ -709,7 +710,8 @@ mod tests {
 	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
 	use crate::utils::RetryConfig;
-	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
+	#[cfg(unix)]
+	use std::{io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
 	use tracing_test::traced_test;
 
@@ -1161,7 +1163,7 @@ mod tests {
 		// Create a JSON file with valid content but unreadable permissions
 		let file_path = config_dir.join("unreadable.json");
 		{
-			let mut file = File::create(&file_path).unwrap();
+			let mut file = std::fs::File::create(&file_path).unwrap();
 			writeln!(file, r#"{{ "test_trigger": {{ "name": "test", "trigger_type": "Slack", "config": {{ "slack_url": "https://hooks.slack.com/services/xxx", "message": {{ "title": "Alert", "body": "Test message" }} }} }} }}"#).unwrap();
 		}
 

@@ -494,6 +494,7 @@ async fn execute_trigger_condition(
 			monitor_match.clone(),
 			&trigger_condition.timeout_ms,
 			trigger_condition.arguments.as_deref(),
+			trigger_condition.runtime_flags.as_deref(),
 			false,
 		)
 		.await;
@@ -594,7 +595,7 @@ mod tests {
 			.paused(paused);
 
 		if let Some(path) = script_path {
-			builder = builder.trigger_condition(path, 1000, ScriptLanguage::Python, None);
+			builder = builder.trigger_condition(path, 1000, ScriptLanguage::Python, None, None);
 		}
 
 		builder.build()
@@ -946,6 +947,7 @@ print(result)
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			arguments: None,
+			runtime_flags: None,
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -967,6 +969,7 @@ print(result)
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			arguments: None,
+			runtime_flags: None,
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -986,6 +989,7 @@ print(result)
 			script_path: "non_existent_script.py".to_string(),
 			timeout_ms: 1000,
 			arguments: None,
+			runtime_flags: None,
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -1004,8 +1008,8 @@ print(result)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("test1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("test2.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("test1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("test2.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		// Create a match with this monitor
@@ -1054,8 +1058,8 @@ print(True)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
@@ -1081,8 +1085,8 @@ print(True)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
@@ -1107,8 +1111,8 @@ print(True)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
@@ -1133,9 +1137,9 @@ print(True)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition3.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition3.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
@@ -1164,9 +1168,9 @@ print(True)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition3.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition3.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::EVM, monitor);
@@ -1251,8 +1255,8 @@ print(result)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["stellar_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::Stellar, monitor);
@@ -1333,8 +1337,8 @@ print(result)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["solana_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::Solana, monitor);
@@ -1389,8 +1393,8 @@ print(result)
 		let monitor = MonitorBuilder::new()
 			.name("monitor_test")
 			.networks(vec!["solana_mainnet".to_string()])
-			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None)
-			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("condition1.py", 1000, ScriptLanguage::Python, None, None)
+			.trigger_condition("condition2.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		let match_item = create_mock_monitor_match_from_monitor(BlockChainType::Solana, monitor);

@@ -12,6 +12,7 @@ use openzeppelin_monitor::{
 	},
 };
 use proptest::{option, prelude::*};
+#[cfg(unix)]
 use std::os::unix::prelude::ExitStatusExt;
 
 const MIN_COLLECTION_SIZE: usize = 0;
@@ -69,6 +70,7 @@ pub fn monitor_strategy(
 						trigger_condition.timeout_ms,
 						trigger_condition.language,
 						trigger_condition.arguments,
+						trigger_condition.runtime_flags,
 					);
 				}
 				monitor.build()
@@ -312,6 +314,7 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 			vec![TriggerConditions {
 				script_path,
 				arguments: Some(arguments.split(',').map(|s| s.to_string()).collect()),
+				runtime_flags: None,
 				language,
 				timeout_ms,
 			}]
@@ -358,7 +361,10 @@ pub fn process_output_strategy() -> impl Strategy<Value = std::process::Output> 
 
 	(stdout_strategy, stderr_strategy, prop::bool::ANY).prop_map(|(stdout, stderr, success)| {
 		std::process::Output {
+			#[cfg(unix)]
 			status: ExitStatusExt::from_raw(if success { 0 } else { 1 }),
+			#[cfg(windows)]
+			status: std::os::windows::process::ExitStatusExt::from_raw(if success { 0 } else { 1 }),
 			stdout: stdout.into_bytes(),
 			stderr: stderr.into_bytes(),
 		}

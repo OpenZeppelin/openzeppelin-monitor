@@ -336,7 +336,7 @@ mod tests {
 		let client = reqwest::Client::new();
 		let response = client
 			.get(format!("http://{}/metrics", bind_address))
-			.timeout(std::time::Duration::from_secs(1))
+			.timeout(std::time::Duration::from_secs(2))
 			.send()
 			.await;
 

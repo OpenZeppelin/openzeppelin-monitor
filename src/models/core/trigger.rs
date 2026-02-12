@@ -144,9 +144,12 @@ pub enum TriggerTypeConfig {
 		language: ScriptLanguage,
 		/// Path to script file
 		script_path: String,
-		/// Command line arguments
+		/// Commandline arguments passed to the running script.
 		#[serde(default)]
 		arguments: Option<Vec<String>>,
+		/// Runtime flags passed to the script execution runtime itself.
+		#[serde(default)]
+		runtime_flags: Option<Vec<String>>,
 		/// Timeout in milliseconds
 		timeout_ms: u32,
 	},

@@ -244,6 +244,7 @@ mod tests {
 	};
 	use std::collections::HashMap;
 	use tempfile::TempDir;
+	#[cfg(unix)]
 	use tracing_test::traced_test;
 
 	#[tokio::test]
@@ -421,7 +422,7 @@ mod tests {
 			.function("transfer(address,uint256)", None)
 			.event("Transfer(address,address,uint256)", None)
 			.transaction(TransactionStatus::Success, None)
-			.trigger_condition("test_script.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("test_script.py", 1000, ScriptLanguage::Python, None, None)
 			.build();
 
 		assert!(valid_monitor.validate().is_ok());
@@ -435,7 +436,13 @@ mod tests {
 		let invalid_monitor = MonitorBuilder::new()
 			.name("TestMonitor")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("non_existent_script.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition(
+				"non_existent_script.py",
+				1000,
+				ScriptLanguage::Python,
+				None,
+				None,
+			)
 			.build();
 
 		assert!(invalid_monitor.validate().is_err());
@@ -455,7 +462,7 @@ mod tests {
 		let invalid_monitor = MonitorBuilder::new()
 			.name("TestMonitor")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("test_script.py", 0, ScriptLanguage::Python, None)
+			.trigger_condition("test_script.py", 0, ScriptLanguage::Python, None, None)
 			.build();
 
 		assert!(invalid_monitor.validate().is_err());
@@ -499,6 +506,7 @@ mod tests {
 					1000,
 					language_clone,
 					None,
+					None,
 				)
 				.build();
 
@@ -516,6 +524,7 @@ mod tests {
 					monitor.trigger_conditions[0].timeout_ms,
 					language,
 					monitor.trigger_conditions[0].arguments.clone(),
+					monitor.trigger_conditions[0].runtime_flags.clone(),
 				)
 				.build();
 
@@ -588,6 +597,7 @@ mod tests {
 				script_path.to_str().unwrap(),
 				1000,
 				ScriptLanguage::Bash,
+				None,
 				None,
 			)
 			.build();

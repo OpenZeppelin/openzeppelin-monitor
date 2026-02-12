@@ -504,6 +504,7 @@ mod tests {
 				1000,
 				ScriptLanguage::Python,
 				None,
+				None,
 			)
 			.build();
 		monitors.insert("test_monitor".to_string(), monitor);
@@ -517,7 +518,13 @@ mod tests {
 		// Test non-existent script
 		let monitor_bad_path = MonitorBuilder::new()
 			.name("test_monitor_bad_path")
-			.trigger_condition("non_existent_script.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition(
+				"non_existent_script.py",
+				1000,
+				ScriptLanguage::Python,
+				None,
+				None,
+			)
 			.build();
 		monitors.insert("test_monitor_bad_path".to_string(), monitor_bad_path);
 
@@ -538,6 +545,7 @@ mod tests {
 				wrong_ext_path.to_str().unwrap(),
 				1000,
 				ScriptLanguage::Python,
+				None,
 				None,
 			)
 			.build();
@@ -561,6 +569,7 @@ mod tests {
 				script_path.to_str().unwrap(),
 				0,
 				ScriptLanguage::Python,
+				None,
 				None,
 			)
 			.build();

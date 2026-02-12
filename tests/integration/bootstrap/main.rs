@@ -494,6 +494,7 @@ print(True)  # Always return true for test
 		language: ScriptLanguage::Python,
 		timeout_ms: 1000,
 		arguments: None,
+		runtime_flags: None,
 	}];
 
 	let processed_block = ProcessedBlock {
@@ -622,6 +623,7 @@ async fn test_load_scripts() {
 			1000,
 			ScriptLanguage::Python,
 			None,
+			None,
 		)
 		.build();
 
@@ -656,7 +658,13 @@ async fn test_load_scripts_error() {
 	// Create test monitors with non-existent script path
 	let monitors = vec![MonitorBuilder::new()
 		.name("test_monitor")
-		.trigger_condition("non_existent_script.py", 1000, ScriptLanguage::Python, None)
+		.trigger_condition(
+			"non_existent_script.py",
+			1000,
+			ScriptLanguage::Python,
+			None,
+			None,
+		)
 		.build()];
 
 	// Create actual TriggerExecutionService instance
@@ -715,6 +723,7 @@ async fn test_load_scripts_for_custom_triggers_notifications() {
 			script_path.to_str().unwrap(),
 			1000,
 			ScriptLanguage::Python,
+			None,
 			None,
 		)
 		.triggers(vec!["custom_trigger".to_string()])
@@ -783,6 +792,7 @@ async fn test_load_scripts_for_custom_triggers_notifications_error() {
 			1000,
 			ScriptLanguage::Python,
 			None,
+			None,
 		)
 		.triggers(vec!["custom_trigger".to_string()])
 		.build()];
@@ -827,6 +837,7 @@ async fn test_load_scripts_for_custom_triggers_notifications_failed() {
 			script_path.to_str().unwrap(),
 			1000,
 			ScriptLanguage::Python,
+			None,
 			None,
 		)
 		.triggers(vec!["custom_trigger_not_found".to_string()])

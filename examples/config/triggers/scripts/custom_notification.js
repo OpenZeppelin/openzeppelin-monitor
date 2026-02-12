@@ -26,6 +26,11 @@ try {
             console.log(`Args: ${JSON.stringify(args)}`);
         }
 
+        // Log runtime_flags if they exist
+        if (process.execArgv && process.execArgv.length > 0) {
+            console.log(`Runtime Flags: ${JSON.stringify(process.execArgv)}`);
+        }
+
         // Validate monitor match data
         if (!monitorMatch) {
             console.log("No monitor match data provided");
