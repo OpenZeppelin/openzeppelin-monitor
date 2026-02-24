@@ -1087,9 +1087,31 @@ mod tests {
 	use reqwest_middleware::ClientWithMiddleware;
 	use serde::Serialize;
 
-	/// Minimal mock transport for unit tests
+	/// Configurable mock transport for unit tests.
+	/// Returns preset responses based on the RPC method name.
 	#[derive(Clone)]
-	struct MockTransport;
+	struct MockTransport {
+		responses: std::collections::HashMap<String, Result<serde_json::Value, String>>,
+	}
+
+	impl MockTransport {
+		fn new() -> Self {
+			Self {
+				responses: std::collections::HashMap::new(),
+			}
+		}
+
+		fn with_response(mut self, method: &str, response: serde_json::Value) -> Self {
+			self.responses.insert(method.to_string(), Ok(response));
+			self
+		}
+
+		fn with_error(mut self, method: &str, error: &str) -> Self {
+			self.responses
+				.insert(method.to_string(), Err(error.to_string()));
+			self
+		}
+	}
 
 	#[async_trait]
 	impl crate::services::blockchain::BlockchainTransport for MockTransport {
@@ -1099,13 +1121,21 @@ mod tests {
 
 		async fn send_raw_request<P>(
 			&self,
-			_method: &str,
+			method: &str,
 			_params: Option<P>,
 		) -> Result<serde_json::Value, TransportError>
 		where
 			P: Into<serde_json::Value> + Send + Clone + Serialize,
 		{
-			Err(TransportError::network("mock transport", None, None))
+			match self.responses.get(method) {
+				Some(Ok(response)) => Ok(response.clone()),
+				Some(Err(msg)) => Err(TransportError::network(msg, None, None)),
+				None => Err(TransportError::network(
+					format!("no mock response for method: {}", method),
+					None,
+					None,
+				)),
+			}
 		}
 
 		fn update_endpoint_manager_client(
@@ -1117,7 +1147,11 @@ mod tests {
 	}
 
 	fn mock_client() -> SolanaClient<MockTransport> {
-		SolanaClient::new_with_transport(MockTransport)
+		SolanaClient::new_with_transport(MockTransport::new())
+	}
+
+	fn mock_client_with_transport(transport: MockTransport) -> SolanaClient<MockTransport> {
+		SolanaClient::new_with_transport(transport)
 	}
 
 	#[test]
@@ -1172,5 +1206,116 @@ mod tests {
 			remaining.is_empty(),
 			"get_blocks should clear failed_slots at the start"
 		);
+	}
+
+	#[tokio::test]
+	async fn test_get_transactions_for_addresses_empty_addresses() {
+		let client = mock_client();
+
+		let result =
+			SolanaClientTrait::get_transactions_for_addresses(&client, &[], 100, Some(200)).await;
+
+		assert!(result.is_ok());
+		assert!(result.unwrap().is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_get_transactions_for_addresses_records_failed_slots() {
+		// Set up transport: getSignaturesForAddress returns one signature,
+		// but getTransaction fails
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						}
+					]
+				}),
+			)
+			.with_error(rpc_methods::GET_TRANSACTION, "RPC node unavailable");
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		// Should succeed but return no transactions
+		assert!(result.is_ok());
+		assert!(result.unwrap().is_empty());
+
+		// Slot 150 should be recorded as failed
+		let failed = client.failed_slots.lock().await;
+		assert_eq!(*failed, vec![150]);
+	}
+
+	#[tokio::test]
+	async fn test_get_transactions_for_addresses_success_no_failed_slots() {
+		// Set up transport: getSignaturesForAddress returns one signature,
+		// getTransaction returns a valid transaction
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						}
+					]
+				}),
+			)
+			.with_response(
+				rpc_methods::GET_TRANSACTION,
+				json!({
+					"result": {
+						"slot": 150,
+						"blockTime": 1234567890,
+						"transaction": {
+							"signatures": ["sig1"],
+							"message": {
+								"accountKeys": ["Account1"],
+								"instructions": [],
+								"recentBlockhash": "hash1"
+							}
+						},
+						"meta": {
+							"err": null,
+							"fee": 5000,
+							"preBalances": [100],
+							"postBalances": [95],
+							"logMessages": []
+						}
+					}
+				}),
+			);
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap().len(), 1);
+
+		// No failed slots
+		let failed = client.failed_slots.lock().await;
+		assert!(failed.is_empty());
 	}
 }
