@@ -14,7 +14,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::instrument;
 
 use crate::{
-	models::{BlockType, Network, ProcessedBlock},
+	models::{BlockChainType, BlockType, Network, ProcessedBlock},
 	services::{
 		blockchain::BlockChainClient,
 		blockwatcher::{
@@ -515,8 +515,16 @@ pub async fn process_new_blocks<
 		.reset_expected_next(network, start_block)
 		.await;
 
-	// Detect missing blocks using BlockTracker
-	let missed_blocks = block_tracker.detect_missing_blocks(network, &blocks).await;
+	// Detect missing blocks.
+	// For Solana with the optimized getSignaturesForAddress approach, gaps between
+	// returned slots are expected (only slots with matching transactions are returned,
+	// and Solana also has skipped slots). Instead of gap detection, we track slots
+	// where individual transaction fetches failed via take_failed_blocks().
+	let missed_blocks = if network.network_type == BlockChainType::Solana {
+		rpc_client.take_failed_blocks().await
+	} else {
+		block_tracker.detect_missing_blocks(network, &blocks).await
+	};
 
 	// Log and save missed blocks if any
 	if !missed_blocks.is_empty() {
@@ -722,11 +730,25 @@ pub async fn process_new_blocks<
 		.await
 		.with_context(|| "Failed to save last processed block")?;
 
-	tracing::info!(
-		"Processed {} blocks in {}ms",
-		blocks.len(),
-		start_time.elapsed().as_millis()
-	);
+	if network.network_type == BlockChainType::Solana {
+		tracing::info!(
+			"Processed {} slots with matching transactions (scanned slot range {}-{}) in {}ms for network {:?}",
+			blocks.len(),
+			start_block,
+			latest_confirmed_block,
+			start_time.elapsed().as_millis(),
+			network.slug
+		);
+	} else {
+		tracing::info!(
+			"Processed {} blocks (range {}-{}) in {}ms for network {:?}",
+			blocks.len(),
+			start_block,
+			latest_confirmed_block,
+			start_time.elapsed().as_millis(),
+			network.slug
+		);
+	}
 
 	Ok(())
 }

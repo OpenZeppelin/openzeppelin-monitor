@@ -7,6 +7,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use serde_json::json;
 use std::marker::PhantomData;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::instrument;
 
 use crate::{
@@ -62,6 +64,9 @@ pub struct SolanaClient<T: Send + Sync + Clone> {
 	/// Addresses to monitor for optimized block fetching (e.g., program IDs)
 	/// When set, get_blocks uses getSignaturesForAddress instead of getBlock
 	monitored_addresses: Vec<String>,
+	/// Slots where transaction fetches failed during the last `get_blocks` call.
+	/// These should be treated as missed blocks for recovery purposes.
+	failed_slots: Arc<Mutex<Vec<u64>>>,
 }
 
 impl<T: Send + Sync + Clone> SolanaClient<T> {
@@ -70,6 +75,7 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 		Self {
 			http_client,
 			monitored_addresses: Vec::new(),
+			failed_slots: Arc::new(Mutex::new(Vec::new())),
 		}
 	}
 
@@ -698,7 +704,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		end_slot: Option<u64>,
 	) -> Result<Vec<SolanaTransaction>, anyhow::Error> {
 		use futures::stream::{self, StreamExt};
-		use std::collections::HashSet;
+		use std::collections::HashMap;
 
 		let end_slot = end_slot.unwrap_or(start_slot);
 
@@ -713,8 +719,8 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			"Fetching transactions for addresses using signatures approach"
 		);
 
-		// Collect all unique signatures from all addresses within the slot range
-		let mut all_signatures: HashSet<String> = HashSet::new();
+		// Collect all unique signatures with their slot info from all addresses
+		let mut signature_slots: HashMap<String, u64> = HashMap::new();
 
 		for address in addresses {
 			// Use paginated method to fetch all signatures
@@ -729,35 +735,67 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			);
 
 			for sig_info in signatures {
-				all_signatures.insert(sig_info.signature);
+				signature_slots
+					.entry(sig_info.signature)
+					.or_insert(sig_info.slot);
 			}
 		}
 
 		tracing::debug!(
-			unique_signatures = all_signatures.len(),
+			unique_signatures = signature_slots.len(),
 			"Fetching transactions for unique signatures in slot range"
 		);
 
 		// Fetch transactions in parallel with controlled concurrency
-		let transactions: Vec<SolanaTransaction> = stream::iter(all_signatures)
-			.map(|signature| async move {
-				let sig = signature.clone();
-				match self.get_transaction(signature).await {
-					Ok(Some(tx)) => Some(tx),
-					Ok(None) => {
-						tracing::debug!(signature = %sig, "Transaction not found");
-						None
+		// Each result is (Option<SolanaTransaction>, Option<u64> for failed slot)
+		let results: Vec<(Option<SolanaTransaction>, Option<u64>)> = stream::iter(signature_slots.into_iter())
+				.map(|(signature, slot)| async move {
+					let sig = signature.clone();
+					match self.get_transaction(signature).await {
+						Ok(Some(tx)) => (Some(tx), None),
+						Ok(None) => {
+							tracing::debug!(signature = %sig, slot = slot, "Transaction not found");
+							(None, None) // Not found is not a failure worth retrying
+						}
+						Err(e) => {
+							tracing::warn!(
+								signature = %sig,
+								slot = slot,
+								error = %e,
+								"Failed to fetch transaction, slot will be marked for recovery"
+							);
+							(None, Some(slot))
+						}
 					}
-					Err(e) => {
-						tracing::warn!(signature = %sig, error = %e, "Failed to fetch transaction");
-						None
-					}
-				}
-			})
-			.buffer_unordered(20) // 20 concurrent requests
-			.filter_map(|result| async move { result })
-			.collect()
-			.await;
+				})
+				.buffer_unordered(20) // 20 concurrent requests
+				.collect()
+				.await;
+
+		// Separate successful transactions from failed slots
+		let mut transactions = Vec::new();
+		let mut new_failed_slots = Vec::new();
+		for (tx, failed_slot) in results {
+			if let Some(tx) = tx {
+				transactions.push(tx);
+			}
+			if let Some(slot) = failed_slot {
+				new_failed_slots.push(slot);
+			}
+		}
+
+		// Store failed slots for the caller to retrieve
+		if !new_failed_slots.is_empty() {
+			new_failed_slots.sort();
+			new_failed_slots.dedup();
+			tracing::warn!(
+				failed_slots = ?new_failed_slots,
+				"Failed to fetch transactions for {} slots",
+				new_failed_slots.len()
+			);
+			let mut failed = self.failed_slots.lock().await;
+			failed.extend(new_failed_slots);
+		}
 
 		tracing::debug!(
 			fetched_transactions = transactions.len(),
@@ -902,6 +940,9 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
+		// Clear failed slots from any previous call
+		self.failed_slots.lock().await.clear();
+
 		// If monitored addresses are configured, use the optimized approach
 		if !self.monitored_addresses.is_empty() {
 			tracing::debug!(
@@ -1031,6 +1072,11 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 		);
 
 		Ok(ContractSpec::Solana(SolanaContractSpec::default()))
+	}
+
+	async fn take_failed_blocks(&self) -> Vec<u64> {
+		let mut failed = self.failed_slots.lock().await;
+		std::mem::take(&mut *failed)
 	}
 }
 

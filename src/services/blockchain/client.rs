@@ -74,6 +74,18 @@ pub trait BlockChainClient: Send + Sync + Clone {
 		// Blockchain-specific clients can override this with optimized implementations
 		self.get_blocks(start_block, end_block).await
 	}
+
+	/// Returns and clears the list of block/slot numbers where fetching failed
+	/// during the last `get_blocks` call.
+	///
+	/// This is used by chains like Solana where the optimized `getSignaturesForAddress`
+	/// approach skips gaps between slots (which is normal), but individual transaction
+	/// fetch failures should still be tracked for recovery.
+	///
+	/// The default implementation returns an empty list (no failed blocks to report).
+	async fn take_failed_blocks(&self) -> Vec<u64> {
+		Vec::new()
+	}
 }
 
 /// Defines the factory interface for creating block filters
