@@ -1083,6 +1083,42 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::services::blockchain::transports::TransportError;
+	use reqwest_middleware::ClientWithMiddleware;
+	use serde::Serialize;
+
+	/// Minimal mock transport for unit tests
+	#[derive(Clone)]
+	struct MockTransport;
+
+	#[async_trait]
+	impl crate::services::blockchain::BlockchainTransport for MockTransport {
+		async fn get_current_url(&self) -> String {
+			"http://mock".to_string()
+		}
+
+		async fn send_raw_request<P>(
+			&self,
+			_method: &str,
+			_params: Option<P>,
+		) -> Result<serde_json::Value, TransportError>
+		where
+			P: Into<serde_json::Value> + Send + Clone + Serialize,
+		{
+			Err(TransportError::network("mock transport", None, None))
+		}
+
+		fn update_endpoint_manager_client(
+			&mut self,
+			_client: ClientWithMiddleware,
+		) -> Result<(), anyhow::Error> {
+			Ok(())
+		}
+	}
+
+	fn mock_client() -> SolanaClient<MockTransport> {
+		SolanaClient::new_with_transport(MockTransport)
+	}
 
 	#[test]
 	fn test_solana_client_implements_traits() {
@@ -1091,5 +1127,50 @@ mod tests {
 
 		assert_send_sync::<SolanaClient<SolanaTransportClient>>();
 		assert_clone::<SolanaClient<SolanaTransportClient>>();
+	}
+
+	#[test]
+	fn test_new_client_has_empty_failed_slots() {
+		let client = mock_client();
+		assert!(client.monitored_addresses.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_take_failed_blocks_returns_and_clears() {
+		let client = mock_client();
+
+		// Manually populate failed slots
+		{
+			let mut failed = client.failed_slots.lock().await;
+			*failed = vec![100, 200, 300];
+		}
+
+		// First take should return all slots
+		let result = BlockChainClient::take_failed_blocks(&client).await;
+		assert_eq!(result, vec![100, 200, 300]);
+
+		// Second take should be empty
+		let result = BlockChainClient::take_failed_blocks(&client).await;
+		assert!(result.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_clears_failed_slots() {
+		let client = mock_client();
+
+		// Pre-populate failed slots
+		{
+			let mut failed = client.failed_slots.lock().await;
+			*failed = vec![100, 200];
+		}
+
+		// Calling get_blocks should clear failed_slots even if the RPC call fails
+		let _ = client.get_blocks(1, Some(1)).await;
+
+		let remaining = client.failed_slots.lock().await;
+		assert!(
+			remaining.is_empty(),
+			"get_blocks should clear failed_slots at the start"
+		);
 	}
 }

@@ -1300,6 +1300,248 @@ mod tests {
 		assert!(!missed.is_empty());
 	}
 
+	// ============ Solana missed block detection tests ============
+
+	/// Helper to create a Solana block with a specific slot number
+	fn create_solana_block(slot: u64) -> BlockType {
+		use crate::models::{SolanaBlock, SolanaConfirmedBlock};
+
+		let confirmed_block = SolanaConfirmedBlock {
+			slot,
+			blockhash: String::new(),
+			previous_blockhash: String::new(),
+			parent_slot: slot.saturating_sub(1),
+			block_time: None,
+			block_height: None,
+			transactions: Vec::new(),
+		};
+		BlockType::Solana(Box::new(SolanaBlock::from(confirmed_block)))
+	}
+
+	#[allow(dead_code)]
+	fn create_solana_test_network() -> Network {
+		NetworkBuilder::new()
+			.name("Solana Test")
+			.slug("test_network")
+			.network_type(BlockChainType::Solana)
+			.store_blocks(true)
+			.confirmation_blocks(32)
+			.max_past_blocks(100)
+			.build()
+	}
+
+	fn create_solana_test_network_with_recovery() -> Network {
+		NetworkBuilder::new()
+			.name("Solana Test")
+			.slug("test_network")
+			.network_type(BlockChainType::Solana)
+			.store_blocks(true)
+			.confirmation_blocks(32)
+			.max_past_blocks(100)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 100,
+			})
+			.build()
+	}
+
+	/// Mock Solana RPC client that can report failed slots via take_failed_blocks
+	#[derive(Clone)]
+	struct MockSolanaRpcClient {
+		latest_block: Arc<AtomicU64>,
+		blocks_to_return: Arc<std::sync::Mutex<Vec<BlockType>>>,
+		failed_blocks: Arc<tokio::sync::Mutex<Vec<u64>>>,
+	}
+
+	impl MockSolanaRpcClient {
+		fn new(latest_block: u64) -> Self {
+			Self {
+				latest_block: Arc::new(AtomicU64::new(latest_block)),
+				blocks_to_return: Arc::new(std::sync::Mutex::new(Vec::new())),
+				failed_blocks: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+			}
+		}
+
+		fn with_blocks(self, blocks: Vec<BlockType>) -> Self {
+			*self.blocks_to_return.lock().unwrap() = blocks;
+			self
+		}
+
+		async fn with_failed_blocks(self, failed: Vec<u64>) -> Self {
+			*self.failed_blocks.lock().await = failed;
+			self
+		}
+	}
+
+	#[async_trait::async_trait]
+	impl BlockChainClient for MockSolanaRpcClient {
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
+			Ok(self.latest_block.load(Ordering::SeqCst))
+		}
+
+		async fn get_blocks(
+			&self,
+			_start: u64,
+			_end: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error> {
+			let blocks = self.blocks_to_return.lock().unwrap();
+			Ok(blocks.clone())
+		}
+
+		async fn take_failed_blocks(&self) -> Vec<u64> {
+			std::mem::take(&mut *self.failed_blocks.lock().await)
+		}
+	}
+
+	#[tokio::test]
+	async fn test_solana_skips_gap_detection_no_false_missed_blocks() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		// Return Solana blocks with gaps (slots 96 and 98, missing 97)
+		// This is normal for Solana — slot 97 may have been skipped or had no matching txs
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(96), create_solana_block(98)]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// No missed blocks should be recorded — gaps are expected on Solana
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(
+			missed.is_empty(),
+			"Solana should not flag gaps as missed blocks, but found: {:?}",
+			missed.iter().map(|e| e.block_number).collect::<Vec<_>>()
+		);
+	}
+
+	#[tokio::test]
+	async fn test_solana_saves_failed_slots_as_missed_blocks() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		// Blocks returned successfully, but slot 97 had a failed transaction fetch
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(96), create_solana_block(98)])
+			.with_failed_blocks(vec![97])
+			.await;
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// Slot 97 should be saved as missed (actual RPC failure)
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		let missed_numbers: Vec<u64> = missed.iter().map(|e| e.block_number).collect();
+		assert!(
+			missed_numbers.contains(&97),
+			"Failed slot 97 should be recorded as missed, got: {:?}",
+			missed_numbers
+		);
+	}
+
+	#[tokio::test]
+	async fn test_solana_take_failed_blocks_clears_after_read() {
+		let rpc_client = MockSolanaRpcClient::new(100)
+			.with_failed_blocks(vec![10, 20, 30])
+			.await;
+
+		// First call should return all failed blocks
+		let failed = rpc_client.take_failed_blocks().await;
+		assert_eq!(failed, vec![10, 20, 30]);
+
+		// Second call should return empty (cleared)
+		let failed = rpc_client.take_failed_blocks().await;
+		assert!(failed.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_evm_still_uses_gap_detection() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_test_network_with_recovery();
+
+		// EVM blocks with a gap (missing block 97) — should detect as missed
+		let rpc_client =
+			MockRpcClient::new(110).with_blocks(vec![create_evm_block(96), create_evm_block(98)]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// EVM should still detect block 97 as missed
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		let missed_numbers: Vec<u64> = missed.iter().map(|e| e.block_number).collect();
+		assert!(
+			missed_numbers.contains(&97),
+			"EVM should still detect gaps as missed blocks"
+		);
+	}
+
 	// ============ BlockWatcherService tests ============
 
 	/// Mock job scheduler for testing
