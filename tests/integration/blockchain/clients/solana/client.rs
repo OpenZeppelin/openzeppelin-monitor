@@ -177,7 +177,7 @@ async fn test_get_transactions_for_addresses() {
 			predicate::eq(Some(123456790u64)),
 		)
 		.times(1)
-		.returning(move |_, _, _| Ok(vec![expected_transaction.clone()]));
+		.returning(move |_, _, _| Ok((vec![expected_transaction.clone()], Vec::new())));
 
 	let result = mock
 		.get_transactions_for_addresses(
@@ -187,7 +187,9 @@ async fn test_get_transactions_for_addresses() {
 		)
 		.await;
 	assert!(result.is_ok());
-	assert_eq!(result.unwrap().len(), 1);
+	let (txs, failed) = result.unwrap();
+	assert_eq!(txs.len(), 1);
+	assert!(failed.is_empty());
 }
 
 #[tokio::test]
@@ -261,7 +263,7 @@ async fn test_get_blocks_for_addresses_optimized() {
 			predicate::eq(Some(123456790u64)),
 		)
 		.times(1)
-		.returning(move |_, _, _| Ok(blocks.clone()));
+		.returning(move |_, _, _| Ok((blocks.clone(), Vec::new())));
 
 	let result = SolanaClientTrait::get_blocks_for_addresses(
 		&mock,
@@ -271,8 +273,9 @@ async fn test_get_blocks_for_addresses_optimized() {
 	)
 	.await;
 	assert!(result.is_ok());
-	let blocks = result.unwrap();
+	let (blocks, failed) = result.unwrap();
 	assert_eq!(blocks.len(), 1);
+	assert!(failed.is_empty());
 }
 
 #[tokio::test]

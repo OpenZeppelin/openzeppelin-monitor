@@ -204,13 +204,13 @@ mock! {
 			addresses: &[String],
 			start_slot: u64,
 			end_slot: Option<u64>,
-		) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
+		) -> Result<(Vec<SolanaTransaction>, Vec<u64>), anyhow::Error>;
 		async fn get_blocks_for_addresses(
 			&self,
 			addresses: &[String],
 			start_slot: u64,
 			end_slot: Option<u64>,
-		) -> Result<Vec<BlockType>, anyhow::Error>;
+		) -> Result<(Vec<BlockType>, Vec<u64>), anyhow::Error>;
 		async fn get_account_info(&self, pubkey: String) -> Result<serde_json::Value, anyhow::Error>;
 		async fn get_program_accounts(&self, program_id: String) -> Result<Vec<serde_json::Value>, anyhow::Error>;
 	}
