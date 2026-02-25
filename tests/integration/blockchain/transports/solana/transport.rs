@@ -1,6 +1,6 @@
 use mockall::predicate;
 use openzeppelin_monitor::services::blockchain::{
-	BlockChainClient, SolanaClient, SolanaClientTrait,
+	BlockChainClient, FetchStreamKind, SolanaClient, SolanaClientTrait,
 };
 use serde_json::{json, Value};
 
@@ -861,12 +861,16 @@ async fn test_get_blocks_uses_optimized_mode_with_monitored_addresses() {
 	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana)
 		.with_monitored_addresses(vec![address.to_string()]);
 
-	let result = client.get_blocks(start_slot, Some(end_slot)).await;
+	let result = client
+		.get_blocks_with_meta(start_slot, Some(end_slot))
+		.await;
 
 	assert!(result.is_ok());
-	let blocks = result.unwrap();
+	let fetch_result = result.unwrap();
 	// Should have 2 virtual blocks (one for each slot with transactions)
-	assert_eq!(blocks.len(), 2);
+	assert_eq!(fetch_result.blocks.len(), 2);
+	assert_eq!(fetch_result.stream_kind, FetchStreamKind::Sparse);
+	assert!(fetch_result.failed_blocks.is_empty());
 }
 
 #[tokio::test]
@@ -908,7 +912,9 @@ async fn test_get_blocks_for_addresses_empty_addresses() {
 	let result = SolanaClientTrait::get_blocks_for_addresses(&client, &[], 100, Some(200)).await;
 
 	assert!(result.is_ok());
-	assert!(result.unwrap().is_empty());
+	let (blocks, failed) = result.unwrap();
+	assert!(blocks.is_empty());
+	assert!(failed.is_empty());
 }
 
 #[tokio::test]
@@ -936,7 +942,9 @@ async fn test_get_blocks_for_addresses_no_signatures_found() {
 	.await;
 
 	assert!(result.is_ok());
-	assert!(result.unwrap().is_empty());
+	let (blocks, failed) = result.unwrap();
+	assert!(blocks.is_empty());
+	assert!(failed.is_empty());
 }
 
 // ============================================================================

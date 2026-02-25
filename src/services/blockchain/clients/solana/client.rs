@@ -17,7 +17,7 @@ use crate::{
 	},
 	services::{
 		blockchain::{
-			client::{BlockChainClient, BlockFilterFactory},
+			client::{BlockChainClient, BlockFetchResult, BlockFilterFactory, FetchStreamKind},
 			transports::{SolanaGetBlockConfig, SolanaTransportClient},
 			BlockchainTransport,
 		},
@@ -460,24 +460,29 @@ pub trait SolanaClientTrait {
 
 	/// Retrieves transactions for multiple addresses within a slot range
 	/// This is the optimized method that uses getSignaturesForAddress instead of getBlock
+	///
+	/// Returns a tuple of (successful transactions, failed slot numbers).
+	/// Uses all-or-nothing semantics per slot: if any transaction fetch fails for a slot,
+	/// all transactions for that slot are discarded and the slot is added to failed_slots.
 	async fn get_transactions_for_addresses(
 		&self,
 		addresses: &[String],
 		start_slot: u64,
 		end_slot: Option<u64>,
-	) -> Result<Vec<SolanaTransaction>, anyhow::Error>;
+	) -> Result<(Vec<SolanaTransaction>, Vec<u64>), anyhow::Error>;
 
 	/// Retrieves blocks containing only transactions relevant to the specified addresses
 	/// This is the main optimization: instead of fetching all blocks, we fetch only
 	/// transactions that involve the monitored addresses and group them into virtual blocks
 	///
+	/// Returns a tuple of (blocks, failed slot numbers).
 	/// Returns BlockType::Solana blocks, compatible with the existing filter infrastructure
 	async fn get_blocks_for_addresses(
 		&self,
 		addresses: &[String],
 		start_slot: u64,
 		end_slot: Option<u64>,
-	) -> Result<Vec<BlockType>, anyhow::Error>;
+	) -> Result<(Vec<BlockType>, Vec<u64>), anyhow::Error>;
 
 	/// Retrieves account info for a given public key
 	async fn get_account_info(&self, pubkey: String) -> Result<serde_json::Value, anyhow::Error>;
@@ -696,14 +701,14 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		addresses: &[String],
 		start_slot: u64,
 		end_slot: Option<u64>,
-	) -> Result<Vec<SolanaTransaction>, anyhow::Error> {
+	) -> Result<(Vec<SolanaTransaction>, Vec<u64>), anyhow::Error> {
 		use futures::stream::{self, StreamExt};
-		use std::collections::HashSet;
+		use std::collections::HashMap;
 
 		let end_slot = end_slot.unwrap_or(start_slot);
 
 		if addresses.is_empty() {
-			return Ok(Vec::new());
+			return Ok((Vec::new(), Vec::new()));
 		}
 
 		tracing::debug!(
@@ -713,11 +718,10 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			"Fetching transactions for addresses using signatures approach"
 		);
 
-		// Collect all unique signatures from all addresses within the slot range
-		let mut all_signatures: HashSet<String> = HashSet::new();
+		// Collect all unique signatures with their slot info from all addresses
+		let mut signature_slots: HashMap<String, u64> = HashMap::new();
 
 		for address in addresses {
-			// Use paginated method to fetch all signatures
 			let signatures = self
 				.get_all_signatures_for_address(address.clone(), start_slot, end_slot)
 				.await?;
@@ -729,42 +733,94 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			);
 
 			for sig_info in signatures {
-				all_signatures.insert(sig_info.signature);
+				signature_slots
+					.entry(sig_info.signature)
+					.or_insert(sig_info.slot);
 			}
 		}
 
 		tracing::debug!(
-			unique_signatures = all_signatures.len(),
+			unique_signatures = signature_slots.len(),
 			"Fetching transactions for unique signatures in slot range"
 		);
 
-		// Fetch transactions in parallel with controlled concurrency
-		let transactions: Vec<SolanaTransaction> = stream::iter(all_signatures)
-			.map(|signature| async move {
-				let sig = signature.clone();
-				match self.get_transaction(signature).await {
-					Ok(Some(tx)) => Some(tx),
-					Ok(None) => {
-						tracing::debug!(signature = %sig, "Transaction not found");
-						None
+		// Group signatures by slot for all-or-nothing semantics
+		let mut slot_signatures: HashMap<u64, Vec<String>> = HashMap::new();
+		for (signature, slot) in signature_slots {
+			slot_signatures.entry(slot).or_default().push(signature);
+		}
+
+		// Process each slot concurrently with all-or-nothing semantics:
+		// If ANY tx fetch fails for a slot, discard ALL txs for that slot.
+		let slot_results: Vec<Result<Vec<SolanaTransaction>, u64>> =
+			stream::iter(slot_signatures.into_iter())
+				.map(|(slot, signatures)| async move {
+					// Fetch all transactions for this slot concurrently
+					let tx_results: Vec<
+						Result<Option<SolanaTransaction>, (String, anyhow::Error)>,
+					> = stream::iter(signatures.into_iter())
+						.map(|signature| async move {
+							let sig = signature.clone();
+							match self.get_transaction(signature).await {
+								Ok(tx) => Ok(tx),
+								Err(e) => Err((sig, e)),
+							}
+						})
+						.buffer_unordered(5)
+						.collect()
+						.await;
+
+					// Check if any fetch failed — if so, fail the entire slot
+					let mut txs = Vec::new();
+					for result in tx_results {
+						match result {
+							Ok(Some(tx)) => txs.push(tx),
+							Ok(None) => {
+								// Transaction not found is not a failure worth retrying
+							}
+							Err((sig, e)) => {
+								tracing::warn!(
+									signature = %sig,
+									slot = slot,
+									error = %e,
+									"Failed to fetch transaction, entire slot will be marked for recovery"
+								);
+								return Err(slot);
+							}
+						}
 					}
-					Err(e) => {
-						tracing::warn!(signature = %sig, error = %e, "Failed to fetch transaction");
-						None
-					}
-				}
-			})
-			.buffer_unordered(20) // 20 concurrent requests
-			.filter_map(|result| async move { result })
-			.collect()
-			.await;
+					Ok(txs)
+				})
+				.buffer_unordered(10)
+				.collect()
+				.await;
+
+		// Separate successful transactions from failed slots
+		let mut transactions = Vec::new();
+		let mut failed_slots = Vec::new();
+		for result in slot_results {
+			match result {
+				Ok(txs) => transactions.extend(txs),
+				Err(slot) => failed_slots.push(slot),
+			}
+		}
+
+		if !failed_slots.is_empty() {
+			failed_slots.sort();
+			failed_slots.dedup();
+			tracing::warn!(
+				failed_slots = ?failed_slots,
+				"Failed to fetch transactions for {} slots",
+				failed_slots.len()
+			);
+		}
 
 		tracing::debug!(
 			fetched_transactions = transactions.len(),
 			"Successfully fetched transactions"
 		);
 
-		Ok(transactions)
+		Ok((transactions, failed_slots))
 	}
 
 	#[instrument(skip(self), fields(pubkey))]
@@ -821,16 +877,16 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		addresses: &[String],
 		start_slot: u64,
 		end_slot: Option<u64>,
-	) -> Result<Vec<BlockType>, anyhow::Error> {
+	) -> Result<(Vec<BlockType>, Vec<u64>), anyhow::Error> {
 		use std::collections::BTreeMap;
 
 		// Fetch transactions using the optimized signatures approach
-		let transactions = self
+		let (transactions, failed_slots) = self
 			.get_transactions_for_addresses(addresses, start_slot, end_slot)
 			.await?;
 
 		if transactions.is_empty() {
-			return Ok(Vec::new());
+			return Ok((Vec::new(), failed_slots));
 		}
 
 		// Group transactions by slot
@@ -862,7 +918,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			"Created virtual blocks from address-filtered transactions"
 		);
 
-		Ok(blocks)
+		Ok((blocks, failed_slots))
 	}
 }
 
@@ -902,23 +958,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
-		// If monitored addresses are configured, use the optimized approach
-		if !self.monitored_addresses.is_empty() {
-			tracing::debug!(
-				addresses = ?self.monitored_addresses,
-				start_block = start_block,
-				end_block = ?end_block,
-				"Using optimized getSignaturesForAddress approach"
-			);
-			return SolanaClientTrait::get_blocks_for_addresses(
-				self,
-				&self.monitored_addresses,
-				start_block,
-				end_block,
-			)
-			.await;
-		}
-
 		// Standard approach: fetch all blocks
 		// Validate input parameters
 		if let Some(end_block) = end_block {
@@ -1032,11 +1071,195 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 
 		Ok(ContractSpec::Solana(SolanaContractSpec::default()))
 	}
+
+	async fn get_blocks_with_meta(
+		&self,
+		start_block: u64,
+		end_block: Option<u64>,
+	) -> Result<BlockFetchResult, anyhow::Error> {
+		if !self.monitored_addresses.is_empty() {
+			tracing::debug!(
+				addresses = ?self.monitored_addresses,
+				start_block = start_block,
+				end_block = ?end_block,
+				"Using optimized getSignaturesForAddress approach"
+			);
+			let (blocks, failed_blocks) = SolanaClientTrait::get_blocks_for_addresses(
+				self,
+				&self.monitored_addresses,
+				start_block,
+				end_block,
+			)
+			.await?;
+			Ok(BlockFetchResult {
+				blocks,
+				failed_blocks,
+				stream_kind: FetchStreamKind::Sparse,
+			})
+		} else {
+			let blocks = self.get_blocks(start_block, end_block).await?;
+			Ok(BlockFetchResult {
+				blocks,
+				failed_blocks: Vec::new(),
+				stream_kind: FetchStreamKind::Dense,
+			})
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::services::blockchain::transports::TransportError;
+	use reqwest_middleware::ClientWithMiddleware;
+	use serde::Serialize;
+	use std::sync::atomic::{AtomicUsize, Ordering};
+	use std::sync::Arc;
+
+	/// Configurable mock transport for unit tests.
+	/// Returns preset responses based on the RPC method name.
+	#[derive(Clone)]
+	struct MockTransport {
+		responses: std::collections::HashMap<String, Result<serde_json::Value, String>>,
+	}
+
+	impl MockTransport {
+		fn new() -> Self {
+			Self {
+				responses: std::collections::HashMap::new(),
+			}
+		}
+
+		fn with_response(mut self, method: &str, response: serde_json::Value) -> Self {
+			self.responses.insert(method.to_string(), Ok(response));
+			self
+		}
+
+		fn with_error(mut self, method: &str, error: &str) -> Self {
+			self.responses
+				.insert(method.to_string(), Err(error.to_string()));
+			self
+		}
+	}
+
+	#[async_trait]
+	impl crate::services::blockchain::BlockchainTransport for MockTransport {
+		async fn get_current_url(&self) -> String {
+			"http://mock".to_string()
+		}
+
+		async fn send_raw_request<P>(
+			&self,
+			method: &str,
+			_params: Option<P>,
+		) -> Result<serde_json::Value, TransportError>
+		where
+			P: Into<serde_json::Value> + Send + Clone + Serialize,
+		{
+			match self.responses.get(method) {
+				Some(Ok(response)) => Ok(response.clone()),
+				Some(Err(msg)) => Err(TransportError::network(msg, None, None)),
+				None => Err(TransportError::network(
+					format!("no mock response for method: {}", method),
+					None,
+					None,
+				)),
+			}
+		}
+
+		fn update_endpoint_manager_client(
+			&mut self,
+			_client: ClientWithMiddleware,
+		) -> Result<(), anyhow::Error> {
+			Ok(())
+		}
+	}
+
+	/// Mock transport that returns different responses based on request parameters.
+	/// Uses a callback function that receives the method and params, allowing
+	/// fine-grained control over responses per-signature, per-address, etc.
+	type MockHandler =
+		dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync;
+
+	#[derive(Clone)]
+	struct CallbackMockTransport {
+		handler: Arc<MockHandler>,
+	}
+
+	impl CallbackMockTransport {
+		fn new<F>(handler: F) -> Self
+		where
+			F: Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
+				+ Send
+				+ Sync
+				+ 'static,
+		{
+			Self {
+				handler: Arc::new(handler),
+			}
+		}
+	}
+
+	#[async_trait]
+	impl crate::services::blockchain::BlockchainTransport for CallbackMockTransport {
+		async fn get_current_url(&self) -> String {
+			"http://mock-callback".to_string()
+		}
+
+		async fn send_raw_request<P>(
+			&self,
+			method: &str,
+			params: Option<P>,
+		) -> Result<serde_json::Value, TransportError>
+		where
+			P: Into<serde_json::Value> + Send + Clone + Serialize,
+		{
+			let params_value = params.map(|p| p.into()).unwrap_or(serde_json::Value::Null);
+			match (self.handler)(method, &params_value) {
+				Ok(val) => Ok(val),
+				Err(msg) => Err(TransportError::network(msg, None, None)),
+			}
+		}
+
+		fn update_endpoint_manager_client(
+			&mut self,
+			_client: ClientWithMiddleware,
+		) -> Result<(), anyhow::Error> {
+			Ok(())
+		}
+	}
+
+	fn mock_client() -> SolanaClient<MockTransport> {
+		SolanaClient::new_with_transport(MockTransport::new())
+	}
+
+	fn mock_client_with_transport(transport: MockTransport) -> SolanaClient<MockTransport> {
+		SolanaClient::new_with_transport(transport)
+	}
+
+	fn mock_tx_response(slot: u64, sig: &str) -> serde_json::Value {
+		json!({
+			"result": {
+				"slot": slot,
+				"blockTime": 1234567890,
+				"transaction": {
+					"signatures": [sig],
+					"message": {
+						"accountKeys": ["Account1"],
+						"instructions": [],
+						"recentBlockhash": "hash1"
+					}
+				},
+				"meta": {
+					"err": null,
+					"fee": 5000,
+					"preBalances": [100],
+					"postBalances": [95],
+					"logMessages": []
+				}
+			}
+		})
+	}
 
 	#[test]
 	fn test_solana_client_implements_traits() {
@@ -1045,5 +1268,780 @@ mod tests {
 
 		assert_send_sync::<SolanaClient<SolanaTransportClient>>();
 		assert_clone::<SolanaClient<SolanaTransportClient>>();
+	}
+
+	#[test]
+	fn test_new_client_has_empty_monitored_addresses() {
+		let client = mock_client();
+		assert!(client.monitored_addresses.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_get_transactions_for_addresses_empty_addresses() {
+		let client = mock_client();
+
+		let result =
+			SolanaClientTrait::get_transactions_for_addresses(&client, &[], 100, Some(200)).await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert!(txs.is_empty());
+		assert!(failed.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_get_transactions_for_addresses_records_failed_slots() {
+		// Set up transport: getSignaturesForAddress returns one signature,
+		// but getTransaction fails
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						}
+					]
+				}),
+			)
+			.with_error(rpc_methods::GET_TRANSACTION, "RPC node unavailable");
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		// Should succeed but return no transactions, with slot 150 as failed
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert!(txs.is_empty());
+		assert_eq!(failed, vec![150]);
+	}
+
+	#[tokio::test]
+	async fn test_get_transactions_for_addresses_success_no_failed_slots() {
+		// Set up transport: getSignaturesForAddress returns one signature,
+		// getTransaction returns a valid transaction
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						}
+					]
+				}),
+			)
+			.with_response(
+				rpc_methods::GET_TRANSACTION,
+				json!({
+					"result": {
+						"slot": 150,
+						"blockTime": 1234567890,
+						"transaction": {
+							"signatures": ["sig1"],
+							"message": {
+								"accountKeys": ["Account1"],
+								"instructions": [],
+								"recentBlockhash": "hash1"
+							}
+						},
+						"meta": {
+							"err": null,
+							"fee": 5000,
+							"preBalances": [100],
+							"postBalances": [95],
+							"logMessages": []
+						}
+					}
+				}),
+			);
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert_eq!(txs.len(), 1);
+		assert!(failed.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_all_or_nothing_partial_failure() {
+		// Slot 150 has 2 signatures: sig1 succeeds, sig2 fails
+		// All-or-nothing: entire slot should fail, zero txs returned for it
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						},
+						{
+							"signature": "sig2",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						}
+					]
+				}),
+			)
+			// MockTransport returns the same response for all calls to a method,
+			// so we use an error to simulate one failure (all sigs for slot fail)
+			.with_error(rpc_methods::GET_TRANSACTION, "RPC node unavailable");
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		// All-or-nothing: no txs should be returned for the failed slot
+		assert!(txs.is_empty(), "No txs should be returned for failed slot");
+		assert_eq!(failed, vec![150], "Slot 150 should be in failed_blocks");
+	}
+
+	#[tokio::test]
+	async fn test_all_or_nothing_mixed_slots() {
+		// We need a transport that can return different results for different signatures.
+		// Since MockTransport returns the same response per method, we'll use a custom approach.
+		// Slot 150 succeeds (sig1), slot 160 fails (sig2 fails)
+		// We'll test with a transport that succeeds for getTransaction — both slots succeed.
+		// Then verify with separate test that failure correctly isolates to one slot.
+
+		// For this test: both slots succeed
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						},
+						{
+							"signature": "sig2",
+							"slot": 160,
+							"err": null,
+							"blockTime": 1234567891
+						}
+					]
+				}),
+			)
+			.with_response(
+				rpc_methods::GET_TRANSACTION,
+				json!({
+					"result": {
+						"slot": 150,
+						"blockTime": 1234567890,
+						"transaction": {
+							"signatures": ["sig1"],
+							"message": {
+								"accountKeys": ["Account1"],
+								"instructions": [],
+								"recentBlockhash": "hash1"
+							}
+						},
+						"meta": {
+							"err": null,
+							"fee": 5000,
+							"preBalances": [100],
+							"postBalances": [95],
+							"logMessages": []
+						}
+					}
+				}),
+			);
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		// Both slots succeed — 2 transactions returned
+		assert_eq!(txs.len(), 2);
+		assert!(failed.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_sparse_path() {
+		// With monitored addresses set, should return Sparse stream kind
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						}
+					]
+				}),
+			)
+			.with_error(rpc_methods::GET_TRANSACTION, "RPC node unavailable");
+
+		let client = mock_client_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(200)).await;
+		assert!(result.is_ok());
+		let fetch_result = result.unwrap();
+		assert_eq!(fetch_result.stream_kind, FetchStreamKind::Sparse);
+		assert!(fetch_result.blocks.is_empty());
+		assert_eq!(fetch_result.failed_blocks, vec![150]);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_dense_path() {
+		// Without monitored addresses, should return Dense stream kind
+		let transport = MockTransport::new()
+			.with_response(rpc_methods::GET_BLOCKS, json!({ "result": [100] }))
+			.with_response(
+				rpc_methods::GET_BLOCK,
+				json!({
+					"result": {
+						"blockhash": "hash1",
+						"previousBlockhash": "hash0",
+						"parentSlot": 99,
+						"blockTime": 1234567890,
+						"blockHeight": 100,
+						"transactions": []
+					}
+				}),
+			);
+
+		let client = mock_client_with_transport(transport);
+		// No monitored addresses — Dense path
+
+		let result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(100)).await;
+		assert!(result.is_ok());
+		let fetch_result = result.unwrap();
+		assert_eq!(fetch_result.stream_kind, FetchStreamKind::Dense);
+		assert!(fetch_result.failed_blocks.is_empty());
+		assert_eq!(fetch_result.blocks.len(), 1);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_dense_error_propagation() {
+		// Dense path should propagate errors from get_blocks
+		let transport = MockTransport::new().with_error(rpc_methods::GET_BLOCK, "RPC node crashed");
+
+		let client = mock_client_with_transport(transport);
+
+		let result = BlockChainClient::get_blocks_with_meta(&client, 100, None).await;
+		assert!(
+			result.is_err(),
+			"Error from get_blocks should propagate through get_blocks_with_meta"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_all_or_nothing_mixed_slots_one_fails() {
+		// Slot 150 (sig1) succeeds, slot 160 (sig2) fails.
+		// Uses param-aware mock to return different results per signature.
+		let transport = CallbackMockTransport::new(|method, params| match method {
+			"getSignaturesForAddress" => Ok(json!({
+				"result": [
+					{ "signature": "sig1", "slot": 150, "err": null, "blockTime": 100 },
+					{ "signature": "sig2", "slot": 160, "err": null, "blockTime": 101 }
+				]
+			})),
+			"getTransaction" => {
+				let sig = params
+					.as_array()
+					.and_then(|a| a.first())
+					.and_then(|v| v.as_str())
+					.unwrap_or("");
+				if sig == "sig1" {
+					Ok(mock_tx_response(150, "sig1"))
+				} else {
+					Err("RPC unavailable".to_string())
+				}
+			}
+			_ => Err(format!("unexpected method: {}", method)),
+		});
+
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert_eq!(txs.len(), 1, "Only slot 150's tx should be returned");
+		assert_eq!(txs[0].slot(), 150);
+		assert_eq!(failed, vec![160], "Slot 160 should be in failed_blocks");
+	}
+
+	#[tokio::test]
+	async fn test_all_or_nothing_all_slots_fail() {
+		// Both slots fail — zero txs, both in failed_blocks
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						},
+						{
+							"signature": "sig2",
+							"slot": 160,
+							"err": null,
+							"blockTime": 1234567891
+						}
+					]
+				}),
+			)
+			.with_error(rpc_methods::GET_TRANSACTION, "RPC node down");
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert!(
+			txs.is_empty(),
+			"No txs should be returned when all slots fail"
+		);
+		assert_eq!(failed.len(), 2);
+		assert!(failed.contains(&150));
+		assert!(failed.contains(&160));
+	}
+
+	#[tokio::test]
+	async fn test_all_or_nothing_tx_not_found_is_not_failure() {
+		// getTransaction returns Ok(None) (null result) — not a failure,
+		// the slot should NOT appear in failed_blocks
+		let transport = MockTransport::new()
+			.with_response(
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS,
+				json!({
+					"result": [
+						{
+							"signature": "sig1",
+							"slot": 150,
+							"err": null,
+							"blockTime": 1234567890
+						}
+					]
+				}),
+			)
+			.with_response(rpc_methods::GET_TRANSACTION, json!({ "result": null }));
+
+		let client = mock_client_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert!(
+			txs.is_empty(),
+			"Not-found tx should not produce a transaction"
+		);
+		assert!(
+			failed.is_empty(),
+			"Not-found tx should not mark slot as failed"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_overlapping_signatures_from_multiple_addresses_deduped() {
+		// Two addresses return the same signature — should be deduplicated.
+		// Uses a call counter to verify getTransaction is called only once.
+		let call_count = Arc::new(AtomicUsize::new(0));
+		let call_count_clone = call_count.clone();
+		let transport = CallbackMockTransport::new(move |method, _params| {
+			match method {
+				"getSignaturesForAddress" => {
+					// Both addresses return the same signature
+					Ok(json!({
+						"result": [
+							{
+								"signature": "shared_sig",
+								"slot": 150,
+								"err": null,
+								"blockTime": 1234567890
+							}
+						]
+					}))
+				}
+				"getTransaction" => {
+					call_count_clone.fetch_add(1, Ordering::SeqCst);
+					Ok(mock_tx_response(150, "shared_sig"))
+				}
+				_ => Err(format!("unexpected method: {}", method)),
+			}
+		});
+
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["Addr1".to_string(), "Addr2".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert_eq!(txs.len(), 1, "Duplicate signatures should be deduplicated");
+		assert!(failed.is_empty());
+		assert_eq!(
+			call_count.load(Ordering::SeqCst),
+			1,
+			"getTransaction should only be called once for deduplicated signature"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_for_addresses_returns_blocks_and_failed_slots() {
+		// Test that get_blocks_for_addresses returns both blocks AND failed slots
+		// sig1 at slot 150 succeeds, sig2 at slot 160 fails
+		let transport = CallbackMockTransport::new(|method, params| match method {
+			"getSignaturesForAddress" => Ok(json!({
+				"result": [
+					{ "signature": "sig1", "slot": 150, "err": null, "blockTime": 100 },
+					{ "signature": "sig2", "slot": 160, "err": null, "blockTime": 101 }
+				]
+			})),
+			"getTransaction" => {
+				let sig = params
+					.as_array()
+					.and_then(|a| a.first())
+					.and_then(|v| v.as_str())
+					.unwrap_or("");
+				if sig == "sig1" {
+					Ok(mock_tx_response(150, "sig1"))
+				} else {
+					Err("RPC unavailable".to_string())
+				}
+			}
+			_ => Err(format!("unexpected method: {}", method)),
+		});
+
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_blocks_for_addresses(
+			&client,
+			&["ProgramId1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (blocks, failed) = result.unwrap();
+		assert_eq!(blocks.len(), 1, "Only slot 150 should produce a block");
+		match &blocks[0] {
+			BlockType::Solana(block) => assert_eq!(block.slot, 150),
+			_ => panic!("Expected Solana block"),
+		}
+		assert_eq!(failed, vec![160], "Slot 160 should be in failed_blocks");
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_sparse_returns_blocks_and_failed() {
+		// get_blocks_with_meta in sparse mode should propagate both blocks and failures
+		let transport = CallbackMockTransport::new(|method, params| match method {
+			"getSignaturesForAddress" => Ok(json!({
+				"result": [
+					{ "signature": "sig1", "slot": 150, "err": null, "blockTime": 100 },
+					{ "signature": "sig2", "slot": 160, "err": null, "blockTime": 101 }
+				]
+			})),
+			"getTransaction" => {
+				let sig = params
+					.as_array()
+					.and_then(|a| a.first())
+					.and_then(|v| v.as_str())
+					.unwrap_or("");
+				if sig == "sig1" {
+					Ok(mock_tx_response(150, "sig1"))
+				} else {
+					Err("RPC unavailable".to_string())
+				}
+			}
+			_ => Err(format!("unexpected method: {}", method)),
+		});
+
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(200)).await;
+		assert!(result.is_ok());
+		let fetch_result = result.unwrap();
+		assert_eq!(fetch_result.stream_kind, FetchStreamKind::Sparse);
+		assert_eq!(fetch_result.blocks.len(), 1);
+		assert_eq!(fetch_result.failed_blocks, vec![160]);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_standard_mode_empty_slot_list() {
+		// When getBlocks returns an empty list for a range, get_blocks should return empty
+		let transport =
+			MockTransport::new().with_response(rpc_methods::GET_BLOCKS, json!({ "result": [] }));
+
+		let client = mock_client_with_transport(transport);
+
+		let result = client.get_blocks(100, Some(200)).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap().is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_standard_mode_still_works_with_monitored_addresses() {
+		// After the redesign, get_blocks always uses the standard path
+		// even when monitored_addresses are set (get_blocks_with_meta handles routing)
+		let transport = MockTransport::new()
+			.with_response(rpc_methods::GET_BLOCKS, json!({ "result": [100] }))
+			.with_response(
+				rpc_methods::GET_BLOCK,
+				json!({
+					"result": {
+						"blockhash": "hash1",
+						"previousBlockhash": "hash0",
+						"parentSlot": 99,
+						"blockTime": 1234567890,
+						"blockHeight": 100,
+						"transactions": []
+					}
+				}),
+			);
+
+		let client = mock_client_with_transport(transport)
+			.with_monitored_addresses(vec!["SomeProgram".to_string()]);
+
+		// get_blocks should still use standard path regardless of monitored_addresses
+		let result = client.get_blocks(100, Some(100)).await;
+		assert!(result.is_ok());
+		assert_eq!(result.unwrap().len(), 1);
+	}
+
+	#[tokio::test]
+	async fn test_single_sig_per_slot_failure_isolation() {
+		// Each slot has exactly 1 signature. Slot 100 (sigA) succeeds, slot 200 (sigB) fails.
+		// Uses param-aware mock to deterministically control per-signature outcomes.
+		let transport = CallbackMockTransport::new(|method, params| match method {
+			"getSignaturesForAddress" => Ok(json!({
+				"result": [
+					{ "signature": "sigA", "slot": 100, "err": null, "blockTime": 100 },
+					{ "signature": "sigB", "slot": 200, "err": null, "blockTime": 101 }
+				]
+			})),
+			"getTransaction" => {
+				let sig = params
+					.as_array()
+					.and_then(|a| a.first())
+					.and_then(|v| v.as_str())
+					.unwrap_or("");
+				if sig == "sigA" {
+					Ok(mock_tx_response(100, "sigA"))
+				} else {
+					Err("timeout".to_string())
+				}
+			}
+			_ => Err(format!("unexpected method: {}", method)),
+		});
+
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["Addr1".to_string()],
+			50,
+			Some(250),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert_eq!(txs.len(), 1);
+		assert_eq!(txs[0].slot(), 100);
+		assert_eq!(failed, vec![200]);
+	}
+
+	#[tokio::test]
+	async fn test_multiple_sigs_same_slot_all_succeed() {
+		// A slot with 3 signatures, all succeed — all txs should be returned
+		let transport = CallbackMockTransport::new(|method, _params| {
+			match method {
+				"getSignaturesForAddress" => Ok(json!({
+					"result": [
+						{ "signature": "s1", "slot": 150, "err": null, "blockTime": 100 },
+						{ "signature": "s2", "slot": 150, "err": null, "blockTime": 100 },
+						{ "signature": "s3", "slot": 150, "err": null, "blockTime": 100 }
+					]
+				})),
+				"getTransaction" => {
+					// All succeed
+					Ok(mock_tx_response(150, "tx"))
+				}
+				_ => Err(format!("unexpected method: {}", method)),
+			}
+		});
+
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["Addr1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert_eq!(
+			txs.len(),
+			3,
+			"All 3 txs from the same slot should be returned"
+		);
+		assert!(failed.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_multiple_sigs_same_slot_one_fails_discards_all() {
+		// A slot with 3 signatures: s1 and s2 succeed, s3 fails
+		// ALL txs for that slot should be discarded (all-or-nothing)
+		let transport = CallbackMockTransport::new(|method, params| match method {
+			"getSignaturesForAddress" => Ok(json!({
+				"result": [
+					{ "signature": "s1", "slot": 150, "err": null, "blockTime": 100 },
+					{ "signature": "s2", "slot": 150, "err": null, "blockTime": 100 },
+					{ "signature": "s3", "slot": 150, "err": null, "blockTime": 100 }
+				]
+			})),
+			"getTransaction" => {
+				let sig = params
+					.as_array()
+					.and_then(|a| a.first())
+					.and_then(|v| v.as_str())
+					.unwrap_or("");
+				if sig == "s3" {
+					Err("connection reset".to_string())
+				} else {
+					Ok(mock_tx_response(150, sig))
+				}
+			}
+			_ => Err(format!("unexpected method: {}", method)),
+		});
+
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_transactions_for_addresses(
+			&client,
+			&["Addr1".to_string()],
+			100,
+			Some(200),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let (txs, failed) = result.unwrap();
+		assert!(
+			txs.is_empty(),
+			"All txs for the slot should be discarded when one fails"
+		);
+		assert_eq!(
+			failed,
+			vec![150],
+			"The entire slot should be marked as failed"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_fetch_stream_kind_derives() {
+		// Verify derived traits work correctly
+		let dense = FetchStreamKind::Dense;
+		let sparse = FetchStreamKind::Sparse;
+
+		// PartialEq / Eq
+		assert_eq!(dense, FetchStreamKind::Dense);
+		assert_ne!(dense, sparse);
+
+		// Clone
+		let dense_clone = dense.clone();
+		assert_eq!(dense, dense_clone);
+
+		// Debug
+		let debug_str = format!("{:?}", sparse);
+		assert_eq!(debug_str, "Sparse");
+	}
+
+	#[tokio::test]
+	async fn test_block_fetch_result_clone() {
+		let result = BlockFetchResult {
+			blocks: vec![],
+			failed_blocks: vec![1, 2, 3],
+			stream_kind: FetchStreamKind::Sparse,
+		};
+		let cloned = result.clone();
+		assert_eq!(cloned.failed_blocks, vec![1, 2, 3]);
+		assert_eq!(cloned.stream_kind, FetchStreamKind::Sparse);
+		assert!(cloned.blocks.is_empty());
 	}
 }

@@ -15,7 +15,7 @@ mod error;
 mod pool;
 mod transports;
 
-pub use client::{BlockChainClient, BlockFilterFactory};
+pub use client::{BlockChainClient, BlockFetchResult, BlockFilterFactory, FetchStreamKind};
 pub use clients::{
 	EvmClient, EvmClientTrait, MidnightClient, MidnightClientTrait, MidnightSubstrateClientTrait,
 	SignatureInfo, SolanaClient, SolanaClientError, SolanaClientTrait, StellarClient,
