@@ -14,7 +14,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::instrument;
 
 use crate::{
-	models::{BlockChainType, BlockType, Network, ProcessedBlock},
+	models::{BlockType, Network, ProcessedBlock},
 	services::{
 		blockchain::{BlockChainClient, BlockFetchResult, FetchStreamKind},
 		blockwatcher::{
@@ -529,6 +529,7 @@ pub async fn process_new_blocks<
 		}
 	};
 
+	let stream_kind = fetch_result.stream_kind;
 	let blocks = fetch_result.blocks;
 
 	// Reset expected_next to start_block to ensure synchronization with this execution
@@ -540,7 +541,7 @@ pub async fn process_new_blocks<
 	// Detect missing blocks based on the fetch stream kind.
 	// Dense streams (sequential block retrieval) use gap detection.
 	// Sparse streams (address-filtered) rely on explicitly reported failed blocks.
-	let missed_blocks = match fetch_result.stream_kind {
+	let missed_blocks = match stream_kind {
 		FetchStreamKind::Dense => block_tracker.detect_missing_blocks(network, &blocks).await,
 		FetchStreamKind::Sparse => fetch_result.failed_blocks,
 	};
@@ -749,24 +750,27 @@ pub async fn process_new_blocks<
 		.await
 		.with_context(|| "Failed to save last processed block")?;
 
-	if network.network_type == BlockChainType::Solana {
-		tracing::info!(
-			"Processed {} slots with matching transactions (scanned slot range {}-{}) in {}ms for network {:?}",
-			blocks.len(),
-			start_block,
-			latest_confirmed_block,
-			start_time.elapsed().as_millis(),
-			network.slug
-		);
-	} else {
-		tracing::info!(
-			"Processed {} blocks (range {}-{}) in {}ms for network {:?}",
-			blocks.len(),
-			start_block,
-			latest_confirmed_block,
-			start_time.elapsed().as_millis(),
-			network.slug
-		);
+	match stream_kind {
+		FetchStreamKind::Sparse => {
+			tracing::info!(
+				"Processed {} slots with matching transactions (scanned slot range {}-{}) in {}ms for network {:?}",
+				blocks.len(),
+				start_block,
+				latest_confirmed_block,
+				start_time.elapsed().as_millis(),
+				network.slug
+			);
+		}
+		FetchStreamKind::Dense => {
+			tracing::info!(
+				"Processed {} blocks (range {}-{}) in {}ms for network {:?}",
+				blocks.len(),
+				start_block,
+				latest_confirmed_block,
+				start_time.elapsed().as_millis(),
+				network.slug
+			);
+		}
 	}
 
 	Ok(())
@@ -775,7 +779,7 @@ pub async fn process_new_blocks<
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::BlockRecoveryConfig;
+	use crate::models::{BlockChainType, BlockRecoveryConfig};
 	use crate::services::blockwatcher::storage::FileBlockStorage;
 	use crate::utils::tests::network::NetworkBuilder;
 	use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
