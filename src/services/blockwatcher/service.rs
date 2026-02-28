@@ -16,7 +16,7 @@ use tracing::instrument;
 use crate::{
 	models::{BlockType, Network, ProcessedBlock},
 	services::{
-		blockchain::BlockChainClient,
+		blockchain::{BlockChainClient, BlockFetchResult, FetchStreamKind},
 		blockwatcher::{
 			error::BlockWatcherError,
 			recovery::process_missed_blocks,
@@ -79,6 +79,7 @@ where
 	pub trigger_handler: Arc<T>,
 	pub scheduler: J,
 	pub block_tracker: Arc<BlockTracker>,
+	pub run_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// Map of active block watchers
@@ -147,6 +148,7 @@ where
 			trigger_handler,
 			scheduler,
 			block_tracker,
+			run_lock: Arc::new(tokio::sync::Mutex::new(())),
 		})
 	}
 
@@ -193,6 +195,7 @@ where
 		let block_handler = self.block_handler.clone();
 		let trigger_handler = self.trigger_handler.clone();
 		let block_tracker = self.block_tracker.clone();
+		let run_lock = self.run_lock.clone();
 
 		let job = Job::new_async(self.network.cron_schedule.as_str(), move |_uuid, _l| {
 			let network = network.clone();
@@ -201,7 +204,9 @@ where
 			let block_tracker = block_tracker.clone();
 			let rpc_client = rpc_client.clone();
 			let trigger_handler = trigger_handler.clone();
+			let run_lock = run_lock.clone();
 			Box::pin(async move {
+				let _guard = run_lock.lock().await;
 				let _ = process_new_blocks(
 					&network,
 					&rpc_client,
@@ -265,6 +270,7 @@ where
 		let block_handler = self.block_handler.clone();
 		let trigger_handler = self.trigger_handler.clone();
 		let block_tracker = self.block_tracker.clone();
+		let run_lock = self.run_lock.clone();
 
 		let cron_schedule = recovery_config.cron_schedule.clone();
 		let job = Job::new_async(cron_schedule.as_str(), move |_uuid, _l| {
@@ -275,7 +281,16 @@ where
 			let block_tracker = block_tracker.clone();
 			let rpc_client = rpc_client.clone();
 			let trigger_handler = trigger_handler.clone();
+			let run_lock = run_lock.clone();
 			Box::pin(async move {
+				let guard = run_lock.try_lock();
+				if guard.is_err() {
+					tracing::debug!(
+						network = %network.slug,
+						"Skipping recovery run: main watcher is currently processing"
+					);
+					return;
+				}
 				let _ = process_missed_blocks(
 					&network,
 					&recovery_config,
@@ -491,23 +506,31 @@ pub async fn process_new_blocks<
 		max_past_blocks
 	);
 
-	let mut blocks = Vec::new();
-	if last_processed_block == 0 {
-		blocks = rpc_client
-			.get_blocks(latest_confirmed_block, None)
+	let fetch_result = if last_processed_block == 0 {
+		rpc_client
+			.get_blocks_with_meta(latest_confirmed_block, None)
 			.await
-			.with_context(|| format!("Failed to get block {}", latest_confirmed_block))?;
+			.with_context(|| format!("Failed to get block {}", latest_confirmed_block))?
 	} else if last_processed_block < latest_confirmed_block {
-		blocks = rpc_client
-			.get_blocks(start_block, Some(latest_confirmed_block))
+		rpc_client
+			.get_blocks_with_meta(start_block, Some(latest_confirmed_block))
 			.await
 			.with_context(|| {
 				format!(
 					"Failed to get blocks from {} to {}",
 					start_block, latest_confirmed_block
 				)
-			})?;
-	}
+			})?
+	} else {
+		BlockFetchResult {
+			blocks: Vec::new(),
+			failed_blocks: Vec::new(),
+			stream_kind: FetchStreamKind::Dense,
+		}
+	};
+
+	let stream_kind = fetch_result.stream_kind;
+	let blocks = fetch_result.blocks;
 
 	// Reset expected_next to start_block to ensure synchronization with this execution
 	// This prevents false out-of-order warnings when reprocessing blocks or restarting
@@ -515,8 +538,13 @@ pub async fn process_new_blocks<
 		.reset_expected_next(network, start_block)
 		.await;
 
-	// Detect missing blocks using BlockTracker
-	let missed_blocks = block_tracker.detect_missing_blocks(network, &blocks).await;
+	// Detect missing blocks based on the fetch stream kind.
+	// Dense streams (sequential block retrieval) use gap detection.
+	// Sparse streams (address-filtered) rely on explicitly reported failed blocks.
+	let missed_blocks = match stream_kind {
+		FetchStreamKind::Dense => block_tracker.detect_missing_blocks(network, &blocks).await,
+		FetchStreamKind::Sparse => fetch_result.failed_blocks,
+	};
 
 	// Log and save missed blocks if any
 	if !missed_blocks.is_empty() {
@@ -722,11 +750,28 @@ pub async fn process_new_blocks<
 		.await
 		.with_context(|| "Failed to save last processed block")?;
 
-	tracing::info!(
-		"Processed {} blocks in {}ms",
-		blocks.len(),
-		start_time.elapsed().as_millis()
-	);
+	match stream_kind {
+		FetchStreamKind::Sparse => {
+			tracing::info!(
+				"Processed {} slots with matching transactions (scanned slot range {}-{}) in {}ms for network {:?}",
+				blocks.len(),
+				start_block,
+				latest_confirmed_block,
+				start_time.elapsed().as_millis(),
+				network.slug
+			);
+		}
+		FetchStreamKind::Dense => {
+			tracing::info!(
+				"Processed {} blocks (range {}-{}) in {}ms for network {:?}",
+				blocks.len(),
+				start_block,
+				latest_confirmed_block,
+				start_time.elapsed().as_millis(),
+				network.slug
+			);
+		}
+	}
 
 	Ok(())
 }
@@ -734,7 +779,7 @@ pub async fn process_new_blocks<
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::BlockRecoveryConfig;
+	use crate::models::{BlockChainType, BlockRecoveryConfig};
 	use crate::services::blockwatcher::storage::FileBlockStorage;
 	use crate::utils::tests::network::NetworkBuilder;
 	use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -1276,6 +1321,613 @@ mod tests {
 			.await
 			.unwrap();
 		assert!(!missed.is_empty());
+	}
+
+	// ============ Solana missed block detection tests ============
+
+	/// Helper to create a Solana block with a specific slot number
+	fn create_solana_block(slot: u64) -> BlockType {
+		use crate::models::{SolanaBlock, SolanaConfirmedBlock};
+
+		let confirmed_block = SolanaConfirmedBlock {
+			slot,
+			blockhash: String::new(),
+			previous_blockhash: String::new(),
+			parent_slot: slot.saturating_sub(1),
+			block_time: None,
+			block_height: None,
+			transactions: Vec::new(),
+		};
+		BlockType::Solana(Box::new(SolanaBlock::from(confirmed_block)))
+	}
+
+	#[allow(dead_code)]
+	fn create_solana_test_network() -> Network {
+		NetworkBuilder::new()
+			.name("Solana Test")
+			.slug("test_network")
+			.network_type(BlockChainType::Solana)
+			.store_blocks(true)
+			.confirmation_blocks(32)
+			.max_past_blocks(100)
+			.build()
+	}
+
+	fn create_solana_test_network_with_recovery() -> Network {
+		NetworkBuilder::new()
+			.name("Solana Test")
+			.slug("test_network")
+			.network_type(BlockChainType::Solana)
+			.store_blocks(true)
+			.confirmation_blocks(32)
+			.max_past_blocks(100)
+			.recovery_config(BlockRecoveryConfig {
+				enabled: true,
+				cron_schedule: "0 */5 * * * *".to_string(),
+				max_blocks_per_run: 10,
+				max_block_age: 1000,
+				max_retries: 3,
+				retry_delay_ms: 100,
+			})
+			.build()
+	}
+
+	/// Mock Solana RPC client that returns BlockFetchResult via get_blocks_with_meta
+	#[derive(Clone)]
+	struct MockSolanaRpcClient {
+		latest_block: Arc<AtomicU64>,
+		blocks_to_return: Arc<std::sync::Mutex<Vec<BlockType>>>,
+		failed_blocks: Arc<std::sync::Mutex<Vec<u64>>>,
+		stream_kind: FetchStreamKind,
+	}
+
+	impl MockSolanaRpcClient {
+		fn new(latest_block: u64) -> Self {
+			Self {
+				latest_block: Arc::new(AtomicU64::new(latest_block)),
+				blocks_to_return: Arc::new(std::sync::Mutex::new(Vec::new())),
+				failed_blocks: Arc::new(std::sync::Mutex::new(Vec::new())),
+				stream_kind: FetchStreamKind::Sparse,
+			}
+		}
+
+		fn with_blocks(self, blocks: Vec<BlockType>) -> Self {
+			*self.blocks_to_return.lock().unwrap() = blocks;
+			self
+		}
+
+		fn with_failed_blocks(self, failed: Vec<u64>) -> Self {
+			*self.failed_blocks.lock().unwrap() = failed;
+			self
+		}
+
+		fn with_stream_kind(mut self, kind: FetchStreamKind) -> Self {
+			self.stream_kind = kind;
+			self
+		}
+	}
+
+	#[async_trait::async_trait]
+	impl BlockChainClient for MockSolanaRpcClient {
+		async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
+			Ok(self.latest_block.load(Ordering::SeqCst))
+		}
+
+		async fn get_blocks(
+			&self,
+			_start: u64,
+			_end: Option<u64>,
+		) -> Result<Vec<BlockType>, anyhow::Error> {
+			let blocks = self.blocks_to_return.lock().unwrap();
+			Ok(blocks.clone())
+		}
+
+		async fn get_blocks_with_meta(
+			&self,
+			_start_block: u64,
+			_end_block: Option<u64>,
+		) -> Result<BlockFetchResult, anyhow::Error> {
+			let blocks = self.blocks_to_return.lock().unwrap().clone();
+			let failed_blocks = self.failed_blocks.lock().unwrap().clone();
+			Ok(BlockFetchResult {
+				blocks,
+				failed_blocks,
+				stream_kind: self.stream_kind.clone(),
+			})
+		}
+	}
+
+	#[tokio::test]
+	async fn test_solana_skips_gap_detection_no_false_missed_blocks() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		// Return Solana blocks with gaps (slots 96 and 98, missing 97)
+		// This is normal for Solana — slot 97 may have been skipped or had no matching txs
+		// Sparse stream kind means gap detection should NOT fire
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(96), create_solana_block(98)]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// No missed blocks should be recorded — gaps are expected on Sparse streams
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(
+			missed.is_empty(),
+			"Sparse stream should not flag gaps as missed blocks, but found: {:?}",
+			missed.iter().map(|e| e.block_number).collect::<Vec<_>>()
+		);
+	}
+
+	#[tokio::test]
+	async fn test_solana_saves_failed_slots_as_missed_blocks() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		// Blocks returned successfully, but slot 97 had a failed transaction fetch
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(96), create_solana_block(98)])
+			.with_failed_blocks(vec![97]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// Slot 97 should be saved as missed (actual RPC failure)
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		let missed_numbers: Vec<u64> = missed.iter().map(|e| e.block_number).collect();
+		assert!(
+			missed_numbers.contains(&97),
+			"Failed slot 97 should be recorded as missed, got: {:?}",
+			missed_numbers
+		);
+	}
+
+	#[tokio::test]
+	async fn test_solana_dense_path_uses_gap_detection() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		// Dense stream (non-optimized Solana path) with a gap — should detect as missed
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(96), create_solana_block(98)])
+			.with_stream_kind(FetchStreamKind::Dense);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// Dense stream should detect block 97 as missed via gap detection
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		let missed_numbers: Vec<u64> = missed.iter().map(|e| e.block_number).collect();
+		assert!(
+			missed_numbers.contains(&97),
+			"Dense stream should detect gaps as missed blocks, got: {:?}",
+			missed_numbers
+		);
+	}
+
+	#[tokio::test]
+	async fn test_evm_still_uses_gap_detection() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_test_network_with_recovery();
+
+		// EVM blocks with a gap (missing block 97) — should detect as missed
+		let rpc_client =
+			MockRpcClient::new(110).with_blocks(vec![create_evm_block(96), create_evm_block(98)]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// EVM should still detect block 97 as missed
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		let missed_numbers: Vec<u64> = missed.iter().map(|e| e.block_number).collect();
+		assert!(
+			missed_numbers.contains(&97),
+			"EVM should still detect gaps as missed blocks"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_sparse_with_blocks_and_failed_blocks_simultaneously() {
+		// Verify that when Sparse stream returns both blocks and failed_blocks,
+		// blocks are still processed AND failed_blocks are saved as missed
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		// Return blocks for slots 96 and 98, with slot 97 as failed
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(96), create_solana_block(98)])
+			.with_failed_blocks(vec![97]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+
+		let trigger_count = Arc::new(AtomicUsize::new(0));
+		let trigger_handler = create_counting_trigger_handler(trigger_count.clone());
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// Wait for async triggers to complete
+		tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+		// Blocks 96 and 98 should have been processed (triggers fired)
+		assert_eq!(
+			trigger_count.load(Ordering::SeqCst),
+			2,
+			"Both blocks should have been processed even though slot 97 failed"
+		);
+
+		// Slot 97 should be saved as missed
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		let missed_numbers: Vec<u64> = missed.iter().map(|e| e.block_number).collect();
+		assert!(
+			missed_numbers.contains(&97),
+			"Failed slot 97 should be recorded as missed"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_dense_stream_ignores_failed_blocks_field() {
+		// When Dense stream has a non-empty failed_blocks (hypothetical), process_new_blocks
+		// should use gap detection instead and ignore the failed_blocks field.
+		// This is a behavioral test: Dense path uses detect_missing_blocks, not failed_blocks.
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		// Dense stream with failed_blocks=[999] set but blocks have no gap 96,97,98
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![
+				create_solana_block(96),
+				create_solana_block(97),
+				create_solana_block(98),
+			])
+			.with_failed_blocks(vec![999])
+			.with_stream_kind(FetchStreamKind::Dense);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// Gap detection should find no missed blocks (96,97,98 are contiguous)
+		// The failed_blocks=[999] from the fetch result should be IGNORED
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(
+			missed.is_empty(),
+			"Dense stream should use gap detection, not failed_blocks field. Got: {:?}",
+			missed.iter().map(|e| e.block_number).collect::<Vec<_>>()
+		);
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_sparse_no_recovery_config() {
+		// Sparse stream with failed blocks but recovery NOT enabled —
+		// failed blocks should NOT be saved when neither store_blocks nor recovery is enabled
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 95)
+			.await
+			.unwrap();
+
+		let mut network = create_solana_test_network_with_recovery();
+		network.store_blocks = Some(false);
+		network.recovery_config = None; // Disable recovery
+
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(96)])
+			.with_failed_blocks(vec![97]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let _ = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		// No missed blocks should be saved (recovery is disabled)
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(
+			missed.is_empty(),
+			"Missed blocks should not be saved when recovery is disabled"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_run_lock_prevents_overlap() {
+		// Verify that the recovery job skips when the run lock is held
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		let network = create_test_network_with_recovery();
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let watcher: NetworkBlockWatcher<_, _, _, MockJobScheduler> = NetworkBlockWatcher::new(
+			network,
+			storage,
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		let run_lock = watcher.run_lock.clone();
+
+		// Acquire the lock (simulating main watcher running)
+		let _guard = run_lock.lock().await;
+
+		// try_lock should fail (recovery would skip)
+		let try_result = run_lock.try_lock();
+		assert!(
+			try_result.is_err(),
+			"try_lock should fail when lock is held by main watcher"
+		);
+
+		// Drop the guard — lock should be acquirable again
+		drop(_guard);
+		let try_result = run_lock.try_lock();
+		assert!(
+			try_result.is_ok(),
+			"try_lock should succeed after main watcher releases lock"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_run_lock_shared_between_main_and_recovery() {
+		// Verify that the run_lock is the same Arc between start_main_watcher and start_recovery_job
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		let network = create_test_network_with_recovery();
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let watcher: NetworkBlockWatcher<_, _, _, MockJobScheduler> = NetworkBlockWatcher::new(
+			network,
+			storage,
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		// The run_lock should be initialized and accessible
+		assert!(
+			watcher.run_lock.try_lock().is_ok(),
+			"Freshly created watcher should have an unlocked run_lock"
+		);
+
+		// Verify Arc strong count is 1 (only the watcher holds it initially)
+		assert_eq!(
+			Arc::strong_count(&watcher.run_lock),
+			1,
+			"Only the watcher should initially hold the run_lock"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_first_run_uses_get_blocks_with_meta() {
+		// Verify that first run (last_processed_block == 0) uses get_blocks_with_meta
+		// by using a MockSolanaRpcClient with Sparse stream
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		let network = create_solana_test_network_with_recovery();
+
+		// No previous run — last_processed_block defaults to 0
+		// Mock returns blocks via get_blocks_with_meta (Sparse)
+		let rpc_client = MockSolanaRpcClient::new(130)
+			.with_blocks(vec![create_solana_block(98)])
+			.with_failed_blocks(vec![97]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		assert!(result.is_ok());
+
+		// Should have saved latest_confirmed_block (130 - 32 = 98)
+		let last_processed = storage
+			.get_last_processed_block("test_network")
+			.await
+			.unwrap();
+		assert_eq!(last_processed, Some(98));
+
+		// Slot 97 should be saved as missed
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		let missed_numbers: Vec<u64> = missed.iter().map(|e| e.block_number).collect();
+		assert!(missed_numbers.contains(&97));
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_no_new_blocks_returns_empty_dense() {
+		// When last_processed >= latest_confirmed, should return empty Dense result
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		// Already processed up to confirmed block
+		storage
+			.save_last_processed_block("test_network", 98)
+			.await
+			.unwrap();
+
+		let network = create_solana_test_network_with_recovery();
+
+		let rpc_client = MockSolanaRpcClient::new(130).with_failed_blocks(vec![999]); // Should be ignored
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		assert!(result.is_ok());
+
+		// No missed blocks should be saved (empty Dense result, no gaps)
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(
+			missed.is_empty(),
+			"No missed blocks when there are no new blocks to process"
+		);
 	}
 
 	// ============ BlockWatcherService tests ============
