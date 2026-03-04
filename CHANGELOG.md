@@ -2,21 +2,10 @@
 
 ## [1.4.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.3.0...v1.4.0) (2026-03-04)
 
-
-### 🚀 Features
-
-* add local EVM testing environment with Foundry ([#435](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/435)) ([88725c9](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/88725c9a3d4d96c94a047bef0216752b12a36956))
-* **solana:** add account and fee payer filtering ([#431](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/431)) ([14ece18](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/14ece18ddbd552adb40528d336e8a216e837293a))
-* Support polkadot EVM clients ([#389](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/389)) ([e980a8b](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/e980a8b18aa729931bf2e81e7386cfc3586f191d))
-
-
 ### 🐛 Bug Fixes
 
 * Docs changes ([#457](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/457)) ([cc5d126](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/cc5d1260849b3e3a7d9f0dc69848af34415ed473))
-* Fixed creation flow for the get_or_create_client ([aa5a650](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/aa5a6505000408069e03c330f2fe6adebd27a5b7))
 * Improve Solana logs and block recovery ([#458](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/458)) ([5507296](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/5507296e3975a0ade46005036ccf79c09e7f0536))
-* Update changelog ([#388](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/388)) ([8e37542](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/8e375426126c1268c15a8332eabea87756bfcdf4))
-* Update rust docs workflow ([#420](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/420)) ([a878372](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/a878372e5f7d8b19529bf67ebed074fbed332932))
 * Use direct gauge values in dashboard ([#454](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/454)) ([1355a0f](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/1355a0fb3123d8fef4c324cc118f7f5360c50377))
 
 ## [1.3.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.2.0...v1.3.0) (2026-02-11)
