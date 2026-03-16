@@ -319,16 +319,18 @@ impl EndpointManager {
 
 						// Check if we should rotate based on status code
 						if ROTATE_ON_ERROR_CODES.contains(&status_code) {
-							// Record rate limit metric (429) with sanitized endpoint (host only, no API keys)
-							let endpoint_label = Url::parse(&current_url_snapshot)
-								.ok()
-								.and_then(|u| u.host_str().map(|h| h.to_string()))
-								.unwrap_or_else(|| "unknown".to_string());
+							// Record rate limit metric only for 429
+							if status_code == 429 {
+								let endpoint_label = Url::parse(&current_url_snapshot)
+									.ok()
+									.and_then(|u| u.host_str().map(|h| h.to_string()))
+									.unwrap_or_else(|| "unknown".to_string());
 
-							crate::utils::metrics::record_rate_limit(
-								&self.network_slug,
-								&endpoint_label,
-							);
+								crate::utils::metrics::record_rate_limit(
+									&self.network_slug,
+									&endpoint_label,
+								);
+							}
 
 							tracing::debug!(
 								"send_raw_request: HTTP status {} on '{}' triggers URL rotation attempt",
@@ -336,10 +338,15 @@ impl EndpointManager {
 								current_url_snapshot
 							);
 
-							// Record endpoint rotation due to rate limit
+							let rotation_reason = if status_code == 429 {
+								"rate_limit"
+							} else {
+								"http_error"
+							};
+
 							crate::utils::metrics::record_endpoint_rotation(
 								&self.network_slug,
-								"rate_limit",
+								rotation_reason,
 							);
 
 							match self.try_rotate_url(transport).await {
