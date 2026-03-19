@@ -835,6 +835,163 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 }
 
 #[tokio::test]
+async fn test_handle_match_with_duplicate_event_signatures() -> Result<(), Box<FilterError>> {
+	// Regression test: when multiple events share the same signature (e.g. two Transfer events),
+	// each should retain its own args rather than all getting the last matching entry's args.
+	let test_data = TestDataBuilder::new("evm").build();
+
+	let data_capture = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+	let data_capture_clone = data_capture.clone();
+
+	let mut trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/evm/triggers/trigger.json")
+			.await;
+
+	trigger_execution_service
+		.expect_execute()
+		.withf(
+			move |_triggers, variables, _monitor_match, _trigger_scripts| {
+				let mut captured = data_capture_clone.lock().unwrap();
+				*captured = variables.clone();
+				true
+			},
+		)
+		.returning(|_, _, _, _| Ok(()));
+
+	use openzeppelin_monitor::models::{
+		EVMMatchArguments, EVMMatchParamEntry, EVMMatchParamsMap, EVMMonitorMatch, EventCondition,
+		MatchConditions,
+	};
+
+	let monitor = test_data.monitor.clone();
+
+	let evm_match = EVMMonitorMatch {
+		monitor,
+		transaction: TransactionBuilder::new().build(),
+		receipt: Some(ReceiptBuilder::new().build()),
+		logs: Some(ReceiptBuilder::new().build().logs.clone()),
+		network_slug: "ethereum_mainnet".to_string(),
+		matched_on: MatchConditions {
+			functions: vec![],
+			events: vec![
+				EventCondition {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					expression: None,
+				},
+				EventCondition {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					expression: None,
+				},
+			],
+			transactions: vec![],
+		},
+		matched_on_args: Some(EVMMatchArguments {
+			functions: None,
+			events: Some(vec![
+				EVMMatchParamsMap {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					args: Some(vec![
+						EVMMatchParamEntry {
+							name: "from".to_string(),
+							value: "0xAAAA".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						EVMMatchParamEntry {
+							name: "to".to_string(),
+							value: "0xBBBB".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						EVMMatchParamEntry {
+							name: "value".to_string(),
+							value: "1000".to_string(),
+							kind: "uint256".to_string(),
+							indexed: false,
+						},
+					]),
+					hex_signature: None,
+				},
+				EVMMatchParamsMap {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					args: Some(vec![
+						EVMMatchParamEntry {
+							name: "from".to_string(),
+							value: "0xCCCC".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						EVMMatchParamEntry {
+							name: "to".to_string(),
+							value: "0xDDDD".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						EVMMatchParamEntry {
+							name: "value".to_string(),
+							value: "2000".to_string(),
+							kind: "uint256".to_string(),
+							indexed: false,
+						},
+					]),
+					hex_signature: None,
+				},
+			]),
+		}),
+	};
+
+	let match_wrapper = MonitorMatch::EVM(Box::new(evm_match));
+
+	let result = handle_match(match_wrapper, &trigger_execution_service, &HashMap::new()).await;
+	assert!(result.is_ok(), "Handle match should succeed");
+
+	let captured_data = data_capture.lock().unwrap();
+
+	// Event 0 should have its own args
+	assert_eq!(
+		captured_data.get("events.0.args.from").unwrap(),
+		"0xAAAA",
+		"First Transfer event should have from=0xAAAA"
+	);
+	assert_eq!(
+		captured_data.get("events.0.args.to").unwrap(),
+		"0xBBBB",
+		"First Transfer event should have to=0xBBBB"
+	);
+	assert_eq!(
+		captured_data.get("events.0.args.value").unwrap(),
+		"1000",
+		"First Transfer event should have value=1000"
+	);
+
+	// Event 1 should have its own distinct args
+	assert_eq!(
+		captured_data.get("events.1.args.from").unwrap(),
+		"0xCCCC",
+		"Second Transfer event should have from=0xCCCC"
+	);
+	assert_eq!(
+		captured_data.get("events.1.args.to").unwrap(),
+		"0xDDDD",
+		"Second Transfer event should have to=0xDDDD"
+	);
+	assert_eq!(
+		captured_data.get("events.1.args.value").unwrap(),
+		"2000",
+		"Second Transfer event should have value=2000"
+	);
+
+	// Both should share the same signature
+	assert_eq!(
+		captured_data.get("events.0.signature").unwrap(),
+		captured_data.get("events.1.signature").unwrap(),
+		"Both events should have the same signature"
+	);
+
+	Ok(())
+}
+
+#[tokio::test]
 async fn test_filter_block_with_receipt_and_logs() -> Result<(), Box<FilterError>> {
 	let test_data = TestDataBuilder::new("evm").build();
 	let filter_service = FilterService::new();
