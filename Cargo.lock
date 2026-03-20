@@ -6207,7 +6207,7 @@ dependencies = [
  "soroban-spec",
  "stellar-rpc-client",
  "stellar-strkey 0.0.13",
- "stellar-xdr",
+ "stellar-xdr 25.0.1",
  "subxt",
  "sysinfo",
  "tempfile",
@@ -8579,7 +8579,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1674de7d3e37390865cb2a6c85870867608811cdebc90f39cc63dd1fc429dc0d"
 dependencies = [
  "base64 0.22.1",
- "stellar-xdr",
+ "stellar-xdr 23.0.0",
  "thiserror 1.0.69",
  "wasmparser 0.116.1",
 ]
@@ -9107,7 +9107,7 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "stellar-strkey 0.0.9",
- "stellar-xdr",
+ "stellar-xdr 23.0.0",
  "termcolor",
  "termcolor_output",
  "thiserror 1.0.69",
@@ -9149,6 +9149,21 @@ dependencies = [
  "hex",
  "serde",
  "serde_with",
+ "sha2 0.10.9",
+ "stellar-strkey 0.0.13",
+]
+
+[[package]]
+name = "stellar-xdr"
+version = "25.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f8116e81c7b5c1313a21396581aa9c2ff0f4033cc29a695f3f816ee882dd66b"
+dependencies = [
+ "cfg_eval",
+ "crate-git-revision",
+ "escape-bytes",
+ "ethnum",
+ "hex",
  "sha2 0.10.9",
  "stellar-strkey 0.0.13",
 ]
