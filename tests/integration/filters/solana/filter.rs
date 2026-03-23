@@ -659,6 +659,164 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 // Tests for function matching will be added when IDL-based instruction decoding is implemented.
 
 #[tokio::test]
+async fn test_handle_match_with_duplicate_event_signatures() -> Result<(), Box<FilterError>> {
+	use openzeppelin_monitor::models::{SolanaMatchParamEntry, SolanaMatchParamsMap};
+
+	// Regression test: when multiple events share the same signature,
+	// each should retain its own args via index-based matching.
+	let data_capture = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+	let data_capture_clone = data_capture.clone();
+
+	let mut trigger_execution_service =
+		setup_trigger_execution_service("tests/integration/fixtures/solana/triggers/trigger.json")
+			.await;
+
+	trigger_execution_service
+		.expect_execute()
+		.withf(
+			move |_triggers, variables, _monitor_match, _trigger_scripts| {
+				let mut captured = data_capture_clone.lock().unwrap();
+				*captured = variables.clone();
+				true
+			},
+		)
+		.returning(|_, _, _, _| Ok(()));
+
+	let monitor = create_test_monitor();
+	let transaction = create_test_solana_transaction(true, 5000, vec![]);
+
+	let solana_match = SolanaMonitorMatch {
+		monitor,
+		transaction,
+		block: SolanaBlock::from(SolanaConfirmedBlock {
+			slot: 123456789,
+			blockhash: "ABC123".to_string(),
+			previous_blockhash: "ZYX987".to_string(),
+			parent_slot: 123456788,
+			block_time: Some(1234567890),
+			block_height: Some(123456789),
+			transactions: vec![],
+		}),
+		network_slug: "solana_devnet".to_string(),
+		matched_on: MatchConditions {
+			functions: vec![],
+			events: vec![
+				EventCondition {
+					signature: "Transfer".to_string(),
+					expression: None,
+				},
+				EventCondition {
+					signature: "Transfer".to_string(),
+					expression: None,
+				},
+			],
+			transactions: vec![],
+		},
+		matched_on_args: Some(SolanaMatchArguments {
+			functions: None,
+			events: Some(vec![
+				SolanaMatchParamsMap {
+					signature: "Transfer".to_string(),
+					args: Some(vec![
+						SolanaMatchParamEntry {
+							name: "from".to_string(),
+							value: "Account1111".to_string(),
+							kind: "pubkey".to_string(),
+							indexed: false,
+						},
+						SolanaMatchParamEntry {
+							name: "to".to_string(),
+							value: "Account2222".to_string(),
+							kind: "pubkey".to_string(),
+							indexed: false,
+						},
+						SolanaMatchParamEntry {
+							name: "amount".to_string(),
+							value: "1000".to_string(),
+							kind: "u64".to_string(),
+							indexed: false,
+						},
+					]),
+				},
+				SolanaMatchParamsMap {
+					signature: "Transfer".to_string(),
+					args: Some(vec![
+						SolanaMatchParamEntry {
+							name: "from".to_string(),
+							value: "Account3333".to_string(),
+							kind: "pubkey".to_string(),
+							indexed: false,
+						},
+						SolanaMatchParamEntry {
+							name: "to".to_string(),
+							value: "Account4444".to_string(),
+							kind: "pubkey".to_string(),
+							indexed: false,
+						},
+						SolanaMatchParamEntry {
+							name: "amount".to_string(),
+							value: "2000".to_string(),
+							kind: "u64".to_string(),
+							indexed: false,
+						},
+					]),
+				},
+			]),
+		}),
+	};
+
+	let match_wrapper = MonitorMatch::Solana(Box::new(solana_match));
+
+	let result = handle_match(match_wrapper, &trigger_execution_service, &HashMap::new()).await;
+	assert!(result.is_ok(), "Handle match should succeed");
+
+	let captured_data = data_capture.lock().unwrap();
+
+	// Event 0 should have its own args
+	assert_eq!(
+		captured_data.get("events.0.args.from").unwrap(),
+		"Account1111",
+		"First event should have from=Account1111"
+	);
+	assert_eq!(
+		captured_data.get("events.0.args.to").unwrap(),
+		"Account2222",
+		"First event should have to=Account2222"
+	);
+	assert_eq!(
+		captured_data.get("events.0.args.amount").unwrap(),
+		"1000",
+		"First event should have amount=1000"
+	);
+
+	// Event 1 should have its own distinct args
+	assert_eq!(
+		captured_data.get("events.1.args.from").unwrap(),
+		"Account3333",
+		"Second event should have from=Account3333"
+	);
+	assert_eq!(
+		captured_data.get("events.1.args.to").unwrap(),
+		"Account4444",
+		"Second event should have to=Account4444"
+	);
+	assert_eq!(
+		captured_data.get("events.1.args.amount").unwrap(),
+		"2000",
+		"Second event should have amount=2000"
+	);
+
+	// Both should share the same signature
+	assert_eq!(
+		captured_data.get("events.0.signature").unwrap(),
+		captured_data.get("events.1.signature").unwrap(),
+		"Both events should have the same signature"
+	);
+
+	Ok(())
+}
+
+#[tokio::test]
 async fn test_filter_transaction_any_status() -> Result<(), Box<FilterError>> {
 	let network = create_test_network();
 	let filter_service = FilterService::new();
