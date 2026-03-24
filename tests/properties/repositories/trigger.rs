@@ -267,7 +267,7 @@ proptest! {
 					}
 				}
 				TriggerType::Script => {
-					if let TriggerTypeConfig::Script { script_path: _, arguments: _, language: _, timeout_ms: _ } = &trigger.config {
+					if let TriggerTypeConfig::Script { script_path: _, arguments: _, language: _, timeout_ms: _, ..} = &trigger.config {
 						// Test invalid path
 						invalid_trigger = trigger.clone();
 						if let TriggerTypeConfig::Script { script_path: p, .. } = &mut invalid_trigger.config {

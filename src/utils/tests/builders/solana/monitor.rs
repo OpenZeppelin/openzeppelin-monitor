@@ -142,11 +142,13 @@ impl MonitorBuilder {
 		timeout_ms: u32,
 		language: ScriptLanguage,
 		arguments: Option<Vec<String>>,
+		runtime_flags: Option<Vec<String>>,
 	) -> Self {
 		self.trigger_conditions.push(TriggerConditions {
 			script_path: script_path.to_string(),
 			timeout_ms,
 			arguments,
+			runtime_flags,
 			language,
 		});
 		self
@@ -276,12 +278,13 @@ mod tests {
 	#[test]
 	fn test_trigger_conditions() {
 		let monitor = MonitorBuilder::new()
-			.trigger_condition("script.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("script.py", 1000, ScriptLanguage::Python, None, None)
 			.trigger_condition(
 				"script.js",
 				2000,
 				ScriptLanguage::JavaScript,
 				Some(vec!["-verbose".to_string()]),
+				None,
 			)
 			.build();
 

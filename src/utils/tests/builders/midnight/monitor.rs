@@ -134,11 +134,13 @@ impl MonitorBuilder {
 		timeout_ms: u32,
 		language: ScriptLanguage,
 		arguments: Option<Vec<String>>,
+		runtime_flags: Option<Vec<String>>,
 	) -> Self {
 		self.trigger_conditions.push(TriggerConditions {
 			script_path: script_path.to_string(),
 			timeout_ms,
 			arguments,
+			runtime_flags,
 			language,
 		});
 		self
@@ -280,12 +282,13 @@ mod tests {
 	#[test]
 	fn test_trigger_conditions() {
 		let monitor = MonitorBuilder::new()
-			.trigger_condition("script.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("script.py", 1000, ScriptLanguage::Python, None, None)
 			.trigger_condition(
 				"script.js",
 				2000,
 				ScriptLanguage::JavaScript,
 				Some(vec!["-verbose".to_string()]),
+				None,
 			)
 			.build();
 
@@ -306,6 +309,7 @@ mod tests {
 			monitor.trigger_conditions[1].arguments,
 			Some(vec!["-verbose".to_string()])
 		);
+		assert_eq!(monitor.trigger_conditions[1].runtime_flags, None);
 	}
 
 	#[test]
@@ -334,7 +338,7 @@ mod tests {
 			.function("transfer(address,uint256)", Some("value >= 0".to_string()))
 			.event("Transfer(address,address,uint256)", None)
 			.transaction(TransactionStatus::Success, None)
-			.trigger_condition("script.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition("script.py", 1000, ScriptLanguage::Python, None, None)
 			.triggers(vec!["trigger1".to_string(), "trigger2".to_string()])
 			.build();
 

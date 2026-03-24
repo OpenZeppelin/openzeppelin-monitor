@@ -126,6 +126,7 @@ impl TriggerBuilder {
 		self.config = TriggerTypeConfig::Script {
 			script_path: script_path.to_string(),
 			arguments: None,
+			runtime_flags: None,
 			language,
 			timeout_ms: 1000,
 		};
@@ -135,6 +136,16 @@ impl TriggerBuilder {
 	pub fn script_arguments(mut self, arguments: Vec<String>) -> Self {
 		if let TriggerTypeConfig::Script { arguments: a, .. } = &mut self.config {
 			*a = Some(arguments);
+		}
+		self
+	}
+
+	pub fn script_runtime_flags(mut self, runtime_flags: Vec<String>) -> Self {
+		if let TriggerTypeConfig::Script {
+			runtime_flags: r, ..
+		} = &mut self.config
+		{
+			*r = Some(runtime_flags);
 		}
 		self
 	}
@@ -496,6 +507,7 @@ mod tests {
 			.name("script_trigger")
 			.script("test.py", ScriptLanguage::Python)
 			.script_arguments(vec!["arg1".to_string()])
+			.script_runtime_flags(vec!["-v".to_string()])
 			.build();
 
 		assert_eq!(trigger.trigger_type, TriggerType::Script);
