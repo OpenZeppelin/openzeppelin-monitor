@@ -335,6 +335,73 @@ async fn test_get_blocks_pagination() {
 	second_mock.assert_async().await;
 }
 
+/// Regression test: cursor equal to start_block must NOT terminate pagination early.
+#[tokio::test]
+async fn test_get_blocks_cursor_equal_start_block_still_paginates() {
+	let mut server = Server::new_async().await;
+	let mock = create_stellar_valid_server_mock_network_response(&mut server);
+	let network = create_stellar_test_network_with_urls(vec![&server.url()]);
+
+	// Page 1: returns one ledger at sequence 10, cursor equals start_block ("10")
+	let first_response = json!({
+		"result": {
+			"ledgers": [{
+				"hash": "aaa",
+				"sequence": 10,
+				"ledgerCloseTime": "1734715051",
+				"headerXdr": "AAA",
+				"metadataXdr": "BBB"
+			}],
+			"cursor": "10"
+		}
+	});
+
+	// Page 2: returns the next ledger, pagination ends (null cursor)
+	let second_response = json!({
+		"result": {
+			"ledgers": [{
+				"hash": "bbb",
+				"sequence": 11,
+				"ledgerCloseTime": "1734715052",
+				"headerXdr": "AAA",
+				"metadataXdr": "BBB"
+			}],
+			"cursor": null
+		}
+	});
+
+	let first_mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_body(first_response.to_string())
+		.create_async()
+		.await;
+
+	let second_mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_body(second_response.to_string())
+		.create_async()
+		.await;
+
+	let client = StellarClient::new(&network).await.unwrap();
+	let result = client.get_blocks(10, Some(11)).await.unwrap();
+
+	assert_eq!(result.len(), 2, "expected both pages to be fetched");
+	match &result[0] {
+		BlockType::Stellar(block) => assert_eq!(block.sequence, 10),
+		_ => panic!("Expected Stellar block"),
+	}
+	match &result[1] {
+		BlockType::Stellar(block) => assert_eq!(block.sequence, 11),
+		_ => panic!("Expected Stellar block"),
+	}
+
+	mock.assert_async().await;
+	first_mock.assert_async().await;
+	second_mock.assert_async().await;
+}
+
 #[tokio::test]
 async fn test_get_contract_spec() {
 	let mut server = Server::new_async().await;

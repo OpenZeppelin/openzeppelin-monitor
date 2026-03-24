@@ -516,6 +516,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 		let mut blocks = Vec::new();
 		let target_block = end_block.unwrap_or(start_block);
 		let mut cursor: Option<String> = None;
+		let mut previous_cursor: Option<String> = None;
 		let mut current_iteration = 0;
 
 		while cursor.is_some() || current_iteration <= 0 {
@@ -606,10 +607,11 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for StellarC
 						.as_str()
 						.map(|s| s.to_string());
 
-					// If the cursor is the same as the start block, we have reached the end of the range
-					if cursor == Some(start_block.to_string()) {
+					// Break if the cursor did not advance (stalled pagination) or is absent
+					if cursor == previous_cursor {
 						break;
 					}
+					previous_cursor = cursor.clone();
 
 					if cursor.is_none() {
 						break;
