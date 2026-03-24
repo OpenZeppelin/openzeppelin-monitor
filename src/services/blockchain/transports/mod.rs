@@ -56,8 +56,14 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 /// HTTP status codes that trigger RPC endpoint rotation
+/// - 408: Request Timeout - the endpoint timed out processing the request
+/// - 410: Gone - the endpoint is no longer available
 /// - 429: Too Many Requests - indicates rate limiting from the current endpoint
-pub const ROTATE_ON_ERROR_CODES: [u16; 1] = [429];
+/// - 500: Internal Server Error - the endpoint encountered an unexpected error
+/// - 502: Bad Gateway - the upstream RPC node behind a proxy is down
+/// - 503: Service Unavailable - the endpoint is overloaded or in maintenance
+/// - 504: Gateway Timeout - the upstream RPC node is unresponsive
+pub const ROTATE_ON_ERROR_CODES: [u16; 7] = [408, 410, 429, 500, 502, 503, 504];
 
 /// Base trait for all blockchain transport clients
 #[async_trait::async_trait]

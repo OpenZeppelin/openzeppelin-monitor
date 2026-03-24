@@ -28,4 +28,5 @@ pub use transports::{
 	MidnightWsTransportClient, RotatingTransport, SolanaCommitment, SolanaGetBlockConfig,
 	SolanaGetTransactionConfig, SolanaTransportClient, StellarTransportClient,
 	TransientErrorRetryStrategy, TransportError, WsConfig, WsEndpointManager, WsTransportClient,
+	ROTATE_ON_ERROR_CODES,
 };

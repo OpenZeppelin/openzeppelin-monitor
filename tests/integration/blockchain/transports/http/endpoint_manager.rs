@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use openzeppelin_monitor::services::blockchain::{
-	BlockchainTransport, HttpEndpointManager, TransportError,
+	BlockchainTransport, HttpEndpointManager, TransportError, ROTATE_ON_ERROR_CODES,
 };
 
 use crate::integration::mocks::{AlwaysFailsToUpdateClientTransport, MockTransport};
@@ -582,4 +582,199 @@ async fn test_send_raw_request_returns_http_error_if_non_transient() {
 	}
 
 	mock.assert();
+}
+
+#[tokio::test]
+async fn test_rotation_on_5xx_error() {
+	let mut primary_server = Server::new_async().await;
+	let mut fallback_server = Server::new_async().await;
+
+	// Primary server returns 502 (Bad Gateway)
+	let primary_mock = primary_server
+		.mock("POST", "/")
+		.with_status(502)
+		.with_body("Bad Gateway")
+		.expect(1)
+		.create_async()
+		.await;
+
+	// Fallback server returns success
+	let fallback_mock = fallback_server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc": "2.0", "result": "success", "id": 1}"#)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		primary_server.url().as_ref(),
+		vec![fallback_server.url()],
+		TEST_NETWORK_SLUG.to_string(),
+	);
+	let transport = MockTransport::new();
+
+	let result = manager
+		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+		.await
+		.unwrap();
+
+	assert_eq!(result["result"], "success");
+	primary_mock.assert();
+	fallback_mock.assert();
+
+	// Verify rotation occurred
+	assert_eq!(&*manager.active_url.read().await, &fallback_server.url());
+}
+
+#[tokio::test]
+async fn test_rotation_on_all_new_error_codes() {
+	// Test each error code in ROTATE_ON_ERROR_CODES triggers rotation
+	for &status_code in ROTATE_ON_ERROR_CODES.iter() {
+		let mut primary_server = Server::new_async().await;
+		let mut fallback_server = Server::new_async().await;
+
+		let primary_mock = primary_server
+			.mock("POST", "/")
+			.with_status(status_code as usize)
+			.with_body(format!("Error {}", status_code))
+			.expect(1)
+			.create_async()
+			.await;
+
+		let fallback_mock = fallback_server
+			.mock("POST", "/")
+			.with_status(200)
+			.with_header("content-type", "application/json")
+			.with_body(r#"{"jsonrpc": "2.0", "result": "success", "id": 1}"#)
+			.create_async()
+			.await;
+
+		let manager = HttpEndpointManager::new(
+			get_mock_client_builder(),
+			primary_server.url().as_ref(),
+			vec![fallback_server.url()],
+			TEST_NETWORK_SLUG.to_string(),
+		);
+		let transport = MockTransport::new();
+
+		let result = manager
+			.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+			.await;
+
+		assert!(
+			result.is_ok(),
+			"Expected rotation and success for status code {}, got error: {:?}",
+			status_code,
+			result.err()
+		);
+		assert_eq!(result.unwrap()["result"], "success");
+		primary_mock.assert();
+		fallback_mock.assert();
+
+		// Verify rotation occurred
+		assert_eq!(
+			&*manager.active_url.read().await,
+			&fallback_server.url(),
+			"Expected rotation to fallback for status code {}",
+			status_code
+		);
+	}
+}
+
+#[tokio::test]
+async fn test_no_fallback_urls_available_5xx() {
+	let mut server = Server::new_async().await;
+
+	let mock = server
+		.mock("POST", "/")
+		.with_status(503)
+		.with_body("Service Unavailable")
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+	);
+	let transport = MockTransport::new();
+
+	let result = manager
+		.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+		.await;
+
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	match err {
+		TransportError::Http {
+			status_code,
+			url,
+			body,
+			..
+		} => {
+			assert_eq!(status_code, 503);
+			assert_eq!(url, server.url());
+			assert_eq!(body, "Service Unavailable");
+		}
+		_ => panic!("Expected Http error with status code 503"),
+	}
+	mock.assert();
+}
+
+#[tokio::test]
+async fn test_non_rotation_error_codes_do_not_rotate() {
+	// These codes should NOT trigger rotation
+	let non_rotation_codes: [u16; 4] = [401, 403, 404, 405];
+
+	for &status_code in non_rotation_codes.iter() {
+		let mut primary_server = Server::new_async().await;
+		let fallback_server = Server::new_async().await;
+
+		let primary_mock = primary_server
+			.mock("POST", "/")
+			.with_status(status_code as usize)
+			.with_body(format!("Error {}", status_code))
+			.expect(1)
+			.create_async()
+			.await;
+
+		let manager = HttpEndpointManager::new(
+			get_mock_client_builder(),
+			primary_server.url().as_ref(),
+			vec![fallback_server.url()],
+			TEST_NETWORK_SLUG.to_string(),
+		);
+		let transport = MockTransport::new();
+
+		let result = manager
+			.send_raw_request(&transport, "test_method", Some(json!(["param1"])))
+			.await;
+
+		assert!(
+			result.is_err(),
+			"Expected error for status code {}",
+			status_code
+		);
+		match result.unwrap_err() {
+			TransportError::Http {
+				status_code: code, ..
+			} => {
+				assert_eq!(code, status_code);
+			}
+			_ => panic!("Expected Http error for status code {}", status_code),
+		}
+		primary_mock.assert();
+
+		// Verify NO rotation occurred - still on primary
+		assert_eq!(
+			&*manager.active_url.read().await,
+			&primary_server.url(),
+			"Should NOT have rotated for status code {}",
+			status_code
+		);
+	}
 }
