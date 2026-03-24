@@ -81,22 +81,20 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched functions
 			let functions = data_json["functions"].as_array_mut().unwrap();
-			for func in evm_monitor_match.matched_on.functions.iter() {
+			for (i, func) in evm_monitor_match.matched_on.functions.iter().enumerate() {
 				let mut function_data = json!({
 					"signature": func.signature.clone(),
 					"args": {}
 				});
 
-				// Add function arguments if present
+				// Add function arguments if present (using index since arrays are parallel)
 				if let Some(args) = &evm_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
-						for func_arg in func_args {
-							if func_arg.signature == func.signature {
-								if let Some(arg_entries) = &func_arg.args {
-									let args_obj = function_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(func_arg) = func_args.get(i) {
+							if let Some(arg_entries) = &func_arg.args {
+								let args_obj = function_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}
@@ -108,22 +106,20 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched events
 			let events = data_json["events"].as_array_mut().unwrap();
-			for event in evm_monitor_match.matched_on.events.iter() {
+			for (i, event) in evm_monitor_match.matched_on.events.iter().enumerate() {
 				let mut event_data = json!({
 					"signature": event.signature.clone(),
 					"args": {}
 				});
 
-				// Add event arguments if present
+				// Add event arguments if present (using index since arrays are parallel)
 				if let Some(args) = &evm_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
-						for event_arg in event_args {
-							if event_arg.signature == event.signature {
-								if let Some(arg_entries) = &event_arg.args {
-									let args_obj = event_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(event_arg) = event_args.get(i) {
+							if let Some(arg_entries) = &event_arg.args {
+								let args_obj = event_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}
@@ -166,22 +162,25 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched functions
 			let functions = data_json["functions"].as_array_mut().unwrap();
-			for func in stellar_monitor_match.matched_on.functions.iter() {
+			for (i, func) in stellar_monitor_match
+				.matched_on
+				.functions
+				.iter()
+				.enumerate()
+			{
 				let mut function_data = json!({
 					"signature": func.signature.clone(),
 					"args": {}
 				});
 
-				// Add function arguments if present
+				// Add function arguments if present (using index since arrays are parallel)
 				if let Some(args) = &stellar_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
-						for func_arg in func_args {
-							if func_arg.signature == func.signature {
-								if let Some(arg_entries) = &func_arg.args {
-									let args_obj = function_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(func_arg) = func_args.get(i) {
+							if let Some(arg_entries) = &func_arg.args {
+								let args_obj = function_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}
@@ -193,22 +192,20 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched events
 			let events = data_json["events"].as_array_mut().unwrap();
-			for event in stellar_monitor_match.matched_on.events.iter() {
+			for (i, event) in stellar_monitor_match.matched_on.events.iter().enumerate() {
 				let mut event_data = json!({
 					"signature": event.signature.clone(),
 					"args": {}
 				});
 
-				// Add event arguments if present
+				// Add event arguments if present (using index since arrays are parallel)
 				if let Some(args) = &stellar_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
-						for event_arg in event_args {
-							if event_arg.signature == event.signature {
-								if let Some(arg_entries) = &event_arg.args {
-									let args_obj = event_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(event_arg) = event_args.get(i) {
+							if let Some(arg_entries) = &event_arg.args {
+								let args_obj = event_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}
@@ -251,22 +248,25 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched functions
 			let functions = data_json["functions"].as_array_mut().unwrap();
-			for func in midnight_monitor_match.matched_on.functions.iter() {
+			for (i, func) in midnight_monitor_match
+				.matched_on
+				.functions
+				.iter()
+				.enumerate()
+			{
 				let mut function_data = json!({
 					"signature": func.signature.clone(),
 					"args": {}
 				});
 
-				// Add function arguments if present
+				// Add function arguments if present (using index since arrays are parallel)
 				if let Some(args) = &midnight_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
-						for func_arg in func_args {
-							if func_arg.signature == func.signature {
-								if let Some(arg_entries) = &func_arg.args {
-									let args_obj = function_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(func_arg) = func_args.get(i) {
+							if let Some(arg_entries) = &func_arg.args {
+								let args_obj = function_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}
@@ -278,22 +278,20 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched events
 			let events = data_json["events"].as_array_mut().unwrap();
-			for event in midnight_monitor_match.matched_on.events.iter() {
+			for (i, event) in midnight_monitor_match.matched_on.events.iter().enumerate() {
 				let mut event_data = json!({
 					"signature": event.signature.clone(),
 					"args": {}
 				});
 
-				// Add event arguments if present
+				// Add event arguments if present (using index since arrays are parallel)
 				if let Some(args) = &midnight_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
-						for event_arg in event_args {
-							if event_arg.signature == event.signature {
-								if let Some(arg_entries) = &event_arg.args {
-									let args_obj = event_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(event_arg) = event_args.get(i) {
+							if let Some(arg_entries) = &event_arg.args {
+								let args_obj = event_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}
@@ -336,22 +334,20 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched functions (instructions)
 			let functions = data_json["functions"].as_array_mut().unwrap();
-			for func in solana_monitor_match.matched_on.functions.iter() {
+			for (i, func) in solana_monitor_match.matched_on.functions.iter().enumerate() {
 				let mut function_data = json!({
 					"signature": func.signature.clone(),
 					"args": {}
 				});
 
-				// Add function arguments if present
+				// Add function arguments if present (using index since arrays are parallel)
 				if let Some(args) = &solana_monitor_match.matched_on_args {
 					if let Some(func_args) = &args.functions {
-						for func_arg in func_args {
-							if func_arg.signature == func.signature {
-								if let Some(arg_entries) = &func_arg.args {
-									let args_obj = function_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(func_arg) = func_args.get(i) {
+							if let Some(arg_entries) = &func_arg.args {
+								let args_obj = function_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}
@@ -363,22 +359,20 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 
 			// Process matched events (logs)
 			let events = data_json["events"].as_array_mut().unwrap();
-			for event in solana_monitor_match.matched_on.events.iter() {
+			for (i, event) in solana_monitor_match.matched_on.events.iter().enumerate() {
 				let mut event_data = json!({
 					"signature": event.signature.clone(),
 					"args": {}
 				});
 
-				// Add event arguments if present
+				// Add event arguments if present (using index since arrays are parallel)
 				if let Some(args) = &solana_monitor_match.matched_on_args {
 					if let Some(event_args) = &args.events {
-						for event_arg in event_args {
-							if event_arg.signature == event.signature {
-								if let Some(arg_entries) = &event_arg.args {
-									let args_obj = event_data["args"].as_object_mut().unwrap();
-									for arg in arg_entries {
-										args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
-									}
+						if let Some(event_arg) = event_args.get(i) {
+							if let Some(arg_entries) = &event_arg.args {
+								let args_obj = event_data["args"].as_object_mut().unwrap();
+								for arg in arg_entries {
+									args_obj.insert(arg.name.clone(), json!(arg.value.clone()));
 								}
 							}
 						}

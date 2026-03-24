@@ -6,7 +6,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use openzeppelin_monitor::{
-	models::{BlockChainType, BlockType, MonitorMatch, TransactionStatus},
+	models::{
+		BlockChainType, BlockType, EventCondition, FunctionCondition, MatchConditions,
+		MidnightMatchArguments, MidnightMatchParamEntry, MidnightMatchParamsMap,
+		MidnightMonitorMatch, MonitorMatch, TransactionStatus,
+	},
 	services::filter::{handle_match, FilterError, FilterService},
 	utils::tests::{
 		midnight::{
@@ -775,6 +779,189 @@ async fn test_monitor_transaction_status_any() -> Result<(), Box<FilterError>> {
 			panic!("Expected Midnight match");
 		}
 	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_handle_match_with_duplicate_event_signatures() -> Result<(), Box<FilterError>> {
+	// Regression test: when multiple events share the same signature,
+	// each should retain its own args via index-based matching.
+	let data_capture = Arc::new(Mutex::new(HashMap::new()));
+	let data_capture_clone = data_capture.clone();
+
+	let mut trigger_execution_service = setup_trigger_execution_service(
+		"tests/integration/fixtures/midnight/triggers/trigger.json",
+	)
+	.await;
+
+	trigger_execution_service
+		.expect_execute()
+		.withf(
+			move |_triggers, variables, _monitor_match, _trigger_scripts| {
+				let mut captured = data_capture_clone.lock().unwrap();
+				*captured = variables.clone();
+				true
+			},
+		)
+		.returning(|_, _, _, _| Ok(()));
+
+	let monitor = MonitorBuilder::new()
+		.name("Test Duplicate Events Monitor")
+		.address("0202000000000000000000000000000000000000000000000000000000000000000000")
+		.build();
+
+	let transaction = TransactionBuilder::new()
+		.add_call_operation(
+			"0202000000000000000000000000000000000000000000000000000000000000000000".to_string(),
+			"main".to_string(),
+		)
+		.build();
+
+	let midnight_match = MidnightMonitorMatch {
+		monitor,
+		transaction,
+		network_slug: "midnight_testnet".to_string(),
+		matched_on: MatchConditions {
+			functions: vec![FunctionCondition {
+				signature: "main()".to_string(),
+				expression: None,
+			}],
+			events: vec![
+				EventCondition {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					expression: None,
+				},
+				EventCondition {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					expression: None,
+				},
+			],
+			transactions: vec![],
+		},
+		matched_on_args: Some(MidnightMatchArguments {
+			functions: Some(vec![MidnightMatchParamsMap {
+				signature: "main()".to_string(),
+				args: Some(vec![MidnightMatchParamEntry {
+					name: "amount".to_string(),
+					value: "1000".to_string(),
+					kind: "uint256".to_string(),
+					indexed: false,
+				}]),
+				hex_signature: None,
+			}]),
+			events: Some(vec![
+				MidnightMatchParamsMap {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					args: Some(vec![
+						MidnightMatchParamEntry {
+							name: "from".to_string(),
+							value: "0xAAAA".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						MidnightMatchParamEntry {
+							name: "to".to_string(),
+							value: "0xBBBB".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						MidnightMatchParamEntry {
+							name: "value".to_string(),
+							value: "1000".to_string(),
+							kind: "uint256".to_string(),
+							indexed: false,
+						},
+					]),
+					hex_signature: None,
+				},
+				MidnightMatchParamsMap {
+					signature: "Transfer(address,address,uint256)".to_string(),
+					args: Some(vec![
+						MidnightMatchParamEntry {
+							name: "from".to_string(),
+							value: "0xCCCC".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						MidnightMatchParamEntry {
+							name: "to".to_string(),
+							value: "0xDDDD".to_string(),
+							kind: "address".to_string(),
+							indexed: true,
+						},
+						MidnightMatchParamEntry {
+							name: "value".to_string(),
+							value: "2000".to_string(),
+							kind: "uint256".to_string(),
+							indexed: false,
+						},
+					]),
+					hex_signature: None,
+				},
+			]),
+		}),
+	};
+
+	let match_wrapper = MonitorMatch::Midnight(Box::new(midnight_match));
+
+	let result = handle_match(match_wrapper, &trigger_execution_service, &HashMap::new()).await;
+	assert!(result.is_ok(), "Handle match should succeed");
+
+	let captured_data = data_capture.lock().unwrap();
+
+	// Verify function args are present
+	assert_eq!(
+		captured_data.get("functions.0.signature").unwrap(),
+		"main()",
+		"Function signature should be preserved"
+	);
+	assert_eq!(
+		captured_data.get("functions.0.args.amount").unwrap(),
+		"1000",
+		"Function arg should be present"
+	);
+
+	// Event 0 should have its own args
+	assert_eq!(
+		captured_data.get("events.0.args.from").unwrap(),
+		"0xAAAA",
+		"First event should have from=0xAAAA"
+	);
+	assert_eq!(
+		captured_data.get("events.0.args.to").unwrap(),
+		"0xBBBB",
+		"First event should have to=0xBBBB"
+	);
+	assert_eq!(
+		captured_data.get("events.0.args.value").unwrap(),
+		"1000",
+		"First event should have value=1000"
+	);
+
+	// Event 1 should have its own distinct args
+	assert_eq!(
+		captured_data.get("events.1.args.from").unwrap(),
+		"0xCCCC",
+		"Second event should have from=0xCCCC"
+	);
+	assert_eq!(
+		captured_data.get("events.1.args.to").unwrap(),
+		"0xDDDD",
+		"Second event should have to=0xDDDD"
+	);
+	assert_eq!(
+		captured_data.get("events.1.args.value").unwrap(),
+		"2000",
+		"Second event should have value=2000"
+	);
+
+	// Both should share the same signature
+	assert_eq!(
+		captured_data.get("events.0.signature").unwrap(),
+		captured_data.get("events.1.signature").unwrap(),
+		"Both events should have the same signature"
+	);
 
 	Ok(())
 }
