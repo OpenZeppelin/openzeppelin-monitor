@@ -322,6 +322,81 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				})
 				.unwrap_or_default();
 
+			let inner_instructions: Vec<crate::models::SolanaInnerInstruction> = m
+				.get("innerInstructions")
+				.and_then(|ii| ii.as_array())
+				.map(|arr| {
+					arr.iter()
+						.filter_map(|inner| {
+							let index = inner.get("index")?.as_u64()? as u8;
+							let instructions: Vec<SolanaInstruction> = inner
+								.get("instructions")
+								.and_then(|instrs| instrs.as_array())
+								.map(|instrs| {
+									instrs
+										.iter()
+										.map(|ix| {
+											let program_id_index = ix
+												.get("programIdIndex")
+												.and_then(|idx| idx.as_u64())
+												.unwrap_or(0) as u8;
+											let accounts: Vec<u8> = ix
+												.get("accounts")
+												.and_then(|a| a.as_array())
+												.map(|a| {
+													a.iter()
+														.filter_map(|v| v.as_u64().map(|i| i as u8))
+														.collect()
+												})
+												.unwrap_or_default();
+											let data = ix
+												.get("data")
+												.and_then(|d| d.as_str())
+												.unwrap_or_default()
+												.to_string();
+											let parsed = ix.get("parsed").map(|p| {
+												let instruction_type = p
+													.get("type")
+													.and_then(|t| t.as_str())
+													.unwrap_or_default();
+												let info = p
+													.get("info")
+													.cloned()
+													.unwrap_or(serde_json::Value::Null);
+												crate::models::SolanaParsedInstruction {
+													instruction_type: instruction_type.to_string(),
+													info,
+												}
+											});
+											let program = ix
+												.get("program")
+												.and_then(|p| p.as_str())
+												.map(|s| s.to_string());
+											let program_id = ix
+												.get("programId")
+												.and_then(|p| p.as_str())
+												.map(|s| s.to_string());
+											SolanaInstruction {
+												program_id_index,
+												accounts,
+												data,
+												parsed,
+												program,
+												program_id,
+											}
+										})
+										.collect()
+								})
+								.unwrap_or_default();
+							Some(crate::models::SolanaInnerInstruction {
+								index,
+								instructions,
+							})
+						})
+						.collect()
+				})
+				.unwrap_or_default();
+
 			SolanaTransactionMeta {
 				err,
 				fee,
@@ -329,7 +404,7 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				post_balances,
 				pre_token_balances: Vec::new(),
 				post_token_balances: Vec::new(),
-				inner_instructions: Vec::new(),
+				inner_instructions,
 				log_messages,
 				compute_units_consumed: m.get("computeUnitsConsumed").and_then(|c| c.as_u64()),
 				loaded_addresses: None,

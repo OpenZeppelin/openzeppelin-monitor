@@ -244,23 +244,34 @@ impl Transaction {
 		self.0.meta.as_ref().map(|m| m.fee).unwrap_or(0)
 	}
 
-	/// Get all program IDs invoked in this transaction
+	/// Get all program IDs invoked in this transaction, including inner instructions (CPIs)
 	pub fn program_ids(&self) -> Vec<String> {
 		let account_keys = &self.0.transaction.account_keys;
-		self.0
+
+		let resolve_program_id = |ix: &Instruction| -> Option<String> {
+			if let Some(program_id) = &ix.program_id {
+				return Some(program_id.clone());
+			}
+			let idx = ix.program_id_index as usize;
+			account_keys.get(idx).cloned()
+		};
+
+		let mut program_ids: Vec<String> = self
+			.0
 			.transaction
 			.instructions
 			.iter()
-			.filter_map(|ix| {
-				// First check if there's a parsed program_id
-				if let Some(program_id) = &ix.program_id {
-					return Some(program_id.clone());
-				}
-				// Otherwise, look up by index
-				let idx = ix.program_id_index as usize;
-				account_keys.get(idx).cloned()
-			})
-			.collect()
+			.filter_map(resolve_program_id)
+			.collect();
+
+		// Also include program IDs from inner instructions (CPI calls)
+		if let Some(meta) = &self.0.meta {
+			for inner in &meta.inner_instructions {
+				program_ids.extend(inner.instructions.iter().filter_map(resolve_program_id));
+			}
+		}
+
+		program_ids
 	}
 
 	/// Get the fee payer address (first account in account_keys by Solana convention)
