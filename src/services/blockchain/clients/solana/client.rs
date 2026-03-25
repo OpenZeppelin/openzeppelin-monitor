@@ -2088,6 +2088,188 @@ mod tests {
 		);
 	}
 
+	#[test]
+	fn test_parse_single_transaction_with_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_with_inner"],
+				"message": {
+					"accountKeys": [
+						"FeePayer111111111111111111111111111111111111",
+						"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+						"BPFLoaderUpgradeab1e11111111111111111111111",
+						"KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+					],
+					"instructions": [{
+						"programIdIndex": 1,
+						"accounts": [0, 2, 3],
+						"data": "3Bxs4h24hBtQy9rw"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [1000000, 500000],
+				"postBalances": [995000, 500000],
+				"logMessages": [
+					"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf invoke [1]",
+					"Program BPFLoaderUpgradeab1e11111111111111111111111 invoke [2]",
+					"Upgraded program KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+					"Program BPFLoaderUpgradeab1e11111111111111111111111 success",
+					"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf success"
+				],
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [{
+						"programIdIndex": 2,
+						"accounts": [3],
+						"data": ""
+					}]
+				}]
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		// Verify inner instructions were parsed
+		let meta = tx.meta.as_ref().unwrap();
+		assert_eq!(meta.inner_instructions.len(), 1);
+		assert_eq!(meta.inner_instructions[0].index, 0);
+		assert_eq!(meta.inner_instructions[0].instructions.len(), 1);
+		assert_eq!(
+			meta.inner_instructions[0].instructions[0].program_id_index,
+			2
+		);
+
+		// Verify program_ids() includes both top-level and inner instruction programs
+		let program_ids = tx.program_ids();
+		assert!(program_ids.contains(&"BPFLoaderUpgradeab1e11111111111111111111111".to_string()));
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_inner_instructions_parsed_format() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_parsed_inner"],
+				"message": {
+					"accountKeys": [
+						"FeePayer111111111111111111111111111111111111",
+						"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
+					],
+					"instructions": [{
+						"programIdIndex": 1,
+						"accounts": [0],
+						"data": "abc"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": [],
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [{
+						"programIdIndex": 0,
+						"accounts": [],
+						"data": "xyz",
+						"program": "bpf-upgradeable-loader",
+						"programId": "BPFLoaderUpgradeab1e11111111111111111111111",
+						"parsed": {
+							"type": "upgrade",
+							"info": {
+								"programId": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+							}
+						}
+					}]
+				}]
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		let inner_ix = &tx.meta.as_ref().unwrap().inner_instructions[0].instructions[0];
+		assert_eq!(
+			inner_ix.program_id,
+			Some("BPFLoaderUpgradeab1e11111111111111111111111".to_string())
+		);
+		assert_eq!(inner_ix.program, Some("bpf-upgradeable-loader".to_string()));
+		assert!(inner_ix.parsed.is_some());
+		assert_eq!(
+			inner_ix.parsed.as_ref().unwrap().instruction_type,
+			"upgrade"
+		);
+	}
+
+	#[test]
+	fn test_parse_single_transaction_without_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_no_inner"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": []
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		// No innerInstructions field -> empty vec
+		assert!(tx.meta.as_ref().unwrap().inner_instructions.is_empty());
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_empty_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_empty_inner"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": [],
+				"innerInstructions": []
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		assert!(tx.meta.as_ref().unwrap().inner_instructions.is_empty());
+	}
+
 	#[tokio::test]
 	async fn test_fetch_stream_kind_derives() {
 		// Verify derived traits work correctly

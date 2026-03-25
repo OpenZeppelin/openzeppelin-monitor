@@ -486,6 +486,62 @@ mod tests {
 	}
 
 	#[test]
+	fn test_program_ids_includes_inner_instructions() {
+		let mut tx_info = create_test_transaction(true);
+		// Add inner instructions with index-based program ID resolution
+		if let Some(ref mut meta) = tx_info.meta {
+			meta.inner_instructions = vec![InnerInstruction {
+				index: 0,
+				instructions: vec![Instruction {
+					program_id_index: 1, // "11111111111111111111111111111111" in account_keys
+					accounts: vec![0],
+					data: String::new(),
+					parsed: None,
+					program: None,
+					program_id: None, // Force index-based lookup
+				}],
+			}];
+		}
+
+		let transaction = Transaction(tx_info);
+		let program_ids = transaction.program_ids();
+
+		assert_eq!(program_ids.len(), 2);
+		assert_eq!(
+			program_ids[0],
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+		);
+		assert_eq!(program_ids[1], "11111111111111111111111111111111");
+	}
+
+	#[test]
+	fn test_program_ids_inner_instructions_with_program_id_field() {
+		let mut tx_info = create_test_transaction(true);
+		if let Some(ref mut meta) = tx_info.meta {
+			meta.inner_instructions = vec![InnerInstruction {
+				index: 0,
+				instructions: vec![Instruction {
+					program_id_index: 0,
+					accounts: vec![],
+					data: String::new(),
+					parsed: None,
+					program: None,
+					program_id: Some("BPFLoaderUpgradeab1e11111111111111111111111".to_string()),
+				}],
+			}];
+		}
+
+		let transaction = Transaction(tx_info);
+		let program_ids = transaction.program_ids();
+
+		assert_eq!(program_ids.len(), 2);
+		assert_eq!(
+			program_ids[1],
+			"BPFLoaderUpgradeab1e11111111111111111111111"
+		);
+	}
+
+	#[test]
 	fn test_serde_serialization() {
 		let tx_info = create_test_transaction(true);
 		let transaction = Transaction(tx_info);
