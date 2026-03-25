@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use openzeppelin_monitor::{
 	models::{
 		AddressWithSpec, BlockType, EventCondition, MatchConditions, Monitor, MonitorMatch,
-		SolanaBlock, SolanaConfirmedBlock, SolanaInstruction, SolanaMatchArguments,
-		SolanaMonitorMatch, SolanaTransaction, SolanaTransactionInfo, SolanaTransactionMessage,
-		SolanaTransactionMeta, TransactionCondition, TransactionStatus,
+		SolanaBlock, SolanaConfirmedBlock, SolanaInnerInstruction, SolanaInstruction,
+		SolanaMatchArguments, SolanaMonitorMatch, SolanaTransaction, SolanaTransactionInfo,
+		SolanaTransactionMessage, SolanaTransactionMeta, TransactionCondition, TransactionStatus,
 	},
 	services::filter::{handle_match, FilterError, FilterService},
 };
@@ -917,6 +917,133 @@ async fn test_filter_with_different_address() -> Result<(), Box<FilterError>> {
 		matches.is_empty(),
 		"Should not match with different address"
 	);
+
+	Ok(())
+}
+
+/// Tests that a monitor watching an address invoked via CPI (inner instruction)
+/// correctly matches the transaction. This simulates the scenario where a program
+/// upgrade is executed through a multisig (e.g., Squads V4), so BPFLoaderUpgradeab1e
+/// is called at depth [2] rather than directly at depth [1].
+#[tokio::test]
+async fn test_filter_matches_address_in_inner_instructions() -> Result<(), Box<FilterError>> {
+	let network = create_test_network();
+	let filter_service = FilterService::new();
+	let client = MockSolanaClientTrait::<MockSolanaTransportClient>::new();
+
+	// Monitor watches BPFLoaderUpgradeab1e with an event for the upgrade log
+	let monitor = Monitor {
+		name: "Upgrade Monitor".to_string(),
+		paused: false,
+		networks: vec!["solana_devnet".to_string()],
+		addresses: vec![AddressWithSpec {
+			address: "BPFLoaderUpgradeab1e11111111111111111111111".to_string(),
+			contract_spec: None,
+		}],
+		match_conditions: MatchConditions {
+			functions: vec![],
+			events: vec![EventCondition {
+				signature: "Upgraded program KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+					.to_string(),
+				expression: None,
+			}],
+			transactions: vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: None,
+			}],
+		},
+		trigger_conditions: vec![],
+		triggers: vec![],
+		chain_configurations: vec![],
+	};
+
+	// Transaction where top-level instruction is Squads V4,
+	// and BPFLoaderUpgradeab1e is invoked via CPI (inner instruction)
+	let transaction = SolanaTransaction::from(SolanaTransactionInfo {
+		signature: "2BqY4vCoMGADSHdGxCEjFRMhMFHBCPhQvJq2t4pPgeMeZtE4AVsjguzCjCzPvqxJPDHtvmzzmxgXedWtGWA2XhUf"
+			.to_string(),
+		slot: 123456789,
+		block_time: Some(1234567890),
+		transaction: SolanaTransactionMessage {
+			account_keys: vec![
+				"FeePayer111111111111111111111111111111111111".to_string(),
+				"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf".to_string(),
+				"BPFLoaderUpgradeab1e11111111111111111111111".to_string(),
+				"KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD".to_string(),
+			],
+			recent_blockhash: "ABC123".to_string(),
+			// Top-level instruction invokes Squads V4 (index 1 in account_keys)
+			instructions: vec![SolanaInstruction {
+				program_id_index: 1,
+				accounts: vec![0, 2, 3],
+				data: "3Bxs4h24hBtQy9rw".to_string(),
+				parsed: None,
+				program: None,
+				program_id: Some(
+					"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf".to_string(),
+				),
+			}],
+			address_table_lookups: vec![],
+		},
+		meta: Some(SolanaTransactionMeta {
+			err: None,
+			fee: 5000,
+			pre_balances: vec![1000000000],
+			post_balances: vec![999000000],
+			// BPFLoaderUpgradeab1e is called via CPI from Squads
+			inner_instructions: vec![SolanaInnerInstruction {
+				index: 0,
+				instructions: vec![SolanaInstruction {
+					program_id_index: 2, // BPFLoaderUpgradeab1e in account_keys
+					accounts: vec![3],
+					data: String::new(),
+					parsed: None,
+					program: None,
+					program_id: Some(
+						"BPFLoaderUpgradeab1e11111111111111111111111".to_string(),
+					),
+				}],
+			}],
+			log_messages: vec![
+				"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf invoke [1]".to_string(),
+				"Program log: Instruction: VaultTransactionExecute".to_string(),
+				"Program BPFLoaderUpgradeab1e11111111111111111111111 invoke [2]".to_string(),
+				"Upgraded program KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD".to_string(),
+				"Program BPFLoaderUpgradeab1e11111111111111111111111 success".to_string(),
+				"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf success".to_string(),
+			],
+			pre_token_balances: vec![],
+			post_token_balances: vec![],
+			compute_units_consumed: Some(83534),
+			loaded_addresses: None,
+		}),
+	});
+
+	let block = create_test_solana_block_with_transactions(vec![transaction]);
+
+	let matches = filter_service
+		.filter_block(&client, &network, &block, &[monitor], None)
+		.await?;
+
+	assert!(
+		!matches.is_empty(),
+		"Should match when monitored address is invoked via CPI (inner instruction)"
+	);
+
+	// Verify the match contains the expected event
+	let monitor_match = &matches[0];
+	if let MonitorMatch::Solana(solana_match) = monitor_match {
+		assert!(
+			!solana_match.matched_on.events.is_empty(),
+			"Should have matched the upgrade event"
+		);
+		assert_eq!(
+			solana_match.matched_on.events[0].signature,
+			"Upgraded program KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+		);
+	} else {
+		panic!("Expected a Solana monitor match");
+	}
 
 	Ok(())
 }

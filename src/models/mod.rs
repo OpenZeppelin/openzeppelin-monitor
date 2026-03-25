@@ -70,6 +70,7 @@ pub use blockchain::solana::{
 	SolanaIdlTypeDef,
 	SolanaIdlTypeDefTy,
 	// Other Solana types
+	SolanaInnerInstruction,
 	SolanaInstruction,
 	SolanaMatchArguments,
 	SolanaMatchParamEntry,

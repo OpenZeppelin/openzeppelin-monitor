@@ -244,23 +244,34 @@ impl Transaction {
 		self.0.meta.as_ref().map(|m| m.fee).unwrap_or(0)
 	}
 
-	/// Get all program IDs invoked in this transaction
+	/// Get all program IDs invoked in this transaction, including inner instructions (CPIs)
 	pub fn program_ids(&self) -> Vec<String> {
 		let account_keys = &self.0.transaction.account_keys;
-		self.0
+
+		let resolve_program_id = |ix: &Instruction| -> Option<String> {
+			if let Some(program_id) = &ix.program_id {
+				return Some(program_id.clone());
+			}
+			let idx = ix.program_id_index as usize;
+			account_keys.get(idx).cloned()
+		};
+
+		let mut program_ids: Vec<String> = self
+			.0
 			.transaction
 			.instructions
 			.iter()
-			.filter_map(|ix| {
-				// First check if there's a parsed program_id
-				if let Some(program_id) = &ix.program_id {
-					return Some(program_id.clone());
-				}
-				// Otherwise, look up by index
-				let idx = ix.program_id_index as usize;
-				account_keys.get(idx).cloned()
-			})
-			.collect()
+			.filter_map(resolve_program_id)
+			.collect();
+
+		// Also include program IDs from inner instructions (CPI calls)
+		if let Some(meta) = &self.0.meta {
+			for inner in &meta.inner_instructions {
+				program_ids.extend(inner.instructions.iter().filter_map(resolve_program_id));
+			}
+		}
+
+		program_ids
 	}
 
 	/// Get the fee payer address (first account in account_keys by Solana convention)
@@ -472,6 +483,62 @@ mod tests {
 		assert_eq!(accounts[1], "11111111111111111111111111111111");
 		assert_eq!(accounts[2], "WritableALTAddress111111111111111111");
 		assert_eq!(accounts[3], "ReadonlyALTAddress111111111111111111");
+	}
+
+	#[test]
+	fn test_program_ids_includes_inner_instructions() {
+		let mut tx_info = create_test_transaction(true);
+		// Add inner instructions with index-based program ID resolution
+		if let Some(ref mut meta) = tx_info.meta {
+			meta.inner_instructions = vec![InnerInstruction {
+				index: 0,
+				instructions: vec![Instruction {
+					program_id_index: 1, // "11111111111111111111111111111111" in account_keys
+					accounts: vec![0],
+					data: String::new(),
+					parsed: None,
+					program: None,
+					program_id: None, // Force index-based lookup
+				}],
+			}];
+		}
+
+		let transaction = Transaction(tx_info);
+		let program_ids = transaction.program_ids();
+
+		assert_eq!(program_ids.len(), 2);
+		assert_eq!(
+			program_ids[0],
+			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+		);
+		assert_eq!(program_ids[1], "11111111111111111111111111111111");
+	}
+
+	#[test]
+	fn test_program_ids_inner_instructions_with_program_id_field() {
+		let mut tx_info = create_test_transaction(true);
+		if let Some(ref mut meta) = tx_info.meta {
+			meta.inner_instructions = vec![InnerInstruction {
+				index: 0,
+				instructions: vec![Instruction {
+					program_id_index: 0,
+					accounts: vec![],
+					data: String::new(),
+					parsed: None,
+					program: None,
+					program_id: Some("BPFLoaderUpgradeab1e11111111111111111111111".to_string()),
+				}],
+			}];
+		}
+
+		let transaction = Transaction(tx_info);
+		let program_ids = transaction.program_ids();
+
+		assert_eq!(program_ids.len(), 2);
+		assert_eq!(
+			program_ids[1],
+			"BPFLoaderUpgradeab1e11111111111111111111111"
+		);
 	}
 
 	#[test]

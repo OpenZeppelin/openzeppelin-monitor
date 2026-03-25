@@ -322,6 +322,81 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				})
 				.unwrap_or_default();
 
+			let inner_instructions: Vec<crate::models::SolanaInnerInstruction> = m
+				.get("innerInstructions")
+				.and_then(|ii| ii.as_array())
+				.map(|arr| {
+					arr.iter()
+						.filter_map(|inner| {
+							let index = inner.get("index")?.as_u64()? as u8;
+							let instructions: Vec<SolanaInstruction> = inner
+								.get("instructions")
+								.and_then(|instrs| instrs.as_array())
+								.map(|instrs| {
+									instrs
+										.iter()
+										.map(|ix| {
+											let program_id_index = ix
+												.get("programIdIndex")
+												.and_then(|idx| idx.as_u64())
+												.unwrap_or(0) as u8;
+											let accounts: Vec<u8> = ix
+												.get("accounts")
+												.and_then(|a| a.as_array())
+												.map(|a| {
+													a.iter()
+														.filter_map(|v| v.as_u64().map(|i| i as u8))
+														.collect()
+												})
+												.unwrap_or_default();
+											let data = ix
+												.get("data")
+												.and_then(|d| d.as_str())
+												.unwrap_or_default()
+												.to_string();
+											let parsed = ix.get("parsed").map(|p| {
+												let instruction_type = p
+													.get("type")
+													.and_then(|t| t.as_str())
+													.unwrap_or_default();
+												let info = p
+													.get("info")
+													.cloned()
+													.unwrap_or(serde_json::Value::Null);
+												crate::models::SolanaParsedInstruction {
+													instruction_type: instruction_type.to_string(),
+													info,
+												}
+											});
+											let program = ix
+												.get("program")
+												.and_then(|p| p.as_str())
+												.map(|s| s.to_string());
+											let program_id = ix
+												.get("programId")
+												.and_then(|p| p.as_str())
+												.map(|s| s.to_string());
+											SolanaInstruction {
+												program_id_index,
+												accounts,
+												data,
+												parsed,
+												program,
+												program_id,
+											}
+										})
+										.collect()
+								})
+								.unwrap_or_default();
+							Some(crate::models::SolanaInnerInstruction {
+								index,
+								instructions,
+							})
+						})
+						.collect()
+				})
+				.unwrap_or_default();
+
 			SolanaTransactionMeta {
 				err,
 				fee,
@@ -329,7 +404,7 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				post_balances,
 				pre_token_balances: Vec::new(),
 				post_token_balances: Vec::new(),
-				inner_instructions: Vec::new(),
+				inner_instructions,
 				log_messages,
 				compute_units_consumed: m.get("computeUnitsConsumed").and_then(|c| c.as_u64()),
 				loaded_addresses: None,
@@ -2011,6 +2086,188 @@ mod tests {
 			vec![150],
 			"The entire slot should be marked as failed"
 		);
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_with_inner"],
+				"message": {
+					"accountKeys": [
+						"FeePayer111111111111111111111111111111111111",
+						"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+						"BPFLoaderUpgradeab1e11111111111111111111111",
+						"KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+					],
+					"instructions": [{
+						"programIdIndex": 1,
+						"accounts": [0, 2, 3],
+						"data": "3Bxs4h24hBtQy9rw"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [1000000, 500000],
+				"postBalances": [995000, 500000],
+				"logMessages": [
+					"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf invoke [1]",
+					"Program BPFLoaderUpgradeab1e11111111111111111111111 invoke [2]",
+					"Upgraded program KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+					"Program BPFLoaderUpgradeab1e11111111111111111111111 success",
+					"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf success"
+				],
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [{
+						"programIdIndex": 2,
+						"accounts": [3],
+						"data": ""
+					}]
+				}]
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		// Verify inner instructions were parsed
+		let meta = tx.meta.as_ref().unwrap();
+		assert_eq!(meta.inner_instructions.len(), 1);
+		assert_eq!(meta.inner_instructions[0].index, 0);
+		assert_eq!(meta.inner_instructions[0].instructions.len(), 1);
+		assert_eq!(
+			meta.inner_instructions[0].instructions[0].program_id_index,
+			2
+		);
+
+		// Verify program_ids() includes both top-level and inner instruction programs
+		let program_ids = tx.program_ids();
+		assert!(program_ids.contains(&"BPFLoaderUpgradeab1e11111111111111111111111".to_string()));
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_inner_instructions_parsed_format() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_parsed_inner"],
+				"message": {
+					"accountKeys": [
+						"FeePayer111111111111111111111111111111111111",
+						"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
+					],
+					"instructions": [{
+						"programIdIndex": 1,
+						"accounts": [0],
+						"data": "abc"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": [],
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [{
+						"programIdIndex": 0,
+						"accounts": [],
+						"data": "xyz",
+						"program": "bpf-upgradeable-loader",
+						"programId": "BPFLoaderUpgradeab1e11111111111111111111111",
+						"parsed": {
+							"type": "upgrade",
+							"info": {
+								"programId": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+							}
+						}
+					}]
+				}]
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		let inner_ix = &tx.meta.as_ref().unwrap().inner_instructions[0].instructions[0];
+		assert_eq!(
+			inner_ix.program_id,
+			Some("BPFLoaderUpgradeab1e11111111111111111111111".to_string())
+		);
+		assert_eq!(inner_ix.program, Some("bpf-upgradeable-loader".to_string()));
+		assert!(inner_ix.parsed.is_some());
+		assert_eq!(
+			inner_ix.parsed.as_ref().unwrap().instruction_type,
+			"upgrade"
+		);
+	}
+
+	#[test]
+	fn test_parse_single_transaction_without_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_no_inner"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": []
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		// No innerInstructions field -> empty vec
+		assert!(tx.meta.as_ref().unwrap().inner_instructions.is_empty());
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_empty_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_empty_inner"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": [],
+				"innerInstructions": []
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		assert!(tx.meta.as_ref().unwrap().inner_instructions.is_empty());
 	}
 
 	#[tokio::test]
