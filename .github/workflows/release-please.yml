@@ -25,17 +25,17 @@ jobs:
       SLACK_CHANNEL: '#oss-releases'
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
           egress-policy: audit
       - name: Get github app token
-        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
       - name: Slack notification
-        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d # v2.1.0
+        uses: act10ns/slack@d96404edccc6d6467fc7f8134a420c851b1e9054 # v2.2.0
         with:
           status: starting
           steps: ${{ toJson(steps) }}
@@ -102,7 +102,7 @@ jobs:
         run: |
           echo "release_branch=${{ fromJSON(steps.release.outputs.pr).headBranchName }}" >> $GITHUB_OUTPUT
       - name: Slack notification success or failure
-        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d # v2.1.0
+        uses: act10ns/slack@d96404edccc6d6467fc7f8134a420c851b1e9054 # v2.2.0
         with:
           status: ${{ job.status }}
           steps: ${{ toJson(steps) }}
@@ -118,11 +118,11 @@ jobs:
     if: ${{ needs.release-please.outputs.release_created == 'false' && needs.release-please.outputs.pr_created == 'true' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
         with:
           egress-policy: audit
       - name: Get github app token
-        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         id: gh-app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
@@ -157,7 +157,7 @@ jobs:
           fi
       - name: Commit cargo update
         if: steps.lock-file-commit.outputs.cargo_changed == 'true'
-        uses: iarekylew00t/verified-bot-commit@b001460501aa4890e4429832db1cdf63e364f162  # v2.1.6
+        uses: iarekylew00t/verified-bot-commit@934fa64df2191ab067d0c0d73f422239b6933392  # v2.2.1
         with:
           message: 'chore: Updating lock file'
           token: ${{ steps.gh-app-token.outputs.token }}
