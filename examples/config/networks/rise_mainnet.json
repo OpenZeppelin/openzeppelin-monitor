@@ -6,8 +6,8 @@
     {
       "type_": "rpc",
       "url": {
-        "type": "plain",
-        "value": "https://rpc.risechain.com"
+        "type": "environment",
+        "value": "RISE_RPC_URL_1"
       },
       "weight": 100
     }

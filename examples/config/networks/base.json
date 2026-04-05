@@ -6,15 +6,47 @@
     {
       "type_": "rpc",
       "url": {
-        "type": "plain",
-        "value": "https://mainnet.base.org"
+        "type": "environment",
+        "value": "BASE_RPC_URL_1"
       },
       "weight": 100
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "BASE_RPC_URL_2"
+      },
+      "weight": 95
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "BASE_RPC_URL_3"
+      },
+      "weight": 90
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "BASE_RPC_URL_4"
+      },
+      "weight": 85
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "BASE_RPC_URL_5"
+      },
+      "weight": 80
     }
   ],
   "chain_id": 8453,
   "block_time_ms": 2000,
   "confirmation_blocks": 3,
-  "cron_schedule": "0 */1 * * * *",
+  "cron_schedule": "*/1 * * * * *",
   "store_blocks": false
 }

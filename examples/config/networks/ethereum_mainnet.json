@@ -6,24 +6,48 @@
     {
       "type_": "rpc",
       "url": {
-        "type": "plain",
-        "value": "https://eth.drpc.org"
+        "type": "environment",
+        "value": "ETH_RPC_URL_1"
       },
       "weight": 100
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "ETH_RPC_URL_2"
+      },
+      "weight": 95
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "ETH_RPC_URL_3"
+      },
+      "weight": 90
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "ETH_RPC_URL_4"
+      },
+      "weight": 85
+    },
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "environment",
+        "value": "ETH_RPC_URL_5"
+      },
+      "weight": 80
     }
   ],
   "chain_id": 1,
   "block_time_ms": 12000,
   "confirmation_blocks": 12,
-  "cron_schedule": "0 */1 * * * *",
+  "cron_schedule": "*/5 * * * * *",
   "max_past_blocks": 18,
-  "store_blocks": false,
-  "recovery_config": {
-    "enabled": false,
-    "cron_schedule": "0 */5 * * * *",
-    "max_blocks_per_run": 10,
-    "max_block_age": 1000,
-    "max_retries": 3,
-    "retry_delay_ms": 1000
-  }
+  "store_blocks": false
 }

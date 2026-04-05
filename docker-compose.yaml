@@ -20,6 +20,22 @@ services:
       # Default: 1GB (1073741824 bytes)
       LOG_MAX_SIZE: ${LOG_MAX_SIZE:-1073741824}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      ETH_RPC_URL_1: ${ETH_RPC_URL_1}
+      ETH_RPC_URL_2: ${ETH_RPC_URL_2}
+      ETH_RPC_URL_3: ${ETH_RPC_URL_3}
+      ETH_RPC_URL_4: ${ETH_RPC_URL_4}
+      ETH_RPC_URL_5: ${ETH_RPC_URL_5}
+      BASE_RPC_URL_1: ${BASE_RPC_URL_1}
+      BASE_RPC_URL_2: ${BASE_RPC_URL_2}
+      BASE_RPC_URL_3: ${BASE_RPC_URL_3}
+      BASE_RPC_URL_4: ${BASE_RPC_URL_4}
+      BASE_RPC_URL_5: ${BASE_RPC_URL_5}
+      ARB_RPC_URL_1: ${ARB_RPC_URL_1}
+      ARB_RPC_URL_2: ${ARB_RPC_URL_2}
+      ARB_RPC_URL_3: ${ARB_RPC_URL_3}
+      ARB_RPC_URL_4: ${ARB_RPC_URL_4}
+      ARB_RPC_URL_5: ${ARB_RPC_URL_5}
+      RISE_RPC_URL_1: ${RISE_RPC_URL_1}
       IN_DOCKER: 'true'
     restart: on-failure:5
     mem_swappiness: 0
