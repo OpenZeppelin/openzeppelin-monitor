@@ -23,7 +23,7 @@
       },
       "message": {
         "title": "${monitor.name} triggered",
-        "body": "*Bridge Deposit*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* ${events.0.args.srcAddress}\n*To:* ${events.0.args.dstAddress}\n*Token:* ${events.0.args.token}\n*Tx:* ${transaction.hash}\n\n${events}"
+        "body": "*Bridge Deposit*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* ${events.0.args.srcAddress}\n*To:* ${events.0.args.dstAddress}\n*Token:* ${events.0.args.token}\n*Tx:* ${transaction.hash}"
       }
     }
   },
@@ -37,7 +37,7 @@
       },
       "message": {
         "title": "${monitor.name} triggered",
-        "body": "*Bridge Withdrawal (RISE)*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* <https://explorer.risechain.com/address/${events.0.args.srcAddress}|${events.0.args.srcAddress}>\n*To:* ${events.0.args.dstAddress}\n*Token:* <https://explorer.risechain.com/address/${events.0.args.token}|${events.0.args.token}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>\n\n${events}"
+        "body": "*Bridge Withdrawal (RISE)*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* <https://explorer.risechain.com/address/${events.0.args.srcAddress}|${events.0.args.srcAddress}>\n*To:* ${events.0.args.dstAddress}\n*Token:* <https://explorer.risechain.com/address/${events.0.args.token}|${events.0.args.token}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>"
       }
     }
   },
