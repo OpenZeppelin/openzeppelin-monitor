@@ -48,6 +48,6 @@
   "block_time_ms": 12000,
   "confirmation_blocks": 12,
   "cron_schedule": "*/5 * * * * *",
-  "max_past_blocks": 18,
+  "max_past_blocks": 7200,
   "store_blocks": false
 }

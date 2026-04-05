@@ -1,12 +1,12 @@
 {
-  "name": "RISEx AccessManager",
+  "name": "RISE Bridge AccessManager (Base)",
   "paused": false,
   "networks": [
-    "rise_mainnet"
+    "base"
   ],
   "addresses": [
     {
-      "address": "0x1bee39c01907e3018b7ec2021cf73f70541b36cc",
+      "address": "0x43c42e363A5Fc9Ba71C5633Ee455f232c718f084",
       "contract_spec": [
         {
           "anonymous": false,
@@ -295,70 +295,6 @@
           ],
           "name": "TargetAdminDelayUpdated",
           "type": "event"
-        },
-        {
-          "anonymous": false,
-          "inputs": [
-            {
-              "indexed": false,
-              "internalType": "bool",
-              "name": "enabled",
-              "type": "bool"
-            }
-          ],
-          "name": "WhitelistEnabled",
-          "type": "event"
-        },
-        {
-          "anonymous": false,
-          "inputs": [
-            {
-              "indexed": false,
-              "internalType": "bool",
-              "name": "enabled",
-              "type": "bool"
-            }
-          ],
-          "name": "BlacklistEnabled",
-          "type": "event"
-        },
-        {
-          "anonymous": false,
-          "inputs": [
-            {
-              "indexed": true,
-              "internalType": "address",
-              "name": "account",
-              "type": "address"
-            },
-            {
-              "indexed": false,
-              "internalType": "bool",
-              "name": "status",
-              "type": "bool"
-            }
-          ],
-          "name": "WhitelistedAccount",
-          "type": "event"
-        },
-        {
-          "anonymous": false,
-          "inputs": [
-            {
-              "indexed": true,
-              "internalType": "address",
-              "name": "account",
-              "type": "address"
-            },
-            {
-              "indexed": false,
-              "internalType": "bool",
-              "name": "status",
-              "type": "bool"
-            }
-          ],
-          "name": "BlacklistedAccount",
-          "type": "event"
         }
       ]
     }
@@ -413,22 +349,6 @@
       {
         "signature": "TargetAdminDelayUpdated(address,uint32,uint48)",
         "expression": null
-      },
-      {
-        "signature": "WhitelistEnabled(bool)",
-        "expression": null
-      },
-      {
-        "signature": "BlacklistEnabled(bool)",
-        "expression": null
-      },
-      {
-        "signature": "WhitelistedAccount(address,bool)",
-        "expression": null
-      },
-      {
-        "signature": "BlacklistedAccount(address,bool)",
-        "expression": null
       }
     ],
     "transactions": [
@@ -439,7 +359,7 @@
     ]
   },
   "triggers": [
-    "rise_access_manager_rise_slack"
+    "rise_access_manager_base_slack"
   ],
   "trigger_conditions": []
 }

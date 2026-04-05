@@ -1,10 +1,7 @@
 {
-  "name": "RISE Bridge AccessManager",
+  "name": "RISE Bridge AccessManager (RISE)",
   "paused": false,
   "networks": [
-    "ethereum_mainnet",
-    "base",
-    "arbitrum_one",
     "rise_mainnet"
   ],
   "addresses": [
@@ -362,7 +359,7 @@
     ]
   },
   "triggers": [
-    "rise_access_manager_slack"
+    "rise_access_manager_rise_slack"
   ],
   "trigger_conditions": []
 }

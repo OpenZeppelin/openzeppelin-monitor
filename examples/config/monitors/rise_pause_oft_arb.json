@@ -1,9 +1,7 @@
 {
-  "name": "RISE LockReleaseOFT Pause",
+  "name": "RISE LockReleaseOFT Pause (Arbitrum)",
   "paused": false,
   "networks": [
-    "ethereum_mainnet",
-    "base",
     "arbitrum_one"
   ],
   "addresses": [
@@ -90,7 +88,7 @@
     ]
   },
   "triggers": [
-    "rise_pause_slack"
+    "rise_pause_arb_slack"
   ],
   "trigger_conditions": []
 }

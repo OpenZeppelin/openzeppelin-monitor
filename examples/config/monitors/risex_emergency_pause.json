@@ -196,7 +196,7 @@
     ]
   },
   "triggers": [
-    "risex_emergency_pause_slack"
+    "risex_emergency_pause_rise_slack"
   ],
   "trigger_conditions": []
 }

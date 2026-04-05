@@ -1,9 +1,7 @@
 {
-  "name": "RISE Bridge Deposit",
+  "name": "RISE Bridge Deposit (Arbitrum)",
   "paused": false,
   "networks": [
-    "ethereum_mainnet",
-    "base",
     "arbitrum_one"
   ],
   "addresses": [
@@ -72,7 +70,7 @@
     ]
   },
   "triggers": [
-    "rise_bridge_deposit_slack"
+    "rise_bridge_deposit_arb_slack"
   ],
   "trigger_conditions": []
 }

@@ -1,12 +1,12 @@
 {
-  "name": "RISE Bridge Pause Alert (GlobalWithdraw)",
+  "name": "RISE LockReleaseOFT Pause (Ethereum)",
   "paused": false,
   "networks": [
-    "rise_mainnet"
+    "ethereum_mainnet"
   ],
   "addresses": [
     {
-      "address": "0xE5E6268977575ccFcB50055c17a4563b8b0Ce24E",
+      "address": "0xf43a70B250a86003a952af7A7986CcC243B89D81",
       "contract_spec": [
         {
           "anonymous": false,
@@ -33,31 +33,36 @@
           ],
           "name": "Unpaused",
           "type": "event"
-        },
+        }
+      ]
+    },
+    {
+      "address": "0x82675d0553D802039e6776C006BEb1b820a69d55",
+      "contract_spec": [
         {
           "anonymous": false,
           "inputs": [
             {
-              "indexed": true,
-              "internalType": "uint32",
-              "name": "dstEid",
-              "type": "uint32"
+              "indexed": false,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
             }
           ],
-          "name": "LanePaused",
+          "name": "Paused",
           "type": "event"
         },
         {
           "anonymous": false,
           "inputs": [
             {
-              "indexed": true,
-              "internalType": "uint32",
-              "name": "dstEid",
-              "type": "uint32"
+              "indexed": false,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
             }
           ],
-          "name": "LaneUnpaused",
+          "name": "Unpaused",
           "type": "event"
         }
       ]
@@ -73,14 +78,6 @@
       {
         "signature": "Unpaused(address)",
         "expression": null
-      },
-      {
-        "signature": "LanePaused(uint32)",
-        "expression": null
-      },
-      {
-        "signature": "LaneUnpaused(uint32)",
-        "expression": null
       }
     ],
     "transactions": [
@@ -91,7 +88,7 @@
     ]
   },
   "triggers": [
-    "rise_pause_rise_slack"
+    "rise_pause_eth_slack"
   ],
   "trigger_conditions": []
 }

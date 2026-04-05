@@ -1,10 +1,8 @@
 {
-  "name": "RISE Bridge GlobalDeposit Pause",
+  "name": "RISE Bridge GlobalDeposit Pause (Base)",
   "paused": false,
   "networks": [
-    "ethereum_mainnet",
-    "base",
-    "arbitrum_one"
+    "base"
   ],
   "addresses": [
     {
@@ -59,7 +57,7 @@
     ]
   },
   "triggers": [
-    "rise_pause_slack"
+    "rise_pause_base_slack"
   ],
   "trigger_conditions": []
 }

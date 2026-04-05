@@ -1,8 +1,8 @@
 {
-  "name": "RISE Bridge Pause Alert (GlobalWithdraw)",
+  "name": "RISE Bridge GlobalDeposit Pause (Arbitrum)",
   "paused": false,
   "networks": [
-    "rise_mainnet"
+    "arbitrum_one"
   ],
   "addresses": [
     {
@@ -33,32 +33,6 @@
           ],
           "name": "Unpaused",
           "type": "event"
-        },
-        {
-          "anonymous": false,
-          "inputs": [
-            {
-              "indexed": true,
-              "internalType": "uint32",
-              "name": "dstEid",
-              "type": "uint32"
-            }
-          ],
-          "name": "LanePaused",
-          "type": "event"
-        },
-        {
-          "anonymous": false,
-          "inputs": [
-            {
-              "indexed": true,
-              "internalType": "uint32",
-              "name": "dstEid",
-              "type": "uint32"
-            }
-          ],
-          "name": "LaneUnpaused",
-          "type": "event"
         }
       ]
     }
@@ -73,14 +47,6 @@
       {
         "signature": "Unpaused(address)",
         "expression": null
-      },
-      {
-        "signature": "LanePaused(uint32)",
-        "expression": null
-      },
-      {
-        "signature": "LaneUnpaused(uint32)",
-        "expression": null
       }
     ],
     "transactions": [
@@ -91,7 +57,7 @@
     ]
   },
   "triggers": [
-    "rise_pause_rise_slack"
+    "rise_pause_arb_slack"
   ],
   "trigger_conditions": []
 }

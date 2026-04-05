@@ -1,8 +1,8 @@
 {
-  "name": "RISE Bridge Withdrawal",
+  "name": "RISE Bridge Deposit (Base)",
   "paused": false,
   "networks": [
-    "rise_mainnet"
+    "base"
   ],
   "addresses": [
     {
@@ -25,15 +25,15 @@
             },
             {
               "indexed": true,
-              "internalType": "uint32",
-              "name": "dstEid",
-              "type": "uint32"
-            },
-            {
-              "indexed": false,
               "internalType": "address",
               "name": "token",
               "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint16",
+              "name": "dappId",
+              "type": "uint16"
             },
             {
               "indexed": false,
@@ -48,7 +48,7 @@
               "type": "uint256"
             }
           ],
-          "name": "WithdrawalProcessed",
+          "name": "DepositProcessed",
           "type": "event"
         }
       ]
@@ -58,7 +58,7 @@
     "functions": [],
     "events": [
       {
-        "signature": "WithdrawalProcessed(address,address,uint32,address,uint256,uint256)",
+        "signature": "DepositProcessed(address,address,address,uint16,uint256,uint256)",
         "expression": null
       }
     ],
@@ -70,7 +70,7 @@
     ]
   },
   "triggers": [
-    "rise_bridge_withdrawal_rise_slack"
+    "rise_bridge_deposit_base_slack"
   ],
   "trigger_conditions": []
 }

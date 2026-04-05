@@ -43,7 +43,7 @@
     ]
   },
   "triggers": [
-    "rise_pause_slack"
+    "rise_pause_rise_slack"
   ],
   "trigger_conditions": []
 }

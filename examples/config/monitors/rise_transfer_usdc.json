@@ -52,7 +52,7 @@
     ]
   },
   "triggers": [
-    "rise_usdc_transfer_slack"
+    "rise_usdc_transfer_rise_slack"
   ],
   "trigger_conditions": []
 }
