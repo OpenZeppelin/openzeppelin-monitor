@@ -59,7 +59,7 @@
     "events": [
       {
         "signature": "DepositProcessed(address,address,address,uint16,uint256,uint256)",
-        "expression": null
+        "expression": "amount > 10000000000"
       }
     ],
     "transactions": [

@@ -59,7 +59,7 @@
     "events": [
       {
         "signature": "WithdrawalProcessed(address,address,uint32,address,uint256,uint256)",
-        "expression": null
+        "expression": "amount > 10000000000"
       }
     ],
     "transactions": [

@@ -41,7 +41,7 @@
     "events": [
       {
         "signature": "Transfer(address,address,uint256)",
-        "expression": null
+        "expression": "value > 10000000000"
       }
     ],
     "transactions": [
