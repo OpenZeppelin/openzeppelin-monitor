@@ -1,0 +1,49 @@
+{
+  "name": "RISE USDC Pause Alert",
+  "paused": false,
+  "networks": [
+    "rise_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "0xe436820ba0C69702c1d3E601d421c0eF38262739",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [],
+          "name": "Pause",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [],
+          "name": "Unpause",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Pause()",
+        "expression": null
+      },
+      {
+        "signature": "Unpause()",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "rise_pause_slack"
+  ],
+  "trigger_conditions": []
+}

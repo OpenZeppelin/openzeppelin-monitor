@@ -1,0 +1,78 @@
+{
+  "name": "RISE Bridge Deposit",
+  "paused": false,
+  "networks": [
+    "ethereum_mainnet",
+    "base",
+    "arbitrum_one"
+  ],
+  "addresses": [
+    {
+      "address": "0xE5E6268977575ccFcB50055c17a4563b8b0Ce24E",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "srcAddress",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "dstAddress",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "token",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint16",
+              "name": "dappId",
+              "type": "uint16"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "fee",
+              "type": "uint256"
+            }
+          ],
+          "name": "DepositProcessed",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "DepositProcessed(address,address,address,uint16,uint256,uint256)",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "rise_bridge_deposit_slack"
+  ],
+  "trigger_conditions": []
+}

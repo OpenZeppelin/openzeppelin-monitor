@@ -1,0 +1,202 @@
+{
+  "name": "RISEx Emergency Pause Alert",
+  "paused": false,
+  "networks": [
+    "rise_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "0x53f10fAcFC8965750494E6965F5d6dA39B41d852",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [],
+          "name": "Pause",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [],
+          "name": "Unpause",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "by",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "bytes4",
+              "name": "selector",
+              "type": "bytes4"
+            }
+          ],
+          "name": "PausedFunction",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "by",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "bytes4",
+              "name": "selector",
+              "type": "bytes4"
+            }
+          ],
+          "name": "UnpausedFunction",
+          "type": "event"
+        }
+      ]
+    },
+    {
+      "address": "0x2C03C7d7e2974C6599b6B108879109281ef3F818",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "by",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "bytes4",
+              "name": "selector",
+              "type": "bytes4"
+            }
+          ],
+          "name": "PausedFunction",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "by",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "bytes4",
+              "name": "selector",
+              "type": "bytes4"
+            }
+          ],
+          "name": "UnpausedFunction",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "triggeredBy",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "token",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "amountUSD",
+              "type": "uint256"
+            },
+            {
+              "indexed": true,
+              "internalType": "bytes32",
+              "name": "reason",
+              "type": "bytes32"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            }
+          ],
+          "name": "EmergencyTriggered",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "clearedBy",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "duration",
+              "type": "uint256"
+            }
+          ],
+          "name": "EmergencyCleared",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Pause()",
+        "expression": null
+      },
+      {
+        "signature": "Unpause()",
+        "expression": null
+      },
+      {
+        "signature": "PausedFunction(address,bytes4)",
+        "expression": null
+      },
+      {
+        "signature": "UnpausedFunction(address,bytes4)",
+        "expression": null
+      },
+      {
+        "signature": "EmergencyTriggered(address,address,uint256,bytes32,uint256)",
+        "expression": null
+      },
+      {
+        "signature": "EmergencyCleared(address,uint256)",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "risex_emergency_pause_slack"
+  ],
+  "trigger_conditions": []
+}

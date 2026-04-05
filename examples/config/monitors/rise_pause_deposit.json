@@ -1,0 +1,65 @@
+{
+  "name": "RISE Bridge GlobalDeposit Pause",
+  "paused": false,
+  "networks": [
+    "ethereum_mainnet",
+    "base",
+    "arbitrum_one"
+  ],
+  "addresses": [
+    {
+      "address": "0xE5E6268977575ccFcB50055c17a4563b8b0Ce24E",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
+            }
+          ],
+          "name": "Paused",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
+            }
+          ],
+          "name": "Unpaused",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "Paused(address)",
+        "expression": null
+      },
+      {
+        "signature": "Unpaused(address)",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "rise_pause_slack"
+  ],
+  "trigger_conditions": []
+}

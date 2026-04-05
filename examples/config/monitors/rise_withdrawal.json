@@ -1,0 +1,76 @@
+{
+  "name": "RISE Bridge Withdrawal",
+  "paused": false,
+  "networks": [
+    "rise_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "0x4752457f0bf4bba8a807602b772d6ec740853e90",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "srcAddress",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "dstAddress",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "uint32",
+              "name": "dstEid",
+              "type": "uint32"
+            },
+            {
+              "indexed": false,
+              "internalType": "address",
+              "name": "token",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "fee",
+              "type": "uint256"
+            }
+          ],
+          "name": "WithdrawalProcessed",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      {
+        "signature": "WithdrawalProcessed(address,address,uint32,address,uint256,uint256)",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "rise_bridge_withdrawal_slack"
+  ],
+  "trigger_conditions": []
+}

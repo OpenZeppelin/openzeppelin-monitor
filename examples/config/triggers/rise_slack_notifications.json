@@ -1,0 +1,86 @@
+{
+  "rise_usdc_transfer_slack": {
+    "name": "RISE USDC Transfer Slack Alert",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "environment",
+        "value": "SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": "${monitor.name} triggered",
+        "body": "*USDC Transfer on RISE*\n*Amount:* ${events.0.args.value}\n*From:* <https://explorer.risechain.com/address/${events.0.args.from}|${events.0.args.from}>\n*To:* <https://explorer.risechain.com/address/${events.0.args.to}|${events.0.args.to}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>"
+      }
+    }
+  },
+  "rise_bridge_deposit_slack": {
+    "name": "RISE Bridge Deposit Slack Alert",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "environment",
+        "value": "SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": "${monitor.name} triggered",
+        "body": "*Bridge Deposit*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* ${events.0.args.srcAddress}\n*To:* ${events.0.args.dstAddress}\n*Token:* ${events.0.args.token}\n*Tx:* ${transaction.hash}\n\n${events}"
+      }
+    }
+  },
+  "rise_bridge_withdrawal_slack": {
+    "name": "RISE Bridge Withdrawal Slack Alert",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "environment",
+        "value": "SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": "${monitor.name} triggered",
+        "body": "*Bridge Withdrawal (RISE)*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* <https://explorer.risechain.com/address/${events.0.args.srcAddress}|${events.0.args.srcAddress}>\n*To:* ${events.0.args.dstAddress}\n*Token:* <https://explorer.risechain.com/address/${events.0.args.token}|${events.0.args.token}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>\n\n${events}"
+      }
+    }
+  },
+  "rise_pause_slack": {
+    "name": "RISE Pause Alert",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "environment",
+        "value": "SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": ":rotating_light: ${monitor.name}",
+        "body": "*Pause/Unpause Event*\n*Contract:* ${transaction.to}\n*Triggered by:* ${transaction.from}\n*Tx:* ${transaction.hash}\n\n${events}"
+      }
+    }
+  },
+  "rise_access_manager_slack": {
+    "name": "RISE Bridge AccessManager Alert",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "environment",
+        "value": "SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": ":lock: ${monitor.name}",
+        "body": "*AccessManager Action*\n*Contract:* ${transaction.to}\n*Called by:* ${transaction.from}\n*Tx:* ${transaction.hash}\n\n${events}"
+      }
+    }
+  },
+  "risex_emergency_pause_slack": {
+    "name": "RISEx Emergency Pause Alert",
+    "trigger_type": "slack",
+    "config": {
+      "slack_url": {
+        "type": "environment",
+        "value": "SLACK_WEBHOOK_URL"
+      },
+      "message": {
+        "title": ":rotating_light: ${monitor.name}",
+        "body": "*RISEx Emergency Event*\n*Contract:* <https://explorer.risechain.com/address/${transaction.to}|${transaction.to}>\n*Triggered by:* <https://explorer.risechain.com/address/${transaction.from}|${transaction.from}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>\n\n${events}"
+      }
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "name": "RISE USDC Transfer",
+  "paused": false,
+  "networks": [
+    "rise_mainnet"
+  ],
+  "addresses": [
+    {
+      "address": "0xe436820ba0C69702c1d3E601d421c0eF38262739",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+            }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "value",
+              "type": "uint256"
+            }
+          ],
+          "name": "transfer",
+          "outputs": [
+            {
+              "internalType": "bool",
+              "name": "",
+              "type": "bool"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      {
+        "signature": "transfer(address,uint256)",
+        "expression": null
+      }
+    ],
+    "events": [
+      {
+        "signature": "Transfer(address,address,uint256)",
+        "expression": null
+      }
+    ],
+    "transactions": [
+      {
+        "status": "Success",
+        "expression": null
+      }
+    ]
+  },
+  "triggers": [
+    "rise_usdc_transfer_slack"
+  ],
+  "trigger_conditions": []
+}
