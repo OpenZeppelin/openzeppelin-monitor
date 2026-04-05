@@ -15,6 +15,6 @@
   "chain_id": 4153,
   "block_time_ms": 1000,
   "confirmation_blocks": 12,
-  "cron_schedule": "0 */1 * * * *",
+  "cron_schedule": "*/1 * * * * *",
   "store_blocks": false
 }

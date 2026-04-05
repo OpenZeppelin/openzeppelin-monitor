@@ -27,7 +27,7 @@ services:
       - no-new-privileges
     volumes:
       - ./config:/app/config/:ro
-      - ${MONITOR_DATA_DIR:-/dev/null}:/app/data
+      - ${MONITOR_DATA_DIR:-./data}:/app/data
       - ${LOG_DATA_DIR:-./logs}:/app/logs
     networks:
       - monitor-network
