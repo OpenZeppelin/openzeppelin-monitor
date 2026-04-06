@@ -47,7 +47,7 @@
   "chain_id": 42161,
   "block_time_ms": 250,
   "confirmation_blocks": 1,
-  "cron_schedule": "*/1 * * * * *",
+  "cron_schedule": "*/5 * * * * *",
   "store_blocks": false,
   "max_past_blocks": 50
 }
