@@ -46,8 +46,16 @@
   ],
   "chain_id": 8453,
   "block_time_ms": 2000,
-  "confirmation_blocks": 1,
-  "cron_schedule": "*/1 * * * * *",
+  "confirmation_blocks": 3,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 100,
   "store_blocks": false,
-  "max_past_blocks": 500
+  "recovery_config": {
+    "enabled": true,
+    "cron_schedule": "0 */5 * * * *",
+    "max_blocks_per_run": 50,
+    "max_block_age": 2000,
+    "max_retries": 3,
+    "retry_delay_ms": 1000
+  }
 }

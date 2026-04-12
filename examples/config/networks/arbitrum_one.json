@@ -46,8 +46,16 @@
   ],
   "chain_id": 42161,
   "block_time_ms": 250,
-  "confirmation_blocks": 1,
-  "cron_schedule": "*/5 * * * * *",
+  "confirmation_blocks": 12,
+  "cron_schedule": "0 */1 * * * *",
+  "max_past_blocks": 750,
   "store_blocks": false,
-  "max_past_blocks": 50
+  "recovery_config": {
+    "enabled": true,
+    "cron_schedule": "0 */5 * * * *",
+    "max_blocks_per_run": 100,
+    "max_block_age": 5000,
+    "max_retries": 3,
+    "retry_delay_ms": 1000
+  }
 }

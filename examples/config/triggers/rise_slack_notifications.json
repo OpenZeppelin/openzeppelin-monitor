@@ -107,7 +107,7 @@
       },
       "message": {
         "title": "${monitor.name} triggered",
-        "body": "*Bridge Withdrawal (RISE)*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* <https://explorer.risechain.com/address/${events.0.args.srcAddress}|${events.0.args.srcAddress}>\n*To:* ${events.0.args.dstAddress}\n*Token:* ${events.0.args.token}\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>|<https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>>"
+        "body": "*Bridge Withdrawal (RISE)*\n*Amount:* ${events.0.args.amount}\n*Fee:* ${events.0.args.fee}\n*From:* <https://explorer.risechain.com/address/${events.0.args.srcAddress}|${events.0.args.srcAddress}>\n*To:* <https://explorer.risechain.com/address/${events.0.args.dstAddress}|${events.0.args.dstAddress}>\n*Token:* <https://explorer.risechain.com/address/${events.0.args.token}|${events.0.args.token}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>"
       }
     }
   },
@@ -177,7 +177,7 @@
       },
       "message": {
         "title": "${monitor.name} triggered",
-        "body": "*USDC Transfer on RISE*\n*Amount:* ${events.0.args.value}\n*From:* <https://explorer.risechain.com/address/${events.0.args.from}|${events.0.args.from}>\n*To:* ${events.0.args.to}\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>|<https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>>"
+        "body": "*USDC Transfer on RISE*\n*Amount:* ${events.0.args.value}\n*From:* <https://explorer.risechain.com/address/${events.0.args.from}|${events.0.args.from}>\n*To:* <https://explorer.risechain.com/address/${events.0.args.to}|${events.0.args.to}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>"
       }
     }
   },
@@ -191,7 +191,7 @@
       },
       "message": {
         "title": ":rotating_light: ${monitor.name}",
-        "body": "*RISEx Emergency Event*\n*Contract:* <https://explorer.risechain.com/address/${transaction.to}|${transaction.to}>|<https://explorer.risechain.com/address/${transaction.to}|${transaction.to}>>\n*Triggered by:* <https://explorer.risechain.com/address/${transaction.from}|${transaction.from}>|<https://explorer.risechain.com/address/${transaction.from}|${transaction.from}>>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>|<https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>>\n\n${events}"
+        "body": "*RISEx Emergency Event*\n*Contract:* <https://explorer.risechain.com/address/${transaction.to}|${transaction.to}>\n*Triggered by:* <https://explorer.risechain.com/address/${transaction.from}|${transaction.from}>\n*Tx:* <https://explorer.risechain.com/tx/${transaction.hash}|${transaction.hash}>\n\n${events}"
       }
     }
   }
