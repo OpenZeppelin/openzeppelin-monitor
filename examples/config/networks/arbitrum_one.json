@@ -19,7 +19,7 @@
   "max_past_blocks": 750,
   "store_blocks": false,
   "recovery_config": {
-    "enabled": true,
+    "enabled": false,
     "cron_schedule": "0 */5 * * * *",
     "max_blocks_per_run": 100,
     "max_block_age": 5000,
