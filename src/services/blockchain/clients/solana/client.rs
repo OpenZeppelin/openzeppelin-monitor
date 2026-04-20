@@ -333,59 +333,7 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 								.get("instructions")
 								.and_then(|instrs| instrs.as_array())
 								.map(|instrs| {
-									instrs
-										.iter()
-										.map(|ix| {
-											let program_id_index = ix
-												.get("programIdIndex")
-												.and_then(|idx| idx.as_u64())
-												.unwrap_or(0) as u8;
-											let accounts: Vec<u8> = ix
-												.get("accounts")
-												.and_then(|a| a.as_array())
-												.map(|a| {
-													a.iter()
-														.filter_map(|v| v.as_u64().map(|i| i as u8))
-														.collect()
-												})
-												.unwrap_or_default();
-											let data = ix
-												.get("data")
-												.and_then(|d| d.as_str())
-												.unwrap_or_default()
-												.to_string();
-											let parsed = ix.get("parsed").map(|p| {
-												let instruction_type = p
-													.get("type")
-													.and_then(|t| t.as_str())
-													.unwrap_or_default();
-												let info = p
-													.get("info")
-													.cloned()
-													.unwrap_or(serde_json::Value::Null);
-												crate::models::SolanaParsedInstruction {
-													instruction_type: instruction_type.to_string(),
-													info,
-												}
-											});
-											let program = ix
-												.get("program")
-												.and_then(|p| p.as_str())
-												.map(|s| s.to_string());
-											let program_id = ix
-												.get("programId")
-												.and_then(|p| p.as_str())
-												.map(|s| s.to_string());
-											SolanaInstruction {
-												program_id_index,
-												accounts,
-												data,
-												parsed,
-												program,
-												program_id,
-											}
-										})
-										.collect()
+									instrs.iter().map(Self::parse_single_instruction).collect()
 								})
 								.unwrap_or_default();
 							Some(crate::models::SolanaInnerInstruction {
@@ -433,64 +381,65 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 			_ => return Ok(Vec::new()),
 		};
 
-		let mut instructions = Vec::with_capacity(raw_instructions.len());
+		Ok(raw_instructions
+			.iter()
+			.map(Self::parse_single_instruction)
+			.collect())
+	}
 
-		for raw_instr in raw_instructions {
-			// Get program ID index
-			let program_id_index = raw_instr
-				.get("programIdIndex")
-				.and_then(|idx| idx.as_u64())
-				.unwrap_or(0) as u8;
+	/// Parses a single instruction JSON value into a `SolanaInstruction`.
+	///
+	/// Shared by top-level and inner-instruction parsing so field extraction
+	/// stays consistent across both code paths.
+	fn parse_single_instruction(raw_instr: &serde_json::Value) -> SolanaInstruction {
+		let program_id_index = raw_instr
+			.get("programIdIndex")
+			.and_then(|idx| idx.as_u64())
+			.unwrap_or(0) as u8;
 
-			// Get account indices
-			let accounts: Vec<u8> = raw_instr
-				.get("accounts")
-				.and_then(|accs| accs.as_array())
-				.map(|accs| {
-					accs.iter()
-						.filter_map(|idx| idx.as_u64().map(|i| i as u8))
-						.collect()
-				})
-				.unwrap_or_default();
+		let accounts: Vec<u8> = raw_instr
+			.get("accounts")
+			.and_then(|accs| accs.as_array())
+			.map(|accs| {
+				accs.iter()
+					.filter_map(|idx| idx.as_u64().map(|i| i as u8))
+					.collect()
+			})
+			.unwrap_or_default();
 
-			// Get data (base58 encoded)
-			let data = raw_instr
-				.get("data")
-				.and_then(|d| d.as_str())
-				.unwrap_or_default()
-				.to_string();
+		let data = raw_instr
+			.get("data")
+			.and_then(|d| d.as_str())
+			.unwrap_or_default()
+			.to_string();
 
-			// Check for parsed instruction
-			let parsed = raw_instr.get("parsed").map(|p| {
-				let instruction_type = p.get("type").and_then(|t| t.as_str()).unwrap_or_default();
-				let info = p.get("info").cloned().unwrap_or(serde_json::Value::Null);
-				crate::models::SolanaParsedInstruction {
-					instruction_type: instruction_type.to_string(),
-					info,
-				}
-			});
+		let parsed = raw_instr.get("parsed").map(|p| {
+			let instruction_type = p.get("type").and_then(|t| t.as_str()).unwrap_or_default();
+			let info = p.get("info").cloned().unwrap_or(serde_json::Value::Null);
+			crate::models::SolanaParsedInstruction {
+				instruction_type: instruction_type.to_string(),
+				info,
+			}
+		});
 
-			let program = raw_instr
-				.get("program")
-				.and_then(|p| p.as_str())
-				.map(|s| s.to_string());
+		let program = raw_instr
+			.get("program")
+			.and_then(|p| p.as_str())
+			.map(|s| s.to_string());
 
-			let program_id = raw_instr
-				.get("programId")
-				.and_then(|p| p.as_str())
-				.map(|s| s.to_string());
+		let program_id = raw_instr
+			.get("programId")
+			.and_then(|p| p.as_str())
+			.map(|s| s.to_string());
 
-			instructions.push(SolanaInstruction {
-				program_id_index,
-				accounts,
-				data,
-				parsed,
-				program,
-				program_id,
-			});
+		SolanaInstruction {
+			program_id_index,
+			accounts,
+			data,
+			parsed,
+			program,
+			program_id,
 		}
-
-		Ok(instructions)
 	}
 }
 
