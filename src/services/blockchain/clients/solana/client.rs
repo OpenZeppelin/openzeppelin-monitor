@@ -322,6 +322,32 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				})
 				.unwrap_or_default();
 
+			let inner_instructions: Vec<crate::models::SolanaInnerInstruction> = m
+				.get("innerInstructions")
+				.and_then(|ii| ii.as_array())
+				.map(|arr| {
+					arr.iter()
+						.filter_map(|inner| {
+							let index = u8::try_from(inner.get("index")?.as_u64()?).ok()?;
+							let instructions: Vec<SolanaInstruction> = inner
+								.get("instructions")
+								.and_then(|instrs| instrs.as_array())
+								.map(|instrs| {
+									instrs
+										.iter()
+										.filter_map(Self::parse_single_instruction)
+										.collect()
+								})
+								.unwrap_or_default();
+							Some(crate::models::SolanaInnerInstruction {
+								index,
+								instructions,
+							})
+						})
+						.collect()
+				})
+				.unwrap_or_default();
+
 			SolanaTransactionMeta {
 				err,
 				fee,
@@ -329,7 +355,7 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				post_balances,
 				pre_token_balances: Vec::new(),
 				post_token_balances: Vec::new(),
-				inner_instructions: Vec::new(),
+				inner_instructions,
 				log_messages,
 				compute_units_consumed: m.get("computeUnitsConsumed").and_then(|c| c.as_u64()),
 				loaded_addresses: None,
@@ -358,64 +384,72 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 			_ => return Ok(Vec::new()),
 		};
 
-		let mut instructions = Vec::with_capacity(raw_instructions.len());
+		Ok(raw_instructions
+			.iter()
+			.filter_map(Self::parse_single_instruction)
+			.collect())
+	}
 
-		for raw_instr in raw_instructions {
-			// Get program ID index
-			let program_id_index = raw_instr
-				.get("programIdIndex")
-				.and_then(|idx| idx.as_u64())
-				.unwrap_or(0) as u8;
+	/// Parses a single instruction JSON value into a `SolanaInstruction`.
+	///
+	/// Shared by top-level and inner-instruction parsing so field extraction
+	/// stays consistent across both code paths.
+	///
+	/// Returns `None` when `programIdIndex` is present but exceeds `u8::MAX`,
+	/// since silently truncating would redirect the instruction to a
+	/// different account. A missing `programIdIndex` (as in the `jsonParsed`
+	/// encoding, where `programId` is the real identifier) defaults to 0.
+	/// Individual out-of-range `accounts` entries are dropped, consistent
+	/// with the existing handling of non-numeric entries.
+	fn parse_single_instruction(raw_instr: &serde_json::Value) -> Option<SolanaInstruction> {
+		let program_id_index = match raw_instr.get("programIdIndex").and_then(|idx| idx.as_u64()) {
+			Some(n) => u8::try_from(n).ok()?,
+			None => 0,
+		};
 
-			// Get account indices
-			let accounts: Vec<u8> = raw_instr
-				.get("accounts")
-				.and_then(|accs| accs.as_array())
-				.map(|accs| {
-					accs.iter()
-						.filter_map(|idx| idx.as_u64().map(|i| i as u8))
-						.collect()
-				})
-				.unwrap_or_default();
+		let accounts: Vec<u8> = raw_instr
+			.get("accounts")
+			.and_then(|accs| accs.as_array())
+			.map(|accs| {
+				accs.iter()
+					.filter_map(|idx| idx.as_u64().and_then(|i| u8::try_from(i).ok()))
+					.collect()
+			})
+			.unwrap_or_default();
 
-			// Get data (base58 encoded)
-			let data = raw_instr
-				.get("data")
-				.and_then(|d| d.as_str())
-				.unwrap_or_default()
-				.to_string();
+		let data = raw_instr
+			.get("data")
+			.and_then(|d| d.as_str())
+			.unwrap_or_default()
+			.to_string();
 
-			// Check for parsed instruction
-			let parsed = raw_instr.get("parsed").map(|p| {
-				let instruction_type = p.get("type").and_then(|t| t.as_str()).unwrap_or_default();
-				let info = p.get("info").cloned().unwrap_or(serde_json::Value::Null);
-				crate::models::SolanaParsedInstruction {
-					instruction_type: instruction_type.to_string(),
-					info,
-				}
-			});
+		let parsed = raw_instr.get("parsed").map(|p| {
+			let instruction_type = p.get("type").and_then(|t| t.as_str()).unwrap_or_default();
+			let info = p.get("info").cloned().unwrap_or(serde_json::Value::Null);
+			crate::models::SolanaParsedInstruction {
+				instruction_type: instruction_type.to_string(),
+				info,
+			}
+		});
 
-			let program = raw_instr
-				.get("program")
-				.and_then(|p| p.as_str())
-				.map(|s| s.to_string());
+		let program = raw_instr
+			.get("program")
+			.and_then(|p| p.as_str())
+			.map(|s| s.to_string());
 
-			let program_id = raw_instr
-				.get("programId")
-				.and_then(|p| p.as_str())
-				.map(|s| s.to_string());
+		let program_id = raw_instr
+			.get("programId")
+			.and_then(|p| p.as_str())
+			.map(|s| s.to_string());
 
-			instructions.push(SolanaInstruction {
-				program_id_index,
-				accounts,
-				data,
-				parsed,
-				program,
-				program_id,
-			});
-		}
-
-		Ok(instructions)
+		Some(SolanaInstruction {
+			program_id_index,
+			accounts,
+			data,
+			parsed,
+			program,
+			program_id,
+		})
 	}
 }
 
@@ -2010,6 +2044,402 @@ mod tests {
 			failed,
 			vec![150],
 			"The entire slot should be marked as failed"
+		);
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_with_inner"],
+				"message": {
+					"accountKeys": [
+						"FeePayer111111111111111111111111111111111111",
+						"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+						"BPFLoaderUpgradeab1e11111111111111111111111",
+						"KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+					],
+					"instructions": [{
+						"programIdIndex": 1,
+						"accounts": [0, 2, 3],
+						"data": "3Bxs4h24hBtQy9rw"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [1000000, 500000],
+				"postBalances": [995000, 500000],
+				"logMessages": [
+					"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf invoke [1]",
+					"Program BPFLoaderUpgradeab1e11111111111111111111111 invoke [2]",
+					"Upgraded program KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+					"Program BPFLoaderUpgradeab1e11111111111111111111111 success",
+					"Program SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf success"
+				],
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [{
+						"programIdIndex": 2,
+						"accounts": [3],
+						"data": ""
+					}]
+				}]
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		// Verify inner instructions were parsed
+		let meta = tx.meta.as_ref().unwrap();
+		assert_eq!(meta.inner_instructions.len(), 1);
+		assert_eq!(meta.inner_instructions[0].index, 0);
+		assert_eq!(meta.inner_instructions[0].instructions.len(), 1);
+		assert_eq!(
+			meta.inner_instructions[0].instructions[0].program_id_index,
+			2
+		);
+
+		// Verify program_ids() includes both top-level and inner instruction programs
+		let program_ids = tx.program_ids();
+		assert!(program_ids.contains(&"BPFLoaderUpgradeab1e11111111111111111111111".to_string()));
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_inner_instructions_parsed_format() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_parsed_inner"],
+				"message": {
+					"accountKeys": [
+						"FeePayer111111111111111111111111111111111111",
+						"SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
+					],
+					"instructions": [{
+						"programIdIndex": 1,
+						"accounts": [0],
+						"data": "abc"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": [],
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [{
+						"programIdIndex": 0,
+						"accounts": [],
+						"data": "xyz",
+						"program": "bpf-upgradeable-loader",
+						"programId": "BPFLoaderUpgradeab1e11111111111111111111111",
+						"parsed": {
+							"type": "upgrade",
+							"info": {
+								"programId": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+							}
+						}
+					}]
+				}]
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		let inner_ix = &tx.meta.as_ref().unwrap().inner_instructions[0].instructions[0];
+		assert_eq!(
+			inner_ix.program_id,
+			Some("BPFLoaderUpgradeab1e11111111111111111111111".to_string())
+		);
+		assert_eq!(inner_ix.program, Some("bpf-upgradeable-loader".to_string()));
+		assert!(inner_ix.parsed.is_some());
+		assert_eq!(
+			inner_ix.parsed.as_ref().unwrap().instruction_type,
+			"upgrade"
+		);
+	}
+
+	#[test]
+	fn test_parse_single_transaction_without_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_no_inner"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": []
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		// No innerInstructions field -> empty vec
+		assert!(tx.meta.as_ref().unwrap().inner_instructions.is_empty());
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_empty_inner_instructions() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_empty_inner"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": [],
+				"innerInstructions": []
+			}
+		});
+
+		let result = client.parse_single_transaction(100, &raw_tx);
+		assert!(result.is_ok());
+		let tx = result.unwrap().expect("should parse transaction");
+
+		assert!(tx.meta.as_ref().unwrap().inner_instructions.is_empty());
+	}
+
+	#[test]
+	fn test_parse_single_transaction_drops_instruction_with_oob_program_id_index() {
+		// A conforming RPC cannot return programIdIndex > 255 (Solana's wire
+		// format packs it as u8), but if one does, silently truncating with
+		// `as u8` would redirect the instruction to account 0 and could
+		// produce false monitor matches. The parser must drop it instead.
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_oob_pid"],
+				"message": {
+					"accountKeys": ["Account1", "Account2"],
+					"instructions": [
+						{ "programIdIndex": 1, "accounts": [0], "data": "ok" },
+						{ "programIdIndex": 300, "accounts": [0], "data": "bad" },
+						{ "programIdIndex": 0, "accounts": [1], "data": "ok2" }
+					],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 0,
+				"preBalances": [0, 0],
+				"postBalances": [0, 0],
+				"logMessages": []
+			}
+		});
+
+		let tx = client
+			.parse_single_transaction(1, &raw_tx)
+			.unwrap()
+			.expect("should parse transaction");
+
+		// Out-of-range instruction dropped; the two valid ones remain in order.
+		assert_eq!(tx.transaction.instructions.len(), 2);
+		assert_eq!(tx.transaction.instructions[0].data, "ok");
+		assert_eq!(tx.transaction.instructions[1].data, "ok2");
+	}
+
+	#[test]
+	fn test_parse_single_transaction_drops_oob_account_indices() {
+		// Individual out-of-range account indices should be dropped, matching
+		// the existing filter_map behavior for non-numeric entries. Other
+		// valid indices in the same instruction are preserved.
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_oob_acct"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [{
+						"programIdIndex": 0,
+						"accounts": [1, 500, 2, 9999, 3],
+						"data": "d"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 0,
+				"preBalances": [0],
+				"postBalances": [0],
+				"logMessages": []
+			}
+		});
+
+		let tx = client
+			.parse_single_transaction(1, &raw_tx)
+			.unwrap()
+			.expect("should parse transaction");
+
+		assert_eq!(tx.transaction.instructions.len(), 1);
+		assert_eq!(tx.transaction.instructions[0].accounts, vec![1u8, 2, 3]);
+	}
+
+	#[test]
+	fn test_parse_single_transaction_drops_inner_instruction_with_oob_program_id_index() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_inner_oob_pid"],
+				"message": {
+					"accountKeys": ["Account1", "Account2"],
+					"instructions": [{
+						"programIdIndex": 1, "accounts": [0], "data": "x"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 0,
+				"preBalances": [0, 0],
+				"postBalances": [0, 0],
+				"logMessages": [],
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [
+						{ "programIdIndex": 1, "accounts": [], "data": "a" },
+						{ "programIdIndex": 999, "accounts": [], "data": "b" },
+						{ "programIdIndex": 0, "accounts": [], "data": "c" }
+					]
+				}]
+			}
+		});
+
+		let tx = client
+			.parse_single_transaction(1, &raw_tx)
+			.unwrap()
+			.expect("should parse transaction");
+
+		let inner = &tx.meta.as_ref().unwrap().inner_instructions;
+		assert_eq!(inner.len(), 1);
+		assert_eq!(inner[0].instructions.len(), 2);
+		assert_eq!(inner[0].instructions[0].data, "a");
+		assert_eq!(inner[0].instructions[1].data, "c");
+	}
+
+	#[test]
+	fn test_parse_single_transaction_drops_inner_group_with_oob_index() {
+		// The `index` on an innerInstructions group must fit in u8 (it
+		// references an outer instruction, which is u8-indexed on the wire).
+		// An out-of-range group index drops the whole group.
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_inner_oob_group"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [{
+						"programIdIndex": 0, "accounts": [], "data": "x"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 0,
+				"preBalances": [0],
+				"postBalances": [0],
+				"logMessages": [],
+				"innerInstructions": [
+					{
+						"index": 0,
+						"instructions": [{
+							"programIdIndex": 0, "accounts": [], "data": "kept"
+						}]
+					},
+					{
+						"index": 300,
+						"instructions": [{
+							"programIdIndex": 0, "accounts": [], "data": "dropped"
+						}]
+					}
+				]
+			}
+		});
+
+		let tx = client
+			.parse_single_transaction(1, &raw_tx)
+			.unwrap()
+			.expect("should parse transaction");
+
+		let inner = &tx.meta.as_ref().unwrap().inner_instructions;
+		assert_eq!(inner.len(), 1);
+		assert_eq!(inner[0].index, 0);
+		assert_eq!(inner[0].instructions[0].data, "kept");
+	}
+
+	#[test]
+	fn test_parse_single_transaction_missing_program_id_index_defaults_to_zero() {
+		// The `jsonParsed` encoding omits `programIdIndex` — the real
+		// identifier lives in the `programId` string. Missing must still
+		// default to 0 (not be treated as an out-of-range drop).
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_parsed_no_pid"],
+				"message": {
+					"accountKeys": ["Account1"],
+					"instructions": [{
+						"accounts": [0],
+						"data": "d",
+						"program": "system",
+						"programId": "11111111111111111111111111111111"
+					}],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 0,
+				"preBalances": [0],
+				"postBalances": [0],
+				"logMessages": []
+			}
+		});
+
+		let tx = client
+			.parse_single_transaction(1, &raw_tx)
+			.unwrap()
+			.expect("should parse transaction");
+
+		assert_eq!(tx.transaction.instructions.len(), 1);
+		let ix = &tx.transaction.instructions[0];
+		assert_eq!(ix.program_id_index, 0);
+		assert_eq!(
+			ix.program_id,
+			Some("11111111111111111111111111111111".to_string())
 		);
 	}
 
