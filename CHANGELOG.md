@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.5.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.4.0...v1.5.0) (2026-04-23)
+
+
+### 🚀 Features
+
+* add local EVM testing environment with Foundry ([#435](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/435)) ([88725c9](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/88725c9a3d4d96c94a047bef0216752b12a36956))
+* Add more rotate on error codes ([#463](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/463)) ([d61cdc2](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/d61cdc20b649f55e4eb5596f0a48292bd1b91ff0))
+* **solana:** add account and fee payer filtering ([#431](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/431)) ([14ece18](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/14ece18ddbd552adb40528d336e8a216e837293a))
+* Support polkadot EVM clients ([#389](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/389)) ([e980a8b](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/e980a8b18aa729931bf2e81e7386cfc3586f191d))
+
+
+### 🐛 Bug Fixes
+
+* Fixed creation flow for the get_or_create_client ([aa5a650](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/aa5a6505000408069e03c330f2fe6adebd27a5b7))
+* Index-based arg matching in handle_match ([#465](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/465)) ([fbcf7fb](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/fbcf7fba9b2bb0ef731c1252e8476b4bcde5a00b))
+* Infinite loop ([#464](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/464)) ([fb1be50](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/fb1be50bc696cf4257fb4468f7c9169fbde8c95c))
+* **solana:** Include CPI program IDs in matching ([#469](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/469)) ([f64cdbc](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/f64cdbcead544cb539a405cba9b6aeac04c9e295))
+* Update changelog ([#388](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/388)) ([8e37542](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/8e375426126c1268c15a8332eabea87756bfcdf4))
+* Update rust docs workflow ([#420](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/420)) ([a878372](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/a878372e5f7d8b19529bf67ebed074fbed332932))
+
 ## [1.4.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.3.0...v1.4.0) (2026-03-04)
 
 ### 🐛 Bug Fixes
