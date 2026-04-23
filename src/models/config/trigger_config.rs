@@ -646,6 +646,8 @@ impl ConfigLoader for Trigger {
 						}
 					}
 				}
+				// Silence unused variable warning on non-Unix platforms
+				let _ = &script_path;
 			}
 			TriggerTypeConfig::Email { port, .. } => {
 				let secure_ports = [993, 587, 465];
@@ -709,7 +711,8 @@ mod tests {
 	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
 	use crate::utils::RetryConfig;
-	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
+	#[cfg(unix)]
+	use std::{io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
 	use tracing_test::traced_test;
 
@@ -1153,6 +1156,8 @@ mod tests {
 	#[tokio::test]
 	#[cfg(unix)] // This test is Unix-specific due to permission handling
 	async fn test_load_all_unreadable_file() {
+		use std::fs::File;
+
 		// Create a temporary directory for our test
 		let temp_dir = TempDir::new().unwrap();
 		let config_dir = temp_dir.path().join("triggers");

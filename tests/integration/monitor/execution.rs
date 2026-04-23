@@ -991,6 +991,7 @@ async fn test_execute_monitor_evm_with_trigger_scripts() {
 		language: ScriptLanguage::Python,
 		timeout_ms: 10000,
 		arguments: None,
+		runtime_flags: None,
 	}];
 	mocked_monitors.insert("monitor".to_string(), test_data.monitor.clone());
 	let mock_monitor_service = setup_monitor_service(mocked_monitors);

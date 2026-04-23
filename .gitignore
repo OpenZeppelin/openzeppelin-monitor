@@ -53,3 +53,4 @@ node_modules
 
 # Ignore logs dir
 logs/
+*.cpuprofile

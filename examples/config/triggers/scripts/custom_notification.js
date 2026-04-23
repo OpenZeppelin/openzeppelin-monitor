@@ -5,6 +5,7 @@
  * Input: JSON object containing:
  *   - monitor_match: The monitor match data with transaction details
  *   - args: Additional arguments passed to the script (optional)
+ *   - runtime_flags: Runtime flags passed to underlying JS runtime (node, bun etc.) (optional)
  *
  * Note: Only stderr output is monitored. If the script returns a non-zero exit code, the error will be logged.
  */
@@ -24,6 +25,11 @@ try {
         // Log args if they exist
         if (args && args.length > 0) {
             console.log(`Args: ${JSON.stringify(args)}`);
+        }
+
+        // Log runtime_flags if they exist
+        if (process.execArgv && process.execArgv.length > 0) {
+            console.log(`Runtime Flags: ${JSON.stringify(process.execArgv)}`);
         }
 
         // Validate monitor match data
