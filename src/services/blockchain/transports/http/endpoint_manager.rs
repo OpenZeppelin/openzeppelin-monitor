@@ -278,6 +278,10 @@ impl EndpointManager {
 			crate::utils::metrics::record_rpc_request(&self.network_slug, method);
 
 			let current_url_snapshot = self.active_url.read().await.clone();
+			let current_host_snapshot = Url::parse(&current_url_snapshot)
+				.ok()
+				.and_then(|u| u.host_str().map(|s| s.to_string()))
+				.unwrap_or_else(|| "unknown-host".into());
 
 			tracing::debug!(
 				"Attempting request on active URL: '{}'",
@@ -350,7 +354,7 @@ impl EndpointManager {
 
 								tracing::warn!(
 									"JSON-RPC error from {}: code {} - {}",
-									current_url_snapshot,
+									current_host_snapshot,
 									code,
 									message,
 								);
@@ -384,7 +388,7 @@ impl EndpointManager {
 
 								tracing::warn!(
 									"Malformed JSON-RPC envelope from {} (neither 'result' nor 'error' field)",
-									current_url_snapshot,
+									current_host_snapshot,
 								);
 
 								crate::utils::metrics::record_endpoint_rotation(
@@ -420,7 +424,7 @@ impl EndpointManager {
 
 						tracing::warn!(
 							"Request to {} failed with status {}: {}",
-							current_url_snapshot,
+							current_host_snapshot,
 							status,
 							error_body
 						);
@@ -477,7 +481,7 @@ impl EndpointManager {
 							tracing::warn!(
 								"HTTP error status {} on {} does not trigger rotation. Failing.",
 								status,
-								current_url_snapshot
+								current_host_snapshot
 							);
 							return Err(TransportError::http(
 								status,
@@ -496,7 +500,7 @@ impl EndpointManager {
 
 					tracing::warn!(
 						"Network error for {}: {}",
-						current_url_snapshot,
+						current_host_snapshot,
 						network_error,
 					);
 
