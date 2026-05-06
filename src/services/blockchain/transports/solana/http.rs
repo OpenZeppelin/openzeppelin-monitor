@@ -164,6 +164,15 @@ impl Commitment {
 	}
 }
 
+/// JSON-RPC error codes that represent legitimate Solana chain state (not endpoint
+/// failure). The HTTP endpoint manager passes responses through instead of rotating.
+/// Mirrors `clients::solana::error::is_slot_unavailable_error`.
+const SOLANA_NON_ROTATING_JSONRPC_CODES: &[i64] = &[
+	-32004, // BLOCK_NOT_AVAILABLE
+	-32007, // SLOT_SKIPPED
+	-32009, // LONG_TERM_STORAGE_SLOT_SKIPPED
+];
+
 /// A client for interacting with Solana blockchain nodes
 ///
 /// This implementation wraps the HttpTransportClient to provide consistent
@@ -188,7 +197,12 @@ impl SolanaTransportClient {
 		// Use getHealth as the test connection method - it's lightweight and indicates node health
 		let test_connection_payload =
 			Some(r#"{"id":1,"jsonrpc":"2.0","method":"getHealth"}"#.to_string());
-		let http_client = HttpTransportClient::new(network, test_connection_payload).await?;
+		let http_client = HttpTransportClient::new(
+			network,
+			test_connection_payload,
+			SOLANA_NON_ROTATING_JSONRPC_CODES,
+		)
+		.await?;
 		Ok(Self { http_client })
 	}
 
@@ -204,7 +218,9 @@ impl SolanaTransportClient {
 		network: &Network,
 		test_payload: Option<String>,
 	) -> Result<Self, anyhow::Error> {
-		let http_client = HttpTransportClient::new(network, test_payload).await?;
+		let http_client =
+			HttpTransportClient::new(network, test_payload, SOLANA_NON_ROTATING_JSONRPC_CODES)
+				.await?;
 		Ok(Self { http_client })
 	}
 

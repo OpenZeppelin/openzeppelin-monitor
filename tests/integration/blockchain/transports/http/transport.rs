@@ -17,7 +17,7 @@ async fn test_client_creation() {
 	let mock = create_http_valid_server_mock_network_response(&mut server);
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
 
-	match HttpTransportClient::new(&network, None).await {
+	match HttpTransportClient::new(&network, None, &[]).await {
 		Ok(transport) => {
 			let active_url = transport.get_current_url().await;
 			assert_eq!(active_url, server.url());
@@ -28,7 +28,7 @@ async fn test_client_creation() {
 
 	let network = create_evm_test_network_with_urls(vec!["invalid-url"]);
 
-	match HttpTransportClient::new(&network, None).await {
+	match HttpTransportClient::new(&network, None, &[]).await {
 		Err(error) => {
 			assert!(error.to_string().contains("All RPC URLs failed to connect"))
 		}
@@ -53,7 +53,7 @@ async fn test_client_creation_with_test_connection_payload() {
 	const TEST_CONNECTION_PAYLOAD: &str =
 		r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#;
 
-	match HttpTransportClient::new(&network, Some(TEST_CONNECTION_PAYLOAD.to_string())).await {
+	match HttpTransportClient::new(&network, Some(TEST_CONNECTION_PAYLOAD.to_string()), &[]).await {
 		Ok(transport) => {
 			let active_url = transport.get_current_url().await;
 			assert_eq!(active_url, server.url());
@@ -84,7 +84,7 @@ async fn test_client_creation_with_fallback() {
 
 	let network = create_evm_test_network_with_urls(vec![&server.url(), &server2.url()]);
 
-	match HttpTransportClient::new(&network, None).await {
+	match HttpTransportClient::new(&network, None, &[]).await {
 		Ok(transport) => {
 			let active_url = transport.get_current_url().await;
 			assert_eq!(active_url, server2.url());
@@ -103,7 +103,7 @@ async fn test_client_update_client() {
 	let mock1 = create_http_valid_server_mock_network_response(&mut server);
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let client = HttpTransportClient::new(&network, None).await.unwrap();
+	let client = HttpTransportClient::new(&network, None, &[]).await.unwrap();
 
 	// Test successful update
 	let result = client.update_client(&server2.url()).await;
@@ -127,7 +127,7 @@ async fn test_client_try_connect() {
 	let mock2 = create_http_valid_server_mock_network_response(&mut server2);
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let client = HttpTransportClient::new(&network, None).await.unwrap();
+	let client = HttpTransportClient::new(&network, None, &[]).await.unwrap();
 
 	let result = client.try_connect(&server2.url()).await;
 	assert!(result.is_ok(), "Try connect should succeed");
@@ -164,7 +164,7 @@ async fn test_client_try_connect_with_test_connection_payload() {
 	const TEST_CONNECTION_PAYLOAD: &str =
 		r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#;
 
-	let client = HttpTransportClient::new(&network, Some(TEST_CONNECTION_PAYLOAD.to_string()))
+	let client = HttpTransportClient::new(&network, Some(TEST_CONNECTION_PAYLOAD.to_string()), &[])
 		.await
 		.unwrap();
 
@@ -191,7 +191,7 @@ async fn test_send_raw_request() {
 		.create();
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let client = HttpTransportClient::new(&network, None).await.unwrap();
+	let client = HttpTransportClient::new(&network, None, &[]).await.unwrap();
 
 	// Test with params
 	let params = json!({"key": "value"});
@@ -238,7 +238,7 @@ async fn test_update_endpoint_manager_client() {
 		.await;
 
 	let network = create_evm_test_network_with_urls(vec![&server.url()]);
-	let mut client = HttpTransportClient::new(&network, None).await.unwrap();
+	let mut client = HttpTransportClient::new(&network, None, &[]).await.unwrap();
 
 	// Test initial client
 	let result = client

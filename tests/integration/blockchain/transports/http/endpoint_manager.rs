@@ -36,6 +36,7 @@ async fn test_endpoint_rotation() {
 		server1.url().as_ref(),
 		vec![server2.url(), server3.url()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -72,6 +73,7 @@ async fn test_send_raw_request() {
 		server.url().as_ref(),
 		vec![],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -112,6 +114,7 @@ async fn test_rotation_on_error() {
 		primary_server.url().as_ref(),
 		vec![fallback_server.url()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -145,6 +148,7 @@ async fn test_no_fallback_urls_available() {
 		server.url().as_ref(),
 		vec![],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -215,6 +219,7 @@ async fn test_rotate_url_no_fallbacks() {
 		server.url().as_ref(),
 		vec![],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -246,6 +251,7 @@ async fn test_rotate_url_all_urls_match_active() {
 		active_url.as_ref(),
 		vec![active_url.clone(), active_url.clone()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -284,6 +290,7 @@ async fn test_rotate_url_connection_failure() {
 		server.url().as_ref(),
 		vec![invalid_url.to_string()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -321,6 +328,7 @@ async fn test_rotate_url_update_client_failure() {
 		server1.url().as_ref(),
 		vec![server2.url()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = AlwaysFailsToUpdateClientTransport {
 		current_url: Arc::new(RwLock::new(server1.url())),
@@ -351,6 +359,7 @@ async fn test_rotate_url_all_urls_fail_returns_url_rotation_error() {
 		invalid_url1,
 		vec![invalid_url2.to_string()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -382,6 +391,7 @@ async fn test_update_client() {
 		server.url().as_ref(),
 		vec![],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 
 	// Test initial client
@@ -441,6 +451,7 @@ async fn test_send_raw_request_network_error() {
 		invalid_url,
 		vec![valid_server.url()], // Add valid fallback URL
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -468,6 +479,7 @@ async fn test_send_raw_request_network_error_no_fallback() {
 		invalid_url,
 		vec![], // No fallback URLs
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -502,6 +514,7 @@ async fn test_send_raw_request_response_parse_error() {
 		server.url().as_ref(),
 		vec![],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -530,6 +543,7 @@ async fn test_send_raw_request_all_urls_fail_returns_network_error() {
 		invalid_url1,
 		vec![invalid_url2.to_string(), invalid_url3.to_string()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -545,11 +559,11 @@ async fn test_send_raw_request_all_urls_fail_returns_network_error() {
 async fn test_send_raw_request_returns_http_error_if_non_transient() {
 	let mut server = Server::new_async().await;
 
-	// Mock a non-transient HTTP error (e.g., 400 Bad Request)
+	// Mock a non-transient HTTP error (e.g., 404 Not Found)
 	let mock = server
 		.mock("POST", "/")
-		.with_status(400)
-		.with_body("Bad Request")
+		.with_status(404)
+		.with_body("Not Found")
 		.expect(1)
 		.create_async()
 		.await;
@@ -559,6 +573,7 @@ async fn test_send_raw_request_returns_http_error_if_non_transient() {
 		server.url().as_ref(),
 		vec![],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -574,11 +589,11 @@ async fn test_send_raw_request_returns_http_error_if_non_transient() {
 			body,
 			..
 		} => {
-			assert_eq!(status_code, 400);
+			assert_eq!(status_code, 404);
 			assert_eq!(url, server.url());
-			assert_eq!(body, "Bad Request");
+			assert_eq!(body, "Not Found");
 		}
-		_ => panic!("Expected Http error with status code 400"),
+		_ => panic!("Expected Http error with status code 404"),
 	}
 
 	mock.assert();
@@ -612,6 +627,7 @@ async fn test_rotation_on_5xx_error() {
 		primary_server.url().as_ref(),
 		vec![fallback_server.url()],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -656,6 +672,7 @@ async fn test_rotation_on_all_new_error_codes() {
 			primary_server.url().as_ref(),
 			vec![fallback_server.url()],
 			TEST_NETWORK_SLUG.to_string(),
+			&[],
 		);
 		let transport = MockTransport::new();
 
@@ -700,6 +717,7 @@ async fn test_no_fallback_urls_available_5xx() {
 		server.url().as_ref(),
 		vec![],
 		TEST_NETWORK_SLUG.to_string(),
+		&[],
 	);
 	let transport = MockTransport::new();
 
@@ -747,6 +765,7 @@ async fn test_non_rotation_error_codes_do_not_rotate() {
 			primary_server.url().as_ref(),
 			vec![fallback_server.url()],
 			TEST_NETWORK_SLUG.to_string(),
+			&[],
 		);
 		let transport = MockTransport::new();
 
@@ -777,4 +796,226 @@ async fn test_non_rotation_error_codes_do_not_rotate() {
 			status_code
 		);
 	}
+}
+
+// ============================================================
+// JSON-RPC envelope tests
+// ============================================================
+
+/// HTTP 200 with a JSON-RPC error envelope must trigger rotation to a fallback. Mirrors
+/// the upstream behavior where some providers (e.g. 1rpc.io) signal rate limiting via
+/// `{"error": {"code": 15, ...}}` instead of HTTP 429.
+#[tokio::test]
+async fn test_rotation_on_jsonrpc_error() {
+	let mut primary_server = Server::new_async().await;
+	let mut fallback_server = Server::new_async().await;
+
+	let primary_mock = primary_server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(
+			r#"{"id":1,"jsonrpc":"2.0","error":{"message":"Too many request, try again later","code":15}}"#,
+		)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let fallback_mock = fallback_server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		primary_server.url().as_ref(),
+		vec![fallback_server.url()],
+		TEST_NETWORK_SLUG.to_string(),
+		&[],
+	);
+	let transport = MockTransport::new();
+
+	let result = manager
+		.send_raw_request(&transport, "eth_blockNumber", None::<Value>)
+		.await
+		.unwrap();
+
+	assert_eq!(result["result"], "0x1");
+	primary_mock.assert();
+	fallback_mock.assert();
+
+	// Active URL should now be the fallback
+	assert_eq!(&*manager.active_url.read().await, &fallback_server.url());
+}
+
+/// When no fallback is available and the primary returns a JSON-RPC error envelope, we
+/// surface a `TransportError::RpcError` carrying the upstream code and message.
+#[tokio::test]
+async fn test_jsonrpc_error_no_fallback() {
+	let mut server = Server::new_async().await;
+
+	let mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(
+			r#"{"id":1,"jsonrpc":"2.0","error":{"message":"Too many request, try again later","code":15}}"#,
+		)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec![],
+		TEST_NETWORK_SLUG.to_string(),
+		&[],
+	);
+	let transport = MockTransport::new();
+
+	let err = manager
+		.send_raw_request(&transport, "eth_blockNumber", None::<Value>)
+		.await
+		.unwrap_err();
+
+	match err {
+		TransportError::RpcError {
+			code, message, url, ..
+		} => {
+			assert_eq!(code, 15);
+			assert_eq!(message, "Too many request, try again later");
+			assert_eq!(url, server.url());
+		}
+		other => panic!("Expected RpcError, got {:?}", other),
+	}
+	mock.assert();
+}
+
+/// JSON-RPC error codes in the per-transport skip-list (e.g. Solana's skipped-slot codes)
+/// must be passed through to the caller without rotating, so per-client handlers can
+/// distinguish "legitimate chain state" from "broken endpoint".
+#[tokio::test]
+async fn test_jsonrpc_passthrough_for_skip_listed_code() {
+	let mut server = Server::new_async().await;
+
+	let mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(
+			r#"{"id":1,"jsonrpc":"2.0","error":{"message":"Slot was skipped","code":-32007}}"#,
+		)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec!["http://other-fallback.example.invalid".to_string()],
+		TEST_NETWORK_SLUG.to_string(),
+		&[-32004, -32007, -32009],
+	);
+	let transport = MockTransport::new();
+
+	let result = manager
+		.send_raw_request(&transport, "getBlock", Some(json!([12345])))
+		.await
+		.unwrap();
+
+	// Response is passed through unchanged so per-client error handlers can run.
+	assert_eq!(result["error"]["code"], -32007);
+	assert_eq!(result["error"]["message"], "Slot was skipped");
+	mock.assert();
+
+	// No rotation should have occurred.
+	assert_eq!(&*manager.active_url.read().await, &server.url());
+}
+
+/// `result: null` is a legitimate response for some methods (e.g. `eth_getBlockByNumber`
+/// for a future block). It must not trigger rotation and must be returned as-is.
+#[tokio::test]
+async fn test_null_result_passes_through() {
+	let mut server = Server::new_async().await;
+
+	let mock = server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc":"2.0","result":null,"id":1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server.url().as_ref(),
+		vec!["http://other-fallback.example.invalid".to_string()],
+		TEST_NETWORK_SLUG.to_string(),
+		&[],
+	);
+	let transport = MockTransport::new();
+
+	let result = manager
+		.send_raw_request(
+			&transport,
+			"eth_getBlockByNumber",
+			Some(json!(["0xffffff", true])),
+		)
+		.await
+		.unwrap();
+
+	assert!(result["result"].is_null());
+	mock.assert();
+	assert_eq!(&*manager.active_url.read().await, &server.url());
+}
+
+/// A JSON body with neither `result` nor `error` is malformed and treated like a
+/// rotatable JSON-RPC failure.
+#[tokio::test]
+async fn test_malformed_envelope_rotates() {
+	let mut primary_server = Server::new_async().await;
+	let mut fallback_server = Server::new_async().await;
+
+	let primary_mock = primary_server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"id":1,"jsonrpc":"2.0"}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let fallback_mock = fallback_server
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		primary_server.url().as_ref(),
+		vec![fallback_server.url()],
+		TEST_NETWORK_SLUG.to_string(),
+		&[],
+	);
+	let transport = MockTransport::new();
+
+	let result = manager
+		.send_raw_request(&transport, "eth_blockNumber", None::<Value>)
+		.await
+		.unwrap();
+
+	assert_eq!(result["result"], "0x1");
+	primary_mock.assert();
+	fallback_mock.assert();
+	assert_eq!(&*manager.active_url.read().await, &fallback_server.url());
 }

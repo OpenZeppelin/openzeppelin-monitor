@@ -25,6 +25,8 @@ use crate::services::blockchain::transports::{
 /// * `client` - The client to use for the endpoint manager
 /// * `rotation_lock` - A lock for managing the rotation process
 /// * `network_slug` - The network identifier for metrics labeling
+/// * `non_rotating_jsonrpc_codes` - JSON-RPC error codes that should not trigger endpoint
+///   rotation (e.g. Solana skipped-slot codes that represent legitimate chain state).
 #[derive(Clone, Debug)]
 pub struct EndpointManager {
 	pub active_url: Arc<RwLock<String>>,
@@ -32,6 +34,7 @@ pub struct EndpointManager {
 	client: ClientWithMiddleware,
 	rotation_lock: Arc<tokio::sync::Mutex<()>>,
 	network_slug: String,
+	non_rotating_jsonrpc_codes: &'static [i64],
 }
 
 /// Represents the outcome of a `EndpointManager::attempt_request_on_url` method call
@@ -55,6 +58,9 @@ impl EndpointManager {
 	/// * `active_url` - The initial active URL
 	/// * `fallback_urls` - A list of fallback URLs to rotate to
 	/// * `network_slug` - The network identifier for metrics labeling
+	/// * `non_rotating_jsonrpc_codes` - JSON-RPC error codes for which the manager should
+	///   pass the response through unchanged instead of rotating to a fallback. Use `&[]`
+	///   if every JSON-RPC error should rotate.
 	///
 	/// # Returns
 	pub fn new(
@@ -62,6 +68,7 @@ impl EndpointManager {
 		active_url: &str,
 		fallback_urls: Vec<String>,
 		network_slug: String,
+		non_rotating_jsonrpc_codes: &'static [i64],
 	) -> Self {
 		Self {
 			active_url: Arc::new(RwLock::new(active_url.to_string())),
@@ -69,6 +76,7 @@ impl EndpointManager {
 			rotation_lock: Arc::new(tokio::sync::Mutex::new(())),
 			client,
 			network_slug,
+			non_rotating_jsonrpc_codes,
 		}
 	}
 
@@ -290,14 +298,114 @@ impl EndpointManager {
 						let duration = attempt_start.elapsed().as_secs_f64();
 						crate::utils::metrics::observe_rpc_duration(&self.network_slug, duration);
 
-						// Successful response, parse JSON
-						return response.json().await.map_err(|e| {
-							TransportError::response_parse(
-								"Failed to parse JSON response".to_string(),
-								Some(Box::new(e)),
-								None,
-							)
-						});
+						// Parse JSON body
+						let value: Value = match response.json().await {
+							Ok(v) => v,
+							Err(e) => {
+								return Err(TransportError::response_parse(
+									"Failed to parse JSON response".to_string(),
+									Some(Box::new(e)),
+									None,
+								));
+							}
+						};
+
+						// Inspect the JSON-RPC envelope: a well-formed response has either a
+						// `result` field (success, possibly null) or an `error` field.
+						match (value.get("result"), value.get("error")) {
+							(Some(result), _) => {
+								if result.is_null() {
+									crate::utils::metrics::record_null_result(
+										&self.network_slug,
+										method,
+									);
+								}
+								return Ok(value);
+							}
+							(None, Some(error_obj)) => {
+								let code =
+									error_obj.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+								let message = error_obj
+									.get("message")
+									.and_then(|m| m.as_str())
+									.unwrap_or("")
+									.to_string();
+
+								if self.non_rotating_jsonrpc_codes.contains(&code) {
+									// Legitimate chain-state response — record for visibility
+									// but pass it through so the per-client error handler runs.
+									crate::utils::metrics::record_rpc_error(
+										&self.network_slug,
+										&code.to_string(),
+										"jsonrpc_passthrough",
+									);
+									return Ok(value);
+								}
+
+								crate::utils::metrics::record_rpc_error(
+									&self.network_slug,
+									&code.to_string(),
+									"jsonrpc",
+								);
+
+								tracing::warn!(
+									"JSON-RPC error from {}: code {} - {}",
+									current_url_snapshot,
+									code,
+									message,
+								);
+
+								crate::utils::metrics::record_endpoint_rotation(
+									&self.network_slug,
+									"jsonrpc_error",
+								);
+
+								match self.try_rotate_url(transport).await {
+									Ok(_new_url) => continue, // Retry on the new active URL
+									Err(rotation_error) => {
+										return Err(TransportError::rpc_error(
+											code,
+											message,
+											current_url_snapshot.clone(),
+											Some(Box::new(rotation_error)),
+											None,
+										));
+									}
+								}
+							}
+							(None, None) => {
+								// Malformed envelope — no `result` and no `error`. Treat as a
+								// rotatable failure, since the upstream is misbehaving.
+								crate::utils::metrics::record_rpc_error(
+									&self.network_slug,
+									"malformed",
+									"jsonrpc",
+								);
+
+								tracing::warn!(
+									"Malformed JSON-RPC envelope from {} (neither 'result' nor 'error' field)",
+									current_url_snapshot,
+								);
+
+								crate::utils::metrics::record_endpoint_rotation(
+									&self.network_slug,
+									"jsonrpc_error",
+								);
+
+								match self.try_rotate_url(transport).await {
+									Ok(_new_url) => continue,
+									Err(rotation_error) => {
+										return Err(TransportError::rpc_error(
+											0,
+											"Malformed JSON-RPC envelope",
+											current_url_snapshot.clone(),
+											Some(Box::new(rotation_error)),
+											None,
+										));
+									}
+								}
+							}
+						}
 					} else {
 						// HTTP error
 						let error_body = response.text().await.unwrap_or_default();

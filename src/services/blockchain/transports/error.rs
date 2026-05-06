@@ -32,6 +32,16 @@ pub enum TransportError {
 	/// URL rotation error
 	#[error("URL rotation failed: {0}")]
 	UrlRotation(ErrorContext),
+
+	/// JSON-RPC error envelope returned by upstream (HTTP 200 with `error` field, or
+	/// missing both `result` and `error`). Surfaced after rotation has been exhausted.
+	#[error("JSON-RPC error: code {code} for URL {url}: {message}")]
+	RpcError {
+		code: i64,
+		message: String,
+		url: String,
+		context: ErrorContext,
+	},
 }
 
 impl TransportError {
@@ -82,6 +92,25 @@ impl TransportError {
 	) -> Self {
 		Self::UrlRotation(ErrorContext::new_with_log(msg, source, metadata))
 	}
+
+	pub fn rpc_error(
+		code: i64,
+		message: impl Into<String>,
+		url: impl Into<String>,
+		source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+		metadata: Option<HashMap<String, String>>,
+	) -> Self {
+		let message = message.into();
+		let url = url.into();
+		let log_msg = format!("JSON-RPC error: code {} for URL {}: {}", code, url, message);
+
+		Self::RpcError {
+			code,
+			message,
+			url,
+			context: ErrorContext::new_with_log(log_msg, source, metadata),
+		}
+	}
 }
 
 impl TraceableError for TransportError {
@@ -92,6 +121,7 @@ impl TraceableError for TransportError {
 			Self::ResponseParse(ctx) => ctx.trace_id.clone(),
 			Self::RequestSerialization(ctx) => ctx.trace_id.clone(),
 			Self::UrlRotation(ctx) => ctx.trace_id.clone(),
+			Self::RpcError { context, .. } => context.trace_id.clone(),
 		}
 	}
 }
@@ -185,6 +215,32 @@ mod tests {
 			error.to_string(),
 			"URL rotation failed: test error [key1=value1]"
 		);
+	}
+
+	#[test]
+	fn test_rpc_error_formatting() {
+		let error = TransportError::rpc_error(
+			15,
+			"Too many request, try again later",
+			"http://example.com",
+			None,
+			None,
+		);
+		assert_eq!(
+			error.to_string(),
+			"JSON-RPC error: code 15 for URL http://example.com: Too many request, try again later"
+		);
+
+		let source_error = IoError::new(ErrorKind::NotFound, "test source");
+		let error = TransportError::rpc_error(
+			-32007,
+			"Slot was skipped",
+			"http://example.com",
+			Some(Box::new(source_error)),
+			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
+		);
+		// Trace ID is reachable via TraceableError impl
+		assert!(!error.trace_id().is_empty());
 	}
 
 	#[test]

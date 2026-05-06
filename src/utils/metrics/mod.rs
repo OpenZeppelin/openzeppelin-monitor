@@ -201,6 +201,20 @@ lazy_static! {
 		REGISTRY.register(Box::new(counter.clone())).unwrap();
 		counter
 	};
+
+	/// Counter for RPC responses where the JSON-RPC `result` field is null.
+	///
+	/// `result: null` is a legitimate answer for some methods (e.g. `eth_getBlockByNumber`
+	/// for a future block, `eth_getTransactionReceipt` for an unknown hash). Tracking it
+	/// gives visibility on how often "not found" responses occur per network and method.
+	pub static ref RPC_NULL_RESULTS_TOTAL: CounterVec = {
+		let counter = CounterVec::new(
+			Opts::new("rpc_null_results_total", "Total number of JSON-RPC responses where result was null"),
+			&["network", "method"]
+		).unwrap();
+		REGISTRY.register(Box::new(counter.clone())).unwrap();
+		counter
+	};
 }
 
 /// Gather all metrics and encode into the provided format.
@@ -386,6 +400,17 @@ pub fn record_rate_limit(network: &str, endpoint: &str) {
 		.inc();
 }
 
+/// Records a JSON-RPC response where the `result` field was null.
+///
+/// # Arguments
+/// * `network` - The network slug
+/// * `method` - The JSON-RPC method that returned the null result
+pub fn record_null_result(network: &str, method: &str) {
+	RPC_NULL_RESULTS_TOTAL
+		.with_label_values(&[network, method])
+		.inc();
+}
+
 /// Initializes RPC metrics for a network so they appear in Prometheus output with 0 values.
 ///
 /// This should be called when a transport client is created for a network.
@@ -405,6 +430,15 @@ pub fn init_rpc_metrics_for_network(network: &str) {
 	RPC_REQUEST_ERRORS_TOTAL
 		.with_label_values(&[network, "0", "network"])
 		.inc_by(0.0);
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "0", "jsonrpc"])
+		.inc_by(0.0);
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "0", "jsonrpc_passthrough"])
+		.inc_by(0.0);
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "malformed", "jsonrpc"])
+		.inc_by(0.0);
 
 	// Initialize rotation counters
 	RPC_ENDPOINT_ROTATIONS_TOTAL
@@ -412,6 +446,9 @@ pub fn init_rpc_metrics_for_network(network: &str) {
 		.inc_by(0.0);
 	RPC_ENDPOINT_ROTATIONS_TOTAL
 		.with_label_values(&[network, "network_error"])
+		.inc_by(0.0);
+	RPC_ENDPOINT_ROTATIONS_TOTAL
+		.with_label_values(&[network, "jsonrpc_error"])
 		.inc_by(0.0);
 }
 
@@ -457,6 +494,7 @@ mod tests {
 		RPC_REQUEST_DURATION_SECONDS.reset();
 		RPC_ENDPOINT_ROTATIONS_TOTAL.reset();
 		RPC_RATE_LIMITS_TOTAL.reset();
+		RPC_NULL_RESULTS_TOTAL.reset();
 	}
 
 	// Helper function to create a test network

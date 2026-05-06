@@ -54,12 +54,16 @@ impl HttpTransportClient {
 	/// # Arguments
 	/// * `network` - Network configuration containing RPC URLs, weights, and other details
 	/// * `test_connection_payload` - Optional JSON RPC payload to test the connection (default is net_version)
+	/// * `non_rotating_jsonrpc_codes` - JSON-RPC error codes for which the endpoint manager
+	///   should pass responses through instead of rotating endpoints. See
+	///   [`EndpointManager::new`] for details.
 	///
 	/// # Returns
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(
 		network: &Network,
 		test_connection_payload: Option<String>,
+		non_rotating_jsonrpc_codes: &'static [i64],
 	) -> Result<Self, anyhow::Error> {
 		let mut rpc_urls: Vec<_> = network
 			.rpc_urls
@@ -140,6 +144,7 @@ impl HttpTransportClient {
 							rpc_url.url.as_ref(),
 							fallback_urls,
 							network_slug,
+							non_rotating_jsonrpc_codes,
 						),
 						test_connection_payload,
 					});
