@@ -1019,3 +1019,115 @@ async fn test_malformed_envelope_rotates() {
 	fallback_mock.assert();
 	assert_eq!(&*manager.active_url.read().await, &fallback_server.url());
 }
+
+/// When every configured endpoint returns a JSON-RPC error envelope, the manager must try
+/// each endpoint once and then surface the last error rather than cycling indefinitely.
+#[tokio::test]
+async fn test_jsonrpc_error_all_endpoints_fail_does_not_loop() {
+	let mut server_a = Server::new_async().await;
+	let mut server_b = Server::new_async().await;
+
+	// `expect(1)` fails the test if either endpoint is hit more than once — which is what
+	// would happen under the prior infinite-rotation behavior.
+	let mock_a = server_a
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"id":1,"jsonrpc":"2.0","error":{"message":"boom","code":15}}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let mock_b = server_b
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"id":1,"jsonrpc":"2.0","error":{"message":"boom","code":15}}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server_a.url().as_ref(),
+		vec![server_b.url()],
+		TEST_NETWORK_SLUG.to_string(),
+		&[],
+	);
+	let transport = MockTransport::new();
+
+	// Guard against regressions that reintroduce the infinite loop.
+	let result = tokio::time::timeout(
+		std::time::Duration::from_secs(5),
+		manager.send_raw_request(&transport, "eth_blockNumber", None::<Value>),
+	)
+	.await
+	.expect("send_raw_request must terminate when all endpoints fail")
+	.expect_err("expected an error after exhausting endpoints");
+
+	match result {
+		TransportError::RpcError { code, message, .. } => {
+			assert_eq!(code, 15);
+			assert_eq!(message, "boom");
+		}
+		other => panic!("Expected RpcError, got {:?}", other),
+	}
+
+	mock_a.assert();
+	mock_b.assert();
+}
+
+/// When every configured endpoint returns a malformed JSON-RPC envelope (neither `result`
+/// nor `error`), the manager must try each endpoint once and surface a malformed-envelope
+/// error rather than rotating forever.
+#[tokio::test]
+async fn test_malformed_envelope_all_endpoints_fail_does_not_loop() {
+	let mut server_a = Server::new_async().await;
+	let mut server_b = Server::new_async().await;
+
+	let mock_a = server_a
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"id":1,"jsonrpc":"2.0"}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let mock_b = server_b
+		.mock("POST", "/")
+		.with_status(200)
+		.with_header("content-type", "application/json")
+		.with_body(r#"{"id":1,"jsonrpc":"2.0"}"#)
+		.expect(1)
+		.create_async()
+		.await;
+
+	let manager = HttpEndpointManager::new(
+		get_mock_client_builder(),
+		server_a.url().as_ref(),
+		vec![server_b.url()],
+		TEST_NETWORK_SLUG.to_string(),
+		&[],
+	);
+	let transport = MockTransport::new();
+
+	let result = tokio::time::timeout(
+		std::time::Duration::from_secs(5),
+		manager.send_raw_request(&transport, "eth_blockNumber", None::<Value>),
+	)
+	.await
+	.expect("send_raw_request must terminate when all endpoints return malformed bodies")
+	.expect_err("expected an error after exhausting endpoints");
+
+	match result {
+		TransportError::RpcError { code, message, .. } => {
+			assert_eq!(code, 0);
+			assert_eq!(message, "Malformed JSON-RPC envelope");
+		}
+		other => panic!("Expected RpcError, got {:?}", other),
+	}
+
+	mock_a.assert();
+	mock_b.assert();
+}

@@ -5,6 +5,7 @@
 use reqwest_middleware::ClientWithMiddleware;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -271,6 +272,18 @@ impl EndpointManager {
 		method: &str,
 		params: Option<P>,
 	) -> Result<Value, TransportError> {
+		// Cap rotations per request: count distinct configured endpoints (active + unique
+		// fallbacks) so we can stop once each has been tried once.
+		let total_unique_endpoints = {
+			let mut endpoints: HashSet<String> = HashSet::new();
+			endpoints.insert(self.active_url.read().await.clone());
+			for url in self.fallback_urls.read().await.iter() {
+				endpoints.insert(url.clone());
+			}
+			endpoints.len()
+		};
+		let mut tried_urls: HashSet<String> = HashSet::new();
+
 		loop {
 			let attempt_start = Instant::now();
 
@@ -282,6 +295,7 @@ impl EndpointManager {
 				.ok()
 				.and_then(|u| u.host_str().map(|s| s.to_string()))
 				.unwrap_or_else(|| "unknown-host".into());
+			tried_urls.insert(current_url_snapshot.clone());
 
 			tracing::debug!(
 				"Attempting request on active URL: '{}'",
@@ -359,6 +373,18 @@ impl EndpointManager {
 									message,
 								);
 
+								// Stop once every distinct endpoint has been tried; otherwise
+								// healthy-but-erroring endpoints would cycle forever.
+								if tried_urls.len() >= total_unique_endpoints {
+									return Err(TransportError::rpc_error(
+										code,
+										message,
+										current_url_snapshot.clone(),
+										None,
+										None,
+									));
+								}
+
 								crate::utils::metrics::record_endpoint_rotation(
 									&self.network_slug,
 									"jsonrpc_error",
@@ -390,6 +416,16 @@ impl EndpointManager {
 									"Malformed JSON-RPC envelope from {} (neither 'result' nor 'error' field)",
 									current_host_snapshot,
 								);
+
+								if tried_urls.len() >= total_unique_endpoints {
+									return Err(TransportError::rpc_error(
+										0,
+										"Malformed JSON-RPC envelope",
+										current_url_snapshot.clone(),
+										None,
+										None,
+									));
+								}
 
 								crate::utils::metrics::record_endpoint_rotation(
 									&self.network_slug,
