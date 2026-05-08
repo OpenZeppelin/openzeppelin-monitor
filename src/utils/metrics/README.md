@@ -52,6 +52,10 @@ The metrics system provides monitoring capabilities for the OpenZeppelin Monitor
 | `rpc_request_duration_seconds` | Histogram | network | Request latency distribution |
 | `rpc_endpoint_rotations_total` | Counter | network, reason | Endpoint rotations |
 | `rpc_rate_limits_total` | Counter | network, endpoint | HTTP 429 responses |
+| `rpc_null_results_total` | Counter | network, method | JSON-RPC responses where `result` was null (e.g. unknown block/tx) |
+| `rpc_jsonrpc_passthrough_total` | Counter | network, code | JSON-RPC error envelopes representing legitimate chain state (e.g. Solana skipped slots), passed through to the caller without rotating |
+
+> Note: `rpc_jsonrpc_passthrough_total` is intentionally separate from `rpc_request_errors_total`. Solana mainnet skips slots routinely, so counting those responses as errors would inflate any alert built on the error counter.
 
 ## Example Grafana Alerts
 

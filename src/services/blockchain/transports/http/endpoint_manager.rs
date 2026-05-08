@@ -5,6 +5,7 @@
 use reqwest_middleware::ClientWithMiddleware;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -25,6 +26,8 @@ use crate::services::blockchain::transports::{
 /// * `client` - The client to use for the endpoint manager
 /// * `rotation_lock` - A lock for managing the rotation process
 /// * `network_slug` - The network identifier for metrics labeling
+/// * `non_rotating_jsonrpc_codes` - JSON-RPC error codes that should not trigger endpoint
+///   rotation (e.g. Solana skipped-slot codes that represent legitimate chain state).
 #[derive(Clone, Debug)]
 pub struct EndpointManager {
 	pub active_url: Arc<RwLock<String>>,
@@ -32,6 +35,7 @@ pub struct EndpointManager {
 	client: ClientWithMiddleware,
 	rotation_lock: Arc<tokio::sync::Mutex<()>>,
 	network_slug: String,
+	non_rotating_jsonrpc_codes: &'static [i64],
 }
 
 /// Represents the outcome of a `EndpointManager::attempt_request_on_url` method call
@@ -55,6 +59,9 @@ impl EndpointManager {
 	/// * `active_url` - The initial active URL
 	/// * `fallback_urls` - A list of fallback URLs to rotate to
 	/// * `network_slug` - The network identifier for metrics labeling
+	/// * `non_rotating_jsonrpc_codes` - JSON-RPC error codes for which the manager should
+	///   pass the response through unchanged instead of rotating to a fallback. Use `&[]`
+	///   if every JSON-RPC error should rotate.
 	///
 	/// # Returns
 	pub fn new(
@@ -62,6 +69,7 @@ impl EndpointManager {
 		active_url: &str,
 		fallback_urls: Vec<String>,
 		network_slug: String,
+		non_rotating_jsonrpc_codes: &'static [i64],
 	) -> Self {
 		Self {
 			active_url: Arc::new(RwLock::new(active_url.to_string())),
@@ -69,6 +77,7 @@ impl EndpointManager {
 			rotation_lock: Arc::new(tokio::sync::Mutex::new(())),
 			client,
 			network_slug,
+			non_rotating_jsonrpc_codes,
 		}
 	}
 
@@ -263,6 +272,18 @@ impl EndpointManager {
 		method: &str,
 		params: Option<P>,
 	) -> Result<Value, TransportError> {
+		// Cap rotations per request: count distinct configured endpoints (active + unique
+		// fallbacks) so we can stop once each has been tried once.
+		let total_unique_endpoints = {
+			let mut endpoints: HashSet<String> = HashSet::new();
+			endpoints.insert(self.active_url.read().await.clone());
+			for url in self.fallback_urls.read().await.iter() {
+				endpoints.insert(url.clone());
+			}
+			endpoints.len()
+		};
+		let mut tried_urls: HashSet<String> = HashSet::new();
+
 		loop {
 			let attempt_start = Instant::now();
 
@@ -270,6 +291,11 @@ impl EndpointManager {
 			crate::utils::metrics::record_rpc_request(&self.network_slug, method);
 
 			let current_url_snapshot = self.active_url.read().await.clone();
+			let current_host_snapshot = Url::parse(&current_url_snapshot)
+				.ok()
+				.and_then(|u| u.host_str().map(|s| s.to_string()))
+				.unwrap_or_else(|| "unknown-host".into());
+			tried_urls.insert(current_url_snapshot.clone());
 
 			tracing::debug!(
 				"Attempting request on active URL: '{}'",
@@ -290,14 +316,140 @@ impl EndpointManager {
 						let duration = attempt_start.elapsed().as_secs_f64();
 						crate::utils::metrics::observe_rpc_duration(&self.network_slug, duration);
 
-						// Successful response, parse JSON
-						return response.json().await.map_err(|e| {
-							TransportError::response_parse(
-								"Failed to parse JSON response".to_string(),
-								Some(Box::new(e)),
-								None,
-							)
-						});
+						// Parse JSON body
+						let value: Value = match response.json().await {
+							Ok(v) => v,
+							Err(e) => {
+								return Err(TransportError::response_parse(
+									"Failed to parse JSON response".to_string(),
+									Some(Box::new(e)),
+									None,
+								));
+							}
+						};
+
+						// Inspect the JSON-RPC envelope: a well-formed response has either a
+						// `result` field (success, possibly null) or an `error` field.
+						match (value.get("result"), value.get("error")) {
+							(Some(result), _) => {
+								if result.is_null() {
+									crate::utils::metrics::record_null_result(
+										&self.network_slug,
+										method,
+									);
+								}
+								return Ok(value);
+							}
+							(None, Some(error_obj)) => {
+								let code =
+									error_obj.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+								let message = error_obj
+									.get("message")
+									.and_then(|m| m.as_str())
+									.unwrap_or("")
+									.to_string();
+
+								if self.non_rotating_jsonrpc_codes.contains(&code) {
+									// Legitimate chain-state response — record for visibility
+									// but pass it through so the per-client error handler runs.
+									// Tracked under a dedicated counter (not the errors counter)
+									// so it doesn't inflate error-rate alerts.
+									crate::utils::metrics::record_jsonrpc_passthrough(
+										&self.network_slug,
+										&code.to_string(),
+									);
+									return Ok(value);
+								}
+
+								crate::utils::metrics::record_rpc_error(
+									&self.network_slug,
+									&code.to_string(),
+									"jsonrpc",
+								);
+
+								tracing::warn!(
+									"JSON-RPC error from {}: code {} - {}",
+									current_host_snapshot,
+									code,
+									message,
+								);
+
+								// Stop once every distinct endpoint has been tried; otherwise
+								// healthy-but-erroring endpoints would cycle forever.
+								if tried_urls.len() >= total_unique_endpoints {
+									return Err(TransportError::rpc_error(
+										code,
+										message,
+										current_url_snapshot.clone(),
+										None,
+										None,
+									));
+								}
+
+								crate::utils::metrics::record_endpoint_rotation(
+									&self.network_slug,
+									"jsonrpc_error",
+								);
+
+								match self.try_rotate_url(transport).await {
+									Ok(_new_url) => continue, // Retry on the new active URL
+									Err(rotation_error) => {
+										return Err(TransportError::rpc_error(
+											code,
+											message,
+											current_url_snapshot.clone(),
+											Some(Box::new(rotation_error)),
+											None,
+										));
+									}
+								}
+							}
+							(None, None) => {
+								// Malformed envelope — no `result` and no `error`. Treat as a
+								// rotatable failure, since the upstream is misbehaving.
+								// `status_code="0"` keeps the slot numeric for PromQL filters
+								// (e.g. `status_code=~"5.."`); the malformed case is carried on
+								// `error_type` instead.
+								crate::utils::metrics::record_rpc_error(
+									&self.network_slug,
+									"0",
+									"malformed_jsonrpc",
+								);
+
+								tracing::warn!(
+									"Malformed JSON-RPC envelope from {} (neither 'result' nor 'error' field)",
+									current_host_snapshot,
+								);
+
+								if tried_urls.len() >= total_unique_endpoints {
+									return Err(TransportError::rpc_error(
+										0,
+										"Malformed JSON-RPC envelope",
+										current_url_snapshot.clone(),
+										None,
+										None,
+									));
+								}
+
+								crate::utils::metrics::record_endpoint_rotation(
+									&self.network_slug,
+									"jsonrpc_error",
+								);
+
+								match self.try_rotate_url(transport).await {
+									Ok(_new_url) => continue,
+									Err(rotation_error) => {
+										return Err(TransportError::rpc_error(
+											0,
+											"Malformed JSON-RPC envelope",
+											current_url_snapshot.clone(),
+											Some(Box::new(rotation_error)),
+											None,
+										));
+									}
+								}
+							}
+						}
 					} else {
 						// HTTP error
 						let error_body = response.text().await.unwrap_or_default();
@@ -312,7 +464,7 @@ impl EndpointManager {
 
 						tracing::warn!(
 							"Request to {} failed with status {}: {}",
-							current_url_snapshot,
+							current_host_snapshot,
 							status,
 							error_body
 						);
@@ -369,7 +521,7 @@ impl EndpointManager {
 							tracing::warn!(
 								"HTTP error status {} on {} does not trigger rotation. Failing.",
 								status,
-								current_url_snapshot
+								current_host_snapshot
 							);
 							return Err(TransportError::http(
 								status,
@@ -388,7 +540,7 @@ impl EndpointManager {
 
 					tracing::warn!(
 						"Network error for {}: {}",
-						current_url_snapshot,
+						current_host_snapshot,
 						network_error,
 					);
 

@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 
 use crate::{
 	models::Network,
-	services::blockchain::transports::{
-		BlockchainTransport, HttpTransportClient, RotatingTransport, TransportError,
+	services::blockchain::{
+		clients::SLOT_UNAVAILABLE_ERROR_CODES,
+		transports::{BlockchainTransport, HttpTransportClient, RotatingTransport, TransportError},
 	},
 };
 
@@ -188,7 +189,12 @@ impl SolanaTransportClient {
 		// Use getHealth as the test connection method - it's lightweight and indicates node health
 		let test_connection_payload =
 			Some(r#"{"id":1,"jsonrpc":"2.0","method":"getHealth"}"#.to_string());
-		let http_client = HttpTransportClient::new(network, test_connection_payload).await?;
+		let http_client = HttpTransportClient::new(
+			network,
+			test_connection_payload,
+			SLOT_UNAVAILABLE_ERROR_CODES,
+		)
+		.await?;
 		Ok(Self { http_client })
 	}
 
@@ -204,7 +210,8 @@ impl SolanaTransportClient {
 		network: &Network,
 		test_payload: Option<String>,
 	) -> Result<Self, anyhow::Error> {
-		let http_client = HttpTransportClient::new(network, test_payload).await?;
+		let http_client =
+			HttpTransportClient::new(network, test_payload, SLOT_UNAVAILABLE_ERROR_CODES).await?;
 		Ok(Self { http_client })
 	}
 

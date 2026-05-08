@@ -201,6 +201,37 @@ lazy_static! {
 		REGISTRY.register(Box::new(counter.clone())).unwrap();
 		counter
 	};
+
+	/// Counter for RPC responses where the JSON-RPC `result` field is null.
+	///
+	/// `result: null` is a legitimate answer for some methods (e.g. `eth_getBlockByNumber`
+	/// for a future block, `eth_getTransactionReceipt` for an unknown hash). Tracking it
+	/// gives visibility on how often "not found" responses occur per network and method.
+	pub static ref RPC_NULL_RESULTS_TOTAL: CounterVec = {
+		let counter = CounterVec::new(
+			Opts::new("rpc_null_results_total", "Total number of JSON-RPC responses where result was null"),
+			&["network", "method"]
+		).unwrap();
+		REGISTRY.register(Box::new(counter.clone())).unwrap();
+		counter
+	};
+
+	/// Counter for JSON-RPC error envelopes that represent legitimate chain state
+	/// rather than endpoint failures (e.g. Solana skipped-slot codes).
+	///
+	/// Tracked separately from `rpc_request_errors_total` so that error-rate alerts
+	/// are not inflated by normal chain behaviour.
+	pub static ref RPC_JSONRPC_PASSTHROUGH_TOTAL: CounterVec = {
+		let counter = CounterVec::new(
+			Opts::new(
+				"rpc_jsonrpc_passthrough_total",
+				"Total number of JSON-RPC error envelopes passed through as legitimate chain state (not endpoint failures)",
+			),
+			&["network", "code"]
+		).unwrap();
+		REGISTRY.register(Box::new(counter.clone())).unwrap();
+		counter
+	};
 }
 
 /// Gather all metrics and encode into the provided format.
@@ -386,6 +417,32 @@ pub fn record_rate_limit(network: &str, endpoint: &str) {
 		.inc();
 }
 
+/// Records a JSON-RPC response where the `result` field was null.
+///
+/// # Arguments
+/// * `network` - The network slug
+/// * `method` - The JSON-RPC method that returned the null result
+pub fn record_null_result(network: &str, method: &str) {
+	RPC_NULL_RESULTS_TOTAL
+		.with_label_values(&[network, method])
+		.inc();
+}
+
+/// Records a JSON-RPC error envelope that represents legitimate chain state and
+/// is passed through to the caller (e.g. a Solana skipped-slot response).
+///
+/// These responses are tracked separately from `rpc_request_errors_total` so
+/// that error-rate alerts are not inflated by normal chain behaviour.
+///
+/// # Arguments
+/// * `network` - The network slug
+/// * `code` - The JSON-RPC error code (as a string)
+pub fn record_jsonrpc_passthrough(network: &str, code: &str) {
+	RPC_JSONRPC_PASSTHROUGH_TOTAL
+		.with_label_values(&[network, code])
+		.inc();
+}
+
 /// Initializes RPC metrics for a network so they appear in Prometheus output with 0 values.
 ///
 /// This should be called when a transport client is created for a network.
@@ -393,7 +450,9 @@ pub fn record_rate_limit(network: &str, endpoint: &str) {
 ///
 /// # Arguments
 /// * `network` - The network slug
-pub fn init_rpc_metrics_for_network(network: &str) {
+/// * `passthrough_codes` - JSON-RPC error codes that the transport treats as legitimate
+///   chain state. Each is seeded into `rpc_jsonrpc_passthrough_total`.
+pub fn init_rpc_metrics_for_network(network: &str, passthrough_codes: &[i64]) {
 	// Initialize error counters with common status codes
 	// These will show as 0 until actual errors occur
 	RPC_REQUEST_ERRORS_TOTAL
@@ -405,6 +464,19 @@ pub fn init_rpc_metrics_for_network(network: &str) {
 	RPC_REQUEST_ERRORS_TOTAL
 		.with_label_values(&[network, "0", "network"])
 		.inc_by(0.0);
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "0", "jsonrpc"])
+		.inc_by(0.0);
+	RPC_REQUEST_ERRORS_TOTAL
+		.with_label_values(&[network, "0", "malformed_jsonrpc"])
+		.inc_by(0.0);
+
+	// Initialize passthrough counters for the transport's skip-listed codes.
+	for code in passthrough_codes {
+		RPC_JSONRPC_PASSTHROUGH_TOTAL
+			.with_label_values(&[network, &code.to_string()])
+			.inc_by(0.0);
+	}
 
 	// Initialize rotation counters
 	RPC_ENDPOINT_ROTATIONS_TOTAL
@@ -412,6 +484,9 @@ pub fn init_rpc_metrics_for_network(network: &str) {
 		.inc_by(0.0);
 	RPC_ENDPOINT_ROTATIONS_TOTAL
 		.with_label_values(&[network, "network_error"])
+		.inc_by(0.0);
+	RPC_ENDPOINT_ROTATIONS_TOTAL
+		.with_label_values(&[network, "jsonrpc_error"])
 		.inc_by(0.0);
 }
 
@@ -457,6 +532,8 @@ mod tests {
 		RPC_REQUEST_DURATION_SECONDS.reset();
 		RPC_ENDPOINT_ROTATIONS_TOTAL.reset();
 		RPC_RATE_LIMITS_TOTAL.reset();
+		RPC_NULL_RESULTS_TOTAL.reset();
+		RPC_JSONRPC_PASSTHROUGH_TOTAL.reset();
 	}
 
 	// Helper function to create a test network
@@ -542,6 +619,12 @@ mod tests {
 		RPC_RATE_LIMITS_TOTAL
 			.with_label_values(&["ethereum", "https://rpc.example.com"])
 			.inc();
+		RPC_JSONRPC_PASSTHROUGH_TOTAL
+			.with_label_values(&["solana", "-32007"])
+			.inc();
+		RPC_NULL_RESULTS_TOTAL
+			.with_label_values(&["ethereum", "eth_getBlockByNumber"])
+			.inc();
 
 		let metrics = gather_metrics().expect("failed to gather metrics");
 		let output = String::from_utf8(metrics).expect("metrics output is not valid UTF-8");
@@ -569,6 +652,8 @@ mod tests {
 		assert!(output.contains("rpc_request_duration_seconds"));
 		assert!(output.contains("rpc_endpoint_rotations_total"));
 		assert!(output.contains("rpc_rate_limits_total"));
+		assert!(output.contains("rpc_jsonrpc_passthrough_total"));
+		assert!(output.contains("rpc_null_results_total"));
 	}
 
 	#[test]
@@ -928,6 +1013,20 @@ mod tests {
 		record_rpc_error("ethereum", "500", "http");
 		record_rpc_error("ethereum", "0", "network");
 
+		// Test record_jsonrpc_passthrough — must not affect rpc_request_errors_total.
+		record_jsonrpc_passthrough("solana", "-32007");
+		record_jsonrpc_passthrough("solana", "-32007");
+		record_jsonrpc_passthrough("solana", "-32004");
+
+		let passthrough_32007 = RPC_JSONRPC_PASSTHROUGH_TOTAL
+			.get_metric_with_label_values(&["solana", "-32007"])
+			.unwrap();
+		assert_eq!(passthrough_32007.get(), 2.0);
+		let passthrough_32004 = RPC_JSONRPC_PASSTHROUGH_TOTAL
+			.get_metric_with_label_values(&["solana", "-32004"])
+			.unwrap();
+		assert_eq!(passthrough_32004.get(), 1.0);
+
 		let rate_limit_errors = RPC_REQUEST_ERRORS_TOTAL
 			.get_metric_with_label_values(&["ethereum", "429", "http"])
 			.unwrap();
@@ -988,8 +1087,8 @@ mod tests {
 		let _lock = TEST_MUTEX.lock().unwrap();
 		reset_all_metrics();
 
-		// Initialize metrics for a new network
-		init_rpc_metrics_for_network("arbitrum");
+		// Initialize metrics for a new network with a couple of passthrough codes
+		init_rpc_metrics_for_network("arbitrum", &[-32007, -32004]);
 
 		// Verify error counters are initialized with 0
 		let http_429 = RPC_REQUEST_ERRORS_TOTAL
@@ -1006,6 +1105,36 @@ mod tests {
 			.get_metric_with_label_values(&["arbitrum", "0", "network"])
 			.unwrap();
 		assert_eq!(network_error.get(), 0.0);
+
+		// Passthroughs must NOT be seeded under the errors counter — they belong on
+		// the dedicated passthrough counter so error-rate alerts stay clean.
+		let mut passthrough_label_present = false;
+		for family in REGISTRY.gather() {
+			if family.name() != "rpc_request_errors_total" {
+				continue;
+			}
+			for metric in family.get_metric() {
+				for label in metric.get_label() {
+					if label.name() == "error_type" && label.value() == "jsonrpc_passthrough" {
+						passthrough_label_present = true;
+					}
+				}
+			}
+		}
+		assert!(
+			!passthrough_label_present,
+			"passthroughs must not appear on rpc_request_errors_total"
+		);
+
+		// Passthrough counters are seeded for each provided code.
+		let passthrough_32007 = RPC_JSONRPC_PASSTHROUGH_TOTAL
+			.get_metric_with_label_values(&["arbitrum", "-32007"])
+			.unwrap();
+		assert_eq!(passthrough_32007.get(), 0.0);
+		let passthrough_32004 = RPC_JSONRPC_PASSTHROUGH_TOTAL
+			.get_metric_with_label_values(&["arbitrum", "-32004"])
+			.unwrap();
+		assert_eq!(passthrough_32004.get(), 0.0);
 
 		// Verify rotation counters are initialized with 0
 		let rate_limit_rotation = RPC_ENDPOINT_ROTATIONS_TOTAL

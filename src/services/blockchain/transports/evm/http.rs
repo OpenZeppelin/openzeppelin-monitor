@@ -38,7 +38,7 @@ impl EVMTransportClient {
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let test_connection_payload =
 			Some(r#"{"id":1,"jsonrpc":"2.0","method":"net_version","params":[]}"#.to_string());
-		let http_client = HttpTransportClient::new(network, test_connection_payload).await?;
+		let http_client = HttpTransportClient::new(network, test_connection_payload, &[]).await?;
 		Ok(Self { http_client })
 	}
 }
