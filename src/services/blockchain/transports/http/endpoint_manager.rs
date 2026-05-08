@@ -352,10 +352,11 @@ impl EndpointManager {
 								if self.non_rotating_jsonrpc_codes.contains(&code) {
 									// Legitimate chain-state response — record for visibility
 									// but pass it through so the per-client error handler runs.
-									crate::utils::metrics::record_rpc_error(
+									// Tracked under a dedicated counter (not the errors counter)
+									// so it doesn't inflate error-rate alerts.
+									crate::utils::metrics::record_jsonrpc_passthrough(
 										&self.network_slug,
 										&code.to_string(),
-										"jsonrpc_passthrough",
 									);
 									return Ok(value);
 								}

@@ -134,7 +134,10 @@ impl HttpTransportClient {
 					let network_slug = network.slug.clone();
 
 					// Initialize RPC metrics for this network so they appear in Prometheus
-					crate::utils::metrics::init_rpc_metrics_for_network(&network_slug);
+					crate::utils::metrics::init_rpc_metrics_for_network(
+						&network_slug,
+						non_rotating_jsonrpc_codes,
+					);
 
 					// Successfully connected - create and return the client
 					return Ok(Self {
