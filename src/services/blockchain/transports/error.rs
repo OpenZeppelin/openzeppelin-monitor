@@ -239,8 +239,10 @@ mod tests {
 			Some(Box::new(source_error)),
 			Some(HashMap::from([("key1".to_string(), "value1".to_string())])),
 		);
-		// Trace ID is reachable via TraceableError impl
-		assert!(!error.trace_id().is_empty());
+		assert_eq!(
+			error.to_string(),
+			"JSON-RPC error: code -32007 for URL http://example.com: Slot was skipped"
+		);
 	}
 
 	#[test]
@@ -303,6 +305,18 @@ mod tests {
 			status_code: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
 			url: "http://example.com".to_string(),
 			body: "Internal Server Error".to_string(),
+			context: error_context,
+		};
+		assert_eq!(transport_error.trace_id(), original_trace_id);
+
+		// RpcError must propagate its inner context's trace_id, not generate a fresh one.
+		let error_context = ErrorContext::new("Slot was skipped", None, None);
+		let original_trace_id = error_context.trace_id.clone();
+
+		let transport_error = TransportError::RpcError {
+			code: -32007,
+			message: "Slot was skipped".to_string(),
+			url: "http://example.com".to_string(),
 			context: error_context,
 		};
 		assert_eq!(transport_error.trace_id(), original_trace_id);
