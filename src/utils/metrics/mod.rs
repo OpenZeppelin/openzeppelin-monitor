@@ -468,7 +468,7 @@ pub fn init_rpc_metrics_for_network(network: &str, passthrough_codes: &[i64]) {
 		.with_label_values(&[network, "0", "jsonrpc"])
 		.inc_by(0.0);
 	RPC_REQUEST_ERRORS_TOTAL
-		.with_label_values(&[network, "malformed", "jsonrpc"])
+		.with_label_values(&[network, "0", "malformed_jsonrpc"])
 		.inc_by(0.0);
 
 	// Initialize passthrough counters for the transport's skip-listed codes.

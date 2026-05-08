@@ -407,10 +407,13 @@ impl EndpointManager {
 							(None, None) => {
 								// Malformed envelope — no `result` and no `error`. Treat as a
 								// rotatable failure, since the upstream is misbehaving.
+								// `status_code="0"` keeps the slot numeric for PromQL filters
+								// (e.g. `status_code=~"5.."`); the malformed case is carried on
+								// `error_type` instead.
 								crate::utils::metrics::record_rpc_error(
 									&self.network_slug,
-									"malformed",
-									"jsonrpc",
+									"0",
+									"malformed_jsonrpc",
 								);
 
 								tracing::warn!(
