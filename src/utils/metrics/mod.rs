@@ -622,6 +622,9 @@ mod tests {
 		RPC_JSONRPC_PASSTHROUGH_TOTAL
 			.with_label_values(&["solana", "-32007"])
 			.inc();
+		RPC_NULL_RESULTS_TOTAL
+			.with_label_values(&["ethereum", "eth_getBlockByNumber"])
+			.inc();
 
 		let metrics = gather_metrics().expect("failed to gather metrics");
 		let output = String::from_utf8(metrics).expect("metrics output is not valid UTF-8");
@@ -650,6 +653,7 @@ mod tests {
 		assert!(output.contains("rpc_endpoint_rotations_total"));
 		assert!(output.contains("rpc_rate_limits_total"));
 		assert!(output.contains("rpc_jsonrpc_passthrough_total"));
+		assert!(output.contains("rpc_null_results_total"));
 	}
 
 	#[test]
