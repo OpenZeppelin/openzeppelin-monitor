@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 
 use crate::{
 	models::Network,
-	services::blockchain::transports::{
-		BlockchainTransport, HttpTransportClient, RotatingTransport, TransportError,
+	services::blockchain::{
+		clients::SLOT_UNAVAILABLE_ERROR_CODES,
+		transports::{BlockchainTransport, HttpTransportClient, RotatingTransport, TransportError},
 	},
 };
 
@@ -164,15 +165,6 @@ impl Commitment {
 	}
 }
 
-/// JSON-RPC error codes that represent legitimate Solana chain state (not endpoint
-/// failure). The HTTP endpoint manager passes responses through instead of rotating.
-/// Mirrors `clients::solana::error::is_slot_unavailable_error`.
-const SOLANA_NON_ROTATING_JSONRPC_CODES: &[i64] = &[
-	-32004, // BLOCK_NOT_AVAILABLE
-	-32007, // SLOT_SKIPPED
-	-32009, // LONG_TERM_STORAGE_SLOT_SKIPPED
-];
-
 /// A client for interacting with Solana blockchain nodes
 ///
 /// This implementation wraps the HttpTransportClient to provide consistent
@@ -200,7 +192,7 @@ impl SolanaTransportClient {
 		let http_client = HttpTransportClient::new(
 			network,
 			test_connection_payload,
-			SOLANA_NON_ROTATING_JSONRPC_CODES,
+			SLOT_UNAVAILABLE_ERROR_CODES,
 		)
 		.await?;
 		Ok(Self { http_client })
@@ -219,8 +211,7 @@ impl SolanaTransportClient {
 		test_payload: Option<String>,
 	) -> Result<Self, anyhow::Error> {
 		let http_client =
-			HttpTransportClient::new(network, test_payload, SOLANA_NON_ROTATING_JSONRPC_CODES)
-				.await?;
+			HttpTransportClient::new(network, test_payload, SLOT_UNAVAILABLE_ERROR_CODES).await?;
 		Ok(Self { http_client })
 	}
 

@@ -226,14 +226,19 @@ pub mod error_codes {
 	pub const INTERNAL_ERROR: i64 = -32603;
 }
 
+/// JSON-RPC error codes that indicate the requested slot/block is unavailable rather
+/// than an endpoint being unhealthy. These represent legitimate Solana chain state and
+/// should be passed through to per-client handlers instead of triggering endpoint
+/// rotation.
+pub const SLOT_UNAVAILABLE_ERROR_CODES: &[i64] = &[
+	error_codes::BLOCK_NOT_AVAILABLE,
+	error_codes::SLOT_SKIPPED,
+	error_codes::LONG_TERM_STORAGE_SLOT_SKIPPED,
+];
+
 /// Checks if the given RPC error code indicates a skipped/unavailable slot
 pub fn is_slot_unavailable_error(code: i64) -> bool {
-	matches!(
-		code,
-		error_codes::BLOCK_NOT_AVAILABLE
-			| error_codes::SLOT_SKIPPED
-			| error_codes::LONG_TERM_STORAGE_SLOT_SKIPPED
-	)
+	SLOT_UNAVAILABLE_ERROR_CODES.contains(&code)
 }
 
 #[cfg(test)]
