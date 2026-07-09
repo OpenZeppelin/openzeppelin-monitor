@@ -137,6 +137,20 @@ lazy_static! {
 		gauge
 	};
 
+	/// Gauge Vector for block checkpoint lag per network.
+	///
+	/// Tracks the number of blocks the saved checkpoint lags behind the latest
+	/// confirmed block, labeled by network slug. Updated whenever the checkpoint
+	/// is saved, so a mid catch-up failure leaves an accurate value.
+	pub static ref BLOCK_CHECKPOINT_LAG: GaugeVec = {
+		let gauge = GaugeVec::new(
+			Opts::new("block_checkpoint_lag", "Number of blocks the checkpoint lags behind the latest confirmed block"),
+			&["network"]
+		).unwrap();
+		REGISTRY.register(Box::new(gauge.clone())).unwrap();
+		gauge
+	};
+
 	// ============================================================
 	// RPC Operational Metrics
 	// ============================================================

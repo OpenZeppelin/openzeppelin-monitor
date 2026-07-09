@@ -14,7 +14,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::instrument;
 
 use crate::{
-	models::{BlockType, Network, ProcessedBlock},
+	models::{BlockType, MaxPastBlocks, Network, ProcessedBlock},
 	services::{
 		blockchain::{BlockChainClient, BlockFetchResult, FetchStreamKind},
 		blockwatcher::{
@@ -24,7 +24,314 @@ use crate::{
 			tracker::{BlockCheckResult, BlockTracker, BlockTrackerTrait},
 		},
 	},
+	utils::metrics::BLOCK_CHECKPOINT_LAG,
 };
+
+/// Number of blocks fetched and processed per batch while catching up.
+///
+/// The checkpoint is saved after each batch, so a failure mid catch-up only
+/// retries a single batch on the next tick instead of the whole backlog.
+const CATCHUP_BATCH_SIZE: u64 = 30;
+
+struct BatchProcessSummary {
+	block_count: usize,
+	stream_kind: FetchStreamKind,
+}
+
+struct BatchProcessingContext<'a, S, H, T, TR> {
+	network: &'a Network,
+	block_storage: &'a Arc<S>,
+	block_handler: &'a Arc<H>,
+	trigger_handler: &'a Arc<T>,
+	block_tracker: &'a Arc<TR>,
+	latest_confirmed_block: u64,
+}
+
+struct BatchProcessingOptions {
+	batch_start: u64,
+	checkpoint_block: u64,
+	delete_blocks_before_save: bool,
+}
+
+async fn save_checkpoint<S: BlockStorage>(
+	block_storage: &Arc<S>,
+	network: &Network,
+	checkpoint_block: u64,
+	latest_confirmed_block: u64,
+) -> Result<(), BlockWatcherError> {
+	block_storage
+		.save_last_processed_block(&network.slug, checkpoint_block)
+		.await
+		.with_context(|| "Failed to save last processed block")?;
+
+	BLOCK_CHECKPOINT_LAG
+		.with_label_values(&[network.slug.as_str()])
+		.set(latest_confirmed_block.saturating_sub(checkpoint_block) as f64);
+
+	Ok(())
+}
+
+fn log_checkpoint_lag(network: &Network, checkpoint_block: u64, latest_confirmed_block: u64) {
+	let lag = latest_confirmed_block.saturating_sub(checkpoint_block);
+	tracing::info!(
+		network = %network.slug,
+		checkpoint_block,
+		latest_confirmed_block,
+		lag,
+		"Block checkpoint lag is {} blocks",
+		lag
+	);
+}
+
+async fn process_block_batch<
+	S: BlockStorage,
+	H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
+	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync + 'static,
+	TR: BlockTrackerTrait + Send + Sync + 'static,
+>(
+	context: &BatchProcessingContext<'_, S, H, T, TR>,
+	fetch_result: BlockFetchResult,
+	options: BatchProcessingOptions,
+) -> Result<BatchProcessSummary, BlockWatcherError> {
+	let network = context.network;
+	let block_storage = context.block_storage;
+	let block_tracker = context.block_tracker;
+	let batch_start = options.batch_start;
+	let checkpoint_block = options.checkpoint_block;
+	let delete_blocks_before_save = options.delete_blocks_before_save;
+	let stream_kind = fetch_result.stream_kind;
+	let blocks = fetch_result.blocks;
+
+	// Reset expected_next to the batch start so long catch-ups can checkpoint
+	// independently without false out-of-order warnings between batches.
+	block_tracker
+		.reset_expected_next(network, batch_start)
+		.await;
+
+	// Detect missing blocks based on the fetch stream kind.
+	// Dense streams (sequential block retrieval) use gap detection.
+	// Sparse streams (address-filtered) rely on explicitly reported failed blocks.
+	let missed_blocks = match &stream_kind {
+		FetchStreamKind::Dense => block_tracker.detect_missing_blocks(network, &blocks).await,
+		FetchStreamKind::Sparse => fetch_result.failed_blocks,
+	};
+
+	// Log and save missed blocks if any
+	if !missed_blocks.is_empty() {
+		tracing::error!(
+			network = %network.slug,
+			count = missed_blocks.len(),
+			"Missed {} blocks: {:?}",
+			missed_blocks.len(),
+			missed_blocks
+		);
+
+		// Save missed blocks in batch (enabled if store_blocks OR recovery is enabled)
+		let recovery_enabled = network.recovery_config.as_ref().is_some_and(|c| c.enabled);
+		if network.store_blocks.unwrap_or(false) || recovery_enabled {
+			block_storage
+				.save_missed_blocks(&network.slug, &missed_blocks)
+				.await
+				.with_context(|| format!("Failed to save {} missed blocks", missed_blocks.len()))?;
+		}
+	}
+
+	// Create channels for our pipeline
+	let channel_size = (blocks.len() * 2).max(1);
+	let (process_tx, process_rx) = mpsc::channel::<(BlockType, u64)>(channel_size);
+	let (trigger_tx, trigger_rx) = mpsc::channel::<ProcessedBlock>(channel_size);
+
+	// Stage 1: Block Processing Pipeline
+	let process_handle = tokio::spawn({
+		let network = network.clone();
+		let block_handler = Arc::clone(context.block_handler);
+		let mut trigger_tx = trigger_tx.clone();
+
+		async move {
+			// Process blocks concurrently, up to 32 at a time
+			let mut results = process_rx
+				.map(|(block, _)| {
+					let network = network.clone();
+					let block_handler = block_handler.clone();
+					async move { (block_handler)(block, network).await }
+				})
+				.buffer_unordered(32);
+
+			// Process all results and send them to trigger channel
+			while let Some(result) = results.next().await {
+				trigger_tx
+					.send(result)
+					.await
+					.with_context(|| "Failed to send processed block")?;
+			}
+
+			Ok::<(), BlockWatcherError>(())
+		}
+	});
+
+	// Stage 2: Trigger Pipeline
+	let trigger_handle = tokio::spawn({
+		let network = network.clone();
+		let trigger_handler = Arc::clone(context.trigger_handler);
+		let block_tracker = Arc::clone(context.block_tracker);
+
+		async move {
+			let mut trigger_rx = trigger_rx;
+			let mut pending_blocks = BTreeMap::new();
+			let mut next_block_number = Some(batch_start);
+			let block_tracker = block_tracker.clone();
+
+			// Process all incoming blocks
+			while let Some(processed_block) = trigger_rx.next().await {
+				let block_number = processed_block.block_number;
+
+				// Buffer the block - we'll check and execute in order
+				pending_blocks.insert(block_number, processed_block);
+
+				// Process blocks in order as long as we have the next expected block
+				while let Some(expected) = next_block_number {
+					if let Some(block) = pending_blocks.remove(&expected) {
+						// Check for duplicate or out-of-order blocks when actually executing
+						// This ensures we're checking the execution order, not arrival order
+						match block_tracker
+							.check_processed_block(&network, expected)
+							.await
+						{
+							BlockCheckResult::Ok => {
+								// Block is valid, execute it
+							}
+							BlockCheckResult::Duplicate { last_seen } => {
+								tracing::error!(
+									network = %network.slug,
+									block_number = expected,
+									last_seen = last_seen,
+									"Duplicate block detected: received block {} again (last seen: {})",
+									expected,
+									last_seen
+								);
+							}
+							BlockCheckResult::OutOfOrder {
+								expected: exp,
+								received,
+							} => {
+								tracing::warn!(
+									network = %network.slug,
+									block_number = received,
+									expected = exp,
+									"Out of order block detected: received {} but expected {}",
+									received,
+									exp
+								);
+							}
+						}
+
+						(trigger_handler)(&block);
+						next_block_number = Some(expected + 1);
+					} else {
+						break;
+					}
+				}
+			}
+
+			// Process any remaining blocks in order after the channel is closed
+			while let Some(min_block) = pending_blocks.keys().next().copied() {
+				if let Some(block) = pending_blocks.remove(&min_block) {
+					// Check for duplicate or out-of-order blocks when executing
+					match block_tracker
+						.check_processed_block(&network, min_block)
+						.await
+					{
+						BlockCheckResult::Ok => {
+							// Block is valid, execute it
+						}
+						BlockCheckResult::Duplicate { last_seen } => {
+							tracing::error!(
+								network = %network.slug,
+								block_number = min_block,
+								last_seen = last_seen,
+								"Duplicate block detected: received block {} again (last seen: {})",
+								min_block,
+								last_seen
+							);
+						}
+						BlockCheckResult::OutOfOrder {
+							expected: exp,
+							received,
+						} => {
+							tracing::warn!(
+								network = %network.slug,
+								block_number = received,
+								expected = exp,
+								"Out of order block detected: received {} but expected {}",
+								received,
+								exp
+							);
+						}
+					}
+
+					(trigger_handler)(&block);
+				}
+			}
+			Ok::<(), BlockWatcherError>(())
+		}
+	});
+
+	// Feed blocks into the pipeline
+	futures::future::join_all(blocks.iter().map(|block| {
+		let mut process_tx = process_tx.clone();
+		async move {
+			let block_number = block.number().unwrap_or(0);
+
+			// Send block to processing pipeline
+			process_tx
+				.send((block.clone(), block_number))
+				.await
+				.with_context(|| "Failed to send block to pipeline")?;
+
+			Ok::<(), BlockWatcherError>(())
+		}
+	}))
+	.await
+	.into_iter()
+	.collect::<Result<Vec<_>, _>>()
+	.with_context(|| format!("Failed to process blocks for network {}", network.slug))?;
+
+	// Drop the sender after all blocks are sent
+	drop(process_tx);
+	drop(trigger_tx);
+
+	// Wait for both pipeline stages to complete
+	let (process_result, trigger_result) = tokio::join!(process_handle, trigger_handle);
+	process_result.map_err(|e| anyhow::anyhow!("Block processing task failed: {}", e))??;
+	trigger_result.map_err(|e| anyhow::anyhow!("Trigger processing task failed: {}", e))??;
+
+	if network.store_blocks.unwrap_or(false) {
+		if delete_blocks_before_save {
+			block_storage
+				.delete_blocks(&network.slug)
+				.await
+				.with_context(|| "Failed to delete old blocks")?;
+		}
+
+		block_storage
+			.save_blocks(&network.slug, &blocks)
+			.await
+			.with_context(|| "Failed to save blocks")?;
+	}
+
+	save_checkpoint(
+		block_storage,
+		network,
+		checkpoint_block,
+		context.latest_confirmed_block,
+	)
+	.await?;
+
+	Ok(BatchProcessSummary {
+		block_count: blocks.len(),
+		stream_kind,
+	})
+}
 
 /// Trait for job scheduler
 ///
@@ -480,13 +787,30 @@ pub async fn process_new_blocks<
 
 	let recommended_past_blocks = network.get_recommended_past_blocks();
 
-	let max_past_blocks = network.max_past_blocks.unwrap_or(recommended_past_blocks);
+	let max_past_blocks = network
+		.max_past_blocks
+		.unwrap_or(MaxPastBlocks::Limited(recommended_past_blocks));
 
-	// Calculate the start block number, using the default if max_past_blocks is not set
-	let start_block = std::cmp::max(
-		last_processed_block + 1,
-		latest_confirmed_block.saturating_sub(max_past_blocks),
-	);
+	// Calculate the start block number, using the default if max_past_blocks is not set.
+	// Unlimited networks never clamp: they always resume from the last processed block.
+	let start_block = if last_processed_block == 0 {
+		latest_confirmed_block
+	} else {
+		match max_past_blocks {
+			MaxPastBlocks::Limited(max) => std::cmp::max(
+				last_processed_block.saturating_add(1),
+				latest_confirmed_block.saturating_sub(max),
+			),
+			MaxPastBlocks::Unlimited => last_processed_block.saturating_add(1),
+		}
+	};
+	let skipped_blocks = match max_past_blocks {
+		MaxPastBlocks::Limited(_) if last_processed_block != 0 => {
+			let next_block = last_processed_block.saturating_add(1);
+			(start_block > next_block).then_some(start_block - next_block)
+		}
+		_ => None,
+	};
 
 	tracing::info!(
 		"Processing blocks:\n\tLast processed block: {}\n\tLatest confirmed block: {}\n\tStart \
@@ -494,267 +818,124 @@ pub async fn process_new_blocks<
 		last_processed_block,
 		latest_confirmed_block,
 		start_block,
-		if start_block > last_processed_block + 1 {
-			format!(
-				" (skipped {} blocks)",
-				start_block - (last_processed_block + 1)
-			)
-		} else {
-			String::new()
-		},
+		skipped_blocks
+			.map(|blocks| format!(" (skipped {} blocks)", blocks))
+			.unwrap_or_default(),
 		network.confirmation_blocks,
 		max_past_blocks
 	);
 
-	let fetch_result = if last_processed_block == 0 {
-		rpc_client
+	let mut total_blocks_processed = 0;
+	let mut stream_kind = FetchStreamKind::Dense;
+	let mut checkpoint_block = last_processed_block;
+	let mut blocks_deleted = false;
+	let batch_context = BatchProcessingContext {
+		network,
+		block_storage: &block_storage,
+		block_handler: &block_handler,
+		trigger_handler: &trigger_handler,
+		block_tracker: &block_tracker,
+		latest_confirmed_block,
+	};
+
+	if last_processed_block == 0 {
+		let fetch_result = rpc_client
 			.get_blocks_with_meta(latest_confirmed_block, None)
 			.await
-			.with_context(|| format!("Failed to get block {}", latest_confirmed_block))?
+			.with_context(|| format!("Failed to get block {}", latest_confirmed_block))?;
+		let summary = process_block_batch(
+			&batch_context,
+			fetch_result,
+			BatchProcessingOptions {
+				batch_start: latest_confirmed_block,
+				checkpoint_block: latest_confirmed_block,
+				delete_blocks_before_save: true,
+			},
+		)
+		.await?;
+		total_blocks_processed += summary.block_count;
+		stream_kind = summary.stream_kind;
+		checkpoint_block = latest_confirmed_block;
 	} else if last_processed_block < latest_confirmed_block {
-		rpc_client
-			.get_blocks_with_meta(start_block, Some(latest_confirmed_block))
-			.await
-			.with_context(|| {
-				format!(
-					"Failed to get blocks from {} to {}",
-					start_block, latest_confirmed_block
+		// The per-network run_lock serializes cron ticks while long catch-ups are still running.
+		let mut batch_start = start_block;
+		while batch_start <= latest_confirmed_block {
+			let batch_end = std::cmp::min(
+				batch_start.saturating_add(CATCHUP_BATCH_SIZE - 1),
+				latest_confirmed_block,
+			);
+			let batch_result = async {
+				let fetch_result = rpc_client
+					.get_blocks_with_meta(batch_start, Some(batch_end))
+					.await
+					.with_context(|| {
+						format!("Failed to get blocks from {} to {}", batch_start, batch_end)
+					})?;
+
+				process_block_batch(
+					&batch_context,
+					fetch_result,
+					BatchProcessingOptions {
+						batch_start,
+						checkpoint_block: batch_end,
+						delete_blocks_before_save: network.store_blocks.unwrap_or(false)
+							&& !blocks_deleted,
+					},
 				)
-			})?
+				.await
+			}
+			.await;
+
+			match batch_result {
+				Ok(summary) => {
+					total_blocks_processed += summary.block_count;
+					stream_kind = summary.stream_kind;
+					checkpoint_block = batch_end;
+					blocks_deleted = blocks_deleted || network.store_blocks.unwrap_or(false);
+				}
+				Err(error) => {
+					tracing::error!(
+						network = %network.slug,
+						batch_start,
+						batch_end,
+						error = %error,
+						"Failed to process block batch"
+					);
+					log_checkpoint_lag(network, checkpoint_block, latest_confirmed_block);
+					return Err(error);
+				}
+			}
+
+			batch_start = batch_end + 1;
+		}
 	} else {
-		BlockFetchResult {
+		let fetch_result = BlockFetchResult {
 			blocks: Vec::new(),
 			failed_blocks: Vec::new(),
 			stream_kind: FetchStreamKind::Dense,
-		}
-	};
-
-	let stream_kind = fetch_result.stream_kind;
-	let blocks = fetch_result.blocks;
-
-	// Reset expected_next to start_block to ensure synchronization with this execution
-	// This prevents false out-of-order warnings when reprocessing blocks or restarting
-	block_tracker
-		.reset_expected_next(network, start_block)
-		.await;
-
-	// Detect missing blocks based on the fetch stream kind.
-	// Dense streams (sequential block retrieval) use gap detection.
-	// Sparse streams (address-filtered) rely on explicitly reported failed blocks.
-	let missed_blocks = match stream_kind {
-		FetchStreamKind::Dense => block_tracker.detect_missing_blocks(network, &blocks).await,
-		FetchStreamKind::Sparse => fetch_result.failed_blocks,
-	};
-
-	// Log and save missed blocks if any
-	if !missed_blocks.is_empty() {
-		tracing::error!(
-			network = %network.slug,
-			count = missed_blocks.len(),
-			"Missed {} blocks: {:?}",
-			missed_blocks.len(),
-			missed_blocks
-		);
-
-		// Save missed blocks in batch (enabled if store_blocks OR recovery is enabled)
-		let recovery_enabled = network.recovery_config.as_ref().is_some_and(|c| c.enabled);
-		if network.store_blocks.unwrap_or(false) || recovery_enabled {
-			block_storage
-				.save_missed_blocks(&network.slug, &missed_blocks)
-				.await
-				.with_context(|| format!("Failed to save {} missed blocks", missed_blocks.len()))?;
-		}
+		};
+		let summary = process_block_batch(
+			&batch_context,
+			fetch_result,
+			BatchProcessingOptions {
+				batch_start: start_block,
+				checkpoint_block: latest_confirmed_block,
+				delete_blocks_before_save: true,
+			},
+		)
+		.await?;
+		total_blocks_processed += summary.block_count;
+		stream_kind = summary.stream_kind;
+		checkpoint_block = latest_confirmed_block;
 	}
 
-	// Create channels for our pipeline
-	let (process_tx, process_rx) = mpsc::channel::<(BlockType, u64)>(blocks.len() * 2);
-	let (trigger_tx, trigger_rx) = mpsc::channel::<ProcessedBlock>(blocks.len() * 2);
-
-	// Stage 1: Block Processing Pipeline
-	let process_handle = tokio::spawn({
-		let network = network.clone();
-		let block_handler = block_handler.clone();
-		let mut trigger_tx = trigger_tx.clone();
-
-		async move {
-			// Process blocks concurrently, up to 32 at a time
-			let mut results = process_rx
-				.map(|(block, _)| {
-					let network = network.clone();
-					let block_handler = block_handler.clone();
-					async move { (block_handler)(block, network).await }
-				})
-				.buffer_unordered(32);
-
-			// Process all results and send them to trigger channel
-			while let Some(result) = results.next().await {
-				trigger_tx
-					.send(result)
-					.await
-					.with_context(|| "Failed to send processed block")?;
-			}
-
-			Ok::<(), BlockWatcherError>(())
-		}
-	});
-
-	// Stage 2: Trigger Pipeline
-	let trigger_handle = tokio::spawn({
-		let network = network.clone();
-		let trigger_handler = trigger_handler.clone();
-		let block_tracker = block_tracker.clone();
-
-		async move {
-			let mut trigger_rx = trigger_rx;
-			let mut pending_blocks = BTreeMap::new();
-			let mut next_block_number = Some(start_block);
-			let block_tracker = block_tracker.clone();
-
-			// Process all incoming blocks
-			while let Some(processed_block) = trigger_rx.next().await {
-				let block_number = processed_block.block_number;
-
-				// Buffer the block - we'll check and execute in order
-				pending_blocks.insert(block_number, processed_block);
-
-				// Process blocks in order as long as we have the next expected block
-				while let Some(expected) = next_block_number {
-					if let Some(block) = pending_blocks.remove(&expected) {
-						// Check for duplicate or out-of-order blocks when actually executing
-						// This ensures we're checking the execution order, not arrival order
-						match block_tracker
-							.check_processed_block(&network, expected)
-							.await
-						{
-							BlockCheckResult::Ok => {
-								// Block is valid, execute it
-							}
-							BlockCheckResult::Duplicate { last_seen } => {
-								tracing::error!(
-									network = %network.slug,
-									block_number = expected,
-									last_seen = last_seen,
-									"Duplicate block detected: received block {} again (last seen: {})",
-									expected,
-									last_seen
-								);
-							}
-							BlockCheckResult::OutOfOrder {
-								expected: exp,
-								received,
-							} => {
-								tracing::warn!(
-									network = %network.slug,
-									block_number = received,
-									expected = exp,
-									"Out of order block detected: received {} but expected {}",
-									received,
-									exp
-								);
-							}
-						}
-
-						(trigger_handler)(&block);
-						next_block_number = Some(expected + 1);
-					} else {
-						break;
-					}
-				}
-			}
-
-			// Process any remaining blocks in order after the channel is closed
-			while let Some(min_block) = pending_blocks.keys().next().copied() {
-				if let Some(block) = pending_blocks.remove(&min_block) {
-					// Check for duplicate or out-of-order blocks when executing
-					match block_tracker
-						.check_processed_block(&network, min_block)
-						.await
-					{
-						BlockCheckResult::Ok => {
-							// Block is valid, execute it
-						}
-						BlockCheckResult::Duplicate { last_seen } => {
-							tracing::error!(
-								network = %network.slug,
-								block_number = min_block,
-								last_seen = last_seen,
-								"Duplicate block detected: received block {} again (last seen: {})",
-								min_block,
-								last_seen
-							);
-						}
-						BlockCheckResult::OutOfOrder {
-							expected: exp,
-							received,
-						} => {
-							tracing::warn!(
-								network = %network.slug,
-								block_number = received,
-								expected = exp,
-								"Out of order block detected: received {} but expected {}",
-								received,
-								exp
-							);
-						}
-					}
-
-					(trigger_handler)(&block);
-				}
-			}
-			Ok::<(), BlockWatcherError>(())
-		}
-	});
-
-	// Feed blocks into the pipeline
-	futures::future::join_all(blocks.iter().map(|block| {
-		let mut process_tx = process_tx.clone();
-		async move {
-			let block_number = block.number().unwrap_or(0);
-
-			// Send block to processing pipeline
-			process_tx
-				.send((block.clone(), block_number))
-				.await
-				.with_context(|| "Failed to send block to pipeline")?;
-
-			Ok::<(), BlockWatcherError>(())
-		}
-	}))
-	.await
-	.into_iter()
-	.collect::<Result<Vec<_>, _>>()
-	.with_context(|| format!("Failed to process blocks for network {}", network.slug))?;
-
-	// Drop the sender after all blocks are sent
-	drop(process_tx);
-	drop(trigger_tx);
-
-	// Wait for both pipeline stages to complete
-	let (_process_result, _trigger_result) = tokio::join!(process_handle, trigger_handle);
-
-	if network.store_blocks.unwrap_or(false) {
-		// Delete old blocks before saving new ones
-		block_storage
-			.delete_blocks(&network.slug)
-			.await
-			.with_context(|| "Failed to delete old blocks")?;
-
-		block_storage
-			.save_blocks(&network.slug, &blocks)
-			.await
-			.with_context(|| "Failed to save blocks")?;
-	}
-	// Update the last processed block
-	block_storage
-		.save_last_processed_block(&network.slug, latest_confirmed_block)
-		.await
-		.with_context(|| "Failed to save last processed block")?;
+	log_checkpoint_lag(network, checkpoint_block, latest_confirmed_block);
 
 	match stream_kind {
 		FetchStreamKind::Sparse => {
 			tracing::info!(
 				"Processed {} slots with matching transactions (scanned slot range {}-{}) in {}ms for network {:?}",
-				blocks.len(),
+				total_blocks_processed,
 				start_block,
 				latest_confirmed_block,
 				start_time.elapsed().as_millis(),
@@ -764,7 +945,7 @@ pub async fn process_new_blocks<
 		FetchStreamKind::Dense => {
 			tracing::info!(
 				"Processed {} blocks (range {}-{}) in {}ms for network {:?}",
-				blocks.len(),
+				total_blocks_processed,
 				start_block,
 				latest_confirmed_block,
 				start_time.elapsed().as_millis(),
@@ -838,6 +1019,7 @@ mod tests {
 		latest_block: Arc<AtomicU64>,
 		blocks_to_return: Arc<std::sync::Mutex<Vec<BlockType>>>,
 		fail_get_blocks: Arc<AtomicBool>,
+		fail_on_call: Arc<AtomicUsize>,
 		call_count: Arc<AtomicUsize>,
 	}
 
@@ -847,6 +1029,7 @@ mod tests {
 				latest_block: Arc::new(AtomicU64::new(latest_block)),
 				blocks_to_return: Arc::new(std::sync::Mutex::new(Vec::new())),
 				fail_get_blocks: Arc::new(AtomicBool::new(false)),
+				fail_on_call: Arc::new(AtomicUsize::new(0)),
 				call_count: Arc::new(AtomicUsize::new(0)),
 			}
 		}
@@ -859,6 +1042,12 @@ mod tests {
 		#[allow(dead_code)]
 		fn with_failing_get_blocks(self) -> Self {
 			self.fail_get_blocks.store(true, Ordering::SeqCst);
+			self
+		}
+
+		fn with_failing_get_blocks_after(self, successful_calls: usize) -> Self {
+			self.fail_on_call
+				.store(successful_calls + 1, Ordering::SeqCst);
 			self
 		}
 	}
@@ -874,9 +1063,14 @@ mod tests {
 			start: u64,
 			end: Option<u64>,
 		) -> Result<Vec<BlockType>, anyhow::Error> {
-			self.call_count.fetch_add(1, Ordering::SeqCst);
+			let call_number = self.call_count.fetch_add(1, Ordering::SeqCst) + 1;
 
 			if self.fail_get_blocks.load(Ordering::SeqCst) {
+				return Err(anyhow::anyhow!("Simulated RPC failure"));
+			}
+
+			let fail_on_call = self.fail_on_call.load(Ordering::SeqCst);
+			if fail_on_call != 0 && call_number >= fail_on_call {
 				return Err(anyhow::anyhow!("Simulated RPC failure"));
 			}
 
@@ -1074,7 +1268,7 @@ mod tests {
 			.unwrap();
 
 		let mut network = create_test_network();
-		network.max_past_blocks = Some(50); // Only process last 50 blocks
+		network.max_past_blocks = Some(MaxPastBlocks::Limited(50)); // Only process last 50 blocks
 
 		let rpc_client = MockRpcClient::new(1000);
 		let block_tracker = Arc::new(BlockTracker::new(100));
@@ -1099,6 +1293,100 @@ mod tests {
 			.await
 			.unwrap();
 		assert_eq!(last_processed, Some(988)); // 1000 - 12 confirmations
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_unlimited_processes_full_gap() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 10)
+			.await
+			.unwrap();
+
+		let mut network = create_test_network();
+		network.max_past_blocks = Some(MaxPastBlocks::Unlimited);
+		network.store_blocks = Some(false);
+
+		let rpc_client = MockRpcClient::new(1000);
+		let block_tracker = Arc::new(BlockTracker::new(2000));
+		let block_handler = create_block_handler();
+		let trigger_count = Arc::new(AtomicUsize::new(0));
+		let trigger_handler = {
+			let trigger_count = trigger_count.clone();
+			Arc::new(move |_block: &ProcessedBlock| {
+				trigger_count.fetch_add(1, Ordering::SeqCst);
+				tokio::spawn(async move {})
+			})
+		};
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		assert!(result.is_ok());
+
+		let last_processed = storage
+			.get_last_processed_block("test_network")
+			.await
+			.unwrap();
+		assert_eq!(last_processed, Some(988));
+		assert_eq!(trigger_count.load(Ordering::SeqCst), 978);
+		assert_eq!(rpc_client.call_count.load(Ordering::SeqCst), 33);
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_unlimited_failure_keeps_last_successful_batch_checkpoint() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 10)
+			.await
+			.unwrap();
+
+		let mut network = create_test_network();
+		network.max_past_blocks = Some(MaxPastBlocks::Unlimited);
+		network.store_blocks = Some(false);
+
+		let rpc_client = MockRpcClient::new(200).with_failing_get_blocks_after(2);
+		let block_tracker = Arc::new(BlockTracker::new(2000));
+		let block_handler = create_block_handler();
+		let trigger_count = Arc::new(AtomicUsize::new(0));
+		let trigger_handler = {
+			let trigger_count = trigger_count.clone();
+			Arc::new(move |_block: &ProcessedBlock| {
+				trigger_count.fetch_add(1, Ordering::SeqCst);
+				tokio::spawn(async move {})
+			})
+		};
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		assert!(result.is_err());
+
+		let last_processed = storage
+			.get_last_processed_block("test_network")
+			.await
+			.unwrap();
+		assert_eq!(last_processed, Some(70));
+		assert_eq!(trigger_count.load(Ordering::SeqCst), 60);
+		assert_eq!(rpc_client.call_count.load(Ordering::SeqCst), 3);
 	}
 
 	#[tokio::test]

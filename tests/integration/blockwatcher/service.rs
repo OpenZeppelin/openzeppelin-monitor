@@ -1,6 +1,6 @@
 use futures::future::BoxFuture;
 use mockall::predicate;
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 use tokio_cron_scheduler::JobScheduler;
 
 use crate::integration::mocks::{
@@ -8,7 +8,7 @@ use crate::integration::mocks::{
 	MockEVMTransportClient, MockEvmClientTrait, MockJobScheduler,
 };
 use openzeppelin_monitor::{
-	models::{BlockChainType, BlockType, Network, ProcessedBlock},
+	models::{BlockChainType, BlockType, MaxPastBlocks, Network, ProcessedBlock},
 	services::blockwatcher::{
 		process_new_blocks, BlockCheckResult, BlockTracker, BlockTrackerTrait, BlockWatcherError,
 		BlockWatcherService, NetworkBlockWatcher,
@@ -21,8 +21,8 @@ struct MockConfig {
 	last_processed_block: Option<u64>,
 	latest_block: u64,
 	blocks_to_return: Vec<BlockType>,
-	expected_save_block: Option<u64>,
-	expected_block_range: Option<(u64, Option<u64>)>,
+	expected_save_blocks: Vec<u64>,
+	expected_block_ranges: Vec<(u64, Option<u64>)>,
 	expected_tracked_blocks: Vec<u64>,
 	store_blocks: bool,
 }
@@ -38,25 +38,44 @@ fn setup_mocks_with_network(
 ) {
 	// Setup mock block storage
 	let mut block_storage = MockBlockStorage::new();
+	let expected_save_blocks = config.expected_save_blocks.clone();
+	let expected_block_ranges = config.expected_block_ranges.clone();
 
 	// Configure get_last_processed_block
+	let last_processed_block = config.last_processed_block;
 	block_storage
 		.expect_get_last_processed_block()
 		.with(predicate::always())
-		.returning(move |_| Ok(config.last_processed_block))
+		.returning(move |_| Ok(last_processed_block))
 		.times(1);
 
 	// Configure save_last_processed_block if expected
-	if let Some(expected_block) = config.expected_save_block {
+	if !expected_save_blocks.is_empty() {
+		let expected_blocks = Arc::new(std::sync::Mutex::new(VecDeque::from(
+			expected_save_blocks.clone(),
+		)));
 		block_storage
 			.expect_save_last_processed_block()
-			.with(predicate::always(), predicate::eq(expected_block))
-			.returning(|_, _| Ok(()))
-			.times(1);
+			.with(predicate::always(), predicate::always())
+			.returning(move |_, block| {
+				let expected_block = expected_blocks
+					.lock()
+					.unwrap()
+					.pop_front()
+					.expect("unexpected save_last_processed_block call");
+				assert_eq!(block, expected_block);
+				Ok(())
+			})
+			.times(expected_save_blocks.len());
 	}
 
 	// Configure block storage expectations based on store_blocks flag
 	if config.store_blocks {
+		let expected_save_count = if expected_block_ranges.is_empty() {
+			1
+		} else {
+			expected_block_ranges.len()
+		};
 		block_storage
 			.expect_delete_blocks()
 			.with(predicate::always())
@@ -67,7 +86,7 @@ fn setup_mocks_with_network(
 			.expect_save_blocks()
 			.with(predicate::always(), predicate::always())
 			.returning(|_, _| Ok(()))
-			.times(1);
+			.times(expected_save_count);
 	} else {
 		block_storage.expect_delete_blocks().times(0);
 		block_storage.expect_save_blocks().times(0);
@@ -85,13 +104,35 @@ fn setup_mocks_with_network(
 		.returning(move || Ok(config.latest_block))
 		.times(1);
 
-	// Configure get_blocks if range is specified
-	if let Some((from, to)) = config.expected_block_range {
+	// Configure get_blocks if ranges are specified
+	if !expected_block_ranges.is_empty() {
+		let expected_ranges = Arc::new(std::sync::Mutex::new(VecDeque::from(
+			expected_block_ranges.clone(),
+		)));
+		let blocks_to_return = config.blocks_to_return.clone();
 		rpc_client
 			.expect_get_blocks()
-			.with(predicate::eq(from), predicate::eq(to))
-			.returning(move |_, _| Ok(config.blocks_to_return.clone()))
-			.times(1);
+			.with(predicate::always(), predicate::always())
+			.returning(move |from, to| {
+				let expected_range = expected_ranges
+					.lock()
+					.unwrap()
+					.pop_front()
+					.expect("unexpected get_blocks call");
+				assert_eq!((from, to), expected_range);
+
+				let end = to.unwrap_or(from);
+				Ok(blocks_to_return
+					.iter()
+					.filter(|block| {
+						block
+							.number()
+							.is_some_and(|number| number >= from && number <= end)
+					})
+					.cloned()
+					.collect())
+			})
+			.times(expected_block_ranges.len());
 	}
 
 	// Setup mock block tracker with the same Arc<MockBlockStorage>
@@ -104,34 +145,76 @@ fn setup_mocks_with_network(
 	let confirmation_blocks = network.map(|n| n.confirmation_blocks).unwrap_or(1); // default confirmation_blocks = 1
 	let latest_confirmed = config.latest_block.saturating_sub(confirmation_blocks);
 	let max_past_blocks = network
-		.and_then(|n| n.max_past_blocks)
-		.or_else(|| network.map(|n| n.get_recommended_past_blocks()))
-		.unwrap_or(50); // default max_past_blocks = 50
-	let start_block = std::cmp::max(
-		last_processed + 1,
-		latest_confirmed.saturating_sub(max_past_blocks),
-	);
+		.map(|n| {
+			n.max_past_blocks
+				.unwrap_or(MaxPastBlocks::Limited(n.get_recommended_past_blocks()))
+		})
+		.unwrap_or(MaxPastBlocks::Limited(50)); // default max_past_blocks = 50
+	let start_block = if last_processed == 0 {
+		latest_confirmed
+	} else {
+		match max_past_blocks {
+			MaxPastBlocks::Limited(max) => std::cmp::max(
+				last_processed.saturating_add(1),
+				latest_confirmed.saturating_sub(max),
+			),
+			MaxPastBlocks::Unlimited => last_processed.saturating_add(1),
+		}
+	};
 
-	// Configure reset_expected_next to be called at the start of each execution
+	let expected_batches = if expected_block_ranges.is_empty() {
+		vec![(start_block, Vec::new())]
+	} else {
+		expected_block_ranges
+			.iter()
+			.map(|(from, to)| {
+				let end = to.unwrap_or(*from);
+				let expected_blocks = config
+					.expected_tracked_blocks
+					.iter()
+					.copied()
+					.filter(|block| *block >= *from && *block <= end)
+					.collect();
+				(*from, expected_blocks)
+			})
+			.collect()
+	};
+
+	let expected_reset_batches = expected_batches.clone();
+	let expected_resets = Arc::new(std::sync::Mutex::new(VecDeque::from(
+		expected_reset_batches,
+	)));
 	block_tracker
 		.expect_reset_expected_next()
 		.withf(move |network: &Network, block: &u64| {
-			network.network_type == BlockChainType::EVM && *block == start_block
+			if network.network_type != BlockChainType::EVM {
+				return false;
+			}
+			let mut expected_resets = expected_resets.lock().unwrap();
+			let Some((expected_start, _)) = expected_resets.pop_front() else {
+				return false;
+			};
+			*block == expected_start
 		})
 		.returning(|_, _| ())
-		.times(1);
+		.times(expected_batches.len());
 
-	// Configure detect_missing_blocks to return empty vec (no gaps expected in most tests)
-	let expected_blocks = config.expected_tracked_blocks.clone();
+	let expected_detect_batches = expected_batches.clone();
+	let expected_detects = Arc::new(std::sync::Mutex::new(VecDeque::from(
+		expected_detect_batches,
+	)));
 	block_tracker
 		.expect_detect_missing_blocks()
 		.withf(move |_, blocks: &[BlockType]| {
-			// Verify blocks match expected
+			let mut expected_detects = expected_detects.lock().unwrap();
+			let Some((_, expected_blocks)) = expected_detects.pop_front() else {
+				return false;
+			};
 			let block_numbers: Vec<u64> = blocks.iter().filter_map(|b| b.number()).collect();
 			block_numbers == expected_blocks
 		})
 		.returning(|_, _| Vec::new())
-		.times(1);
+		.times(expected_batches.len());
 
 	// Configure check_processed_block to return Ok for all expected blocks
 	for &block_number in &config.expected_tracked_blocks {
@@ -161,8 +244,8 @@ async fn test_normal_block_range() {
 			create_test_block(BlockChainType::EVM, 103),
 			create_test_block(BlockChainType::EVM, 104),
 		],
-		expected_save_block: Some(104),
-		expected_block_range: Some((101, Some(104))),
+		expected_save_blocks: vec![104],
+		expected_block_ranges: vec![(101, Some(104))],
 		expected_tracked_blocks: vec![101, 102, 103, 104],
 		store_blocks: false,
 	};
@@ -209,8 +292,8 @@ async fn test_fresh_start_processing() {
 		last_processed_block: Some(0),
 		latest_block: 100,
 		blocks_to_return: vec![create_test_block(BlockChainType::EVM, 99)],
-		expected_save_block: Some(99),
-		expected_block_range: Some((99, None)),
+		expected_save_blocks: vec![99],
+		expected_block_ranges: vec![(99, None)],
 		expected_tracked_blocks: vec![99],
 		store_blocks: false,
 	};
@@ -257,9 +340,9 @@ async fn test_no_new_blocks() {
 		last_processed_block: Some(100),
 		latest_block: 100,        // Same as last_processed_block
 		blocks_to_return: vec![], // No blocks should be returned
-		expected_save_block: Some(99), /* We still store the last confirmed (latest_block - 1
+		expected_save_blocks: vec![99], /* We still store the last confirmed (latest_block - 1
 		                           * confirmations) block */
-		expected_block_range: None,      // No block range should be requested
+		expected_block_ranges: vec![],   // No block range should be requested
 		expected_tracked_blocks: vec![], // No blocks should be tracked
 		store_blocks: true,
 	};
@@ -300,7 +383,7 @@ async fn test_no_new_blocks() {
 #[tokio::test]
 async fn test_concurrent_processing() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
-	network.max_past_blocks = Some(51); // match processing limit
+	network.max_past_blocks = Some(MaxPastBlocks::Limited(51)); // match processing limit
 
 	// Create 50 blocks to test the pipeline
 	let blocks_to_process: Vec<u64> = (101..151).collect();
@@ -312,8 +395,8 @@ async fn test_concurrent_processing() {
 			.iter()
 			.map(|&num| create_test_block(BlockChainType::EVM, num))
 			.collect(),
-		expected_save_block: Some(150),
-		expected_block_range: Some((101, Some(150))),
+		expected_save_blocks: vec![130, 150],
+		expected_block_ranges: vec![(101, Some(130)), (131, Some(150))],
 		expected_tracked_blocks: blocks_to_process.clone(),
 		store_blocks: false,
 	};
@@ -413,8 +496,8 @@ async fn test_ordered_trigger_handling() {
 			.iter()
 			.map(|&num| create_test_block(BlockChainType::EVM, num))
 			.collect(),
-		expected_save_block: Some(105),
-		expected_block_range: Some((101, Some(105))),
+		expected_save_blocks: vec![105],
+		expected_block_ranges: vec![(101, Some(105))],
 		expected_tracked_blocks: blocks_to_process.clone(),
 		store_blocks: false,
 	};
@@ -506,8 +589,8 @@ async fn test_block_storage_enabled() {
 		last_processed_block: Some(100),
 		latest_block: 103,
 		blocks_to_return: blocks_to_process.clone(),
-		expected_save_block: Some(102),
-		expected_block_range: Some((101, Some(102))),
+		expected_save_blocks: vec![102],
+		expected_block_ranges: vec![(101, Some(102))],
 		expected_tracked_blocks: vec![101, 102],
 		store_blocks: true,
 	};
@@ -547,7 +630,7 @@ async fn test_block_storage_enabled() {
 #[tokio::test]
 async fn test_max_past_blocks_limit() {
 	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
-	network.max_past_blocks = Some(3); // Only process last 3 blocks max
+	network.max_past_blocks = Some(MaxPastBlocks::Limited(3)); // Only process last 3 blocks max
 
 	let config = MockConfig {
 		last_processed_block: Some(100),
@@ -558,9 +641,9 @@ async fn test_max_past_blocks_limit() {
 			create_test_block(BlockChainType::EVM, 108),
 			create_test_block(BlockChainType::EVM, 109),
 		],
-		expected_save_block: Some(109),
+		expected_save_blocks: vec![109],
 		// Should start at 106 (110 - 1 confirmation - 3 past blocks) instead of 101
-		expected_block_range: Some((106, Some(109))),
+		expected_block_ranges: vec![(106, Some(109))],
 		expected_tracked_blocks: vec![106, 107, 108, 109],
 		store_blocks: false,
 	};
@@ -633,9 +716,9 @@ async fn test_max_past_blocks_limit_recommended() {
 			create_test_block(BlockChainType::EVM, 137),
 			create_test_block(BlockChainType::EVM, 138),
 		],
-		expected_save_block: Some(138),
-		expected_block_range: Some((125, Some(138))), /* start at 125 (150 - 12 (confirmations) - 13 (max_past_blocks)
-													  stop at 138 (150 - 12 (confirmations) */
+		expected_save_blocks: vec![138],
+		expected_block_ranges: vec![(125, Some(138))], /* start at 125 (150 - 12 (confirmations) - 13 (max_past_blocks)
+													   stop at 138 (150 - 12 (confirmations) */
 		expected_tracked_blocks: vec![
 			125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138,
 		],
@@ -688,9 +771,9 @@ async fn test_confirmation_blocks() {
 			create_test_block(BlockChainType::EVM, 102),
 			create_test_block(BlockChainType::EVM, 103),
 		],
-		expected_save_block: Some(103), /* We expect this to be saved as the last processed block
-		                                 * with 2 confirmations */
-		expected_block_range: Some((101, Some(103))),
+		expected_save_blocks: vec![103], /* We expect this to be saved as the last processed block
+		                                  * with 2 confirmations */
+		expected_block_ranges: vec![(101, Some(103))],
 		expected_tracked_blocks: vec![101, 102, 103],
 		store_blocks: false,
 	};

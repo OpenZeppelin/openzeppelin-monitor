@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use futures;
+use futures::{stream, StreamExt, TryStreamExt};
 use serde_json::json;
 use tracing::instrument;
 
@@ -211,7 +211,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
-		let block_futures: Vec<_> = (start_block..=end_block.unwrap_or(start_block))
+		stream::iter(start_block..=end_block.unwrap_or(start_block))
 			.map(|block_number| {
 				let params = json!([
 					format!("0x{:x}", block_number),
@@ -239,11 +239,8 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 					Ok(BlockType::EVM(Box::new(block)))
 				}
 			})
-			.collect();
-
-		futures::future::join_all(block_futures)
+			.buffered(32)
+			.try_collect()
 			.await
-			.into_iter()
-			.collect::<Result<Vec<_>, _>>()
 	}
 }

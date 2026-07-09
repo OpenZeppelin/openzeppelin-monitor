@@ -200,9 +200,9 @@ pub fn network_strategy() -> impl Strategy<Value = Network> {
 		1000..60000u64,                                               // block_time_ms
 		1..=20u64,                                                    // confirmation_blocks
 		"0 \\*/5 \\* \\* \\* \\*".prop_map(|s| s.to_string()),        // cron_schedule
-		Just(Some(1u64)),                                             /* max_past_blocks -
+		Just(1u64),                                                   /* max_past_blocks -
 		                                                               * ensure it's always
-		                                                               * Some(1) or greater */
+		                                                               * 1 or greater */
 		option::of(prop::bool::ANY), // store_blocks
 	)
 		.prop_map(
@@ -229,7 +229,7 @@ pub fn network_strategy() -> impl Strategy<Value = Network> {
 					.block_time_ms(block_time_ms)
 					.confirmation_blocks(confirmation_blocks)
 					.cron_schedule(cron_schedule.as_str())
-					.max_past_blocks(max_past_blocks.unwrap_or(0))
+					.max_past_blocks(max_past_blocks)
 					.store_blocks(store_blocks.unwrap_or(false))
 					.build()
 			},

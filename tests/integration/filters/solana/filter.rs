@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		AddressWithSpec, BlockType, EventCondition, MatchConditions, Monitor, MonitorMatch,
-		SolanaBlock, SolanaConfirmedBlock, SolanaInnerInstruction, SolanaInstruction,
+		AddressWithSpec, BlockType, EventCondition, MatchConditions, MaxPastBlocks, Monitor,
+		MonitorMatch, SolanaBlock, SolanaConfirmedBlock, SolanaInnerInstruction, SolanaInstruction,
 		SolanaMatchArguments, SolanaMonitorMatch, SolanaTransaction, SolanaTransactionInfo,
 		SolanaTransactionMessage, SolanaTransactionMeta, TransactionCondition, TransactionStatus,
 	},
@@ -34,7 +34,7 @@ fn create_test_network() -> Network {
 		block_time_ms: 400,
 		confirmation_blocks: 1,
 		cron_schedule: "*/10 * * * * *".to_string(),
-		max_past_blocks: Some(50),
+		max_past_blocks: Some(MaxPastBlocks::Limited(50)),
 		store_blocks: Some(true),
 		recovery_config: None,
 	}
