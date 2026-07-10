@@ -33,6 +33,12 @@ use crate::{
 /// retries a single batch on the next tick instead of the whole backlog.
 const CATCHUP_BATCH_SIZE: u64 = 30;
 
+/// Maximum number of unlimited catch-up batches processed by a single tick.
+///
+/// This bounds tick duration so the per-network run_lock is released and
+/// recovery can interleave. The next tick resumes from the per-batch checkpoint.
+const MAX_BATCHES_PER_TICK: u64 = 100;
+
 struct BatchProcessSummary {
 	block_count: usize,
 	stream_kind: FetchStreamKind,
@@ -859,7 +865,23 @@ pub async fn process_new_blocks<
 	} else if last_processed_block < latest_confirmed_block {
 		// The per-network run_lock serializes cron ticks while long catch-ups are still running.
 		let mut batch_start = start_block;
+		let mut batches_processed_this_tick = 0;
 		while batch_start <= latest_confirmed_block {
+			if matches!(max_past_blocks, MaxPastBlocks::Unlimited)
+				&& batches_processed_this_tick >= MAX_BATCHES_PER_TICK
+			{
+				let remaining_lag = latest_confirmed_block.saturating_sub(checkpoint_block);
+				tracing::info!(
+					network = %network.slug,
+					checkpoint = checkpoint_block,
+					latest_confirmed = latest_confirmed_block,
+					remaining_lag,
+					batches_processed = batches_processed_this_tick,
+					"Reached unlimited catch-up batch cap; continuing next tick"
+				);
+				break;
+			}
+
 			let batch_end = std::cmp::min(
 				batch_start.saturating_add(CATCHUP_BATCH_SIZE - 1),
 				latest_confirmed_block,
@@ -892,6 +914,7 @@ pub async fn process_new_blocks<
 					stream_kind = summary.stream_kind;
 					checkpoint_block = batch_end;
 					blocks_deleted = blocks_deleted || network.store_blocks.unwrap_or(false);
+					batches_processed_this_tick += 1;
 				}
 				Err(error) => {
 					tracing::error!(
@@ -906,7 +929,10 @@ pub async fn process_new_blocks<
 				}
 			}
 
-			batch_start = batch_end + 1;
+			if batch_end == latest_confirmed_block {
+				break;
+			}
+			batch_start = batch_end.saturating_add(1);
 		}
 	} else {
 		let fetch_result = BlockFetchResult {
@@ -1340,6 +1366,80 @@ mod tests {
 		assert_eq!(last_processed, Some(988));
 		assert_eq!(trigger_count.load(Ordering::SeqCst), 978);
 		assert_eq!(rpc_client.call_count.load(Ordering::SeqCst), 33);
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_unlimited_caps_batches_per_tick_and_resumes() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		let last_processed = 10;
+
+		storage
+			.save_last_processed_block("test_network", last_processed)
+			.await
+			.unwrap();
+
+		let mut network = create_test_network();
+		network.max_past_blocks = Some(MaxPastBlocks::Unlimited);
+		network.store_blocks = Some(false);
+
+		let first_tick_blocks = MAX_BATCHES_PER_TICK * CATCHUP_BATCH_SIZE;
+		let remaining_blocks = CATCHUP_BATCH_SIZE + 20;
+		let first_tick_checkpoint = last_processed + first_tick_blocks;
+		let latest_confirmed_block = first_tick_checkpoint + remaining_blocks;
+		let latest_block = latest_confirmed_block + network.confirmation_blocks;
+
+		let rpc_client = MockRpcClient::new(latest_block);
+		let block_tracker = Arc::new(BlockTracker::new(4000));
+		let block_handler = create_block_handler();
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler.clone(),
+			trigger_handler.clone(),
+			block_tracker.clone(),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		assert_eq!(
+			storage
+				.get_last_processed_block("test_network")
+				.await
+				.unwrap(),
+			Some(first_tick_checkpoint)
+		);
+		assert_eq!(
+			rpc_client.call_count.load(Ordering::SeqCst),
+			usize::try_from(MAX_BATCHES_PER_TICK).unwrap()
+		);
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await;
+
+		assert!(result.is_ok());
+		assert_eq!(
+			storage
+				.get_last_processed_block("test_network")
+				.await
+				.unwrap(),
+			Some(latest_confirmed_block)
+		);
+		assert_eq!(
+			rpc_client.call_count.load(Ordering::SeqCst),
+			usize::try_from(MAX_BATCHES_PER_TICK + remaining_blocks.div_ceil(CATCHUP_BATCH_SIZE))
+				.unwrap()
+		);
 	}
 
 	#[tokio::test]
