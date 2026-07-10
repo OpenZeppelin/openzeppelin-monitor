@@ -332,7 +332,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::models::{BlockChainType, RpcUrl, SecretString, SecretValue};
+	use crate::models::{BlockChainType, MaxPastBlocks, RpcUrl, SecretString, SecretValue};
 	use crate::services::blockwatcher::storage::{
 		BlockStorage, FileBlockStorage, MissedBlockEntry,
 	};
@@ -355,7 +355,7 @@ mod tests {
 			block_time_ms: 12000,
 			confirmation_blocks: 12,
 			cron_schedule: "*/10 * * * * *".to_string(),
-			max_past_blocks: Some(100),
+			max_past_blocks: Some(MaxPastBlocks::Limited(100)),
 			store_blocks: Some(true),
 			recovery_config: Some(BlockRecoveryConfig {
 				enabled: true,

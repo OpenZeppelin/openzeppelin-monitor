@@ -3,7 +3,7 @@
 //! - `NetworkBuilder`: Builder for creating test Network instances
 
 use crate::models::{
-	BlockChainType, BlockRecoveryConfig, Network, RpcUrl, SecretString, SecretValue,
+	BlockChainType, BlockRecoveryConfig, MaxPastBlocks, Network, RpcUrl, SecretString, SecretValue,
 };
 
 /// Builder for creating test Network instances
@@ -18,7 +18,7 @@ pub struct NetworkBuilder {
 	block_time_ms: u64,
 	confirmation_blocks: u64,
 	cron_schedule: String,
-	max_past_blocks: Option<u64>,
+	max_past_blocks: Option<MaxPastBlocks>,
 	recovery_config: Option<BlockRecoveryConfig>,
 }
 
@@ -35,7 +35,7 @@ impl Default for NetworkBuilder {
 			block_time_ms: 1000,
 			confirmation_blocks: 1,
 			cron_schedule: "0 */5 * * * *".to_string(),
-			max_past_blocks: Some(10),
+			max_past_blocks: Some(MaxPastBlocks::Limited(10)),
 			recovery_config: None,
 		}
 	}
@@ -148,7 +148,12 @@ impl NetworkBuilder {
 	}
 
 	pub fn max_past_blocks(mut self, blocks: u64) -> Self {
-		self.max_past_blocks = Some(blocks);
+		self.max_past_blocks = Some(MaxPastBlocks::Limited(blocks));
+		self
+	}
+
+	pub fn unlimited_past_blocks(mut self) -> Self {
+		self.max_past_blocks = Some(MaxPastBlocks::Unlimited);
 		self
 	}
 
@@ -192,7 +197,7 @@ mod tests {
 		assert_eq!(network.block_time_ms, 1000);
 		assert_eq!(network.confirmation_blocks, 1);
 		assert_eq!(network.cron_schedule, "0 */5 * * * *");
-		assert_eq!(network.max_past_blocks, Some(10));
+		assert_eq!(network.max_past_blocks, Some(MaxPastBlocks::Limited(10)));
 		assert_eq!(network.rpc_urls.len(), 0);
 	}
 

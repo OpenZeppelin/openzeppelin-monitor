@@ -2,9 +2,9 @@ use email_address::EmailAddress;
 use openzeppelin_monitor::{
 	models::{
 		AddressWithSpec, BlockChainType, EventCondition, FunctionCondition, MatchConditions,
-		Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage, SecretString, SecretValue,
-		TransactionCondition, TransactionStatus, Trigger, TriggerConditions, TriggerType,
-		TriggerTypeConfig, WebhookPayloadMode,
+		MaxPastBlocks, Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage, SecretString,
+		SecretValue, TransactionCondition, TransactionStatus, Trigger, TriggerConditions,
+		TriggerType, TriggerTypeConfig, WebhookPayloadMode,
 	},
 	utils::{
 		tests::{evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder},
@@ -200,10 +200,11 @@ pub fn network_strategy() -> impl Strategy<Value = Network> {
 		1000..60000u64,                                               // block_time_ms
 		1..=20u64,                                                    // confirmation_blocks
 		"0 \\*/5 \\* \\* \\* \\*".prop_map(|s| s.to_string()),        // cron_schedule
-		Just(Some(1u64)),                                             /* max_past_blocks -
-		                                                               * ensure it's always
-		                                                               * Some(1) or greater */
-		option::of(prop::bool::ANY), // store_blocks
+		prop_oneof![
+			(1..=1000u64).prop_map(MaxPastBlocks::Limited),
+			Just(MaxPastBlocks::Unlimited),
+		], // max_past_blocks
+		option::of(prop::bool::ANY),                                  // store_blocks
 	)
 		.prop_map(
 			|(
@@ -219,7 +220,7 @@ pub fn network_strategy() -> impl Strategy<Value = Network> {
 				max_past_blocks,
 				store_blocks,
 			)| {
-				NetworkBuilder::new()
+				let builder = NetworkBuilder::new()
 					.network_type(network_type)
 					.slug(&slug)
 					.name(&name)
@@ -228,10 +229,12 @@ pub fn network_strategy() -> impl Strategy<Value = Network> {
 					.network_passphrase(network_passphrase.unwrap_or("".to_string()).as_str())
 					.block_time_ms(block_time_ms)
 					.confirmation_blocks(confirmation_blocks)
-					.cron_schedule(cron_schedule.as_str())
-					.max_past_blocks(max_past_blocks.unwrap_or(0))
-					.store_blocks(store_blocks.unwrap_or(false))
-					.build()
+					.cron_schedule(cron_schedule.as_str());
+				let builder = match max_past_blocks {
+					MaxPastBlocks::Limited(blocks) => builder.max_past_blocks(blocks),
+					MaxPastBlocks::Unlimited => builder.unlimited_past_blocks(),
+				};
+				builder.store_blocks(store_blocks.unwrap_or(false)).build()
 			},
 		)
 }

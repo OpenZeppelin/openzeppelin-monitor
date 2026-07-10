@@ -488,7 +488,7 @@ A Network configuration defines connection details and operational parameters fo
 | `**block_time_ms**` | `Number` | Average block time in milliseconds |
 | `**confirmation_blocks**` | `Number` | Number of blocks to wait for confirmation |
 | `**cron_schedule**` | `String` | Monitor scheduling in cron format |
-| `**max_past_blocks**` | `Number` | Maximum number of past blocks to process |
+| `**max_past_blocks**` | `Number` or `"unlimited"` | Maximum number of past blocks to process, or `"unlimited"` to resume from the last processed block without clamping |
 | `**store_blocks**` | `Boolean` | Whether to store processed blocks (defaults output to `./data/` directory) |
 | `**recovery_config**` | `Object` | Optional configuration for missed block recovery (see below) |
 
@@ -1752,7 +1752,7 @@ The monitor implements a comprehensive error handling system with rich context a
 * The `max_past_blocks` configuration is critical:
   * Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
   * Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
-  * Too low settings may result in missed blocks.
+  * Too low numeric settings may skip older unprocessed blocks after downtime. Use `"unlimited"` to avoid this clamp; catch-up still runs in bounded batches.
 * Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _***temporarily***_ increase it with `ulimit -n 2048`.
 * Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
 * See performance considerations about custom scripts [here](/monitor/scripts#performance-considerations).

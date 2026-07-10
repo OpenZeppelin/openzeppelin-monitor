@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
 use crate::{
-	models::{config::error::ConfigError, BlockChainType, ConfigLoader, Network, SecretValue},
+	models::{
+		config::error::ConfigError, BlockChainType, ConfigLoader, MaxPastBlocks, Network,
+		SecretValue,
+	},
 	utils::{get_cron_interval_ms, normalize_string},
 };
 
@@ -265,27 +268,38 @@ impl ConfigLoader for Network {
 			return Err(ConfigError::validation_error(e.to_string(), None, None));
 		}
 
-		// Validate max_past_blocks
-		if let Some(max_blocks) = self.max_past_blocks {
-			if max_blocks == 0 {
-				return Err(ConfigError::validation_error(
-					"max_past_blocks must be greater than 0",
-					None,
-					None,
-				));
+		// Validate max_past_blocks ("unlimited" is always valid)
+		match self.max_past_blocks {
+			Some(MaxPastBlocks::Limited(max_blocks)) => {
+				if max_blocks == 0 {
+					return Err(ConfigError::validation_error(
+						"max_past_blocks must be greater than 0",
+						None,
+						None,
+					));
+				}
+
+				let recommended_blocks = self.get_recommended_past_blocks();
+
+				if max_blocks < recommended_blocks {
+					tracing::warn!(
+						"Network '{}' max_past_blocks ({}) is below the recommended minimum ({}); \
+						 blocks will be skipped on every tick, not just after downtime. Use \
+						 \"unlimited\" to never skip.",
+						self.slug,
+						max_blocks,
+						recommended_blocks
+					);
+				}
 			}
-
-			let recommended_blocks = self.get_recommended_past_blocks();
-
-			if max_blocks < recommended_blocks {
+			Some(MaxPastBlocks::Unlimited) if self.store_blocks == Some(true) => {
 				tracing::warn!(
-					"Network '{}' max_past_blocks ({}) below recommended {} \
-					 (cron_interval/block_time + confirmations + 1)",
-					self.slug,
-					max_blocks,
-					recommended_blocks
+					"Network '{}' unlimited catch-up with store_blocks enabled can write the \
+					 entire backlog to disk during catch-up (one file per batch)",
+					self.slug
 				);
 			}
+			_ => {}
 		}
 
 		// Log a warning if the network uses an insecure protocol
@@ -494,6 +508,132 @@ mod tests {
 			network.validate(),
 			Err(ConfigError::ValidationError(_))
 		));
+	}
+
+	#[test]
+	fn test_validate_unlimited_max_past_blocks() {
+		let network = NetworkBuilder::new().unlimited_past_blocks().build();
+		assert!(network.validate().is_ok());
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_unlimited_max_past_blocks_with_store_blocks_warns() {
+		let network = NetworkBuilder::new()
+			.unlimited_past_blocks()
+			.store_blocks(true)
+			.build();
+
+		assert!(network.validate().is_ok());
+		assert!(logs_contain(
+			"unlimited catch-up with store_blocks enabled can write the entire backlog to disk \
+			 during catch-up (one file per batch)"
+		));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_validate_unlimited_max_past_blocks_without_store_blocks_does_not_warn() {
+		let network = NetworkBuilder::new()
+			.unlimited_past_blocks()
+			.store_blocks(false)
+			.build();
+
+		assert!(network.validate().is_ok());
+		assert!(!logs_contain(
+			"unlimited catch-up with store_blocks enabled"
+		));
+	}
+
+	fn network_json_with_max_past_blocks(value: &str) -> String {
+		format!(
+			r#"{{
+			"name": "Test Network",
+			"slug": "test_network",
+			"network_type": "EVM",
+			"rpc_urls": [
+				{{
+					"type_": "rpc",
+					"url": {{
+						"type": "plain",
+						"value": "https://eth.drpc.org"
+					}},
+					"weight": 100
+				}}
+			],
+			"chain_id": 1,
+			"block_time_ms": 1000,
+			"confirmation_blocks": 1,
+			"cron_schedule": "0 */5 * * * *",
+			{}
+			"store_blocks": true
+		}}"#,
+			value
+		)
+	}
+
+	#[test]
+	fn test_max_past_blocks_deserialize_number() {
+		let network: Network = serde_json::from_str(&network_json_with_max_past_blocks(
+			"\"max_past_blocks\": 10,",
+		))
+		.unwrap();
+		assert_eq!(network.max_past_blocks, Some(MaxPastBlocks::Limited(10)));
+	}
+
+	#[test]
+	fn test_max_past_blocks_deserialize_unlimited() {
+		let network: Network = serde_json::from_str(&network_json_with_max_past_blocks(
+			"\"max_past_blocks\": \"unlimited\",",
+		))
+		.unwrap();
+		assert_eq!(network.max_past_blocks, Some(MaxPastBlocks::Unlimited));
+	}
+
+	#[test]
+	fn test_max_past_blocks_deserialize_absent() {
+		let network: Network =
+			serde_json::from_str(&network_json_with_max_past_blocks("")).unwrap();
+		assert_eq!(network.max_past_blocks, None);
+	}
+
+	#[test]
+	fn test_max_past_blocks_deserialize_invalid_string() {
+		let result: Result<Network, _> = serde_json::from_str(&network_json_with_max_past_blocks(
+			"\"max_past_blocks\": \"infinite\",",
+		));
+		let error = result.unwrap_err().to_string();
+		assert!(error.contains("a non-negative integer or the string \"unlimited\""));
+	}
+
+	#[test]
+	fn test_max_past_blocks_deserialize_bool() {
+		let result: Result<Network, _> = serde_json::from_str(&network_json_with_max_past_blocks(
+			"\"max_past_blocks\": true,",
+		));
+		let error = result.unwrap_err().to_string();
+		assert!(error.contains("a non-negative integer or the string \"unlimited\""));
+	}
+
+	#[test]
+	fn test_max_past_blocks_deserialize_negative() {
+		let result: Result<Network, _> = serde_json::from_str(&network_json_with_max_past_blocks(
+			"\"max_past_blocks\": -5,",
+		));
+		let error = result.unwrap_err().to_string();
+		assert!(error.contains("a non-negative integer or the string \"unlimited\""));
+	}
+
+	#[test]
+	fn test_max_past_blocks_serialize() {
+		assert_eq!(
+			serde_json::to_string(&MaxPastBlocks::Limited(10)).unwrap(),
+			"10"
+		);
+		assert_eq!(
+			serde_json::to_string(&MaxPastBlocks::Unlimited).unwrap(),
+			"\"unlimited\""
+		);
 	}
 
 	#[test]
