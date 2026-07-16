@@ -53,3 +53,6 @@ node_modules
 
 # Ignore logs dir
 logs/
+
+# Serena LSP tooling
+.serena/

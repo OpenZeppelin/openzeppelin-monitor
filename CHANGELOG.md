@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.5.0...v1.6.0) (2026-07-15)
+
+
+### 🚀 Features
+
+* Rotate and track JSON-RPC error envelopes ([#480](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/480)) ([df097d4](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/df097d4b5dce3e9308ddf1d8fd90c993a5657262))
+* support unlimited max_past_blocks with batched catch-up ([#487](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/487)) ([b5f7bca](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/b5f7bca0bb3d3d3e79c1b8d6ae537e2ae3cc770a))
+
+
+### 🐛 Bug Fixes
+
+* **examples:** add recovery_config and max_past_blocks buffer to network examples ([#478](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/478)) ([36b360c](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/36b360c7f1159d80c95e47233be891ac5d9bcc33))
+
 ## [1.5.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.4.0...v1.5.0) (2026-04-23)
 
 
