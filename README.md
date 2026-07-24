@@ -350,7 +350,6 @@ If you have any questions, first see if the answer to your question can be found
 
 ### Community Support
 
-- **Telegram**: [Join our community chat](https://t.me/openzeppelin_tg/4) for help and discussions
 - **GitHub Issues**: Open a [bug report](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml) or [feature request](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-feature%2CS-needs-triage&projects=&template=feature.yml)
 - **Good First Issues**: [Find beginner-friendly issues](https://github.com/openzeppelin/openzeppelin-monitor/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-issue)
 - **GitHub Discussions**: For questions and community interaction
