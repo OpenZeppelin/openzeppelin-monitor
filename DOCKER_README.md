@@ -75,9 +75,10 @@ For security concerns, please refer to our [Security Policy](https://github.com/
 
 If you have any questions, first see if the answer to your question can be found in the [User Documentation](https://docs.openzeppelin.com/monitor).
 
-If the answer is not there:
+### Community Support
 
-- Join the [Telegram](https://t.me/openzeppelin_tg/4) to get help, or
-- Open an issue with [the bug](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml)
+- **GitHub Issues**: Open a [bug report](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-bug%2CS-needs-triage&projects=&template=bug.yml) or [feature request](https://github.com/openzeppelin/openzeppelin-monitor/issues/new?assignees=&labels=T-feature%2CS-needs-triage&projects=&template=feature.yml)
+- **Good First Issues**: [Find beginner-friendly issues](https://github.com/openzeppelin/openzeppelin-monitor/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-issue)
+- **GitHub Discussions**: For questions and community interaction
 
 We encourage you to reach out with any questions or feedback.
