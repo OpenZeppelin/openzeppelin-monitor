@@ -409,11 +409,7 @@ mod tests {
 		let script_path = temp_dir.path().join("test_script.py");
 		fs::write(&script_path, "print('test')").unwrap();
 
-		// Set current directory to temp directory to make relative paths work
-		let original_dir = std::env::current_dir().unwrap();
-		std::env::set_current_dir(temp_dir.path()).unwrap();
-
-		// Test with valid script path
+		// Test with valid script path using absolute path
 		let valid_monitor = MonitorBuilder::new()
 			.name("TestMonitor")
 			.networks(vec!["ethereum_mainnet".to_string()])
@@ -421,13 +417,10 @@ mod tests {
 			.function("transfer(address,uint256)", None)
 			.event("Transfer(address,address,uint256)", None)
 			.transaction(TransactionStatus::Success, None)
-			.trigger_condition("test_script.py", 1000, ScriptLanguage::Python, None)
+			.trigger_condition(script_path.to_str().unwrap(), 1000, ScriptLanguage::Python, None)
 			.build();
 
 		assert!(valid_monitor.validate().is_ok());
-
-		// Restore original directory
-		std::env::set_current_dir(original_dir).unwrap();
 	}
 
 	#[test]
@@ -448,22 +441,14 @@ mod tests {
 		let script_path = temp_dir.path().join("test_script.py");
 		fs::write(&script_path, "print('test')").unwrap();
 
-		// Set current directory to temp directory to make relative paths work
-		let original_dir = std::env::current_dir().unwrap();
-		std::env::set_current_dir(temp_dir.path()).unwrap();
-
+		// Test with absolute path and invalid timeout
 		let invalid_monitor = MonitorBuilder::new()
 			.name("TestMonitor")
 			.networks(vec!["ethereum_mainnet".to_string()])
-			.trigger_condition("test_script.py", 0, ScriptLanguage::Python, None)
+			.trigger_condition(script_path.to_str().unwrap(), 0, ScriptLanguage::Python, None)
 			.build();
 
 		assert!(invalid_monitor.validate().is_err());
-
-		// Restore original directory
-		std::env::set_current_dir(original_dir).unwrap();
-		// Clean up temp directory
-		temp_dir.close().unwrap();
 	}
 
 	#[test]
