@@ -87,10 +87,10 @@ pub use blockchain::solana::{
 
 // Re-export core types
 pub use core::{
-	AddressWithSpec, BlockRecoveryConfig, EventCondition, FunctionCondition, MatchConditions,
-	MaxPastBlocks, Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage,
-	TransactionCondition, TransactionStatus, Trigger, TriggerConditions, TriggerType,
-	TriggerTypeConfig, WebhookPayloadMode, SCRIPT_LANGUAGE_EXTENSIONS,
+	AddressWithSpec, BlockRecoveryConfig, EventCondition, EvmPrivateTransactionConfig,
+	FunctionCondition, MatchConditions, MaxPastBlocks, Monitor, Network, NotificationMessage,
+	RpcUrl, ScriptLanguage, TransactionCondition, TransactionStatus, Trigger, TriggerConditions,
+	TriggerType, TriggerTypeConfig, WebhookPayloadMode, SCRIPT_LANGUAGE_EXTENSIONS,
 };
 
 // Re-export config types

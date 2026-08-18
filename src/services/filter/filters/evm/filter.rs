@@ -734,14 +734,37 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 			// Process all transactions in the block
 			for transaction in &evm_block.transactions {
 				let tx_hash = b256_to_string(transaction.hash);
-				let empty_logs = Vec::new();
-				let logs = logs_by_tx.get(&tx_hash).unwrap_or(&empty_logs);
 				let tx_hash_str = tx_hash.clone();
 
-				let receipt = if should_fetch_receipt {
+				// Private events and execution status are only available through Besu's
+				// private receipt API, so always fetch it for resolved private transactions.
+				let receipt = if transaction.is_private {
+					match client.get_private_transaction_receipt(transaction).await {
+						Ok(receipt) => receipt,
+						Err(error) => {
+							tracing::warn!(
+								transaction_hash = %tx_hash,
+								%error,
+								"Failed to retrieve Besu private transaction receipt"
+							);
+							None
+						}
+					}
+				} else if should_fetch_receipt {
 					Some(client.get_transaction_receipt(tx_hash_str).await?)
 				} else {
 					None
+				};
+				let private_logs = receipt
+					.as_ref()
+					.filter(|_| transaction.is_private)
+					.map(|receipt| receipt.logs.clone())
+					.unwrap_or_default();
+				let empty_logs = Vec::new();
+				let logs = if transaction.is_private {
+					&private_logs
+				} else {
+					logs_by_tx.get(&tx_hash).unwrap_or(&empty_logs)
 				};
 
 				// Reset matched_on_args for each transaction
@@ -757,6 +780,9 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 					} else {
 						TransactionStatus::Failure
 					}
+				} else if transaction.is_private {
+					// A missing private receipt must not be treated as a successful execution.
+					TransactionStatus::Failure
 				} else {
 					// Transaction receipt is only fetched when:
 					// 1. The monitor has conditions requiring receipt data (e.g., gas_used)

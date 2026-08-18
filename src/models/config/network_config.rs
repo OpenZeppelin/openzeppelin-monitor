@@ -3,6 +3,7 @@
 //! This module implements the ConfigLoader trait for Network configurations,
 //! allowing network definitions to be loaded from JSON files.
 
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
@@ -188,6 +189,25 @@ impl ConfigLoader for Network {
 					None,
 					None,
 				));
+			}
+		}
+
+		if let Some(private_transactions) = &self.private_transactions {
+			if private_transactions.enabled {
+				if self.network_type != BlockChainType::EVM {
+					return Err(ConfigError::validation_error(
+						"Private transactions are only supported for EVM networks",
+						None,
+						None,
+					));
+				}
+				Address::from_str(&private_transactions.pmt_address).map_err(|_| {
+					ConfigError::validation_error(
+						"private_transactions.pmt_address must be a 20-byte hex address",
+						None,
+						None,
+					)
+				})?;
 			}
 		}
 
@@ -425,6 +445,37 @@ mod tests {
 	fn test_validate_valid_network() {
 		let network = create_valid_network();
 		assert!(network.validate().is_ok());
+	}
+
+	#[test]
+	fn test_validate_besu_private_transactions() {
+		let network = NetworkBuilder::new()
+			.private_transactions(true, "0x000000000000000000000000000000000000007a")
+			.build();
+		assert!(network.validate().is_ok());
+	}
+
+	#[test]
+	fn test_rejects_invalid_private_marker_transaction_address() {
+		let network = NetworkBuilder::new()
+			.private_transactions(true, "not-an-address")
+			.build();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_rejects_private_transactions_on_non_evm_network() {
+		let network = NetworkBuilder::new()
+			.network_type(BlockChainType::Solana)
+			.private_transactions(true, "0x000000000000000000000000000000000000007a")
+			.build();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
 	}
 
 	#[test]

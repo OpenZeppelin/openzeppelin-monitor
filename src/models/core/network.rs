@@ -111,6 +111,31 @@ pub struct BlockRecoveryConfig {
 	pub retry_delay_ms: u64,
 }
 
+/// Besu/Tessera private transaction support for an EVM network.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EvmPrivateTransactionConfig {
+	/// Whether Privacy Marker Transactions should be resolved through Besu's `priv_*` RPC API.
+	pub enabled: bool,
+
+	/// Destination address used by public Privacy Marker Transactions.
+	#[serde(default = "default_private_marker_transaction_address")]
+	pub pmt_address: String,
+}
+
+fn default_private_marker_transaction_address() -> String {
+	"0x000000000000000000000000000000000000007a".to_string()
+}
+
+impl Default for EvmPrivateTransactionConfig {
+	fn default() -> Self {
+		Self {
+			enabled: false,
+			pmt_address: default_private_marker_transaction_address(),
+		}
+	}
+}
+
 /// Configuration for connecting to and interacting with a blockchain network.
 ///
 /// Defines connection details and operational parameters for a specific blockchain network.
@@ -131,6 +156,10 @@ pub struct Network {
 
 	/// Chain ID for EVM networks
 	pub chain_id: Option<u64>,
+
+	/// Optional Besu/Tessera private transaction support for EVM networks.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub private_transactions: Option<EvmPrivateTransactionConfig>,
 
 	/// Network passphrase for Stellar networks
 	pub network_passphrase: Option<String>,

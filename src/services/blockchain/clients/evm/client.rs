@@ -4,8 +4,9 @@
 //! blockchains, supporting operations like block retrieval, transaction receipt lookup,
 //! and log filtering.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, str::FromStr};
 
+use alloy::primitives::Address;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures::{stream, StreamExt, TryStreamExt};
@@ -13,7 +14,10 @@ use serde_json::json;
 use tracing::instrument;
 
 use crate::{
-	models::{BlockType, EVMBlock, EVMReceiptLog, EVMTransactionReceipt, Network},
+	models::{
+		BlockType, EVMBlock, EVMReceiptLog, EVMTransaction, EVMTransactionReceipt,
+		EvmPrivateTransactionConfig, Network,
+	},
 	services::{
 		blockchain::{
 			client::BlockChainClient,
@@ -24,6 +28,11 @@ use crate::{
 	},
 };
 
+use super::privacy::{
+	normalize_private_receipt, normalize_private_transaction, BesuPrivateReceipt,
+	BesuPrivateTransaction,
+};
+
 /// Client implementation for Ethereum Virtual Machine (EVM) compatible blockchains
 ///
 /// Provides high-level access to EVM blockchain data and operations through HTTP transport.
@@ -31,12 +40,27 @@ use crate::{
 pub struct EvmClient<T: Send + Sync + Clone> {
 	/// The underlying HTTP transport client for RPC communication
 	http_client: T,
+	private_transactions: Option<EvmPrivateTransactionConfig>,
 }
 
 impl<T: Send + Sync + Clone> EvmClient<T> {
 	/// Creates a new EVM client instance with a specific transport client
 	pub fn new_with_transport(http_client: T) -> Self {
-		Self { http_client }
+		Self {
+			http_client,
+			private_transactions: None,
+		}
+	}
+
+	/// Creates an EVM client with optional Besu/Tessera private transaction support.
+	pub fn new_with_transport_and_private_transactions(
+		http_client: T,
+		private_transactions: Option<EvmPrivateTransactionConfig>,
+	) -> Self {
+		Self {
+			http_client,
+			private_transactions,
+		}
 	}
 }
 
@@ -50,7 +74,10 @@ impl EvmClient<EVMTransportClient> {
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let client = EVMTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(client))
+		Ok(Self::new_with_transport_and_private_transactions(
+			client,
+			network.private_transactions.clone(),
+		))
 	}
 }
 
@@ -77,6 +104,14 @@ pub trait EvmClientTrait {
 		&self,
 		transaction_hash: String,
 	) -> Result<EVMTransactionReceipt, anyhow::Error>;
+
+	/// Retrieves the private receipt for a decrypted Besu transaction.
+	async fn get_private_transaction_receipt(
+		&self,
+		_transaction: &EVMTransaction,
+	) -> Result<Option<EVMTransactionReceipt>, anyhow::Error> {
+		Ok(None)
+	}
 
 	/// Retrieves logs for a range of blocks
 	///
@@ -131,6 +166,44 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 
 		Ok(serde_json::from_value(receipt_data.clone())
 			.with_context(|| "Failed to parse transaction receipt")?)
+	}
+
+	#[instrument(skip(self, transaction), fields(transaction_hash = %transaction.hash))]
+	async fn get_private_transaction_receipt(
+		&self,
+		transaction: &EVMTransaction,
+	) -> Result<Option<EVMTransactionReceipt>, anyhow::Error> {
+		if !transaction.is_private {
+			return Ok(None);
+		}
+
+		let response = self
+			.http_client
+			.send_raw_request(
+				"priv_getTransactionReceipt",
+				Some(json!([format!("0x{:x}", transaction.hash)])),
+			)
+			.await
+			.with_context(|| {
+				format!(
+					"Failed to get private transaction receipt: 0x{:x}",
+					transaction.hash
+				)
+			})?;
+
+		let receipt_data = response
+			.get("result")
+			.with_context(|| "Missing 'result' field")?;
+		if receipt_data.is_null() {
+			return Ok(None);
+		}
+
+		let private_receipt: BesuPrivateReceipt = serde_json::from_value(receipt_data.clone())
+			.with_context(|| "Failed to parse private transaction receipt")?;
+		Ok(Some(normalize_private_receipt(
+			transaction,
+			private_receipt,
+		)))
 	}
 
 	/// Retrieves logs within the specified block range
@@ -211,6 +284,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
+		let private_transactions = self.private_transactions.clone();
 		stream::iter(start_block..=end_block.unwrap_or(start_block))
 			.map(|block_number| {
 				let params = json!([
@@ -218,6 +292,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 					true // include full transaction objects
 				]);
 				let client = self.http_client.clone();
+				let private_transactions = private_transactions.clone();
 
 				async move {
 					let response = client
@@ -233,8 +308,78 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 						return Err(anyhow::anyhow!("Block not found"));
 					}
 
-					let block: EVMBlock = serde_json::from_value(block_data.clone())
+					let mut block: EVMBlock = serde_json::from_value(block_data.clone())
 						.map_err(|e| anyhow::anyhow!("Failed to parse block: {}", e))?;
+
+					if let Some(config) = private_transactions.filter(|config| config.enabled) {
+						let pmt_address =
+							Address::from_str(&config.pmt_address).with_context(|| {
+								format!(
+									"Invalid private transaction PMT address: {}",
+									config.pmt_address
+								)
+							})?;
+						let public_pmts: Vec<EVMTransaction> = block
+							.0
+							.transactions
+							.iter()
+							.filter(|transaction| transaction.to == Some(pmt_address))
+							.cloned()
+							.collect();
+
+						for public_pmt in public_pmts {
+							let tx_hash = format!("0x{:x}", public_pmt.hash);
+							let private_response = match client
+								.send_raw_request(
+									"priv_getPrivateTransaction",
+									Some(json!([tx_hash.clone()])),
+								)
+								.await
+							{
+								Ok(response) => response,
+								Err(error) => {
+									tracing::warn!(
+										block_number,
+										transaction_hash = %tx_hash,
+										%error,
+										"Failed to resolve Besu private transaction; retaining public PMT"
+									);
+									continue;
+								}
+							};
+
+							let Some(private_data) = private_response.get("result") else {
+								tracing::warn!(
+									block_number,
+									transaction_hash = %tx_hash,
+									"Besu private transaction response is missing its result"
+								);
+								continue;
+							};
+							if private_data.is_null() {
+								tracing::debug!(
+									block_number,
+									transaction_hash = %tx_hash,
+									"Besu node is not a member of this transaction's privacy group"
+								);
+								continue;
+							}
+
+							match serde_json::from_value::<BesuPrivateTransaction>(
+								private_data.clone(),
+							) {
+								Ok(private_transaction) => block.0.transactions.push(
+									normalize_private_transaction(&public_pmt, private_transaction),
+								),
+								Err(error) => tracing::warn!(
+									block_number,
+									transaction_hash = %tx_hash,
+									%error,
+									"Failed to parse Besu private transaction"
+								),
+							}
+						}
+					}
 
 					Ok(BlockType::EVM(Box::new(block)))
 				}

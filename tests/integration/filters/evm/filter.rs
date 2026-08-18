@@ -168,6 +168,58 @@ async fn test_monitor_events_with_no_expressions() -> Result<(), Box<FilterError
 }
 
 #[tokio::test]
+async fn test_monitor_events_from_besu_private_receipt() -> Result<(), Box<FilterError>> {
+	let test_data = TestDataBuilder::new("evm").build();
+	let filter_service = FilterService::new();
+	let mut block = test_data.blocks[0].clone();
+	let BlockType::EVM(evm_block) = &mut block else {
+		panic!("expected EVM block");
+	};
+	assert!(!evm_block.0.transactions.is_empty());
+	evm_block.0.transactions[0].0.is_private = true;
+	evm_block.0.transactions[0].0.privacy_group_id = Some("privacy-group-1".to_string());
+
+	let private_receipt = test_data.receipts[0].clone();
+	let mut mock_transport = MockEVMTransportClient::new();
+	mock_transport
+		.expect_send_raw_request()
+		.returning(move |method, _params| match method {
+			"eth_getLogs" => Ok(json!({"result": []})),
+			"priv_getTransactionReceipt" => Ok(json!({"result": private_receipt})),
+			_ => Err(TransportError::http(
+				reqwest::StatusCode::METHOD_NOT_ALLOWED,
+				"random.url".to_string(),
+				format!("Unexpected method call: {method}"),
+				None,
+				None,
+			)),
+		});
+	let client = EvmClient::new_with_transport(mock_transport);
+	let monitor = make_monitor_with_events(test_data.monitor, false);
+
+	let matches = filter_service
+		.filter_block(&client, &test_data.network, &block, &[monitor], None)
+		.await?;
+
+	assert_eq!(matches.len(), 1);
+	let MonitorMatch::EVM(evm_match) = &matches[0] else {
+		panic!("expected EVM match");
+	};
+	assert!(evm_match.transaction.is_private);
+	assert_eq!(evm_match.matched_on.events.len(), 1);
+	assert_eq!(evm_match.logs.as_ref().map(Vec::len), Some(1));
+	assert_eq!(
+		evm_match
+			.receipt
+			.as_ref()
+			.and_then(|receipt| receipt.status),
+		Some(alloy::primitives::U64::from(1))
+	);
+
+	Ok(())
+}
+
+#[tokio::test]
 async fn test_monitor_events_with_expressions() -> Result<(), Box<FilterError>> {
 	// Load test data using common utility
 	let test_data = TestDataBuilder::new("evm").build();

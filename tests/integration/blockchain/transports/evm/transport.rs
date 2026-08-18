@@ -6,6 +6,10 @@ use mockall::predicate;
 use openzeppelin_monitor::services::blockchain::{
 	BlockChainClient, EvmClient, EvmClientTrait, TransportError,
 };
+use openzeppelin_monitor::{
+	models::{BlockType, EvmPrivateTransactionConfig},
+	utils::tests::evm::transaction::TransactionBuilder,
+};
 use serde_json::{json, Value};
 
 use crate::integration::mocks::MockEVMTransportClient;
@@ -35,6 +39,154 @@ fn create_mock_block(number: u64) -> Value {
 		"mixHash": format!("0x{:064x}", number),  // 32 bytes
 		"nonce": format!("0x{:016x}", number),  // 8 bytes
 	})
+}
+
+fn create_mock_pmt_block(number: u64) -> Value {
+	let mut block = create_mock_block(number);
+	block["transactions"] = json!([{
+		"blockHash": format!("0x{:064x}", number),
+		"blockNumber": format!("0x{:x}", number),
+		"from": "0x1d7e2cad87ab7e6d07c707fc41e8bc6c04baa793",
+		"gas": "0x7a1200",
+		"gasPrice": "0x7a1200",
+		"hash": "0x236f733e8e45d7c32e31a42ca1179b6ea6fb63f2780e40d28358cf39d3789902",
+		"input": "0x04cfe0b6",
+		"nonce": "0xd35",
+		"to": "0x000000000000000000000000000000000000007a",
+		"transactionIndex": "0x0",
+		"type": "0x0",
+		"value": "0x0",
+		"v": "0x1b",
+		"r": "0x64",
+		"s": "0xc8"
+	}]);
+	block
+}
+
+#[tokio::test]
+async fn test_resolves_besu_private_transaction_from_pmt() {
+	let mut mock_evm = MockEVMTransportClient::new();
+	mock_evm.expect_clone().times(1).returning(|| {
+		let mut cloned = MockEVMTransportClient::new();
+		cloned
+			.expect_send_raw_request()
+			.returning(|method, _params| match method {
+				"eth_getBlockByNumber" => Ok(json!({"result": create_mock_pmt_block(11717)})),
+				"priv_getPrivateTransaction" => Ok(json!({
+					"result": {
+						"from": "0xf8413e68905f6e063f90e851a2411781c155c0ac",
+						"gas": "0x7a1200",
+						"gasPrice": "0x7a1200",
+						"input": "0x16c417870000000000000000000000000000000000000000000000000000000000000001",
+						"nonce": "0xd35",
+						"to": "0xc0577f6dabcc09a7f226af8af818703fb2351055",
+						"value": "0x0",
+						"privateFrom": "enclave-a",
+						"privacyGroupId": "privacy-group-1",
+						"restriction": "restricted"
+					}
+				})),
+				_ => panic!("unexpected RPC method: {method}"),
+			});
+		cloned
+	});
+
+	let client = EvmClient::new_with_transport_and_private_transactions(
+		mock_evm,
+		Some(EvmPrivateTransactionConfig {
+			enabled: true,
+			pmt_address: "0x000000000000000000000000000000000000007a".to_string(),
+		}),
+	);
+	let blocks = client.get_blocks(11717, None).await.unwrap();
+	let BlockType::EVM(block) = &blocks[0] else {
+		panic!("expected EVM block");
+	};
+
+	assert_eq!(block.transactions.len(), 2);
+	let private = &block.transactions[1];
+	assert!(private.is_private);
+	assert_eq!(
+		private.to.unwrap(),
+		"0xc0577f6dabcc09a7f226af8af818703fb2351055"
+			.parse::<Address>()
+			.unwrap()
+	);
+	assert_eq!(private.privacy_group_id.as_deref(), Some("privacy-group-1"));
+	assert_eq!(&private.input[..4], &[0x16, 0xc4, 0x17, 0x87]);
+	assert_eq!(private.hash, block.transactions[0].hash);
+}
+
+#[tokio::test]
+async fn test_skips_besu_pmt_when_node_is_not_in_privacy_group() {
+	let mut mock_evm = MockEVMTransportClient::new();
+	mock_evm.expect_clone().times(1).returning(|| {
+		let mut cloned = MockEVMTransportClient::new();
+		cloned
+			.expect_send_raw_request()
+			.returning(|method, _params| match method {
+				"eth_getBlockByNumber" => Ok(json!({"result": create_mock_pmt_block(11717)})),
+				"priv_getPrivateTransaction" => Ok(json!({"result": null})),
+				_ => panic!("unexpected RPC method: {method}"),
+			});
+		cloned
+	});
+
+	let client = EvmClient::new_with_transport_and_private_transactions(
+		mock_evm,
+		Some(EvmPrivateTransactionConfig {
+			enabled: true,
+			pmt_address: "0x000000000000000000000000000000000000007a".to_string(),
+		}),
+	);
+	let blocks = client.get_blocks(11717, None).await.unwrap();
+	let BlockType::EVM(block) = &blocks[0] else {
+		panic!("expected EVM block");
+	};
+
+	assert_eq!(block.transactions.len(), 1);
+	assert!(!block.transactions[0].is_private);
+}
+
+#[tokio::test]
+async fn test_get_besu_private_transaction_receipt_normalizes_logs() {
+	let mut mock_evm = MockEVMTransportClient::new();
+	mock_evm
+		.expect_send_raw_request()
+		.with(
+			predicate::eq("priv_getTransactionReceipt"),
+			predicate::always(),
+		)
+		.returning(|_, _| {
+			Ok(json!({
+				"result": {
+					"from": "0xf8413e68905f6e063f90e851a2411781c155c0ac",
+					"to": "0xc0577f6dabcc09a7f226af8af818703fb2351055",
+					"status": "0x1",
+					"logs": [{
+						"address": "0xc0577f6dabcc09a7f226af8af818703fb2351055",
+						"topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
+						"data": "0x01"
+					}]
+				}
+			}))
+		});
+
+	let mut transaction = TransactionBuilder::new().build();
+	transaction.0.is_private = true;
+	transaction.0.hash = "0x236f733e8e45d7c32e31a42ca1179b6ea6fb63f2780e40d28358cf39d3789902"
+		.parse()
+		.unwrap();
+	let client = EvmClient::new_with_transport(mock_evm);
+	let receipt = client
+		.get_private_transaction_receipt(&transaction)
+		.await
+		.unwrap()
+		.unwrap();
+
+	assert_eq!(receipt.status.unwrap(), U64::from(1));
+	assert_eq!(receipt.logs.len(), 1);
+	assert_eq!(receipt.logs[0].transaction_hash, Some(transaction.hash));
 }
 
 #[tokio::test]

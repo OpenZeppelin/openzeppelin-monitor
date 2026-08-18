@@ -3,7 +3,8 @@
 //! - `NetworkBuilder`: Builder for creating test Network instances
 
 use crate::models::{
-	BlockChainType, BlockRecoveryConfig, MaxPastBlocks, Network, RpcUrl, SecretString, SecretValue,
+	BlockChainType, BlockRecoveryConfig, EvmPrivateTransactionConfig, MaxPastBlocks, Network,
+	RpcUrl, SecretString, SecretValue,
 };
 
 /// Builder for creating test Network instances
@@ -12,6 +13,7 @@ pub struct NetworkBuilder {
 	slug: String,
 	network_type: BlockChainType,
 	chain_id: Option<u64>,
+	private_transactions: Option<EvmPrivateTransactionConfig>,
 	network_passphrase: Option<String>,
 	store_blocks: Option<bool>,
 	rpc_urls: Vec<RpcUrl>,
@@ -29,6 +31,7 @@ impl Default for NetworkBuilder {
 			slug: "test_network".to_string(),
 			network_type: BlockChainType::EVM,
 			chain_id: Some(1),
+			private_transactions: None,
 			network_passphrase: None,
 			store_blocks: Some(true),
 			rpc_urls: vec![],
@@ -63,6 +66,14 @@ impl NetworkBuilder {
 
 	pub fn chain_id(mut self, chain_id: u64) -> Self {
 		self.chain_id = Some(chain_id);
+		self
+	}
+
+	pub fn private_transactions(mut self, enabled: bool, pmt_address: &str) -> Self {
+		self.private_transactions = Some(EvmPrivateTransactionConfig {
+			enabled,
+			pmt_address: pmt_address.to_string(),
+		});
 		self
 	}
 
@@ -168,6 +179,7 @@ impl NetworkBuilder {
 			slug: self.slug,
 			network_type: self.network_type,
 			chain_id: self.chain_id,
+			private_transactions: self.private_transactions,
 			network_passphrase: self.network_passphrase,
 			store_blocks: self.store_blocks,
 			rpc_urls: self.rpc_urls,

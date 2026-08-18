@@ -1,0 +1,25 @@
+{
+  "network_type": "EVM",
+  "slug": "besu_private_mock",
+  "name": "Besu Private Transaction Mock",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "http://127.0.0.1:3336"
+      },
+      "weight": 100
+    }
+  ],
+  "chain_id": 1337,
+  "private_transactions": {
+    "enabled": true,
+    "pmt_address": "0x000000000000000000000000000000000000007a"
+  },
+  "block_time_ms": 1000,
+  "confirmation_blocks": 1,
+  "cron_schedule": "*/10 * * * * *",
+  "max_past_blocks": "unlimited",
+  "store_blocks": false
+}

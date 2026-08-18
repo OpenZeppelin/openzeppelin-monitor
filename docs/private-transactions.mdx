@@ -1,0 +1,61 @@
+---
+title: Besu Private Transactions
+---
+
+OpenZeppelin Monitor can resolve Tessera-based private transactions exposed by Hyperledger Besu.
+The configured RPC node must be a member of the relevant privacy group and expose the `PRIV`
+JSON-RPC namespace.
+
+## Network configuration
+
+Enable private transactions on an EVM network and configure its Privacy Marker Transaction (PMT)
+address:
+
+```json
+"private_transactions": {
+  "enabled": true,
+  "pmt_address": "0x000000000000000000000000000000000000007a"
+}
+```
+
+For each block, Monitor keeps the public PMT and adds a normalized private transaction after calling
+`priv_getPrivateTransaction` with the PMT hash. The normalized transaction uses the decrypted `from`,
+`to`, `input`, `value`, and gas fields and exposes `is_private` and `privacy_group_id` in notification
+payloads. Function matching therefore uses the decrypted calldata and destination.
+
+Private execution status and events are loaded with `priv_getTransactionReceipt`; public
+`eth_getLogs` results do not contain private logs. A `null` private transaction means that the node
+cannot see that privacy group and is skipped without failing the public block.
+
+When multiple weighted RPC URLs are configured, every endpoint should have equivalent privacy-group
+membership. Otherwise endpoint rotation can change which private transactions are visible.
+
+## Try it with the Dedge mock
+
+From the `dgs-services` repository, start its OpenRPC mocks. The private Besu/Tessera endpoint is
+published on port 3336:
+
+```bash
+make local-rpc-mock-server
+```
+
+The current Dedge OpenRPC document can be queried directly for its decrypted PMT fixture:
+
+```bash
+curl -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"priv_getPrivateTransaction","params":["0x236f733e8e45d7c32e31a42ca1179b6ea6fb63f2780e40d28358cf39d3789902"]}' \
+  http://127.0.0.1:3336
+```
+
+Run the full PMT, receipt, and private-event path through the integration tests:
+
+```bash
+cargo test --test integration private -- --nocapture
+```
+
+Example Monitor configuration is provided in `examples/config/networks/besu_private_mock.json` and
+`examples/config/monitors/besu_private_asset_transfer.json`. The current Dedge OpenRPC document's
+full PMT block example is keyed by decimal block input even though its schema accepts only hex, and
+it does not yet define `priv_getTransactionReceipt`. Consequently, the current external fixture can
+validate payload resolution directly, while the deterministic integration tests validate block
+normalization, private receipts, status, and event matching until those fixture gaps are corrected.

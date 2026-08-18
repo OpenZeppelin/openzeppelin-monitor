@@ -8,6 +8,7 @@
 
 mod evm {
 	pub mod client;
+	mod privacy;
 }
 mod stellar {
 	pub mod client;

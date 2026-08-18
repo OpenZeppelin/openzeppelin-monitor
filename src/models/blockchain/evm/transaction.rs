@@ -8,6 +8,10 @@ use alloy::{
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::Deref};
 
+fn is_false(value: &bool) -> bool {
+	!*value
+}
+
 /// L2-specific transaction fields
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
 pub struct BaseL2Transaction {
@@ -53,6 +57,12 @@ pub struct BaseTransaction {
 	/// Transaction Index. None when pending.
 	#[serde(rename = "transactionIndex")]
 	pub transaction_index: Option<Index>,
+	/// Whether this is a decrypted Besu private transaction resolved from a PMT.
+	#[serde(default, skip_serializing_if = "is_false")]
+	pub is_private: bool,
+	/// Tessera privacy group identifier, when supplied by the Besu node.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub privacy_group_id: Option<String>,
 	/// Sender
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub from: Option<Address>,
@@ -166,6 +176,8 @@ impl From<AlloyTransaction> for Transaction {
 			block_hash: tx.block_hash,
 			block_number: tx.block_number.map(U64::from),
 			transaction_index: tx.transaction_index.map(|i| Index::from(i as usize)),
+			is_private: false,
+			privacy_group_id: None,
 			from: Some(tx.inner.signer()),
 			to: tx.inner.to(),
 			value: tx.inner.value(),

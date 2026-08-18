@@ -30,6 +30,7 @@ fn create_test_network() -> Network {
 		name: "Solana Devnet".to_string(),
 		rpc_urls: vec![],
 		chain_id: None,
+		private_transactions: None,
 		network_passphrase: None,
 		block_time_ms: 400,
 		confirmation_blocks: 1,

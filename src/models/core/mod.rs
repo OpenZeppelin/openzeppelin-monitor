@@ -13,7 +13,9 @@ pub use monitor::{
 	AddressWithSpec, EventCondition, FunctionCondition, MatchConditions, Monitor, ScriptLanguage,
 	TransactionCondition, TransactionStatus, TriggerConditions, SCRIPT_LANGUAGE_EXTENSIONS,
 };
-pub use network::{BlockRecoveryConfig, MaxPastBlocks, Network, RpcUrl};
+pub use network::{
+	BlockRecoveryConfig, EvmPrivateTransactionConfig, MaxPastBlocks, Network, RpcUrl,
+};
 pub use trigger::{
 	NotificationMessage, Trigger, TriggerType, TriggerTypeConfig, WebhookPayloadMode,
 };

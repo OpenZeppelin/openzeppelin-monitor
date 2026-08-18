@@ -351,6 +351,7 @@ mod tests {
 				weight: 100,
 			}],
 			chain_id: Some(1),
+			private_transactions: None,
 			network_passphrase: None,
 			block_time_ms: 12000,
 			confirmation_blocks: 12,

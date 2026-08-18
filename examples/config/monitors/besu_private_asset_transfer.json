@@ -1,0 +1,18 @@
+{
+  "name": "Besu Private AssetTransfer",
+  "paused": false,
+  "networks": ["besu_private_mock"],
+  "addresses": [
+    {
+      "address": "0xc0577f6dabcc09a7f226af8af818703fb2351055",
+      "contract_spec": []
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [],
+    "transactions": []
+  },
+  "trigger_conditions": [],
+  "triggers": []
+}
