@@ -3,14 +3,15 @@
 //! Tests the monitoring functionality for EVM-compatible blockchains,
 //! including event and transaction filtering.
 
-use alloy::primitives::Uint;
+use alloy::primitives::{Address, Uint, B256, U256, U64};
 use serde_json::json;
 use std::collections::HashMap;
 
 use openzeppelin_monitor::{
 	models::{
-		BlockType, ContractSpec, EVMReceiptLog, EVMTransactionReceipt, EventCondition,
-		FunctionCondition, Monitor, MonitorMatch, TransactionCondition, TransactionStatus,
+		AddressWithSpec, BlockType, ContractSpec, EVMBlock, EVMReceiptLog, EVMTransactionReceipt,
+		EventCondition, FunctionCondition, Monitor, MonitorMatch, TransactionCondition,
+		TransactionStatus,
 	},
 	services::{
 		blockchain::{EvmClient, TransportError},
@@ -117,6 +118,102 @@ fn make_monitor_with_tuples_expression_equality(mut monitor: Monitor) -> Monitor
 		expression: Some("nestedStruct == '(true,\"The Book Title\",\"Author Name\",123,\"0x1234567890abcdef1234567890abcdef12345678\",[\"fiction\",\"bestseller\"],(\"The Sequel\",321))'".to_string()),
 	});
 	monitor
+}
+
+#[tokio::test]
+async fn test_monitor_transaction_status_with_mixed_block_logs() -> Result<(), Box<FilterError>> {
+	let test_data = TestDataBuilder::new("evm").build();
+	let sender = Address::repeat_byte(1);
+	let failed_hash = B256::repeat_byte(1);
+	let success_hash = B256::repeat_byte(2);
+	let logged_hash = B256::repeat_byte(3);
+	let mut block = EVMBlock::default();
+	block.0.number = Some(U64::from(1));
+	block.0.transactions = [failed_hash, success_hash, logged_hash]
+		.into_iter()
+		.map(|hash| TransactionBuilder::new().hash(hash).from(sender).build())
+		.collect();
+	let block = BlockType::EVM(Box::new(block));
+	let log = EVMReceiptLog {
+		transaction_hash: Some(logged_hash),
+		..test_data.receipts[0].logs[0].clone()
+	};
+
+	for status in [
+		TransactionStatus::Success,
+		TransactionStatus::Failure,
+		TransactionStatus::Any,
+	] {
+		for force_receipt in [false, true] {
+			let mut transport = MockEVMTransportClient::new();
+			let block_log = log.clone();
+			transport
+				.expect_send_raw_request()
+				.withf(|method, _| method == "eth_getLogs")
+				.once()
+				.returning(move |_, _| Ok(json!({"result": [block_log.clone()]})));
+
+			let expected_receipts = if force_receipt {
+				3
+			} else if status != TransactionStatus::Any {
+				2
+			} else {
+				0
+			};
+			let receipt_log = log.clone();
+			transport
+				.expect_send_raw_request()
+				.withf(|method, _| method == "eth_getTransactionReceipt")
+				.times(expected_receipts)
+				.returning(move |_, params| {
+					let hash: B256 = serde_json::from_value(params.unwrap()[0].clone()).unwrap();
+					assert!([failed_hash, success_hash, logged_hash].contains(&hash));
+					assert!(force_receipt || hash != logged_hash);
+					let receipt = ReceiptBuilder::new()
+						.transaction_hash(hash)
+						.status(hash != failed_hash)
+						.gas_used(U256::from(21_000))
+						.logs(if hash == logged_hash {
+							vec![receipt_log.clone()]
+						} else {
+							vec![]
+						})
+						.build();
+					Ok(json!({"result": receipt}))
+				});
+
+			let mut monitor = make_monitor_with_transactions(test_data.monitor.clone(), false);
+			monitor.addresses = vec![AddressWithSpec {
+				address: format!("{sender:#x}"),
+				contract_spec: None,
+			}];
+			monitor.match_conditions.transactions = vec![TransactionCondition {
+				status,
+				expression: force_receipt.then(|| "gas_used >= 0".to_string()),
+			}];
+			let client = EvmClient::new_with_transport(transport);
+			let matches = FilterService::new()
+				.filter_block(&client, &test_data.network, &block, &[monitor], None)
+				.await?;
+			let hashes: Vec<_> = matches
+				.iter()
+				.map(|matched| match matched {
+					MonitorMatch::EVM(matched) => matched.transaction.hash,
+					_ => panic!("Expected EVM match"),
+				})
+				.collect();
+			let expected = match status {
+				TransactionStatus::Success => vec![success_hash, logged_hash],
+				TransactionStatus::Failure => vec![failed_hash],
+				TransactionStatus::Any => vec![failed_hash, success_hash, logged_hash],
+			};
+			assert_eq!(
+				hashes, expected,
+				"status={status:?}, force_receipt={force_receipt}"
+			);
+		}
+	}
+	Ok(())
 }
 
 #[tokio::test]
