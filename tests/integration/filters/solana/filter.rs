@@ -650,6 +650,11 @@ async fn test_handle_match_with_key_collision() -> Result<(), Box<FilterError>> 
 		captured_data.contains_key("monitor.name"),
 		"Monitor name should be present"
 	);
+	assert_eq!(
+		captured_data.get("network.slug").unwrap(),
+		"solana_devnet",
+		"Network slug should be present"
+	);
 
 	Ok(())
 }
