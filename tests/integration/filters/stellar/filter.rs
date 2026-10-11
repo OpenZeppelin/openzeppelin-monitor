@@ -785,6 +785,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				trigger_name == ["example_trigger_slack"]
 				// Monitor metadata
 				&& variables.get("monitor.name") == Some(&"Large Transfer of USDC Token".to_string())
+				&& variables.get("network.slug") == Some(&"stellar_testnet".to_string())
 				// Transaction variables
 				&& variables.get("transaction.hash")
 					== Some(&"2c89fc3311bc275415ed6a764c77d7b0349cb9f4ce37fd2bbfc6604920811503".to_string())

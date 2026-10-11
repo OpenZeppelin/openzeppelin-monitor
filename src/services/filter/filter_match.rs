@@ -65,6 +65,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				"monitor": {
 					"name": evm_monitor_match.monitor.name.clone(),
 				},
+				"network": {
+					"slug": evm_monitor_match.network_slug.clone(),
+				},
 				"transaction": {
 					"hash": b256_to_string(*transaction.hash()),
 					"from": h160_to_string(*sender),
@@ -153,6 +156,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				"monitor": {
 					"name": stellar_monitor_match.monitor.name.clone(),
 				},
+				"network": {
+					"slug": stellar_monitor_match.network_slug.clone(),
+				},
 				"transaction": {
 					"hash": transaction.hash().to_string(),
 				},
@@ -239,6 +245,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 				"monitor": {
 					"name": midnight_monitor_match.monitor.name.clone(),
 				},
+				"network": {
+					"slug": midnight_monitor_match.network_slug.clone(),
+				},
 				"transaction": {
 					"hash": transaction.hash().to_string(),
 				},
@@ -324,6 +333,9 @@ pub async fn handle_match<T: TriggerExecutionServiceTrait>(
 			let mut data_json = json!({
 				"monitor": {
 					"name": solana_monitor_match.monitor.name.clone(),
+				},
+				"network": {
+					"slug": solana_monitor_match.network_slug.clone(),
 				},
 				"transaction": {
 					"signature": transaction.signature().to_string(),

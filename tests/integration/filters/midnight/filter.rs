@@ -963,5 +963,11 @@ async fn test_handle_match_with_duplicate_event_signatures() -> Result<(), Box<F
 		"Both events should have the same signature"
 	);
 
+	assert_eq!(
+		captured_data.get("network.slug").unwrap(),
+		"midnight_testnet",
+		"Network slug should be present"
+	);
+
 	Ok(())
 }

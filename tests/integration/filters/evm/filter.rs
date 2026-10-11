@@ -576,6 +576,7 @@ async fn test_handle_match() -> Result<(), Box<FilterError>> {
 				&& variables.get("transaction.value") == Some(&"0".to_string())
 				// Monitor metadata
 				&& variables.get("monitor.name") == Some(&"Mint USDC Token".to_string())
+				&& variables.get("network.slug") == Some(&"ethereum_mainnet".to_string())
 		})
 		.once()
 		.returning(|_, _, _, _| Ok(()));
