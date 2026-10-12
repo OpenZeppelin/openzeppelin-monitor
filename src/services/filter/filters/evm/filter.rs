@@ -728,9 +728,6 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 				.map(|a| a.address.clone())
 				.collect();
 
-			// Check if this monitor needs a receipt
-			let should_fetch_receipt = self.needs_receipt(monitor, &all_block_logs);
-
 			// Process all transactions in the block
 			for transaction in &evm_block.transactions {
 				let tx_hash = b256_to_string(transaction.hash);
@@ -738,7 +735,8 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 				let logs = logs_by_tx.get(&tx_hash).unwrap_or(&empty_logs);
 				let tx_hash_str = tx_hash.clone();
 
-				let receipt = if should_fetch_receipt {
+				// Other transactions' logs cannot establish this transaction's status.
+				let receipt = if self.needs_receipt(monitor, logs) {
 					Some(client.get_transaction_receipt(tx_hash_str).await?)
 				} else {
 					None
