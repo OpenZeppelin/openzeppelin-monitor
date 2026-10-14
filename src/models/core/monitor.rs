@@ -121,6 +121,10 @@ pub struct TriggerConditions {
 	#[serde(default)]
 	pub arguments: Option<Vec<String>>,
 
+	/// Arguments passed to the script interpreter itself (before `-e` / `-c`)
+	#[serde(default)]
+	pub runtime_arguments: Option<Vec<String>>,
+
 	/// The language of the script
 	pub language: ScriptLanguage,
 

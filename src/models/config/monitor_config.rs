@@ -239,7 +239,7 @@ impl ConfigLoader for Monitor {
 mod tests {
 	use super::*;
 	use crate::{
-		models::core::{ScriptLanguage, TransactionStatus},
+		models::core::{ScriptLanguage, TransactionStatus, TriggerConditions},
 		utils::tests::builders::evm::monitor::MonitorBuilder,
 	};
 	use std::collections::HashMap;
@@ -428,6 +428,36 @@ mod tests {
 
 		// Restore original directory
 		std::env::set_current_dir(original_dir).unwrap();
+	}
+
+	#[test]
+	fn test_trigger_conditions_runtime_arguments_serde() {
+		// Configuration without the field must still load (backward compatibility)
+		let without_field = r#"{
+			"script_path": "./filter.js",
+			"language": "JavaScript",
+			"timeout_ms": 1000
+		}"#;
+		let conditions: TriggerConditions = serde_json::from_str(without_field).unwrap();
+		assert_eq!(conditions.runtime_arguments, None);
+
+		// Configuration with the field round-trips
+		let with_field = r#"{
+			"script_path": "./filter.js",
+			"language": "JavaScript",
+			"arguments": ["--verbose"],
+			"runtime_arguments": ["--max-old-space-size=4096"],
+			"timeout_ms": 1000
+		}"#;
+		let conditions: TriggerConditions = serde_json::from_str(with_field).unwrap();
+		assert_eq!(conditions.arguments, Some(vec!["--verbose".to_string()]));
+		assert_eq!(
+			conditions.runtime_arguments,
+			Some(vec!["--max-old-space-size=4096".to_string()])
+		);
+		let serialized = serde_json::to_string(&conditions).unwrap();
+		let deserialized: TriggerConditions = serde_json::from_str(&serialized).unwrap();
+		assert_eq!(deserialized, conditions);
 	}
 
 	#[test]

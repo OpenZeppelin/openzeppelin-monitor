@@ -55,23 +55,15 @@ pub fn monitor_strategy(
 				match_conditions,
 				trigger_conditions,
 			)| {
-				let mut monitor = MonitorBuilder::new()
+				MonitorBuilder::new()
 					.triggers(triggers)
 					.networks(networks)
 					.name(name.as_str())
 					.paused(paused)
 					.addresses(addresses.iter().map(|a| a.address.clone()).collect())
-					.match_conditions(match_conditions);
-
-				for trigger_condition in trigger_conditions {
-					monitor = monitor.trigger_condition(
-						trigger_condition.script_path.as_str(),
-						trigger_condition.timeout_ms,
-						trigger_condition.language,
-						trigger_condition.arguments,
-					);
-				}
-				monitor.build()
+					.match_conditions(match_conditions)
+					.trigger_conditions(trigger_conditions)
+					.build()
 			},
 		)
 }
@@ -302,9 +294,13 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 	(
 		script_paths,
 		"[a-zA-Z0-9_]+".prop_map(|s| s.to_string()),
+		option::of(proptest::collection::vec(
+			"--[a-z]{1,10}".prop_map(|s| s.to_string()),
+			0..3,
+		)),
 		Just(1000u32),
 	)
-		.prop_map(|(script_path, arguments, timeout_ms)| {
+		.prop_map(|(script_path, arguments, runtime_arguments, timeout_ms)| {
 			let language = match script_path.split('.').next_back() {
 				Some("py") => ScriptLanguage::Python,
 				Some("js") => ScriptLanguage::JavaScript,
@@ -315,6 +311,7 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 			vec![TriggerConditions {
 				script_path,
 				arguments: Some(arguments.split(',').map(|s| s.to_string()).collect()),
+				runtime_arguments,
 				language,
 				timeout_ms,
 			}]

@@ -602,6 +602,25 @@ This examples demonstrates how to:
 
 Integrate your custom notification script with the triggers by following the [configuration guidelines](/monitor#custom_script_notifications).
 
+## Runtime Arguments
+
+Both filter scripts (`trigger_conditions`) and notification scripts (`script` triggers) accept an optional `runtime_arguments` field. These values are command line options for the script interpreter itself and are placed on the interpreter's command line before the script (`node <runtime_arguments> -e <script>`, `python3 <runtime_arguments> -c <script>`, `sh <runtime_arguments> -c <script>`).
+
+```json
+{
+  "script_path": "./config/filters/evm_large_transfer.js",
+  "language": "JavaScript",
+  "runtime_arguments": ["--max-old-space-size=4096", "--env-file=./config/.env"],
+  "arguments": ["--verbose"],
+  "timeout_ms": 1000
+}
+```
+
+* **`runtime_arguments`** are interpreter options. They are consumed by `node`, `python3` or `sh` and never reach your script. Typical uses are memory limits (`--max-old-space-size=4096`), loading an env file (`--env-file=./config/.env`) or enabling ES module syntax (`--input-type=module`).
+* **`arguments`** are script options. They are serialised into the `args` array of the JSON document the script reads from `stdin`, exactly as before.
+* **Environment variables** such as `UV_THREADPOOL_SIZE` or `NODE_OPTIONS` are not runtime arguments. Scripts inherit the environment of the Monitor process, so set them where you start the Monitor (shell, service unit, container) rather than in the configuration.
+* Runtime arguments are passed to the interpreter verbatim, so they must only come from trusted configuration files. An invalid option makes the interpreter exit with an error, which is reported like any other script failure.
+
 ## Performance Considerations
 
 * **File descriptor limits**: Each script execution requires file descriptors for `stdin`, `stdout`, and `stderr`

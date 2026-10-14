@@ -147,6 +147,9 @@ pub enum TriggerTypeConfig {
 		/// Command line arguments
 		#[serde(default)]
 		arguments: Option<Vec<String>>,
+		/// Arguments passed to the script interpreter itself (before `-e` / `-c`)
+		#[serde(default)]
+		runtime_arguments: Option<Vec<String>>,
 		/// Timeout in milliseconds
 		timeout_ms: u32,
 	},
