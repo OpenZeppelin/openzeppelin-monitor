@@ -323,6 +323,7 @@ Therefore, there may be a small delay in processing the latest blocks since we w
 * Use geographically distributed endpoints when possible
 * Monitor endpoint health and adjust weights as needed
 * Set appropriate retry policies based on network characteristics
+* Benchmark provider latency and reliability before assigning weights. Independent continuous cross provider measurements across 22 chains are published at [OpenChainBench](https://openchainbench.com/benchmarks/rpc-capabilities), including p50/p95/p99 latency, error classification (HTTP vs JSON-RPC), and stale-block detection from three geographic regions.
 
 ## Troubleshooting
 
