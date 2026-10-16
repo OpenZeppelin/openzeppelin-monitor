@@ -121,3 +121,43 @@ async fn test_notification_service_script_execution_normalized_monitor_name() {
 		.await;
 	assert!(result.is_ok());
 }
+
+#[tokio::test]
+async fn test_notification_service_script_execution_with_runtime_arguments() {
+	let notification_service = NotificationService::new();
+	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
+
+	// The script emits a warning; `-W error` makes the Python interpreter treat it as an error
+	let mut trigger_scripts = HashMap::new();
+	trigger_scripts.insert(
+		"test_monitor|test_script.py".to_string(),
+		(
+			ScriptLanguage::Python,
+			"import warnings\nwarnings.warn('deprecated')\nprint(True)".to_string(),
+		),
+	);
+
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.script("test_script.py", ScriptLanguage::Python)
+		.script_runtime_arguments(vec!["-W".to_string(), "error".to_string()])
+		.script_timeout_ms(1000)
+		.build();
+
+	let result = notification_service
+		.execute(&trigger, &HashMap::new(), &monitor_match, &trigger_scripts)
+		.await;
+	assert!(matches!(result, Err(NotificationError::ExecutionError(_))));
+
+	// Without the runtime argument the warning only goes to stderr and the script succeeds
+	let trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.script("test_script.py", ScriptLanguage::Python)
+		.script_timeout_ms(1000)
+		.build();
+
+	let result = notification_service
+		.execute(&trigger, &HashMap::new(), &monitor_match, &trigger_scripts)
+		.await;
+	assert!(result.is_ok());
+}

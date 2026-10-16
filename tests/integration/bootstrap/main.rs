@@ -494,6 +494,7 @@ print(True)  # Always return true for test
 		language: ScriptLanguage::Python,
 		timeout_ms: 1000,
 		arguments: None,
+		runtime_arguments: vec![],
 	}];
 
 	let processed_block = ProcessedBlock {

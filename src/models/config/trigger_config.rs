@@ -1112,6 +1112,78 @@ mod tests {
 		std::fs::remove_file(script_path).unwrap();
 	}
 
+	#[test]
+	fn test_script_trigger_runtime_arguments_serde() {
+		// Configuration without the field must still load (backward compatibility)
+		let without_field = r#"{
+			"name": "script_trigger",
+			"trigger_type": "script",
+			"config": {
+				"language": "JavaScript",
+				"script_path": "./script.js",
+				"timeout_ms": 1000
+			}
+		}"#;
+		let trigger: Trigger = serde_json::from_str(without_field).unwrap();
+		match &trigger.config {
+			TriggerTypeConfig::Script {
+				arguments,
+				runtime_arguments,
+				..
+			} => {
+				assert_eq!(*arguments, None);
+				assert!(runtime_arguments.is_empty());
+			}
+			_ => panic!("Expected script config"),
+		}
+
+		// Empty runtime arguments are omitted when serializing, `arguments` keeps its behaviour
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert!(serialized["config"].get("runtime_arguments").is_none());
+		assert_eq!(serialized["config"]["arguments"], serde_json::Value::Null);
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, trigger);
+
+		// Configuration with the field round-trips
+		let with_field = r#"{
+			"name": "script_trigger",
+			"trigger_type": "script",
+			"config": {
+				"language": "JavaScript",
+				"script_path": "./script.js",
+				"arguments": ["--verbose"],
+				"runtime_arguments": ["--max-old-space-size=4096"],
+				"timeout_ms": 1000
+			}
+		}"#;
+		let trigger: Trigger = serde_json::from_str(with_field).unwrap();
+		match &trigger.config {
+			TriggerTypeConfig::Script {
+				arguments,
+				runtime_arguments,
+				..
+			} => {
+				assert_eq!(*arguments, Some(vec!["--verbose".to_string()]));
+				assert_eq!(
+					*runtime_arguments,
+					vec!["--max-old-space-size=4096".to_string()]
+				);
+			}
+			_ => panic!("Expected script config"),
+		}
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert_eq!(
+			serialized["config"]["runtime_arguments"],
+			serde_json::json!(["--max-old-space-size=4096"])
+		);
+		assert_eq!(
+			serialized["config"]["arguments"],
+			serde_json::json!(["--verbose"])
+		);
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, trigger);
+	}
+
 	#[tokio::test]
 	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/triggers/invalid.json");

@@ -37,6 +37,8 @@ pub trait ScriptExecutor: Send + Sync + Any {
 pub struct PythonScriptExecutor {
 	/// Content of the Python script file to be executed
 	pub script_content: String,
+	/// Arguments passed to the Python interpreter itself (before `-c`), e.g. `-W error`
+	pub runtime_arguments: Vec<String>,
 }
 
 #[async_trait]
@@ -59,6 +61,7 @@ impl ScriptExecutor for PythonScriptExecutor {
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
 		let cmd = tokio::process::Command::new("python3")
+			.args(&self.runtime_arguments)
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -75,6 +78,9 @@ impl ScriptExecutor for PythonScriptExecutor {
 pub struct JavaScriptScriptExecutor {
 	/// Content of the JavaScript script file to be executed
 	pub script_content: String,
+	/// Arguments passed to the Node.js runtime itself (before `-e`), e.g.
+	/// `--max-old-space-size=4096`
+	pub runtime_arguments: Vec<String>,
 }
 
 #[async_trait]
@@ -98,6 +104,7 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
 		let cmd = tokio::process::Command::new("node")
+			.args(&self.runtime_arguments)
 			.arg("-e")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -113,6 +120,8 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 pub struct BashScriptExecutor {
 	/// Content of the Bash script file to be executed
 	pub script_content: String,
+	/// Arguments passed to the shell itself (before `-c`), e.g. `-e`
+	pub runtime_arguments: Vec<String>,
 }
 
 #[async_trait]
@@ -137,6 +146,7 @@ impl ScriptExecutor for BashScriptExecutor {
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
 		let cmd = tokio::process::Command::new("sh")
+			.args(&self.runtime_arguments)
 			.arg("-c")
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
@@ -327,6 +337,7 @@ print(result)
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -351,6 +362,7 @@ print(result)
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -384,6 +396,7 @@ print("true")
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -423,6 +436,7 @@ print("true")
 
 		let executor = JavaScriptScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -456,6 +470,7 @@ print("true")
 
 		let executor = JavaScriptScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -482,6 +497,7 @@ echo "true"
 "#;
 		let executor = BashScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -503,6 +519,7 @@ echo "not a boolean"
 
 		let executor = BashScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -530,6 +547,7 @@ input_json = sys.stdin.read()
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -554,6 +572,7 @@ print("     true    ")  # Should handle whitespace correctly
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -577,6 +596,7 @@ print("     true    ")  # Should handle whitespace correctly
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		// Create an invalid MonitorMatch that will fail JSON serialization
@@ -604,6 +624,7 @@ print("true")
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -636,6 +657,7 @@ else:
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -667,6 +689,7 @@ else:
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -711,6 +734,7 @@ else:
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -739,7 +763,10 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_verbose_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
-		let executor = PythonScriptExecutor { script_content };
+		let executor = PythonScriptExecutor {
+			script_content,
+			runtime_arguments: vec![],
+		};
 		let input = create_mock_monitor_match();
 		let args = vec![String::from("--verbose")];
 		let result = executor
@@ -753,7 +780,10 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_wrong_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
-		let executor = PythonScriptExecutor { script_content };
+		let executor = PythonScriptExecutor {
+			script_content,
+			runtime_arguments: vec![],
+		};
 
 		let input = create_mock_monitor_match();
 		let args = vec![String::from("--wrong_arg"), String::from("--test")];
@@ -774,6 +804,7 @@ input_json = sys.stdin.read()
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -793,6 +824,7 @@ sys.exit(1)
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -820,6 +852,7 @@ time.sleep(0.3)
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -845,6 +878,7 @@ time.sleep(0.5)
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -869,6 +903,7 @@ sys.exit(1)
 
 		let executor = PythonScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -909,6 +944,7 @@ sys.exit(1)
 
 		let executor = JavaScriptScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -937,6 +973,7 @@ exit 1
 
 		let executor = BashScriptExecutor {
 			script_content: script_content.to_string(),
+			runtime_arguments: vec![],
 		};
 
 		let input = create_mock_monitor_match();
@@ -950,5 +987,118 @@ exit 1
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
+	}
+
+	// The test observes `process.execArgv` instead of relying on behaviour such as ES module
+	// syntax detection, which changes between Node.js versions (enabled by default from 22.7).
+	const JS_EXEC_ARGV_SCRIPT: &str = r#"
+let input = '';
+process.stdin.on('data', (chunk) => {
+	input += chunk;
+});
+process.stdin.on('end', () => {
+	JSON.parse(input);
+	console.log(process.execArgv.includes('--max-old-space-size=4096') ? "true" : "false");
+});
+"#;
+
+	#[tokio::test]
+	async fn test_javascript_script_executor_with_runtime_arguments() {
+		let executor = JavaScriptScriptExecutor {
+			script_content: JS_EXEC_ARGV_SCRIPT.to_string(),
+			runtime_arguments: vec!["--max-old-space-size=4096".to_string()],
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &5000, None, false).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_javascript_script_executor_without_runtime_arguments() {
+		let executor = JavaScriptScriptExecutor {
+			script_content: JS_EXEC_ARGV_SCRIPT.to_string(),
+			runtime_arguments: vec![],
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &5000, None, false).await;
+		assert!(result.is_ok());
+		assert!(!result.unwrap());
+	}
+
+	const PYTHON_WARNING_SCRIPT: &str = r#"
+import sys
+import warnings
+sys.stdin.read()
+warnings.warn("deprecated")
+print("true")
+"#;
+
+	#[tokio::test]
+	async fn test_python_script_executor_with_runtime_arguments() {
+		// `-W error` turns the warning into an exception, so the script fails
+		let executor = PythonScriptExecutor {
+			script_content: PYTHON_WARNING_SCRIPT.to_string(),
+			runtime_arguments: vec!["-W".to_string(), "error".to_string()],
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("Script execution failed"));
+	}
+
+	#[tokio::test]
+	async fn test_python_script_executor_without_runtime_arguments_ignores_warning() {
+		let executor = PythonScriptExecutor {
+			script_content: PYTHON_WARNING_SCRIPT.to_string(),
+			runtime_arguments: vec![],
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
+	}
+
+	const BASH_FAILING_COMMAND_SCRIPT: &str = r#"
+input_json=$(cat)
+false
+echo "true"
+"#;
+
+	#[tokio::test]
+	async fn test_bash_script_executor_with_runtime_arguments() {
+		// `-e` makes the shell exit on the first failing command
+		let executor = BashScriptExecutor {
+			script_content: BASH_FAILING_COMMAND_SCRIPT.to_string(),
+			runtime_arguments: vec!["-e".to_string()],
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_err());
+		assert!(result
+			.unwrap_err()
+			.to_string()
+			.contains("Script execution failed"));
+	}
+
+	#[tokio::test]
+	async fn test_bash_script_executor_without_runtime_arguments_continues_after_failure() {
+		let executor = BashScriptExecutor {
+			script_content: BASH_FAILING_COMMAND_SCRIPT.to_string(),
+			runtime_arguments: vec![],
+		};
+
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_ok());
+		assert!(result.unwrap());
 	}
 }

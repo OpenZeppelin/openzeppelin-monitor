@@ -773,6 +773,7 @@ When using raw mode:
 | `**language**` | `String` | The language of the script |
 | `**script_path**` | `String` | The path to the script |
 | `**arguments**` | `Array[String]` | The arguments of the script (optional). |
+| `**runtime_arguments**` | `Array[String]` | Command line options passed to the script interpreter itself (`node`, `python3` or `sh`) before the script, e.g. `["--max-old-space-size=4096"]` (optional, defaults to an empty list when omitted). See [Runtime Arguments](/monitor/scripts#runtime-arguments). |
 | `**timeout_ms**` | `Number` | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed. |
 
 For more information about custom scripts, see [Custom Scripts Section](/monitor/scripts).
@@ -1577,6 +1578,7 @@ For more information about custom scripts, see [Custom Scripts Section](/monitor
 | `**script_path**` | String | The path to the script |
 | `**language**` | String | The language of the script |
 | `**arguments**` | Array[String] | The arguments of the script (optional). |
+| `**runtime_arguments**` | Array[String] | Command line options passed to the script interpreter itself (`node`, `python3` or `sh`) before the script, e.g. `["--max-old-space-size=4096"]` (optional, defaults to an empty list when omitted). See [Runtime Arguments](/monitor/scripts#runtime-arguments). |
 | `**timeout_ms**` | Number | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default. |
 
 #### Important Considerations

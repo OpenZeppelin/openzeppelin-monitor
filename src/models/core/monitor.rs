@@ -121,6 +121,10 @@ pub struct TriggerConditions {
 	#[serde(default)]
 	pub arguments: Option<Vec<String>>,
 
+	/// Arguments passed to the script interpreter itself (before `-e` / `-c`)
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub runtime_arguments: Vec<String>,
+
 	/// The language of the script
 	pub language: ScriptLanguage,
 

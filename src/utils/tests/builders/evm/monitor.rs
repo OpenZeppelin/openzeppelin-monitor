@@ -145,6 +145,7 @@ impl MonitorBuilder {
 			script_path: script_path.to_string(),
 			timeout_ms,
 			arguments,
+			runtime_arguments: vec![],
 			language,
 		});
 		self
@@ -157,6 +158,11 @@ impl MonitorBuilder {
 
 	pub fn match_conditions(mut self, match_conditions: MatchConditions) -> Self {
 		self.match_conditions = match_conditions;
+		self
+	}
+
+	pub fn trigger_conditions(mut self, trigger_conditions: Vec<TriggerConditions>) -> Self {
+		self.trigger_conditions = trigger_conditions;
 		self
 	}
 

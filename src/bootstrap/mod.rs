@@ -487,7 +487,11 @@ async fn execute_trigger_condition(
 	monitor_match: &MonitorMatch,
 	script_content: &(ScriptLanguage, String),
 ) -> bool {
-	let executor = ScriptExecutorFactory::create(&script_content.0, &script_content.1);
+	let executor = ScriptExecutorFactory::create(
+		&script_content.0,
+		&script_content.1,
+		&trigger_condition.runtime_arguments,
+	);
 
 	let result = executor
 		.execute(
@@ -946,6 +950,7 @@ print(result)
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			arguments: None,
+			runtime_arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -967,6 +972,7 @@ print(result)
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			arguments: None,
+			runtime_arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -980,12 +986,50 @@ print(result)
 	}
 
 	#[tokio::test]
+	async fn test_execute_trigger_condition_with_runtime_arguments() {
+		// The script emits a warning; `-W error` makes the Python interpreter treat it as an error
+		let script_content = r#"
+import sys
+import warnings
+sys.stdin.read()
+warnings.warn("deprecated")
+print("true")
+"#;
+		let temp_file = create_temp_script(script_content);
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::EVM,
+			Some(temp_file.path().to_str().unwrap()),
+		);
+		let script_content = (ScriptLanguage::Python, script_content.to_string());
+
+		let trigger_condition = TriggerConditions {
+			language: ScriptLanguage::Python,
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			timeout_ms: 1000,
+			arguments: None,
+			runtime_arguments: vec!["-W".to_string(), "error".to_string()],
+		};
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
+		assert!(!result); // The warning becomes an error, so the condition fails
+
+		let trigger_condition = TriggerConditions {
+			runtime_arguments: vec![],
+			..trigger_condition
+		};
+		let result =
+			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
+		assert!(result); // Without the flag the warning only goes to stderr
+	}
+
+	#[tokio::test]
 	async fn test_execute_trigger_condition_invalid_script() {
 		let trigger_condition = TriggerConditions {
 			language: ScriptLanguage::Python,
 			script_path: "non_existent_script.py".to_string(),
 			timeout_ms: 1000,
 			arguments: None,
+			runtime_arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,

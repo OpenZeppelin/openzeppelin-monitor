@@ -126,6 +126,7 @@ impl TriggerBuilder {
 		self.config = TriggerTypeConfig::Script {
 			script_path: script_path.to_string(),
 			arguments: None,
+			runtime_arguments: vec![],
 			language,
 			timeout_ms: 1000,
 		};
@@ -135,6 +136,17 @@ impl TriggerBuilder {
 	pub fn script_arguments(mut self, arguments: Vec<String>) -> Self {
 		if let TriggerTypeConfig::Script { arguments: a, .. } = &mut self.config {
 			*a = Some(arguments);
+		}
+		self
+	}
+
+	pub fn script_runtime_arguments(mut self, runtime_arguments: Vec<String>) -> Self {
+		if let TriggerTypeConfig::Script {
+			runtime_arguments: r,
+			..
+		} = &mut self.config
+		{
+			*r = runtime_arguments;
 		}
 		self
 	}
@@ -502,6 +514,28 @@ mod tests {
 		match trigger.config {
 			TriggerTypeConfig::Script { arguments, .. } => {
 				assert_eq!(arguments, Some(vec!["arg1".to_string()]));
+			}
+			_ => panic!("Expected script config"),
+		}
+	}
+
+	#[test]
+	fn test_script_trigger_with_runtime_arguments() {
+		let trigger = TriggerBuilder::new()
+			.name("script_trigger")
+			.script("test.js", ScriptLanguage::JavaScript)
+			.script_runtime_arguments(vec!["--max-old-space-size=4096".to_string()])
+			.build();
+
+		assert_eq!(trigger.trigger_type, TriggerType::Script);
+		match trigger.config {
+			TriggerTypeConfig::Script {
+				runtime_arguments, ..
+			} => {
+				assert_eq!(
+					runtime_arguments,
+					vec!["--max-old-space-size=4096".to_string()]
+				);
 			}
 			_ => panic!("Expected script config"),
 		}
