@@ -126,7 +126,7 @@ impl TriggerBuilder {
 		self.config = TriggerTypeConfig::Script {
 			script_path: script_path.to_string(),
 			arguments: None,
-			runtime_arguments: None,
+			runtime_arguments: vec![],
 			language,
 			timeout_ms: 1000,
 		};
@@ -146,7 +146,7 @@ impl TriggerBuilder {
 			..
 		} = &mut self.config
 		{
-			*r = Some(runtime_arguments);
+			*r = runtime_arguments;
 		}
 		self
 	}
@@ -534,7 +534,7 @@ mod tests {
 			} => {
 				assert_eq!(
 					runtime_arguments,
-					Some(vec!["--max-old-space-size=4096".to_string()])
+					vec!["--max-old-space-size=4096".to_string()]
 				);
 			}
 			_ => panic!("Expected script config"),

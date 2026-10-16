@@ -139,9 +139,15 @@ impl MonitorBuilder {
 			script_path: script_path.to_string(),
 			timeout_ms,
 			arguments,
-			runtime_arguments: None,
+			runtime_arguments: vec![],
 			language,
 		});
+		self
+	}
+
+	/// Set the trigger conditions of the monitor
+	pub fn trigger_conditions(mut self, trigger_conditions: Vec<TriggerConditions>) -> Self {
+		self.trigger_conditions = trigger_conditions;
 		self
 	}
 

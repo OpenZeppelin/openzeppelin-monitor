@@ -294,10 +294,7 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 	(
 		script_paths,
 		"[a-zA-Z0-9_]+".prop_map(|s| s.to_string()),
-		option::of(proptest::collection::vec(
-			"--[a-z]{1,10}".prop_map(|s| s.to_string()),
-			0..3,
-		)),
+		proptest::collection::vec("--[a-z]{1,10}".prop_map(|s| s.to_string()), 0..3),
 		Just(1000u32),
 	)
 		.prop_map(|(script_path, arguments, runtime_arguments, timeout_ms)| {

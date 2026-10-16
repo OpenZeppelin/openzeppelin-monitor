@@ -490,7 +490,7 @@ async fn execute_trigger_condition(
 	let executor = ScriptExecutorFactory::create(
 		&script_content.0,
 		&script_content.1,
-		trigger_condition.runtime_arguments.as_deref(),
+		&trigger_condition.runtime_arguments,
 	);
 
 	let result = executor
@@ -950,7 +950,7 @@ print(result)
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			arguments: None,
-			runtime_arguments: None,
+			runtime_arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -972,7 +972,7 @@ print(result)
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			arguments: None,
-			runtime_arguments: None,
+			runtime_arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -1007,14 +1007,14 @@ print("true")
 			script_path: temp_file.path().to_str().unwrap().to_string(),
 			timeout_ms: 1000,
 			arguments: None,
-			runtime_arguments: Some(vec!["-W".to_string(), "error".to_string()]),
+			runtime_arguments: vec!["-W".to_string(), "error".to_string()],
 		};
 		let result =
 			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
 		assert!(!result); // The warning becomes an error, so the condition fails
 
 		let trigger_condition = TriggerConditions {
-			runtime_arguments: None,
+			runtime_arguments: vec![],
 			..trigger_condition
 		};
 		let result =
@@ -1029,7 +1029,7 @@ print("true")
 			script_path: "non_existent_script.py".to_string(),
 			timeout_ms: 1000,
 			arguments: None,
-			runtime_arguments: None,
+			runtime_arguments: vec![],
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,

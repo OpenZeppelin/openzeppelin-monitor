@@ -439,7 +439,15 @@ mod tests {
 			"timeout_ms": 1000
 		}"#;
 		let conditions: TriggerConditions = serde_json::from_str(without_field).unwrap();
-		assert_eq!(conditions.runtime_arguments, None);
+		assert_eq!(conditions.arguments, None);
+		assert!(conditions.runtime_arguments.is_empty());
+
+		// Empty runtime arguments are omitted when serializing, `arguments` keeps its behaviour
+		let serialized = serde_json::to_value(&conditions).unwrap();
+		assert!(serialized.get("runtime_arguments").is_none());
+		assert_eq!(serialized["arguments"], serde_json::Value::Null);
+		let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, conditions);
 
 		// Configuration with the field round-trips
 		let with_field = r#"{
@@ -453,10 +461,15 @@ mod tests {
 		assert_eq!(conditions.arguments, Some(vec!["--verbose".to_string()]));
 		assert_eq!(
 			conditions.runtime_arguments,
-			Some(vec!["--max-old-space-size=4096".to_string()])
+			vec!["--max-old-space-size=4096".to_string()]
 		);
-		let serialized = serde_json::to_string(&conditions).unwrap();
-		let deserialized: TriggerConditions = serde_json::from_str(&serialized).unwrap();
+		let serialized = serde_json::to_value(&conditions).unwrap();
+		assert_eq!(
+			serialized["runtime_arguments"],
+			serde_json::json!(["--max-old-space-size=4096"])
+		);
+		assert_eq!(serialized["arguments"], serde_json::json!(["--verbose"]));
+		let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
 		assert_eq!(deserialized, conditions);
 	}
 

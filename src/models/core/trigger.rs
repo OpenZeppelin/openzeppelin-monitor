@@ -148,8 +148,8 @@ pub enum TriggerTypeConfig {
 		#[serde(default)]
 		arguments: Option<Vec<String>>,
 		/// Arguments passed to the script interpreter itself (before `-e` / `-c`)
-		#[serde(default)]
-		runtime_arguments: Option<Vec<String>>,
+		#[serde(default, skip_serializing_if = "Vec::is_empty")]
+		runtime_arguments: Vec<String>,
 		/// Timeout in milliseconds
 		timeout_ms: u32,
 	},

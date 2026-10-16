@@ -19,8 +19,8 @@ impl ScriptExecutorFactory {
 	///
 	/// * `language` - The programming language of the script
 	/// * `script_content` - The content of the script
-	/// * `runtime_arguments` - Optional arguments passed to the interpreter itself (before
-	///   `-e` / `-c`); `None` means no extra arguments
+	/// * `runtime_arguments` - Arguments passed to the interpreter itself (before `-e` / `-c`);
+	///   an empty slice means no extra arguments
 	///
 	/// # Returns
 	///
@@ -29,9 +29,9 @@ impl ScriptExecutorFactory {
 	pub fn create(
 		language: &ScriptLanguage,
 		script_content: &str,
-		runtime_arguments: Option<&[String]>,
+		runtime_arguments: &[String],
 	) -> Box<dyn ScriptExecutor> {
-		let runtime_arguments = runtime_arguments.unwrap_or_default().to_vec();
+		let runtime_arguments = runtime_arguments.to_vec();
 		match language {
 			ScriptLanguage::Python => Box::new(PythonScriptExecutor {
 				script_content: script_content.to_string(),
@@ -57,7 +57,7 @@ mod tests {
 	#[test]
 	fn test_create_python_executor() {
 		let script = "print('Hello')";
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, script, &[]);
 		assert!(
 			executor
 				.as_any()
@@ -69,7 +69,7 @@ mod tests {
 
 		// Test with empty script
 		let empty_script = "";
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, empty_script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, empty_script, &[]);
 		assert!(executor
 			.as_any()
 			.downcast_ref::<PythonScriptExecutor>()
@@ -81,7 +81,7 @@ mod tests {
 	#[test]
 	fn test_create_javascript_executor() {
 		let script = "console.log('Hello')";
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script, &[]);
 		assert!(
 			executor
 				.as_any()
@@ -94,7 +94,7 @@ mod tests {
 		// Test with empty script
 		let empty_script = "";
 		let executor =
-			ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, empty_script, None);
+			ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, empty_script, &[]);
 		assert!(executor
 			.as_any()
 			.downcast_ref::<JavaScriptScriptExecutor>()
@@ -106,7 +106,7 @@ mod tests {
 	#[test]
 	fn test_create_bash_executor() {
 		let script = "echo 'Hello'";
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, script, &[]);
 		assert!(
 			executor
 				.as_any()
@@ -118,7 +118,7 @@ mod tests {
 
 		// Test with empty script
 		let empty_script = "";
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, empty_script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, empty_script, &[]);
 		assert!(executor
 			.as_any()
 			.downcast_ref::<BashScriptExecutor>()
@@ -132,11 +132,8 @@ mod tests {
 		let script = "echo 'Hello'";
 		let runtime_arguments = vec!["--flag".to_string(), "value".to_string()];
 
-		let executor = ScriptExecutorFactory::create(
-			&ScriptLanguage::Python,
-			script,
-			Some(&runtime_arguments),
-		);
+		let executor =
+			ScriptExecutorFactory::create(&ScriptLanguage::Python, script, &runtime_arguments);
 		assert_eq!(
 			executor
 				.as_any()
@@ -146,11 +143,8 @@ mod tests {
 			runtime_arguments
 		);
 
-		let executor = ScriptExecutorFactory::create(
-			&ScriptLanguage::JavaScript,
-			script,
-			Some(&runtime_arguments),
-		);
+		let executor =
+			ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script, &runtime_arguments);
 		assert_eq!(
 			executor
 				.as_any()
@@ -161,7 +155,7 @@ mod tests {
 		);
 
 		let executor =
-			ScriptExecutorFactory::create(&ScriptLanguage::Bash, script, Some(&runtime_arguments));
+			ScriptExecutorFactory::create(&ScriptLanguage::Bash, script, &runtime_arguments);
 		assert_eq!(
 			executor
 				.as_any()
@@ -176,7 +170,7 @@ mod tests {
 	fn test_create_executor_without_runtime_arguments() {
 		let script = "echo 'Hello'";
 
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Python, script, &[]);
 		assert!(executor
 			.as_any()
 			.downcast_ref::<PythonScriptExecutor>()
@@ -184,7 +178,7 @@ mod tests {
 			.runtime_arguments
 			.is_empty());
 
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::JavaScript, script, &[]);
 		assert!(executor
 			.as_any()
 			.downcast_ref::<JavaScriptScriptExecutor>()
@@ -192,7 +186,7 @@ mod tests {
 			.runtime_arguments
 			.is_empty());
 
-		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, script, None);
+		let executor = ScriptExecutorFactory::create(&ScriptLanguage::Bash, script, &[]);
 		assert!(executor
 			.as_any()
 			.downcast_ref::<BashScriptExecutor>()

@@ -604,22 +604,33 @@ Integrate your custom notification script with the triggers by following the [co
 
 ## Runtime Arguments
 
-Both filter scripts (`trigger_conditions`) and notification scripts (`script` triggers) accept an optional `runtime_arguments` field. These values are command line options for the script interpreter itself and are placed on the interpreter's command line before the script (`node <runtime_arguments> -e <script>`, `python3 <runtime_arguments> -c <script>`, `sh <runtime_arguments> -c <script>`).
+Both filter scripts (`trigger_conditions`) and notification scripts (`script` triggers) accept an optional `runtime_arguments` field. It defaults to an empty list when omitted. These values are command line options for the script interpreter itself and are placed on the interpreter's command line before the script (`node <runtime_arguments> -e <script>`, `python3 <runtime_arguments> -c <script>`, `sh <runtime_arguments> -c <script>`).
 
 ```json
 {
   "script_path": "./config/filters/evm_large_transfer.js",
   "language": "JavaScript",
-  "runtime_arguments": ["--max-old-space-size=4096", "--env-file=./config/.env"],
+  "runtime_arguments": ["--max-old-space-size=4096", "--env-file=./config/scripts/.env"],
   "arguments": ["--verbose"],
   "timeout_ms": 1000
 }
 ```
 
-* **`runtime_arguments`** are interpreter options. They are consumed by `node`, `python3` or `sh` and never reach your script. Typical uses are memory limits (`--max-old-space-size=4096`), loading an env file (`--env-file=./config/.env`) or enabling ES module syntax (`--input-type=module`).
+* **`runtime_arguments`** are interpreter options. They are consumed by `node`, `python3` or `sh` and never reach your script. Typical uses are memory limits (`--max-old-space-size=4096`) or loading an env file (`--env-file=./config/scripts/.env`). Every option must be supported by the interpreter version installed on the host, for example `--env-file` requires Node.js 20.6 or later.
 * **`arguments`** are script options. They are serialised into the `args` array of the JSON document the script reads from `stdin`, exactly as before.
 * **Environment variables** such as `UV_THREADPOOL_SIZE` or `NODE_OPTIONS` are not runtime arguments. Scripts inherit the environment of the Monitor process, so set them where you start the Monitor (shell, service unit, container) rather than in the configuration.
-* Runtime arguments are passed to the interpreter verbatim, so they must only come from trusted configuration files. An invalid option makes the interpreter exit with an error, which is reported like any other script failure.
+* Runtime arguments are passed to the interpreter verbatim, so they must only come from trusted configuration files.
+
+<Callout type='warn'>
+
+
+Invalid or unsupported interpreter options make the interpreter exit before the script runs, which is reported like any other script failure. For filter scripts, a failed execution does not filter out the match: the match stays eligible for notification, so incorrect runtime arguments can result in unintended notifications. Validate interpreter options locally against the installed runtime version before deploying a configuration.
+
+</Callout>
+
+### Shell compatibility
+
+Scripts configured with `"language": "Bash"` are currently executed with `sh -c`, not with the `bash` executable. Runtime arguments are therefore passed to the host's `/bin/sh`, and the behaviour depends on which shell that is: on typical Debian and Ubuntu installations `/bin/sh` is `dash`, while on macOS it is usually based on Bash. Portable options such as `-e`, `-u` and `-x` work on both. Bash-specific options such as `-o pipefail` or `-O extglob` may fail on `dash`, so check the host's `/bin/sh` before relying on them.
 
 ## Performance Considerations
 

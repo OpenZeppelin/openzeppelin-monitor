@@ -1127,10 +1127,22 @@ mod tests {
 		let trigger: Trigger = serde_json::from_str(without_field).unwrap();
 		match &trigger.config {
 			TriggerTypeConfig::Script {
-				runtime_arguments, ..
-			} => assert_eq!(*runtime_arguments, None),
+				arguments,
+				runtime_arguments,
+				..
+			} => {
+				assert_eq!(*arguments, None);
+				assert!(runtime_arguments.is_empty());
+			}
 			_ => panic!("Expected script config"),
 		}
+
+		// Empty runtime arguments are omitted when serializing, `arguments` keeps its behaviour
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert!(serialized["config"].get("runtime_arguments").is_none());
+		assert_eq!(serialized["config"]["arguments"], serde_json::Value::Null);
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, trigger);
 
 		// Configuration with the field round-trips
 		let with_field = r#"{
@@ -1154,13 +1166,21 @@ mod tests {
 				assert_eq!(*arguments, Some(vec!["--verbose".to_string()]));
 				assert_eq!(
 					*runtime_arguments,
-					Some(vec!["--max-old-space-size=4096".to_string()])
+					vec!["--max-old-space-size=4096".to_string()]
 				);
 			}
 			_ => panic!("Expected script config"),
 		}
-		let serialized = serde_json::to_string(&trigger).unwrap();
-		let deserialized: Trigger = serde_json::from_str(&serialized).unwrap();
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert_eq!(
+			serialized["config"]["runtime_arguments"],
+			serde_json::json!(["--max-old-space-size=4096"])
+		);
+		assert_eq!(
+			serialized["config"]["arguments"],
+			serde_json::json!(["--verbose"])
+		);
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
 		assert_eq!(deserialized, trigger);
 	}
 

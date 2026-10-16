@@ -145,7 +145,7 @@ impl MonitorBuilder {
 			script_path: script_path.to_string(),
 			timeout_ms,
 			arguments,
-			runtime_arguments: None,
+			runtime_arguments: vec![],
 			language,
 		});
 		self
