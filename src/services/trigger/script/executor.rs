@@ -33,58 +33,20 @@ pub trait ScriptExecutor: Send + Sync + Any {
 	) -> Result<bool, anyhow::Error>;
 }
 
-/// Executes Python scripts using the python3 interpreter.
-pub struct PythonScriptExecutor {
-	/// Content of the Python script file to be executed
+/// Executes a script by handing its content to an interpreter via an eval flag.
+pub struct InterpreterExecutor {
+	/// Interpreter binary, e.g. `python3`, `node`, `sh`
+	pub program: &'static str,
+	/// Flag that makes the interpreter evaluate the script given on the command line (`-c` / `-e`)
+	pub eval_flag: &'static str,
+	/// Content of the script to be executed
 	pub script_content: String,
-	/// Arguments passed to the Python interpreter itself (before `-c`), e.g. `-W error`
+	/// Arguments passed to the interpreter itself, before the eval flag
 	pub runtime_arguments: Vec<String>,
 }
 
 #[async_trait]
-impl ScriptExecutor for PythonScriptExecutor {
-	fn as_any(&self) -> &dyn Any {
-		self
-	}
-	async fn execute(
-		&self,
-		input: MonitorMatch,
-		timeout_ms: &u32,
-		args: Option<&[String]>,
-		from_custom_notification: bool,
-	) -> Result<bool, anyhow::Error> {
-		let combined_input = serde_json::json!({
-			"monitor_match": input,
-			"args": args
-		});
-		let input_json = serde_json::to_string(&combined_input)
-			.with_context(|| "Failed to serialize monitor match and arguments")?;
-
-		let cmd = tokio::process::Command::new("python3")
-			.args(&self.runtime_arguments)
-			.arg("-c")
-			.arg(&self.script_content)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.stderr(Stdio::piped())
-			.spawn()
-			.with_context(|| "Failed to spawn python3 process")?;
-
-		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
-	}
-}
-
-/// Executes JavaScript scripts using the Node.js runtime.
-pub struct JavaScriptScriptExecutor {
-	/// Content of the JavaScript script file to be executed
-	pub script_content: String,
-	/// Arguments passed to the Node.js runtime itself (before `-e`), e.g.
-	/// `--max-old-space-size=4096`
-	pub runtime_arguments: Vec<String>,
-}
-
-#[async_trait]
-impl ScriptExecutor for JavaScriptScriptExecutor {
+impl ScriptExecutor for InterpreterExecutor {
 	fn as_any(&self) -> &dyn Any {
 		self
 	}
@@ -103,57 +65,15 @@ impl ScriptExecutor for JavaScriptScriptExecutor {
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
-		let cmd = tokio::process::Command::new("node")
+		let cmd = tokio::process::Command::new(self.program)
 			.args(&self.runtime_arguments)
-			.arg("-e")
+			.arg(self.eval_flag)
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
 			.spawn()
-			.with_context(|| "Failed to spawn node process")?;
-		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
-	}
-}
-
-/// Executes Bash shell scripts.
-pub struct BashScriptExecutor {
-	/// Content of the Bash script file to be executed
-	pub script_content: String,
-	/// Arguments passed to the shell itself (before `-c`), e.g. `-e`
-	pub runtime_arguments: Vec<String>,
-}
-
-#[async_trait]
-impl ScriptExecutor for BashScriptExecutor {
-	fn as_any(&self) -> &dyn Any {
-		self
-	}
-	async fn execute(
-		&self,
-		input: MonitorMatch,
-		timeout_ms: &u32,
-		args: Option<&[String]>,
-		from_custom_notification: bool,
-	) -> Result<bool, anyhow::Error> {
-		// Create a combined input with both the monitor match and arguments
-		let combined_input = serde_json::json!({
-			"monitor_match": input,
-			"args": args
-		});
-
-		let input_json = serde_json::to_string(&combined_input)
-			.with_context(|| "Failed to serialize monitor match and arguments")?;
-
-		let cmd = tokio::process::Command::new("sh")
-			.args(&self.runtime_arguments)
-			.arg("-c")
-			.arg(&self.script_content)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.stderr(Stdio::piped())
-			.spawn()
-			.with_context(|| "Failed to spawn shell process")?;
+			.with_context(|| format!("Failed to spawn {} process", self.program))?;
 
 		process_command(cmd, &input_json, timeout_ms, from_custom_notification).await
 	}
@@ -268,6 +188,32 @@ mod tests {
 			.unwrap_or_else(|_| panic!("Failed to read fixture file: {}", filename))
 	}
 
+	fn interpreter(
+		program: &'static str,
+		eval_flag: &'static str,
+		script: &str,
+		runtime_arguments: Vec<String>,
+	) -> InterpreterExecutor {
+		InterpreterExecutor {
+			program,
+			eval_flag,
+			script_content: script.to_string(),
+			runtime_arguments,
+		}
+	}
+
+	fn python(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
+		interpreter("python3", "-c", script, runtime_arguments)
+	}
+
+	fn node(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
+		interpreter("node", "-e", script, runtime_arguments)
+	}
+
+	fn sh(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
+		interpreter("sh", "-c", script, runtime_arguments)
+	}
+
 	/// Creates a test monitor with customizable parameters
 	fn create_test_monitor(
 		event_conditions: Vec<EventCondition>,
@@ -335,10 +281,7 @@ result = test()
 print(result)
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 
@@ -360,10 +303,7 @@ result = test()
 print(result)
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -394,10 +334,7 @@ print("More debug info")
 print("true")
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 
@@ -434,10 +371,7 @@ print("true")
 		})();
 		"#;
 
-		let executor = JavaScriptScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = node(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -468,10 +402,7 @@ print("true")
 		})();
 		"#;
 
-		let executor = JavaScriptScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = node(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -495,10 +426,7 @@ sleep 0.1  # Small delay to ensure process startup
 echo "debugging..."
 echo "true"
 "#;
-		let executor = BashScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = sh(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -517,10 +445,7 @@ echo "debugging..."
 echo "not a boolean"
 "#;
 
-		let executor = BashScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = sh(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -545,10 +470,7 @@ input_json = sys.stdin.read()
 # This script produces no output
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -570,10 +492,7 @@ print("   ")
 print("     true    ")  # Should handle whitespace correctly
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -594,10 +513,7 @@ print("     true    ")  # Should handle whitespace correctly
 	exit(1)
 	"#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = create_mock_monitor_match();
@@ -622,10 +538,7 @@ print("false")
 print("true")
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 
@@ -655,10 +568,7 @@ else:
     print("false")
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -687,10 +597,7 @@ else:
     print("false")
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 
@@ -732,10 +639,7 @@ else:
     print("false")
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 
@@ -763,10 +667,7 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_verbose_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
-		let executor = PythonScriptExecutor {
-			script_content,
-			runtime_arguments: vec![],
-		};
+		let executor = python(&script_content, vec![]);
 		let input = create_mock_monitor_match();
 		let args = vec![String::from("--verbose")];
 		let result = executor
@@ -780,10 +681,7 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_wrong_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
-		let executor = PythonScriptExecutor {
-			script_content,
-			runtime_arguments: vec![],
-		};
+		let executor = python(&script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let args = vec![String::from("--wrong_arg"), String::from("--test")];
@@ -802,10 +700,7 @@ import sys
 input_json = sys.stdin.read()
 "#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, true).await;
@@ -822,10 +717,7 @@ sys.stderr.write("Error: something went wrong\n")
 sys.exit(1)
 		"#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, true).await;
@@ -850,10 +742,7 @@ input_json = sys.stdin.read()
 time.sleep(0.3)
 		"#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let start_time = Instant::now();
@@ -876,10 +765,7 @@ input_json = sys.stdin.read()
 time.sleep(0.5)
 		"#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let start_time = Instant::now();
@@ -901,10 +787,7 @@ print("This is a python test error message!", file=sys.stderr)
 sys.exit(1)
 		"#;
 
-		let executor = PythonScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -942,10 +825,7 @@ sys.exit(1)
 		});
 		"#;
 
-		let executor = JavaScriptScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = node(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -971,10 +851,7 @@ echo "This is a bash test error message!" >&2
 exit 1
 "#;
 
-		let executor = BashScriptExecutor {
-			script_content: script_content.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = sh(script_content, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1004,10 +881,10 @@ process.stdin.on('end', () => {
 
 	#[tokio::test]
 	async fn test_javascript_script_executor_with_runtime_arguments() {
-		let executor = JavaScriptScriptExecutor {
-			script_content: JS_EXEC_ARGV_SCRIPT.to_string(),
-			runtime_arguments: vec!["--max-old-space-size=4096".to_string()],
-		};
+		let executor = node(
+			JS_EXEC_ARGV_SCRIPT,
+			vec!["--max-old-space-size=4096".to_string()],
+		);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -1017,10 +894,7 @@ process.stdin.on('end', () => {
 
 	#[tokio::test]
 	async fn test_javascript_script_executor_without_runtime_arguments() {
-		let executor = JavaScriptScriptExecutor {
-			script_content: JS_EXEC_ARGV_SCRIPT.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = node(JS_EXEC_ARGV_SCRIPT, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -1039,10 +913,10 @@ print("true")
 	#[tokio::test]
 	async fn test_python_script_executor_with_runtime_arguments() {
 		// `-W error` turns the warning into an exception, so the script fails
-		let executor = PythonScriptExecutor {
-			script_content: PYTHON_WARNING_SCRIPT.to_string(),
-			runtime_arguments: vec!["-W".to_string(), "error".to_string()],
-		};
+		let executor = python(
+			PYTHON_WARNING_SCRIPT,
+			vec!["-W".to_string(), "error".to_string()],
+		);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1055,10 +929,7 @@ print("true")
 
 	#[tokio::test]
 	async fn test_python_script_executor_without_runtime_arguments_ignores_warning() {
-		let executor = PythonScriptExecutor {
-			script_content: PYTHON_WARNING_SCRIPT.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = python(PYTHON_WARNING_SCRIPT, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1075,10 +946,7 @@ echo "true"
 	#[tokio::test]
 	async fn test_bash_script_executor_with_runtime_arguments() {
 		// `-e` makes the shell exit on the first failing command
-		let executor = BashScriptExecutor {
-			script_content: BASH_FAILING_COMMAND_SCRIPT.to_string(),
-			runtime_arguments: vec!["-e".to_string()],
-		};
+		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, vec!["-e".to_string()]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1091,14 +959,25 @@ echo "true"
 
 	#[tokio::test]
 	async fn test_bash_script_executor_without_runtime_arguments_continues_after_failure() {
-		let executor = BashScriptExecutor {
-			script_content: BASH_FAILING_COMMAND_SCRIPT.to_string(),
-			runtime_arguments: vec![],
-		};
+		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, vec![]);
 
 		let input = create_mock_monitor_match();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_interpreter_executor_unknown_program_reports_program_name() {
+		let executor = interpreter("definitely-not-a-program", "-c", "true", vec![]);
+		let input = create_mock_monitor_match();
+		let result = executor.execute(input, &1000, None, false).await;
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(
+			err.contains("Failed to spawn definitely-not-a-program process"),
+			"unexpected error: {}",
+			err
+		);
 	}
 }
