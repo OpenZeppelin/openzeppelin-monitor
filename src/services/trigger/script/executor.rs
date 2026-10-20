@@ -72,6 +72,10 @@ impl ScriptExecutor for InterpreterExecutor {
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
+			// On timeout, `process_command` drops the `wait_with_output` future; tokio only kills
+			// the child on drop with this flag. It kills the direct child only, not its
+			// descendants (e.g. a `sleep` started by `sh -c` is orphaned).
+			.kill_on_drop(true)
 			.spawn()
 			.with_context(|| format!("Failed to spawn {} process", self.program))?;
 
@@ -775,6 +779,65 @@ time.sleep(0.5)
 		assert!(result.is_err());
 		// Verify that execution took at least 300ms (the sleep time)
 		assert!(elapsed.as_millis() >= 400 && elapsed.as_millis() < 600);
+	}
+
+	/// Proves that a script which outlives its timeout is actually killed, not just abandoned.
+	/// Without `kill_on_drop(true)` the timed-out child keeps running after `execute` returns.
+	/// The child's death is observed directly via `ps`: the process being gone or a zombie
+	/// (`Z`) both count, because tokio reaps the killed child asynchronously. The `sleep` the
+	/// shell may leave orphaned is harmless to the test; only the direct child is checked.
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_script_timeout_kills_child_process() {
+		let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+		let pid_path = temp_dir.path().join("pid");
+		let script = format!("echo $$ > {}; sleep 30", pid_path.display());
+
+		let executor = sh(&script, vec![]);
+		let input = create_mock_monitor_match();
+		let handle = tokio::spawn(async move { executor.execute(input, &2000, None, false).await });
+
+		// Wait for the shell to report its pid.
+		let poll_deadline = Instant::now() + Duration::from_secs(5);
+		let pid = loop {
+			if let Ok(contents) = fs::read_to_string(&pid_path) {
+				if !contents.trim().is_empty() {
+					break contents
+						.trim()
+						.parse::<u32>()
+						.expect("pid file is not a number");
+				}
+			}
+			assert!(
+				Instant::now() < poll_deadline,
+				"timed out waiting for the script to write its pid file"
+			);
+			tokio::time::sleep(Duration::from_millis(10)).await;
+		};
+
+		let result = handle.await.expect("execute task panicked");
+		match result {
+			Err(e) => assert!(e.to_string().contains("timed out"), "unexpected error: {e}"),
+			Ok(v) => panic!("expected a timeout error, got Ok({v})"),
+		}
+
+		// Wait for the child to be gone or a zombie.
+		let poll_deadline = Instant::now() + Duration::from_secs(5);
+		loop {
+			let output = std::process::Command::new("ps")
+				.args(["-o", "stat=", "-p", &pid.to_string()])
+				.output()
+				.expect("failed to run ps");
+			let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
+			if state.is_empty() || state.starts_with('Z') {
+				break;
+			}
+			assert!(
+				Instant::now() < poll_deadline,
+				"timed-out script process {pid} is still alive (state: {state})"
+			);
+			tokio::time::sleep(Duration::from_millis(10)).await;
+		}
 	}
 
 	#[tokio::test]
