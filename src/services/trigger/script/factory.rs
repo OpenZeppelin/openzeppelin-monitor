@@ -14,8 +14,8 @@ pub struct ScriptExecutorFactory;
 impl ScriptExecutorFactory {
 	/// Creates a new script executor for the specified language and script content.
 	///
-	/// The language selects the interpreter and its eval flag:
-	/// Python → `python3 -c`, JavaScript → `node -e`, Bash → `sh -c`.
+	/// The language selects the interpreter and its eval flag via
+	/// [`ScriptLanguage::interpreter`].
 	///
 	/// # Arguments
 	///
@@ -33,11 +33,7 @@ impl ScriptExecutorFactory {
 		script_content: &str,
 		runtime_arguments: &[String],
 	) -> Box<dyn ScriptExecutor> {
-		let (program, eval_flag) = match language {
-			ScriptLanguage::Python => ("python3", "-c"),
-			ScriptLanguage::JavaScript => ("node", "-e"),
-			ScriptLanguage::Bash => ("sh", "-c"),
-		};
+		let (program, eval_flag) = language.interpreter();
 		Box::new(InterpreterExecutor {
 			program,
 			eval_flag,
@@ -59,11 +55,11 @@ mod tests {
 		},
 	};
 
-	/// `(language, expected interpreter, expected eval flag)` for every supported language
-	const LANGUAGES: [(ScriptLanguage, &str, &str); 3] = [
-		(ScriptLanguage::Python, "python3", "-c"),
-		(ScriptLanguage::JavaScript, "node", "-e"),
-		(ScriptLanguage::Bash, "sh", "-c"),
+	/// Every supported language
+	const LANGUAGES: [ScriptLanguage; 3] = [
+		ScriptLanguage::Python,
+		ScriptLanguage::JavaScript,
+		ScriptLanguage::Bash,
 	];
 
 	fn downcast<'a>(
@@ -93,65 +89,36 @@ mod tests {
 
 	#[test]
 	fn test_create_maps_language_to_interpreter() {
-		let script = "print('Hello')";
-		for (language, program, eval_flag) in &LANGUAGES {
-			let executor = ScriptExecutorFactory::create(language, script, &[]);
-			let executor = downcast(executor.as_ref(), language);
-			assert_eq!(executor.program, *program, "program for {:?}", language);
-			assert_eq!(
-				executor.eval_flag, *eval_flag,
-				"eval flag for {:?}",
-				language
-			);
-			assert_eq!(executor.script_content, script, "script for {:?}", language);
+		// Compare against the shared mapping, so the factory cannot keep its own table.
+		for language in &LANGUAGES {
+			let (program, eval_flag) = language.interpreter();
+			for script in ["print('Hello')", ""] {
+				let executor = ScriptExecutorFactory::create(language, script, &[]);
+				let executor = downcast(executor.as_ref(), language);
+				assert_eq!(executor.program, program, "program for {:?}", language);
+				assert_eq!(
+					executor.eval_flag, eval_flag,
+					"eval flag for {:?}",
+					language
+				);
+				assert_eq!(executor.script_content, script, "script for {:?}", language);
+			}
 		}
 	}
 
 	#[test]
-	fn test_create_with_empty_script() {
-		for (language, program, eval_flag) in &LANGUAGES {
-			let executor = ScriptExecutorFactory::create(language, "", &[]);
-			let executor = downcast(executor.as_ref(), language);
-			assert_eq!(executor.program, *program, "program for {:?}", language);
-			assert_eq!(
-				executor.eval_flag, *eval_flag,
-				"eval flag for {:?}",
-				language
-			);
-			assert!(
-				executor.script_content.is_empty(),
-				"script for {:?}",
-				language
-			);
-		}
-	}
-
-	#[test]
-	fn test_create_executor_with_runtime_arguments() {
+	fn test_create_passes_runtime_arguments() {
 		let script = "echo 'Hello'";
-		let runtime_arguments = vec!["--flag".to_string(), "value".to_string()];
-		for (language, _, _) in &LANGUAGES {
-			let executor = ScriptExecutorFactory::create(language, script, &runtime_arguments);
-			let executor = downcast(executor.as_ref(), language);
-			assert_eq!(
-				executor.runtime_arguments, runtime_arguments,
-				"runtime arguments for {:?}",
-				language
-			);
-		}
-	}
-
-	#[test]
-	fn test_create_executor_without_runtime_arguments() {
-		let script = "echo 'Hello'";
-		for (language, _, _) in &LANGUAGES {
-			let executor = ScriptExecutorFactory::create(language, script, &[]);
-			let executor = downcast(executor.as_ref(), language);
-			assert!(
-				executor.runtime_arguments.is_empty(),
-				"runtime arguments for {:?}",
-				language
-			);
+		for runtime_arguments in [vec![], vec!["--flag".to_string(), "value".to_string()]] {
+			for language in &LANGUAGES {
+				let executor = ScriptExecutorFactory::create(language, script, &runtime_arguments);
+				let executor = downcast(executor.as_ref(), language);
+				assert_eq!(
+					executor.runtime_arguments, runtime_arguments,
+					"runtime arguments for {:?}",
+					language
+				);
+			}
 		}
 	}
 

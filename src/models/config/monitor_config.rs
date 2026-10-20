@@ -567,6 +567,16 @@ mod tests {
 
 		// TempDir will automatically clean up when dropped
 	}
+
+	#[test]
+	fn test_script_language_interpreter() {
+		// The expected pairs are literals on purpose: this is the one place, besides the
+		// implementation, where the full mapping is written out.
+		assert_eq!(ScriptLanguage::Python.interpreter(), ("python3", "-c"));
+		assert_eq!(ScriptLanguage::JavaScript.interpreter(), ("node", "-e"));
+		assert_eq!(ScriptLanguage::Bash.interpreter(), ("sh", "-c"));
+	}
+
 	#[tokio::test]
 	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/monitors/invalid.json");

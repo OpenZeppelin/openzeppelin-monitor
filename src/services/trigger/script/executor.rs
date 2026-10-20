@@ -176,7 +176,7 @@ mod tests {
 	use crate::{
 		models::{
 			AddressWithSpec, EVMMonitorMatch, EVMReceiptLog, EventCondition, FunctionCondition,
-			MatchConditions, Monitor, MonitorMatch, TransactionCondition,
+			MatchConditions, Monitor, MonitorMatch, ScriptLanguage, TransactionCondition,
 		},
 		utils::tests::evm::{
 			monitor::MonitorBuilder, receipt::ReceiptBuilder, transaction::TransactionBuilder,
@@ -207,15 +207,18 @@ mod tests {
 	}
 
 	fn python(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
-		interpreter("python3", "-c", script, runtime_arguments)
+		let (program, eval_flag) = ScriptLanguage::Python.interpreter();
+		interpreter(program, eval_flag, script, runtime_arguments)
 	}
 
 	fn node(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
-		interpreter("node", "-e", script, runtime_arguments)
+		let (program, eval_flag) = ScriptLanguage::JavaScript.interpreter();
+		interpreter(program, eval_flag, script, runtime_arguments)
 	}
 
 	fn sh(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
-		interpreter("sh", "-c", script, runtime_arguments)
+		let (program, eval_flag) = ScriptLanguage::Bash.interpreter();
+		interpreter(program, eval_flag, script, runtime_arguments)
 	}
 
 	/// Creates a test monitor with customizable parameters
