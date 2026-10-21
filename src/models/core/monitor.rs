@@ -157,3 +157,17 @@ impl ScriptLanguage {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_script_language_interpreter() {
+		// The expected pairs are literals on purpose: this is the one place, besides the
+		// implementation, where the full mapping is written out.
+		assert_eq!(ScriptLanguage::Python.interpreter(), ("python3", "-c"));
+		assert_eq!(ScriptLanguage::JavaScript.interpreter(), ("node", "-e"));
+		assert_eq!(ScriptLanguage::Bash.interpreter(), ("sh", "-c"));
+	}
+}

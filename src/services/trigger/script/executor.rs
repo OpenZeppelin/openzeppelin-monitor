@@ -786,15 +786,16 @@ time.sleep(0.5)
 
 	/// Proves that a script which outlives its timeout is actually killed, not just abandoned.
 	/// Without `kill_on_drop(true)` the timed-out child keeps running after `execute` returns.
-	/// The child's death is observed directly via `ps`: the process being gone or a zombie
-	/// (`Z`) both count, because tokio reaps the killed child asynchronously. The `sleep` the
-	/// shell may leave orphaned is harmless to the test; only the direct child is checked.
+	/// The shell `exec`s `sleep`, so the direct child (the pid it wrote) is the `sleep` itself
+	/// and the kill leaves no orphan. Its death is observed with `kill(pid, 0)`, which also
+	/// succeeds for a zombie, so the poll waits for `ESRCH`: that arrives once tokio has reaped
+	/// the killed child on `SIGCHLD`.
 	#[cfg(unix)]
 	#[tokio::test]
 	async fn test_script_timeout_kills_child_process() {
 		let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
 		let pid_path = temp_dir.path().join("pid");
-		let script = format!("echo $$ > {}; sleep 30", pid_path.display());
+		let script = format!("echo $$ > '{}'; exec sleep 30", pid_path.display());
 
 		let executor = sh(&script, vec![]);
 		let input = create_mock_monitor_match();
@@ -807,7 +808,7 @@ time.sleep(0.5)
 				if !contents.trim().is_empty() {
 					break contents
 						.trim()
-						.parse::<u32>()
+						.parse::<libc::pid_t>()
 						.expect("pid file is not a number");
 				}
 			}
@@ -824,20 +825,20 @@ time.sleep(0.5)
 			Ok(v) => panic!("expected a timeout error, got Ok({v})"),
 		}
 
-		// Wait for the child to be gone or a zombie.
+		// Wait for the child to be gone: `kill(pid, 0)` fails with ESRCH once it is reaped.
 		let poll_deadline = Instant::now() + Duration::from_secs(5);
 		loop {
-			let output = std::process::Command::new("ps")
-				.args(["-o", "stat=", "-p", &pid.to_string()])
-				.output()
-				.expect("failed to run ps");
-			let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
-			if state.is_empty() || state.starts_with('Z') {
+			// SAFETY: signal 0 performs no action; it only checks whether `pid` exists.
+			let rc = unsafe { libc::kill(pid, 0) };
+			let errno = (rc == -1)
+				.then(|| std::io::Error::last_os_error().raw_os_error())
+				.flatten();
+			if errno == Some(libc::ESRCH) {
 				break;
 			}
 			assert!(
 				Instant::now() < poll_deadline,
-				"timed-out script process {pid} is still alive (state: {state})"
+				"timed-out script process {pid} still exists (kill returned {rc}, errno {errno:?})"
 			);
 			tokio::time::sleep(Duration::from_millis(10)).await;
 		}
