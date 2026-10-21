@@ -567,6 +567,7 @@ mod tests {
 
 		// TempDir will automatically clean up when dropped
 	}
+
 	#[tokio::test]
 	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/monitors/invalid.json");

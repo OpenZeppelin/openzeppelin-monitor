@@ -145,3 +145,29 @@ pub const SCRIPT_LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
 	(&ScriptLanguage::JavaScript, "js"),
 	(&ScriptLanguage::Bash, "sh"),
 ];
+
+impl ScriptLanguage {
+	/// Interpreter used to run scripts of this language, as `(program, eval_flag)`:
+	/// the binary and the flag that makes it evaluate a script given on the command line.
+	pub fn interpreter(&self) -> (&'static str, &'static str) {
+		match self {
+			ScriptLanguage::Python => ("python3", "-c"),
+			ScriptLanguage::JavaScript => ("node", "-e"),
+			ScriptLanguage::Bash => ("sh", "-c"),
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_script_language_interpreter() {
+		// The expected pairs are literals on purpose: this is the one place, besides the
+		// implementation, where the full mapping is written out.
+		assert_eq!(ScriptLanguage::Python.interpreter(), ("python3", "-c"));
+		assert_eq!(ScriptLanguage::JavaScript.interpreter(), ("node", "-e"));
+		assert_eq!(ScriptLanguage::Bash.interpreter(), ("sh", "-c"));
+	}
+}
