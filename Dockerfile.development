@@ -19,12 +19,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     RUST_BACKTRACE=1 cargo install --root /usr/app --path . --debug --locked
 
 # Wolfi image with latest tag digest
-FROM cgr.dev/chainguard/wolfi-base:latest@sha256:17ab0709456ce1a2aedd85e95f72e58d73133bb70c33ae945a4d4b2424e984f1
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:81211e15a86ea1d5357f284482af45730c51de45eaf10ad9ce205d6bfc2df323
 
 ARG version=3.12
+ARG NODE_VERSION=24
 ARG MIN_CA_CERTIFICATES_BUNDLE_VERSION
 
-RUN apk add "ca-certificates-bundle>=${MIN_CA_CERTIFICATES_BUNDLE_VERSION}" bash python-${version} py${version}-pip nodejs jq
+# libssl3/libcrypto3: the binary links OpenSSL 3, while wolfi-base now ships OpenSSL 4.
+RUN apk add "ca-certificates-bundle>=${MIN_CA_CERTIFICATES_BUNDLE_VERSION}" bash python-${version} py${version}-pip nodejs=~${NODE_VERSION} jq libssl3 libcrypto3
 
 WORKDIR /app
 COPY --from=base --chown=nonroot:nonroot /usr/app/bin/openzeppelin-monitor /app/openzeppelin-monitor
