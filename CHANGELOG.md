@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.6.0...v1.7.0) (2026-10-22)
+
+
+### 🚀 Features
+
+* expose matched network as ${network.slug} template variable ([#500](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/500)) ([5a26bb2](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/5a26bb229020e7e6d7400b22f96baf7226bc0c66))
+* **scripts:** Add runtime_arguments option ([#503](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/503)) ([6229b3b](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/6229b3bee84b2e117aae16ab798dcc733fd357a6))
+
+
+### 🐛 Bug Fixes
+
+* Distrust compromised eMudhra intermediates ([1c44f31](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/1c44f312ec388eb02d23adcb7ee48df689de158b))
+* Distrust compromised eMudhra intermediates in TLS trust stores ([#505](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/505)) ([1c44f31](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/1c44f312ec388eb02d23adcb7ee48df689de158b))
+* scope EVM receipt checks to transaction logs ([#499](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/499)) ([e00446d](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/e00446db71816755cd50e4bf617dc9cae520582f))
+* **scripts:** Kill timed-out script processes ([#504](https://github.com/OpenZeppelin/openzeppelin-monitor/issues/504)) ([42a4d91](https://github.com/OpenZeppelin/openzeppelin-monitor/commit/42a4d91e3a8fe57419fe80c50b09ac2a8d94305d))
+
 ## [1.6.0](https://github.com/OpenZeppelin/openzeppelin-monitor/compare/v1.5.0...v1.6.0) (2026-07-15)
 
 
