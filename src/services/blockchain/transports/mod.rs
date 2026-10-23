@@ -45,6 +45,7 @@ pub use midnight::ws::MidnightTransportClient as MidnightWsTransportClient;
 pub use solana::http::{
 	Commitment as SolanaCommitment, GetBlockConfig as SolanaGetBlockConfig,
 	GetTransactionConfig as SolanaGetTransactionConfig, SolanaTransportClient,
+	MAX_SUPPORTED_TRANSACTION_VERSION as SOLANA_MAX_SUPPORTED_TRANSACTION_VERSION,
 };
 pub use stellar::http::StellarTransportClient;
 
