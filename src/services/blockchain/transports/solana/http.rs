@@ -79,7 +79,7 @@ impl GetBlockConfig {
 			transaction_details: Some("full".to_string()),
 			rewards: Some(true),
 			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
+			max_supported_transaction_version: Some(1),
 		}
 	}
 
@@ -127,7 +127,7 @@ impl GetTransactionConfig {
 		Self {
 			encoding: Some("json".to_string()),
 			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
+			max_supported_transaction_version: Some(1),
 		}
 	}
 
@@ -136,7 +136,7 @@ impl GetTransactionConfig {
 		Self {
 			encoding: Some("jsonParsed".to_string()),
 			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
+			max_supported_transaction_version: Some(1),
 		}
 	}
 }

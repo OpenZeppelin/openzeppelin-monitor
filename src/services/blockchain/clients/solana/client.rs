@@ -563,7 +563,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		let config = json!({
 			"encoding": "json",
 			"commitment": "finalized",
-			"maxSupportedTransactionVersion": 0
+			"maxSupportedTransactionVersion": 1
 		});
 		let params = json!([signature, config]);
 

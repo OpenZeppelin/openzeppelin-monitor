@@ -308,7 +308,7 @@ async fn test_get_block_with_full_config() {
 				"transactionDetails": "full",
 				"rewards": true,
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -421,7 +421,7 @@ async fn test_get_block_default_config() {
 				"transactionDetails": "full",
 				"rewards": true,
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -542,7 +542,7 @@ async fn test_get_transaction_json_config() {
 			"params": ["5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW", {
 				"encoding": "json",
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -579,7 +579,7 @@ async fn test_get_transaction_json_parsed_config() {
 			"params": ["sig123", {
 				"encoding": "jsonParsed",
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -614,7 +614,7 @@ async fn test_get_transaction_default_config() {
 			"params": ["sig456", {
 				"encoding": "json",
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -1137,7 +1137,7 @@ fn test_get_block_config_full() {
 	assert_eq!(config.transaction_details, Some("full".to_string()));
 	assert_eq!(config.rewards, Some(true));
 	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
+	assert_eq!(config.max_supported_transaction_version, Some(1));
 }
 
 #[test]
@@ -1175,7 +1175,7 @@ fn test_get_transaction_config_json() {
 	let config = SolanaGetTransactionConfig::json();
 	assert_eq!(config.encoding, Some("json".to_string()));
 	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
+	assert_eq!(config.max_supported_transaction_version, Some(1));
 }
 
 #[test]
@@ -1183,7 +1183,7 @@ fn test_get_transaction_config_json_parsed() {
 	let config = SolanaGetTransactionConfig::json_parsed();
 	assert_eq!(config.encoding, Some("jsonParsed".to_string()));
 	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
+	assert_eq!(config.max_supported_transaction_version, Some(1));
 }
 
 #[test]
