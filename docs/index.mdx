@@ -774,7 +774,7 @@ When using raw mode:
 | `**script_path**` | `String` | The path to the script |
 | `**arguments**` | `Array[String]` | The arguments of the script (optional). |
 | `**runtime_arguments**` | `Array[String]` | Command line options passed to the script interpreter itself (`node`, `python3` or `sh`) before the script, e.g. `["--max-old-space-size=4096"]` (optional, defaults to an empty list when omitted). See [Runtime Arguments](/monitor/scripts#runtime-arguments). |
-| `**timeout_ms**` | `Number` | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed. |
+| `**timeout_ms**` | `Number` | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed. The timeout covers input delivery and execution; on timeout the script and, on Unix, its process group are terminated (see [Custom Scripts](/monitor/scripts)). |
 
 For more information about custom scripts, see [Custom Scripts Section](/monitor/scripts).
 
@@ -1579,7 +1579,7 @@ For more information about custom scripts, see [Custom Scripts Section](/monitor
 | `**language**` | String | The language of the script |
 | `**arguments**` | Array[String] | The arguments of the script (optional). |
 | `**runtime_arguments**` | Array[String] | Command line options passed to the script interpreter itself (`node`, `python3` or `sh`) before the script, e.g. `["--max-old-space-size=4096"]` (optional, defaults to an empty list when omitted). See [Runtime Arguments](/monitor/scripts#runtime-arguments). |
-| `**timeout_ms**` | Number | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default. |
+| `**timeout_ms**` | Number | The timeout of the script is important to avoid infinite loops during the execution. If the script takes longer than the timeout, it will be killed and the match will be included by default. The timeout covers input delivery and execution; on timeout the script and, on Unix, its process group are terminated (see [Custom Scripts](/monitor/scripts)). |
 
 #### Important Considerations
 
@@ -1768,7 +1768,7 @@ The monitor implements a comprehensive error handling system with rich context a
   * Mixing contexts results in empty values.
 * Custom script notifications have additional considerations:
   * Scripts receive monitor match data and arguments as JSON input
-  * Scripts must complete within their configured timeout_ms or they will be terminated
+  * Scripts must complete within their configured timeout_ms or they are terminated together with their process group on Unix; the timeout covers input delivery as well as execution.
   * Script modifications require monitor restart to take effect
   * Supported languages are limited to Python, JavaScript, and Bash
 

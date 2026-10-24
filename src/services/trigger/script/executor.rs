@@ -65,17 +65,23 @@ impl ScriptExecutor for InterpreterExecutor {
 		let input_json = serde_json::to_string(&combined_input)
 			.with_context(|| "Failed to serialize monitor match and arguments")?;
 
-		let cmd = tokio::process::Command::new(self.program)
+		let mut command = tokio::process::Command::new(self.program);
+		command
 			.args(&self.runtime_arguments)
 			.arg(self.eval_flag)
 			.arg(&self.script_content)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
-			// On timeout, `process_command` drops the `wait_with_output` future; tokio only kills
-			// the child on drop with this flag. It kills the direct child only, not its
-			// descendants (e.g. a `sleep` started by `sh -c` is orphaned).
-			.kill_on_drop(true)
+			// Kill the direct child if the handle is dropped; the process-group guard in
+			// `process_command` covers the descendants on timeout and cancellation.
+			.kill_on_drop(true);
+		// The child leads its own process group (pgid == pid), so timeout and cancellation
+		// cleanup can signal the processes remaining in that group (descendants that moved to
+		// another session or group are out of reach).
+		#[cfg(unix)]
+		command.process_group(0);
+		let cmd = command
 			.spawn()
 			.with_context(|| format!("Failed to spawn {} process", self.program))?;
 
@@ -137,36 +143,161 @@ pub fn process_script_output(
 	}
 }
 
+/// Kills the script's process group on drop unless disarmed.
+///
+/// The script is spawned as the leader of its own process group (see
+/// [`InterpreterExecutor::execute`]), so `killpg` reaches the descendants that
+/// `kill_on_drop` cannot. The guard holds a numeric pgid, not the kernel group: a late kill
+/// after the whole group has exited and been reaped could in theory target a reused id, and
+/// descendants that move to another session or group are out of reach (documented
+/// limitations).
+#[cfg(unix)]
+struct ProcessGroupGuard {
+	pgid: libc::pid_t,
+	armed: bool,
+}
+
+#[cfg(unix)]
+impl ProcessGroupGuard {
+	/// Arms a guard for the process group led by `pid`. A pid that does not fit a positive
+	/// `pid_t` leaves the guard inactive: `killpg` with zero or a negative value would signal
+	/// the Monitor's own group.
+	fn new(pid: u32) -> Self {
+		match libc::pid_t::try_from(pid) {
+			Ok(pgid) if pgid > 0 => Self { pgid, armed: true },
+			_ => {
+				tracing::warn!(
+					"script process id {} is not a valid process group id; descendants will \
+					 not be cleaned up",
+					pid
+				);
+				Self {
+					pgid: 0,
+					armed: false,
+				}
+			}
+		}
+	}
+
+	/// Sends `SIGKILL` to the process group once; later calls are no-ops.
+	fn kill(&mut self) {
+		if !self.armed {
+			return;
+		}
+		self.armed = false;
+		// SAFETY: `pgid` is a positive id obtained from a child this process spawned as a
+		// group leader; `killpg` has no memory-safety preconditions.
+		let rc = unsafe { libc::killpg(self.pgid, libc::SIGKILL) };
+		if rc == -1 {
+			let err = std::io::Error::last_os_error();
+			if err.raw_os_error() == Some(libc::ESRCH) {
+				tracing::debug!("script process group {} already exited", self.pgid);
+			} else {
+				tracing::warn!("failed to kill script process group {}: {}", self.pgid, err);
+			}
+		}
+	}
+
+	/// Leaves the process group alive when the guard is dropped.
+	fn disarm(&mut self) {
+		self.armed = false;
+	}
+}
+
+#[cfg(unix)]
+impl Drop for ProcessGroupGuard {
+	fn drop(&mut self) {
+		self.kill();
+	}
+}
+
+/// No-op counterpart of the Unix guard so `process_command` reads the same everywhere.
+#[cfg(not(unix))]
+struct ProcessGroupGuard;
+
+#[cfg(not(unix))]
+impl ProcessGroupGuard {
+	fn new(_pid: u32) -> Self {
+		Self
+	}
+
+	fn kill(&mut self) {}
+
+	fn disarm(&mut self) {}
+}
+
+/// Feeds `input_json` to the script and waits for it to exit, bounded by `timeout_ms`.
+///
+/// The stdin write and the stdout/stderr drain run concurrently so neither can block the
+/// other on a full pipe. A `BrokenPipe` while writing or closing stdin is not an error: the
+/// child's exit status and output decide. On Unix, a timeout, an I/O failure or cancellation
+/// of this future kills the script's process group; after a successful execution nothing is
+/// killed, so background processes a script leaves behind keep running.
 async fn process_command(
 	mut cmd: tokio::process::Child,
 	input_json: &str,
 	timeout_ms: &u32,
 	from_custom_notification: bool,
 ) -> Result<bool, anyhow::Error> {
-	if let Some(mut stdin) = cmd.stdin.take() {
-		stdin
-			.write_all(input_json.as_bytes())
-			.await
-			.map_err(|e| anyhow::anyhow!("Failed to write input to script: {}", e))?;
+	let pid = cmd
+		.id()
+		.ok_or_else(|| anyhow::anyhow!("Script process has no pid"))?;
+	// Arm the guard before taking stdin so an early error there still triggers process-group
+	// cleanup.
+	let mut guard = ProcessGroupGuard::new(pid);
+	let mut stdin = cmd
+		.stdin
+		.take()
+		.ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?;
 
-		// Explicitly close stdin
-		stdin
-			.shutdown()
+	let feed = async move {
+		match stdin.write_all(input_json.as_bytes()).await {
+			Ok(()) => {}
+			Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+				tracing::debug!("script closed stdin before reading its input")
+			}
+			Err(e) => return Err(anyhow::anyhow!("Failed to write input to script: {}", e)),
+		}
+		let shutdown_result = stdin.shutdown().await;
+		// On an anonymous pipe `shutdown` is a no-op in tokio; closing the handle is what delivers
+		// EOF to the child, so do it explicitly instead of relying on the completed future being
+		// dropped.
+		drop(stdin);
+		match shutdown_result {
+			Ok(()) => Ok(()),
+			Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+			Err(e) => Err(anyhow::anyhow!("Failed to close stdin: {}", e)),
+		}
+	};
+	let wait = async {
+		cmd.wait_with_output()
 			.await
-			.map_err(|e| anyhow::anyhow!("Failed to close stdin: {}", e))?;
-	} else {
-		return Err(anyhow::anyhow!("Failed to get stdin handle"));
-	}
+			.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))
+	};
+	// `try_join!` stops at the first error: the other future is dropped, `kill_on_drop` hits
+	// the direct child and the still-armed guard kills the group at scope exit.
+	let run = async { tokio::try_join!(feed, wait) };
+	tokio::pin!(run);
 
 	let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
-
-	match timeout(timeout_duration, cmd.wait_with_output()).await {
-		Ok(result) => {
-			let output =
-				result.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))?;
+	// Polling `&mut run` means `run` keeps owning the `Child` handle past an `Elapsed`, so the
+	// explicit kill below runs before that handle is dropped. It does not guarantee the OS
+	// process is still alive or unreaped: `wait_with_output` may already have waited for it
+	// while another I/O operation was pending. On cancellation of this future the locals drop
+	// in reverse order: `run` (the `Child`, via `kill_on_drop`) first, then the guard
+	// (`killpg`).
+	match timeout(timeout_duration, &mut run).await {
+		Ok(Ok(((), output))) => {
+			// Only once both the stdin feed and the wait have completed: a descendant that
+			// still holds stdin open after the interpreter exited must remain killable.
+			guard.disarm();
 			process_script_output(output, from_custom_notification)
 		}
-		Err(_) => Err(anyhow::anyhow!("Script execution timed out")),
+		Ok(Err(e)) => Err(e),
+		Err(_) => {
+			guard.kill();
+			Err(anyhow::anyhow!("Script execution timed out"))
+		}
 	}
 }
 
@@ -1288,12 +1419,15 @@ print("true", flush=True)
 			descendant_pid_path.display()
 		);
 
+		const SCRIPT_TIMEOUT: u32 = 3000;
 		let executor = python(&script_content, vec![]);
 		let input = create_mock_monitor_match();
 		let args = large_args();
 		let spawned_at = Instant::now();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
-			executor.execute(input, &3000, Some(&args), false).await
+			executor
+				.execute(input, &SCRIPT_TIMEOUT, Some(&args), false)
+				.await
 		}));
 
 		let interpreter_pid = wait_for_pid_file(&interpreter_pid_path).await;
@@ -1342,7 +1476,7 @@ print("true", flush=True)
 		}
 		assert!(
 			elapsed < Duration::from_secs(5),
-			"timeout of 1500 ms was not honored while the descendant held stdin (took {elapsed:?})"
+			"timeout of {SCRIPT_TIMEOUT} ms was not honored while the descendant held stdin (took {elapsed:?})"
 		);
 
 		// The descendant must be terminated by the timeout even though the direct child had
@@ -1357,6 +1491,103 @@ print("true", flush=True)
 			);
 			tokio::time::sleep(Duration::from_millis(10)).await;
 		}
+	}
+
+	/// Test D on the custom-notification path, which skips stdout parsing: a child that exits
+	/// successfully without reading the large payload is still reported as `Ok(true)`.
+	#[tokio::test]
+	async fn test_large_stdin_early_exit_success_notification_path() {
+		let executor = sh("echo true", vec![]);
+		let input = create_mock_monitor_match();
+		let args = large_args();
+
+		let result = tokio::time::timeout(
+			OUTER_TIMEOUT,
+			executor.execute(input, &5000, Some(&args), true),
+		)
+		.await
+		.ok();
+		match result {
+			None => panic!("execute() hung past the outer timeout"),
+			Some(Ok(true)) => {}
+			Some(other) => panic!("expected Ok(true), got {other:?}"),
+		}
+	}
+
+	/// The script runs as the leader of its own process group, distinct from the Monitor's,
+	/// so killing that group on timeout or cancellation never reaches the Monitor itself.
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_script_process_group_is_isolated() {
+		let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+		let pid_path = temp_dir.path().join("pid");
+		let script = format!("echo $$ > '{}'; exec sleep 30", pid_path.display());
+
+		// Generous so the `getpgid` check below runs before the timeout fires on a loaded CI
+		// runner.
+		const SCRIPT_TIMEOUT: u32 = 2000;
+		let executor = sh(&script, vec![]);
+		let input = create_mock_monitor_match();
+		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			executor.execute(input, &SCRIPT_TIMEOUT, None, false).await
+		}));
+
+		let pid = wait_for_pid_file(&pid_path).await;
+		let _cleanup = KillOnDrop(pid);
+
+		// SAFETY: `getpgid` and `getpgrp` only query process-group ids.
+		let (script_pgid, own_pgid) = unsafe { (libc::getpgid(pid), libc::getpgrp()) };
+		assert_eq!(
+			script_pgid, pid,
+			"script process {pid} is not the leader of its own process group"
+		);
+		assert_ne!(
+			script_pgid, own_pgid,
+			"script process {pid} shares the test runner's process group {own_pgid}"
+		);
+
+		let result = task.join().await.expect("execute task panicked");
+		match result {
+			Err(e) => assert!(e.to_string().contains("timed out"), "unexpected error: {e}"),
+			Ok(v) => panic!("expected a timeout error, got Ok({v})"),
+		}
+	}
+
+	/// Documents the deliberately kept semantics after a successful execution: nothing is
+	/// killed, so a background process the script leaves behind keeps running. Whether the
+	/// Monitor should tear down the group after a normal exit is raised in the PR.
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_script_background_process_outlives_successful_exit() {
+		let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+		let pid_path = temp_dir.path().join("pid");
+		let script = format!(
+			"sleep 30 >/dev/null 2>&1 & echo $! > '{}'; echo true",
+			pid_path.display()
+		);
+
+		let executor = sh(&script, vec![]);
+		let input = create_mock_monitor_match();
+		let result =
+			tokio::time::timeout(OUTER_TIMEOUT, executor.execute(input, &5000, None, false))
+				.await
+				.expect("execute() hung past the outer timeout");
+		match result {
+			Ok(true) => {}
+			other => panic!("expected Ok(true), got {other:?}"),
+		}
+
+		let background_pid = wait_for_pid_file(&pid_path).await;
+		let _cleanup = KillOnDrop(background_pid);
+		assert_eq!(
+			process_probe_errno(background_pid),
+			None,
+			"background process {background_pid} did not survive the script's successful exit"
+		);
+		assert!(
+			!is_zombie(background_pid),
+			"background process {background_pid} is a zombie after the script's successful exit"
+		);
 	}
 
 	#[tokio::test]
