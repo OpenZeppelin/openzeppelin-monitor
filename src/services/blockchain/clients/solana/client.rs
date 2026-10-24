@@ -18,7 +18,10 @@ use crate::{
 	services::{
 		blockchain::{
 			client::{BlockChainClient, BlockFetchResult, BlockFilterFactory, FetchStreamKind},
-			transports::{SolanaGetBlockConfig, SolanaTransportClient},
+			transports::{
+				SolanaGetBlockConfig, SolanaGetTransactionConfig, SolanaTransportClient,
+				SOLANA_MAX_SUPPORTED_TRANSACTION_VERSION,
+			},
 			BlockchainTransport,
 		},
 		filter::SolanaBlockFilter,
@@ -131,6 +134,14 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 					None,
 					None,
 				));
+			}
+
+			if rpc_code == error_codes::UNSUPPORTED_TRANSACTION_VERSION {
+				let message = format!(
+					"RPC returned a transaction version newer than maxSupportedTransactionVersion {} for method '{}': {} (code {})",
+					SOLANA_MAX_SUPPORTED_TRANSACTION_VERSION, method_name, rpc_message, rpc_code
+				);
+				return Err(SolanaClientError::rpc_error(message, None, None));
 			}
 
 			// Other JSON-RPC error
@@ -560,17 +571,15 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		&self,
 		signature: String,
 	) -> Result<Option<SolanaTransaction>, anyhow::Error> {
-		let config = json!({
-			"encoding": "json",
-			"commitment": "finalized",
-			"maxSupportedTransactionVersion": 0
-		});
-		let params = json!([signature, config]);
+		let params = json!([signature, SolanaGetTransactionConfig::json()]);
 
 		let response = self
 			.http_client
 			.send_raw_request(rpc_methods::GET_TRANSACTION, Some(params))
 			.await
+			.with_context(|| format!("Failed to get transaction {}", signature))?;
+
+		self.check_and_handle_rpc_error(&response, 0, rpc_methods::GET_TRANSACTION)
 			.with_context(|| format!("Failed to get transaction {}", signature))?;
 
 		// Check for null result (transaction not found)

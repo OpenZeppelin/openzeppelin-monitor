@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use crate::{
 	models::Network,
 	services::blockchain::{
-		clients::SLOT_UNAVAILABLE_ERROR_CODES,
+		clients::PASS_THROUGH_ERROR_CODES,
 		transports::{BlockchainTransport, HttpTransportClient, RotatingTransport, TransportError},
 	},
 };
@@ -50,6 +50,9 @@ pub mod rpc_methods {
 	pub const MINIMUM_LEDGER_SLOT: &str = "minimumLedgerSlot";
 }
 
+/// Highest transaction version the parser understands; requests above this fail with -32015.
+pub const MAX_SUPPORTED_TRANSACTION_VERSION: u8 = 1;
+
 /// Configuration options for getBlock RPC calls
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -79,29 +82,7 @@ impl GetBlockConfig {
 			transaction_details: Some("full".to_string()),
 			rewards: Some(true),
 			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
-		}
-	}
-
-	/// Creates a config for fetching block with signatures only (lighter)
-	pub fn signatures_only() -> Self {
-		Self {
-			encoding: Some("json".to_string()),
-			transaction_details: Some("signatures".to_string()),
-			rewards: Some(false),
-			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
-		}
-	}
-
-	/// Creates a config for fetching block metadata only (no transactions)
-	pub fn none() -> Self {
-		Self {
-			encoding: Some("json".to_string()),
-			transaction_details: Some("none".to_string()),
-			rewards: Some(false),
-			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
+			max_supported_transaction_version: Some(MAX_SUPPORTED_TRANSACTION_VERSION),
 		}
 	}
 }
@@ -127,7 +108,7 @@ impl GetTransactionConfig {
 		Self {
 			encoding: Some("json".to_string()),
 			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
+			max_supported_transaction_version: Some(MAX_SUPPORTED_TRANSACTION_VERSION),
 		}
 	}
 
@@ -136,7 +117,7 @@ impl GetTransactionConfig {
 		Self {
 			encoding: Some("jsonParsed".to_string()),
 			commitment: Some("finalized".to_string()),
-			max_supported_transaction_version: Some(0),
+			max_supported_transaction_version: Some(MAX_SUPPORTED_TRANSACTION_VERSION),
 		}
 	}
 }
@@ -189,12 +170,9 @@ impl SolanaTransportClient {
 		// Use getHealth as the test connection method - it's lightweight and indicates node health
 		let test_connection_payload =
 			Some(r#"{"id":1,"jsonrpc":"2.0","method":"getHealth"}"#.to_string());
-		let http_client = HttpTransportClient::new(
-			network,
-			test_connection_payload,
-			SLOT_UNAVAILABLE_ERROR_CODES,
-		)
-		.await?;
+		let http_client =
+			HttpTransportClient::new(network, test_connection_payload, PASS_THROUGH_ERROR_CODES)
+				.await?;
 		Ok(Self { http_client })
 	}
 
@@ -211,7 +189,7 @@ impl SolanaTransportClient {
 		test_payload: Option<String>,
 	) -> Result<Self, anyhow::Error> {
 		let http_client =
-			HttpTransportClient::new(network, test_payload, SLOT_UNAVAILABLE_ERROR_CODES).await?;
+			HttpTransportClient::new(network, test_payload, PASS_THROUGH_ERROR_CODES).await?;
 		Ok(Self { http_client })
 	}
 
