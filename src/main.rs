@@ -29,7 +29,7 @@ use crate::{
 		create_block_handler, create_trigger_handler, get_contract_specs, has_active_monitors,
 		initialize_services, Result,
 	},
-	models::{BlockChainType, Network, ScriptLanguage},
+	models::{BlockChainType, Monitor, Network, ScriptLanguage},
 	repositories::{
 		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
 	},
@@ -204,7 +204,9 @@ async fn main() -> Result<()> {
 
 	// If --check flag is provided, only validate configuration and exit
 	if cli.check {
-		validate_configuration().await;
+		if validate_configuration().await.is_err() {
+			std::process::exit(1);
+		}
 		return Ok(());
 	}
 
@@ -754,7 +756,11 @@ async fn test_monitor_execution(config: MonitorExecutionTestConfig) -> Result<()
 }
 
 /// Validates configuration files and their structure
-async fn validate_configuration() {
+///
+/// # Errors
+/// Returns an error if the services fail to initialize, if no monitor is active, or if no
+/// network has an active monitor. Each case is also logged.
+async fn validate_configuration() -> Result<()> {
 	info!("Validating configuration files...");
 
 	// Initialize services in validation mode to check configurations
@@ -767,40 +773,80 @@ async fn validate_configuration() {
 	{
 		Ok((_, _, active_monitors, networks, _, _, _)) => {
 			info!("✓ Core services initialized successfully");
-
-			// Check if we have any monitors configured
-			if active_monitors.is_empty() {
-				error!("No active monitors found. Please refer to the documentation quickstart ({}) for configuration setup.", DOCUMENTATION_URL);
-				return;
-			}
-			info!("✓ Found {} active monitor(s)", active_monitors.len());
-
-			// Check if we have any networks with active monitors
-			let networks_with_monitors: Vec<&Network> = networks
-				.values()
-				.filter(|network| has_active_monitors(&active_monitors, &network.slug))
-				.collect();
-
-			if networks_with_monitors.is_empty() {
-				error!("No networks with active monitors found. Please refer to the documentation quickstart ({}) for network configuration.", DOCUMENTATION_URL);
-				return;
-			}
-			info!(
-				"✓ Found {} network(s) with active monitors",
-				networks_with_monitors.len()
-			);
-
+			check_active_monitors(&active_monitors, &networks)?;
 			info!("Configuration validation completed successfully!");
+			Ok(())
 		}
 		Err(e) => {
 			error!("{}.\nPlease refer to the documentation quickstart ({}) for proper configuration setup.", e, DOCUMENTATION_URL);
+			Err(e)
 		}
 	}
+}
+
+/// Checks that at least one monitor is active and that at least one network has an active monitor
+fn check_active_monitors(
+	active_monitors: &[Monitor],
+	networks: &HashMap<String, Network>,
+) -> Result<()> {
+	// Check if we have any monitors configured
+	if active_monitors.is_empty() {
+		error!("No active monitors found. Please refer to the documentation quickstart ({}) for configuration setup.", DOCUMENTATION_URL);
+		return Err("No active monitors found".into());
+	}
+	info!("✓ Found {} active monitor(s)", active_monitors.len());
+
+	// Check if we have any networks with active monitors
+	let networks_with_monitors: Vec<&Network> = networks
+		.values()
+		.filter(|network| has_active_monitors(active_monitors, &network.slug))
+		.collect();
+
+	if networks_with_monitors.is_empty() {
+		error!("No networks with active monitors found. Please refer to the documentation quickstart ({}) for network configuration.", DOCUMENTATION_URL);
+		return Err("No networks with active monitors found".into());
+	}
+	info!(
+		"✓ Found {} network(s) with active monitors",
+		networks_with_monitors.len()
+	);
+	Ok(())
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::utils::tests::builders::{evm::monitor::MonitorBuilder, network::NetworkBuilder};
+
+	fn networks(slugs: &[&str]) -> HashMap<String, Network> {
+		slugs
+			.iter()
+			.map(|slug| (slug.to_string(), NetworkBuilder::new().slug(slug).build()))
+			.collect()
+	}
+
+	#[test]
+	fn test_check_active_monitors_fails_without_active_monitors() {
+		assert!(check_active_monitors(&[], &networks(&["ethereum_mainnet"])).is_err());
+	}
+
+	#[test]
+	fn test_check_active_monitors_fails_without_a_network_for_them() {
+		let monitor = MonitorBuilder::new()
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.build();
+		assert!(check_active_monitors(&[monitor], &networks(&["sepolia"])).is_err());
+	}
+
+	#[test]
+	fn test_check_active_monitors_passes_with_a_network_for_a_monitor() {
+		let monitor = MonitorBuilder::new()
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.build();
+		assert!(
+			check_active_monitors(&[monitor], &networks(&["ethereum_mainnet", "sepolia"])).is_ok()
+		);
+	}
 
 	#[tokio::test]
 	async fn test_monitor_execution_without_network_slug_with_block_number() {
