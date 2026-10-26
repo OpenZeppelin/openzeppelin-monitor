@@ -915,7 +915,7 @@ time.sleep(0.5)
 	/// Without `kill_on_drop(true)` the timed-out child keeps running after `execute` returns.
 	/// The shell `exec`s `sleep`, so the direct child (the pid it wrote) is the `sleep` itself
 	/// and the kill leaves no orphan. Its death is observed with `kill(pid, 0)`, which also
-	/// succeeds for a zombie, so the poll waits for `ESRCH`: that arrives once tokio has reaped
+	/// succeeds for a zombie, so the test waits for `ESRCH`: that arrives once tokio has reaped
 	/// the killed child on `SIGCHLD`.
 	#[cfg(unix)]
 	#[tokio::test]
@@ -926,49 +926,19 @@ time.sleep(0.5)
 
 		let executor = sh(&script, vec![]);
 		let input = create_mock_monitor_match();
-		let handle = tokio::spawn(async move { executor.execute(input, &2000, None, false).await });
+		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			executor.execute(input, &2000, None, false).await
+		}));
 
-		// Wait for the shell to report its pid.
-		let poll_deadline = Instant::now() + Duration::from_secs(5);
-		let pid = loop {
-			if let Ok(contents) = fs::read_to_string(&pid_path) {
-				if !contents.trim().is_empty() {
-					break contents
-						.trim()
-						.parse::<libc::pid_t>()
-						.expect("pid file is not a number");
-				}
-			}
-			assert!(
-				Instant::now() < poll_deadline,
-				"timed out waiting for the script to write its pid file"
-			);
-			tokio::time::sleep(Duration::from_millis(10)).await;
-		};
+		let pid = wait_for_pid_file(&pid_path).await;
 
-		let result = handle.await.expect("execute task panicked");
+		let result = task.join().await.expect("execute task panicked");
 		match result {
 			Err(e) => assert!(e.to_string().contains("timed out"), "unexpected error: {e}"),
 			Ok(v) => panic!("expected a timeout error, got Ok({v})"),
 		}
 
-		// Wait for the child to be gone: `kill(pid, 0)` fails with ESRCH once it is reaped.
-		let poll_deadline = Instant::now() + Duration::from_secs(5);
-		loop {
-			// SAFETY: signal 0 performs no action; it only checks whether `pid` exists.
-			let rc = unsafe { libc::kill(pid, 0) };
-			let errno = (rc == -1)
-				.then(|| std::io::Error::last_os_error().raw_os_error())
-				.flatten();
-			if errno == Some(libc::ESRCH) {
-				break;
-			}
-			assert!(
-				Instant::now() < poll_deadline,
-				"timed-out script process {pid} still exists (kill returned {rc}, errno {errno:?})"
-			);
-			tokio::time::sleep(Duration::from_millis(10)).await;
-		}
+		wait_until_reaped(pid, "timed-out script process").await;
 	}
 
 	// ---------------------------------------------------------------------------
@@ -1081,8 +1051,8 @@ time.sleep(0.5)
 	}
 
 	/// Returns `errno` of `kill(pid, 0)`, or `None` when the process exists. `kill(pid, 0)`
-	/// also succeeds for a zombie, so callers poll for `ESRCH` the way
-	/// `test_script_timeout_kills_child_process` does, or combine it with [`is_zombie`].
+	/// also succeeds for a zombie, so callers wait with [`wait_until_reaped`] for `ESRCH`, or
+	/// with [`wait_until_terminated`] when a zombie is acceptable.
 	#[cfg(unix)]
 	fn process_probe_errno(pid: libc::pid_t) -> Option<i32> {
 		// SAFETY: signal 0 performs no action; it only checks whether `pid` exists.
@@ -1090,6 +1060,50 @@ time.sleep(0.5)
 		(rc == -1)
 			.then(|| std::io::Error::last_os_error().raw_os_error())
 			.flatten()
+	}
+
+	/// Whether `pid` has terminated: either gone (`ESRCH`) or a zombie that only awaits reaping.
+	#[cfg(unix)]
+	fn is_terminated(pid: libc::pid_t) -> bool {
+		let errno = process_probe_errno(pid);
+		errno == Some(libc::ESRCH) || (errno.is_none() && is_zombie(pid))
+	}
+
+	/// Polls `predicate` on `pid` for up to 5 s; panics naming `what`, the pid, the awaited
+	/// `state` and the last probe errno.
+	#[cfg(unix)]
+	async fn wait_until(
+		pid: libc::pid_t,
+		what: &str,
+		state: &str,
+		predicate: impl Fn(libc::pid_t) -> bool,
+	) {
+		let poll_deadline = Instant::now() + Duration::from_secs(5);
+		while !predicate(pid) {
+			assert!(
+				Instant::now() < poll_deadline,
+				"{what} (pid {pid}) was not {state} within 5 s (last errno {:?})",
+				process_probe_errno(pid)
+			);
+			tokio::time::sleep(Duration::from_millis(10)).await;
+		}
+	}
+
+	/// Waits until `pid` is gone or a zombie: for descendants, which are reaped by init or a
+	/// subreaper rather than by this process and may therefore stay zombies.
+	#[cfg(unix)]
+	async fn wait_until_terminated(pid: libc::pid_t, what: &str) {
+		wait_until(pid, what, "terminated", is_terminated).await
+	}
+
+	/// Waits until `kill(pid, 0)` fails with `ESRCH`: for a direct child, which tokio or
+	/// `wait_with_output` must reap, so a lingering zombie fails the wait.
+	#[cfg(unix)]
+	async fn wait_until_reaped(pid: libc::pid_t, what: &str) {
+		wait_until(pid, what, "reaped", |pid| {
+			process_probe_errno(pid) == Some(libc::ESRCH)
+		})
+		.await
 	}
 
 	/// Returns `errno` of `killpg(pgid, 0)`, or `None` while the process group still has members.
@@ -1286,21 +1300,9 @@ print(True)
 			Ok(v) => panic!("expected a timeout error, got Ok({v})"),
 		}
 
-		// Poll briefly to allow the kill to land: the descendant is gone once `kill(pid, 0)`
-		// fails with `ESRCH`, or once it has terminated and only awaits reaping (zombie).
-		let poll_deadline = Instant::now() + Duration::from_secs(5);
-		loop {
-			let errno = process_probe_errno(descendant_pid);
-			if errno == Some(libc::ESRCH) || (errno.is_none() && is_zombie(descendant_pid)) {
-				break;
-			}
-			assert!(
-				Instant::now() < poll_deadline,
-				"descendant process {descendant_pid} survived the script timeout (errno {errno:?}): \
-				 only the direct child was killed"
-			);
-			tokio::time::sleep(Duration::from_millis(10)).await;
-		}
+		// Poll briefly to allow the kill to land; a surviving descendant means only the direct
+		// child was killed.
+		wait_until_terminated(descendant_pid, "descendant of the timed-out script").await;
 	}
 
 	/// Counterpart of `test_script_timeout_kills_descendant_process` for external cancellation.
@@ -1363,34 +1365,9 @@ print(True)
 			Ok(result) => panic!("expected the task to be cancelled, got {result:?}"),
 		}
 
-		// A process counts as terminated once `kill(pid, 0)` fails with `ESRCH` or it has
-		// become a zombie that only awaits reaping.
-		let terminated = |pid: libc::pid_t| {
-			let errno = process_probe_errno(pid);
-			errno == Some(libc::ESRCH) || (errno.is_none() && is_zombie(pid))
-		};
-		let poll_deadline = Instant::now() + Duration::from_secs(5);
-		loop {
-			let shell_terminated = terminated(shell_pid);
-			let descendant_terminated = terminated(descendant_pid);
-			if shell_terminated && descendant_terminated {
-				break;
-			}
-			if Instant::now() >= poll_deadline {
-				assert!(
-					shell_terminated,
-					"direct child {shell_pid} survived external cancellation (errno {:?})",
-					process_probe_errno(shell_pid)
-				);
-				assert!(
-					descendant_terminated,
-					"descendant process {descendant_pid} survived external cancellation (errno \
-					 {:?}): only the direct child was killed",
-					process_probe_errno(descendant_pid)
-				);
-			}
-			tokio::time::sleep(Duration::from_millis(10)).await;
-		}
+		// A surviving descendant means only the direct child was killed.
+		wait_until_terminated(shell_pid, "direct child of the cancelled script").await;
+		wait_until_terminated(descendant_pid, "descendant of the cancelled script").await;
 	}
 
 	/// The interpreter exits successfully, but a descendant it started inherits the stdin read
@@ -1441,25 +1418,10 @@ print("true", flush=True)
 		let descendant_pid = wait_for_pid_file(&descendant_pid_path).await;
 		let _descendant_cleanup = KillOnDrop(descendant_pid);
 
-		// A process counts as terminated once `kill(pid, 0)` fails with `ESRCH` or it has
-		// become a zombie that only awaits reaping.
-		let terminated = |pid: libc::pid_t| {
-			let errno = process_probe_errno(pid);
-			errno == Some(libc::ESRCH) || (errno.is_none() && is_zombie(pid))
-		};
-
 		// Precondition 1: the interpreter has exited. `wait_with_output` runs concurrently with
 		// the stdin write, so it reaps the interpreter even though that write is still blocked
 		// on the descendant.
-		let poll_deadline = Instant::now() + Duration::from_secs(5);
-		while !terminated(interpreter_pid) {
-			assert!(
-				Instant::now() < poll_deadline,
-				"interpreter {interpreter_pid} did not exit after printing its result (errno {:?})",
-				process_probe_errno(interpreter_pid)
-			);
-			tokio::time::sleep(Duration::from_millis(10)).await;
-		}
+		wait_until_reaped(interpreter_pid, "interpreter that printed its result").await;
 		// Precondition 2: the descendant is running and holds the stdin read end.
 		assert_eq!(
 			process_probe_errno(descendant_pid),
@@ -1488,17 +1450,8 @@ print("true", flush=True)
 		);
 
 		// The descendant must be terminated by the timeout even though the direct child had
-		// already exited.
-		let poll_deadline = Instant::now() + Duration::from_secs(5);
-		while !terminated(descendant_pid) {
-			assert!(
-				Instant::now() < poll_deadline,
-				"descendant process {descendant_pid} survived the script timeout (errno {:?}): \
-				 cleanup stopped once the direct child had exited",
-				process_probe_errno(descendant_pid)
-			);
-			tokio::time::sleep(Duration::from_millis(10)).await;
-		}
+		// already exited; a survivor means cleanup stopped once the direct child had exited.
+		wait_until_terminated(descendant_pid, "descendant of the exited interpreter").await;
 	}
 
 	/// Test D on the custom-notification path, which skips stdout parsing: a child that exits
