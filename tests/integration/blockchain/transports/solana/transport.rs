@@ -771,6 +771,128 @@ async fn test_block_not_available_error() {
 	);
 }
 
+#[tokio::test]
+async fn test_get_transactions_parses_v1_block() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response: Value = serde_json::from_str(include_str!(
+		"../../../fixtures/solana/block_with_v1_transaction.json"
+	))
+	.unwrap();
+	assert_eq!(mock_response["result"]["transactions"][0]["version"], 1);
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let transactions = client.get_transactions(460168186).await.unwrap();
+
+	assert_eq!(transactions.len(), 1);
+	let tx = &transactions[0];
+	assert_eq!(
+		tx.signature(),
+		"nSHA1zN6sSMX6jSV7sVhiA2MtdUyWgN9pE9aCKgjLq7UacuaW6Z9pmQ65wzepkFqSPWn9UYYK37tkSDG25obtib"
+	);
+	assert!(tx.is_success());
+	assert_eq!(tx.fee(), 5058);
+
+	let message = &tx.0.transaction;
+	assert_eq!(message.account_keys.len(), 20);
+	assert_eq!(
+		message.account_keys[0],
+		"AiTheeuEtGD2ZRkW43Pq9RhFn9jtxjBjPZAiVN7VD9ji"
+	);
+	assert_eq!(message.instructions.len(), 2);
+	assert_eq!(message.instructions[0].program_id_index, 10);
+	assert_eq!(message.instructions[0].accounts, vec![0, 7]);
+	assert_eq!(message.instructions[1].program_id_index, 15);
+	assert_eq!(
+		message.instructions[1].accounts,
+		vec![4, 0, 18, 17, 11, 1, 2, 3, 9, 13, 12, 10, 8, 16, 5, 19, 14, 6]
+	);
+	assert!(tx
+		.program_ids()
+		.contains(&"2da8bvV9vLrehbuGYvoXx1XJ8zvx6LXtjjT8trXyqk4X".to_string()));
+}
+
+#[tokio::test]
+async fn test_get_transactions_unsupported_transaction_version() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"error": {
+			"code": -32015,
+			"message": "Transaction version (2) is not supported by the requesting client."
+		},
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let err = client.get_transactions(123456789).await.unwrap_err();
+
+	assert!(format!("{:#}", err).contains(
+		"RPC returned a transaction version newer than maxSupportedTransactionVersion 1"
+	));
+}
+
+#[tokio::test]
+async fn test_get_transaction_unsupported_transaction_version() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"error": {
+			"code": -32015,
+			"message": "Transaction version (2) is not supported by the requesting client."
+		},
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let err = client
+		.get_transaction("test_sig".to_string())
+		.await
+		.unwrap_err();
+
+	assert!(format!("{:#}", err).contains(
+		"RPC returned a transaction version newer than maxSupportedTransactionVersion 1"
+	));
+}
+
+#[tokio::test]
+async fn test_get_transaction_rpc_error_is_not_not_found() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response = json!({
+		"jsonrpc": "2.0",
+		"error": {
+			"code": -32603,
+			"message": "Internal error"
+		},
+		"id": 1
+	});
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let result = client.get_transaction("test_sig".to_string()).await;
+
+	assert!(result.is_err());
+	assert!(format!("{:#}", result.unwrap_err()).contains("Internal error"));
+}
+
 // ============================================================================
 // Monitored addresses tests
 // ============================================================================

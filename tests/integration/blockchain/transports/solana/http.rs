@@ -308,7 +308,7 @@ async fn test_get_block_with_full_config() {
 				"transactionDetails": "full",
 				"rewards": true,
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -330,82 +330,6 @@ async fn test_get_block_with_full_config() {
 }
 
 #[tokio::test]
-async fn test_get_block_with_signatures_only_config() {
-	let mut server = Server::new_async().await;
-
-	let network_mock = create_solana_valid_server_mock_network_response(&mut server);
-
-	let block_mock = server
-		.mock("POST", "/")
-		.match_body(mockito::Matcher::PartialJson(json!({
-			"method": "getBlock",
-			"params": [200, {
-				"encoding": "json",
-				"transactionDetails": "signatures",
-				"rewards": false,
-				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
-			}]
-		})))
-		.with_header("content-type", "application/json")
-		.with_status(200)
-		.with_body(
-			r#"{"jsonrpc":"2.0","result":{"blockhash":"def456","signatures":["sig1","sig2"]},"id":1}"#,
-		)
-		.create();
-
-	let network = create_solana_test_network_with_urls(vec![&server.url()]);
-	let client = SolanaTransportClient::new(&network).await.unwrap();
-
-	let result = client
-		.get_block(200, Some(SolanaGetBlockConfig::signatures_only()))
-		.await;
-	assert!(result.is_ok());
-	assert_eq!(result.unwrap()["result"]["blockhash"], "def456");
-
-	network_mock.assert();
-	block_mock.assert();
-}
-
-#[tokio::test]
-async fn test_get_block_with_none_config() {
-	let mut server = Server::new_async().await;
-
-	let network_mock = create_solana_valid_server_mock_network_response(&mut server);
-
-	let block_mock = server
-		.mock("POST", "/")
-		.match_body(mockito::Matcher::PartialJson(json!({
-			"method": "getBlock",
-			"params": [300, {
-				"encoding": "json",
-				"transactionDetails": "none",
-				"rewards": false,
-				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
-			}]
-		})))
-		.with_header("content-type", "application/json")
-		.with_status(200)
-		.with_body(
-			r#"{"jsonrpc":"2.0","result":{"blockhash":"ghi789","blockTime":1234567890},"id":1}"#,
-		)
-		.create();
-
-	let network = create_solana_test_network_with_urls(vec![&server.url()]);
-	let client = SolanaTransportClient::new(&network).await.unwrap();
-
-	let result = client
-		.get_block(300, Some(SolanaGetBlockConfig::none()))
-		.await;
-	assert!(result.is_ok());
-	assert_eq!(result.unwrap()["result"]["blockhash"], "ghi789");
-
-	network_mock.assert();
-	block_mock.assert();
-}
-
-#[tokio::test]
 async fn test_get_block_default_config() {
 	let mut server = Server::new_async().await;
 
@@ -421,7 +345,7 @@ async fn test_get_block_default_config() {
 				"transactionDetails": "full",
 				"rewards": true,
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -542,7 +466,7 @@ async fn test_get_transaction_json_config() {
 			"params": ["5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW", {
 				"encoding": "json",
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -579,7 +503,7 @@ async fn test_get_transaction_json_parsed_config() {
 			"params": ["sig123", {
 				"encoding": "jsonParsed",
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -614,7 +538,7 @@ async fn test_get_transaction_default_config() {
 			"params": ["sig456", {
 				"encoding": "json",
 				"commitment": "finalized",
-				"maxSupportedTransactionVersion": 0
+				"maxSupportedTransactionVersion": 1
 			}]
 		})))
 		.with_header("content-type", "application/json")
@@ -1087,6 +1011,35 @@ async fn test_get_block_unavailable_error() {
 }
 
 #[tokio::test]
+async fn test_get_block_unsupported_transaction_version_passes_through() {
+	let mut server = Server::new_async().await;
+
+	let network_mock = create_solana_valid_server_mock_network_response(&mut server);
+
+	let error_mock = server
+		.mock("POST", "/")
+		.match_body(mockito::Matcher::PartialJson(json!({
+			"method": "getBlock"
+		})))
+		.with_header("content-type", "application/json")
+		.with_status(200)
+		.with_body(r#"{"jsonrpc":"2.0","error":{"code":-32015,"message":"Transaction version (2) is not supported by the requesting client. Please try the request again with the following configuration parameter: \"maxSupportedTransactionVersion\": 2"},"id":1}"#)
+		.expect(1)
+		.create();
+
+	let network = create_solana_test_network_with_urls(vec![&server.url()]);
+	let client = SolanaTransportClient::new(&network).await.unwrap();
+
+	let result = client.get_block(100, None).await;
+	assert!(result.is_ok());
+	let response = result.unwrap();
+	assert_eq!(response["error"]["code"], -32015);
+
+	network_mock.assert();
+	error_mock.assert();
+}
+
+#[tokio::test]
 async fn test_get_transaction_not_found() {
 	let mut server = Server::new_async().await;
 
@@ -1137,27 +1090,7 @@ fn test_get_block_config_full() {
 	assert_eq!(config.transaction_details, Some("full".to_string()));
 	assert_eq!(config.rewards, Some(true));
 	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
-}
-
-#[test]
-fn test_get_block_config_signatures_only() {
-	let config = SolanaGetBlockConfig::signatures_only();
-	assert_eq!(config.encoding, Some("json".to_string()));
-	assert_eq!(config.transaction_details, Some("signatures".to_string()));
-	assert_eq!(config.rewards, Some(false));
-	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
-}
-
-#[test]
-fn test_get_block_config_none() {
-	let config = SolanaGetBlockConfig::none();
-	assert_eq!(config.encoding, Some("json".to_string()));
-	assert_eq!(config.transaction_details, Some("none".to_string()));
-	assert_eq!(config.rewards, Some(false));
-	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
+	assert_eq!(config.max_supported_transaction_version, Some(1));
 }
 
 #[test]
@@ -1175,7 +1108,7 @@ fn test_get_transaction_config_json() {
 	let config = SolanaGetTransactionConfig::json();
 	assert_eq!(config.encoding, Some("json".to_string()));
 	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
+	assert_eq!(config.max_supported_transaction_version, Some(1));
 }
 
 #[test]
@@ -1183,7 +1116,7 @@ fn test_get_transaction_config_json_parsed() {
 	let config = SolanaGetTransactionConfig::json_parsed();
 	assert_eq!(config.encoding, Some("jsonParsed".to_string()));
 	assert_eq!(config.commitment, Some("finalized".to_string()));
-	assert_eq!(config.max_supported_transaction_version, Some(0));
+	assert_eq!(config.max_supported_transaction_version, Some(1));
 }
 
 #[test]

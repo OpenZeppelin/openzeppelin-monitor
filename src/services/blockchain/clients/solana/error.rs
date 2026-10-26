@@ -216,7 +216,6 @@ pub mod error_codes {
 	/// Long-term storage query error
 	pub const LONG_TERM_STORAGE_SLOT_SKIPPED: i64 = -32009;
 	/// Transaction version not supported
-	#[allow(dead_code)]
 	pub const UNSUPPORTED_TRANSACTION_VERSION: i64 = -32015;
 	/// Invalid parameters
 	#[allow(dead_code)]
@@ -234,6 +233,16 @@ pub const SLOT_UNAVAILABLE_ERROR_CODES: &[i64] = &[
 	error_codes::BLOCK_NOT_AVAILABLE,
 	error_codes::SLOT_SKIPPED,
 	error_codes::LONG_TERM_STORAGE_SLOT_SKIPPED,
+];
+
+/// JSON-RPC error codes the transport passes through to the client instead of
+/// rotating endpoints: the slot-unavailable codes, plus a transaction version above
+/// the requested `maxSupportedTransactionVersion`, which every endpoint returns alike.
+pub const PASS_THROUGH_ERROR_CODES: &[i64] = &[
+	error_codes::BLOCK_NOT_AVAILABLE,
+	error_codes::SLOT_SKIPPED,
+	error_codes::LONG_TERM_STORAGE_SLOT_SKIPPED,
+	error_codes::UNSUPPORTED_TRANSACTION_VERSION,
 ];
 
 /// Checks if the given RPC error code indicates a skipped/unavailable slot
