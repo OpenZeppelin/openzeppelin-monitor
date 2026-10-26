@@ -328,7 +328,7 @@ Therefore, there may be a small delay in processing the latest blocks since we w
 
 ### Common Issues
 
-* **429 Too Many Requests**: Increase the number of fallback URLs, adjust weights or reduce monitoring frequency
+* **429 Too Many Requests**: Increase the number of fallback URLs, adjust weights or reduce monitoring frequency. A self-hosted RPC proxy such as [eRPC](https://github.com/erpc/erpc) can also sit in front of several providers and retry rate-limited calls on the next one.
 * **Connection Timeouts**: Check endpoint health and network connectivity
 * **Invalid Responses**: Verify endpoint compatibility with your network type
 
