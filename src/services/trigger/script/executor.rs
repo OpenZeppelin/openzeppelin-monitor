@@ -159,24 +159,18 @@ struct ProcessGroupGuard {
 
 #[cfg(unix)]
 impl ProcessGroupGuard {
-	/// Arms a guard for the process group led by `pid`. A pid that does not fit a positive
-	/// `pid_t` leaves the guard inactive: `killpg` with zero or a negative value would signal
-	/// the Monitor's own group.
+	/// Arms a guard for the process group led by `pid`.
+	///
+	/// `pid` comes from `Child::id()` right after the spawn, so it is always a positive
+	/// `pid_t`. Anything else is a caller bug and panics: `killpg(0)` would signal the
+	/// Monitor's own process group.
 	fn new(pid: u32) -> Self {
-		match libc::pid_t::try_from(pid) {
-			Ok(pgid) if pgid > 0 => Self { pgid, armed: true },
-			_ => {
-				tracing::warn!(
-					"script process id {} is not a valid process group id; descendants will \
-					 not be cleaned up",
-					pid
-				);
-				Self {
-					pgid: 0,
-					armed: false,
-				}
-			}
-		}
+		let pgid = libc::pid_t::try_from(pid).expect("pid does not fit pid_t");
+		assert!(
+			pgid > 0,
+			"process group id must be positive: killpg(0) would signal the Monitor's own group"
+		);
+		Self { pgid, armed: true }
 	}
 
 	/// Sends `SIGKILL` to the process group once; later calls are no-ops.
@@ -229,10 +223,11 @@ impl ProcessGroupGuard {
 /// Feeds `input_json` to the script and waits for it to exit, bounded by `timeout_ms`.
 ///
 /// The stdin write and the stdout/stderr drain run concurrently so neither can block the
-/// other on a full pipe. A `BrokenPipe` while writing or closing stdin is not an error: the
-/// child's exit status and output decide. On Unix, a timeout, an I/O failure or cancellation
-/// of this future kills the script's process group; after a successful execution nothing is
-/// killed, so background processes a script leaves behind keep running.
+/// other on a full pipe. A `BrokenPipe` while writing stdin is not an error: the child's
+/// exit status and output decide. On Unix, a timeout, an I/O failure or cancellation
+/// of this future kills the script's process group. After stdin delivery and output collection
+/// complete successfully, the process group is left running regardless of the script's exit
+/// status or parsed result, so background processes a script leaves behind keep running.
 async fn process_command(
 	mut cmd: tokio::process::Child,
 	input_json: &str,
@@ -241,10 +236,7 @@ async fn process_command(
 ) -> Result<bool, anyhow::Error> {
 	let pid = cmd
 		.id()
-		.ok_or_else(|| anyhow::anyhow!("Script process has no pid"))?;
-	// Arm the guard before taking stdin so an early error there still triggers process-group
-	// cleanup.
-	let mut guard = ProcessGroupGuard::new(pid);
+		.expect("child was just spawned and has not been waited for");
 	let mut stdin = cmd
 		.stdin
 		.take()
@@ -258,34 +250,38 @@ async fn process_command(
 			}
 			Err(e) => return Err(anyhow::anyhow!("Failed to write input to script: {}", e)),
 		}
-		let shutdown_result = stdin.shutdown().await;
-		// On an anonymous pipe `shutdown` is a no-op in tokio; closing the handle is what delivers
-		// EOF to the child, so do it explicitly instead of relying on the completed future being
-		// dropped.
+		// Closing the handle is what delivers EOF to the child (`shutdown` is a no-op on a
+		// pipe), so do it explicitly instead of relying on the completed future being dropped.
 		drop(stdin);
-		match shutdown_result {
-			Ok(()) => Ok(()),
-			Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
-			Err(e) => Err(anyhow::anyhow!("Failed to close stdin: {}", e)),
-		}
+		Ok(())
 	};
 	let wait = async {
 		cmd.wait_with_output()
 			.await
 			.map_err(|e| anyhow::anyhow!("Failed to wait for script output: {}", e))
 	};
-	// `try_join!` stops at the first error: the other future is dropped, `kill_on_drop` hits
-	// the direct child and the still-armed guard kills the group at scope exit.
-	let run = async { tokio::try_join!(feed, wait) };
+	tokio::pin!(feed);
+	tokio::pin!(wait);
+	// Invariant: the `Child` (inside `wait`) and the stdin handle (inside `feed`) are owned by
+	// locals declared before the guard below, and `run` only borrows them. Locals drop in
+	// reverse order, so on timeout (explicit kill), on a stdin write error and on cancellation
+	// (both via `Drop`) the group is signalled before the `Child` is dropped and
+	// `kill_on_drop` reaches the already-signalled leader. `try_join!` stops at the first
+	// error and drops the branches it was given, but those are `&mut` borrows, so that cannot
+	// release the `Child` early. A failure inside `wait_with_output` is the one exception:
+	// that future owns the `Child` and drops it as it completes, so there `kill_on_drop` runs
+	// first and the guard signals whatever group members remain.
+	let run = async { tokio::try_join!(&mut feed, &mut wait) };
 	tokio::pin!(run);
+	// Nothing above awaits, and the one early return before this point (`stdin.take()`, which
+	// cannot fail with a piped stdin) still kills the direct child through `kill_on_drop`.
+	let mut guard = ProcessGroupGuard::new(pid);
 
 	let timeout_duration = Duration::from_millis(u64::from(*timeout_ms));
-	// Polling `&mut run` means `run` keeps owning the `Child` handle past an `Elapsed`, so the
-	// explicit kill below runs before that handle is dropped. It does not guarantee the OS
-	// process is still alive or unreaped: `wait_with_output` may already have waited for it
-	// while another I/O operation was pending. On cancellation of this future the locals drop
-	// in reverse order: `run` (the `Child`, via `kill_on_drop`) first, then the guard
-	// (`killpg`).
+	// Polling `&mut run` keeps `run` alive past an `Elapsed`, so the explicit kill below runs
+	// while the `Child` is still held. It does not guarantee the OS process is still alive or
+	// unreaped: `wait_with_output` may already have waited for it while another I/O operation
+	// was pending.
 	match timeout(timeout_duration, &mut run).await {
 		Ok(Ok(((), output))) => {
 			// Only once both the stdin feed and the wait have completed: a descendant that
@@ -1018,8 +1014,8 @@ time.sleep(0.5)
 	}
 
 	/// Kills a process by pid on drop so a leaked descendant is cleaned up even when an
-	/// assertion fails first. Signals the pid individually, never its process group: the
-	/// child currently shares the test runner's process group.
+	/// assertion fails first. Signals the pid individually, never a process group, so the
+	/// cleanup does not depend on the process-group behaviour under test.
 	#[cfg(unix)]
 	struct KillOnDrop(libc::pid_t);
 
@@ -1091,6 +1087,16 @@ time.sleep(0.5)
 	fn process_probe_errno(pid: libc::pid_t) -> Option<i32> {
 		// SAFETY: signal 0 performs no action; it only checks whether `pid` exists.
 		let rc = unsafe { libc::kill(pid, 0) };
+		(rc == -1)
+			.then(|| std::io::Error::last_os_error().raw_os_error())
+			.flatten()
+	}
+
+	/// Returns `errno` of `killpg(pgid, 0)`, or `None` while the process group still has members.
+	#[cfg(unix)]
+	fn process_group_probe_errno(pgid: libc::pid_t) -> Option<i32> {
+		// SAFETY: signal 0 performs no action; it only checks whether the group exists.
+		let rc = unsafe { libc::killpg(pgid, 0) };
 		(rc == -1)
 			.then(|| std::io::Error::last_os_error().raw_os_error())
 			.flatten()
@@ -1252,8 +1258,8 @@ print(True)
 	/// gone too. It is reaped by its new parent (init or a subreaper), not by us, and in a
 	/// container without an init process it can stay a zombie; the descendant is therefore
 	/// accepted when it is either gone (`ESRCH`) or a zombie. The descendant's pid is
-	/// signalled individually for cleanup; the test never signals a process group because the
-	/// child shares the test runner's.
+	/// signalled individually for cleanup; the test never signals a process group (see
+	/// [`KillOnDrop`]).
 	#[cfg(unix)]
 	#[tokio::test]
 	async fn test_script_timeout_kills_descendant_process() {
@@ -1261,11 +1267,13 @@ print(True)
 		let pid_path = temp_dir.path().join("pid");
 		let script = format!("sleep 30 & echo $! > '{}'; wait", pid_path.display());
 
+		// Generous so the pid file exists before the timeout fires on a loaded CI runner.
+		const DESCENDANT_TIMEOUT_MS: u32 = 2000;
 		let executor = sh(&script, vec![]);
 		let input = create_mock_monitor_match();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
 			executor
-				.execute(input, &SCRIPT_TIMEOUT_MS, None, false)
+				.execute(input, &DESCENDANT_TIMEOUT_MS, None, false)
 				.await
 		}));
 
@@ -1389,14 +1397,13 @@ print(True)
 	/// end and never reads it, so the parent's large stdin write stays blocked. The direct
 	/// child is gone and both output pipes have reached EOF (the descendant's go to
 	/// `/dev/null`), yet the execution cannot complete: the timeout must still fire and must
-	/// still terminate the descendant. This distinguishes a correct fix from one that disarms
-	/// its process-group cleanup as soon as the direct child has been waited for, which would
-	/// leak the descendant here.
+	/// still terminate the descendant. This distinguishes cleanup that stays armed until stdin
+	/// delivery has completed from cleanup that disarms as soon as the direct child has been
+	/// waited for, which would leak the descendant here.
 	///
-	/// Today the stdin write runs before the timeout starts and blocks until the descendant
-	/// exits after 30 s, so `task.join()` hits `OUTER_TIMEOUT` first; the interpreter is a
-	/// zombie meanwhile because the parent never reaches `wait_with_output`. Pids are signalled
-	/// individually for cleanup; never a process group.
+	/// The timeout covers stdin delivery even in this state: the write cannot block until the
+	/// descendant exits, and `wait_with_output` reaps the interpreter before the timeout fires.
+	/// Pids are signalled individually for cleanup; never a process group.
 	#[cfg(unix)]
 	#[tokio::test]
 	async fn test_timeout_after_interpreter_exit_kills_descendant() {
@@ -1441,8 +1448,9 @@ print("true", flush=True)
 			errno == Some(libc::ESRCH) || (errno.is_none() && is_zombie(pid))
 		};
 
-		// Precondition 1: the interpreter has exited. Today it stays a zombie, since the parent
-		// is stuck in the stdin write and never waits for it; after the fix it is reaped.
+		// Precondition 1: the interpreter has exited. `wait_with_output` runs concurrently with
+		// the stdin write, so it reaps the interpreter even though that write is still blocked
+		// on the descendant.
 		let poll_deadline = Instant::now() + Duration::from_secs(5);
 		while !terminated(interpreter_pid) {
 			assert!(
@@ -1568,17 +1576,21 @@ print("true", flush=True)
 
 		let executor = sh(&script, vec![]);
 		let input = create_mock_monitor_match();
-		let result =
-			tokio::time::timeout(OUTER_TIMEOUT, executor.execute(input, &5000, None, false))
-				.await
-				.expect("execute() hung past the outer timeout");
+		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			executor.execute(input, &5000, None, false).await
+		}));
+
+		// Register the cleanup before asserting on the result, so a failed assertion does not
+		// leave the `sleep` running for 30 s.
+		let background_pid = wait_for_pid_file(&pid_path).await;
+		let _cleanup = KillOnDrop(background_pid);
+
+		let result = task.join().await.expect("execute task panicked");
 		match result {
 			Ok(true) => {}
 			other => panic!("expected Ok(true), got {other:?}"),
 		}
 
-		let background_pid = wait_for_pid_file(&pid_path).await;
-		let _cleanup = KillOnDrop(background_pid);
 		assert_eq!(
 			process_probe_errno(background_pid),
 			None,
@@ -1588,6 +1600,93 @@ print("true", flush=True)
 			!is_zombie(background_pid),
 			"background process {background_pid} is a zombie after the script's successful exit"
 		);
+	}
+
+	/// Spawns `sh -c <script>` as the leader of its own process group, the way
+	/// [`InterpreterExecutor::execute`] spawns scripts, so a guard built from its pid targets
+	/// only that group.
+	#[cfg(unix)]
+	fn spawn_group_leader(script: &str) -> std::process::Child {
+		use std::os::unix::process::CommandExt;
+
+		std::process::Command::new("sh")
+			.args(["-c", script])
+			.process_group(0)
+			.stdin(std::process::Stdio::null())
+			.stdout(std::process::Stdio::null())
+			.stderr(std::process::Stdio::null())
+			.spawn()
+			.expect("failed to spawn sh")
+	}
+
+	/// `killpg(0)` would signal the Monitor's own process group, so `new` must reject a zero
+	/// pid instead of arming a guard for it.
+	#[cfg(unix)]
+	#[test]
+	#[should_panic(expected = "killpg(0) would signal the Monitor's own group")]
+	fn test_process_group_guard_rejects_zero_pid() {
+		let _guard = ProcessGroupGuard::new(0);
+	}
+
+	/// `kill()` signals the group once and disarms the guard; a second call, after the group
+	/// has been killed, is a no-op and must not fail on the stale pgid.
+	#[cfg(unix)]
+	#[test]
+	fn test_process_group_guard_kill_is_idempotent() {
+		use std::os::unix::process::ExitStatusExt;
+
+		let mut child = spawn_group_leader("exec sleep 30");
+		let pid = libc::pid_t::try_from(child.id()).expect("pid does not fit pid_t");
+		let _cleanup = KillOnDrop(pid);
+
+		let mut guard = ProcessGroupGuard::new(child.id());
+		assert!(guard.armed, "a valid pid did not arm the guard");
+		guard.kill();
+		assert!(!guard.armed, "kill() left the guard armed");
+
+		// The child is our own, so `try_wait` both observes its death and reaps it.
+		let poll_deadline = Instant::now() + Duration::from_secs(5);
+		let status = loop {
+			if let Some(status) = child.try_wait().expect("failed to poll child") {
+				break status;
+			}
+			assert!(
+				Instant::now() < poll_deadline,
+				"process {pid} survived the process-group kill"
+			);
+			std::thread::sleep(Duration::from_millis(10));
+		};
+		assert_eq!(
+			status.signal(),
+			Some(libc::SIGKILL),
+			"process {pid} did not die from the guard's signal: {status}"
+		);
+
+		// The group is gone; a second kill() must be a no-op on the stale pgid.
+		guard.kill();
+		assert!(!guard.armed, "a second kill() re-armed the guard");
+	}
+
+	/// A guard whose process group has already exited takes the `ESRCH` branch of `kill()`
+	/// and must not panic. Pid reuse between the `wait()` and the `kill()` is practically
+	/// impossible within the microseconds the test takes.
+	#[cfg(unix)]
+	#[test]
+	fn test_process_group_guard_tolerates_exited_group() {
+		let mut child = spawn_group_leader("true");
+		let pid = child.id();
+		child.wait().expect("failed to reap child");
+		let pgid = libc::pid_t::try_from(pid).expect("pid does not fit pid_t");
+		assert_eq!(
+			process_group_probe_errno(pgid),
+			Some(libc::ESRCH),
+			"process group {pgid} still exists after its leader was reaped"
+		);
+
+		let mut guard = ProcessGroupGuard::new(pid);
+		assert!(guard.armed, "a valid pid did not arm the guard");
+		guard.kill();
+		assert!(!guard.armed, "kill() left the guard armed");
 	}
 
 	#[tokio::test]
