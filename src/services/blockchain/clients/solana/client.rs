@@ -12,8 +12,8 @@ use tracing::instrument;
 use crate::{
 	models::{
 		BlockType, ContractSpec, Network, SolanaBlock, SolanaConfirmedBlock, SolanaContractSpec,
-		SolanaInstruction, SolanaTransaction, SolanaTransactionInfo, SolanaTransactionMessage,
-		SolanaTransactionMeta,
+		SolanaInstruction, SolanaLoadedAddresses, SolanaTransaction, SolanaTransactionInfo,
+		SolanaTransactionMessage, SolanaTransactionMeta,
 	},
 	services::{
 		blockchain::{
@@ -369,7 +369,20 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				inner_instructions,
 				log_messages,
 				compute_units_consumed: m.get("computeUnitsConsumed").and_then(|c| c.as_u64()),
-				loaded_addresses: None,
+				loaded_addresses: m.get("loadedAddresses").and_then(|loaded| {
+					let addresses = |key: &str| -> Option<Vec<String>> {
+						loaded
+							.get(key)?
+							.as_array()?
+							.iter()
+							.map(|address| address.as_str().map(str::to_string))
+							.collect()
+					};
+					Some(SolanaLoadedAddresses {
+						writable: addresses("writable")?,
+						readonly: addresses("readonly")?,
+					})
+				}),
 			}
 		});
 
@@ -2177,6 +2190,74 @@ mod tests {
 		assert_eq!(
 			inner_ix.parsed.as_ref().unwrap().instruction_type,
 			"upgrade"
+		);
+	}
+
+	#[test]
+	fn test_parse_single_transaction_without_loaded_addresses() {
+		let client = mock_client();
+		for loaded in [None, Some(json!({ "writable": ["W1"] }))] {
+			let mut meta =
+				json!({ "err": null, "fee": 5000, "preBalances": [], "postBalances": [] });
+			if let Some(loaded) = loaded {
+				meta["loadedAddresses"] = loaded;
+			}
+			let raw_tx = json!({
+				"transaction": {
+					"signatures": ["sig_without_loaded"],
+					"message": { "accountKeys": ["A1", "A2"], "instructions": [], "recentBlockhash": "hash1" }
+				},
+				"meta": meta
+			});
+			let tx = client
+				.parse_single_transaction(100, &raw_tx)
+				.unwrap()
+				.expect("should parse transaction");
+			assert!(tx.meta.as_ref().unwrap().loaded_addresses.is_none());
+			assert_eq!(tx.accounts(), vec!["A1".to_string(), "A2".to_string()]);
+		}
+	}
+
+	#[test]
+	fn test_parse_single_transaction_with_loaded_addresses() {
+		let client = mock_client();
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_with_loaded"],
+				"message": {
+					"accountKeys": ["FeePayer", "Router"],
+					"instructions": [{ "programIdIndex": 1, "accounts": [0, 2, 3], "data": "" }],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [],
+				"postBalances": [],
+				"loadedAddresses": { "writable": ["Pool"], "readonly": ["AmmProgram"] },
+				"innerInstructions": [{
+					"index": 0,
+					"instructions": [{ "programIdIndex": 3, "accounts": [2], "data": "" }]
+				}]
+			}
+		});
+
+		let tx = client
+			.parse_single_transaction(100, &raw_tx)
+			.unwrap()
+			.expect("should parse transaction");
+
+		assert_eq!(
+			tx.accounts(),
+			vec!["FeePayer", "Router", "Pool", "AmmProgram"]
+				.into_iter()
+				.map(String::from)
+				.collect::<Vec<_>>()
+		);
+		assert_eq!(
+			tx.program_ids(),
+			vec!["Router".to_string(), "AmmProgram".to_string()]
 		);
 	}
 

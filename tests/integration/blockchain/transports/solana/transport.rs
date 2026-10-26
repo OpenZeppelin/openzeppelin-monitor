@@ -817,6 +817,48 @@ async fn test_get_transactions_parses_v1_block() {
 }
 
 #[tokio::test]
+async fn test_get_transactions_resolves_lookup_table_programs() {
+	let mut mock_solana = MockSolanaTransportClient::new();
+
+	let mock_response: Value = serde_json::from_str(include_str!(
+		"../../../fixtures/solana/block_with_lookup_table_programs.json"
+	))
+	.unwrap();
+
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let transactions = client.get_transactions(461606152).await.unwrap();
+
+	assert_eq!(transactions.len(), 1);
+	let tx = &transactions[0];
+	assert_eq!(
+		tx.signature(),
+		"3E1iaK2L9WD1mZJivfJsuVbGEMdMCM8Md9nat3Cn62kFQWFNoTKe5kfWByna8yTU5k6Li8cM6tJzWrXtBvgvg299"
+	);
+	assert_eq!(tx.0.transaction.account_keys.len(), 15);
+
+	let accounts = tx.accounts();
+	assert_eq!(accounts.len(), 34);
+	assert_eq!(accounts[15], "HBWtAaJktuxhjBVnsnfSvGHDhNKDAgZWvUUAReSu7Rwc");
+	assert_eq!(accounts[25], "So11111111111111111111111111111111111111112");
+
+	let program_ids = tx.program_ids();
+	for program in [
+		"CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+		"LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+	] {
+		assert!(!tx.0.transaction.account_keys.contains(&program.to_string()));
+		assert!(
+			program_ids.contains(&program.to_string()),
+			"{program} missing"
+		);
+	}
+}
+
+#[tokio::test]
 async fn test_get_transactions_unsupported_transaction_version() {
 	let mut mock_solana = MockSolanaTransportClient::new();
 
