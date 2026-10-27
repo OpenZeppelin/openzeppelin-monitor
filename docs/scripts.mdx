@@ -641,6 +641,9 @@ Scripts configured with `"language": "Bash"` are currently executed with `sh -c`
   * For permanent changes, modify `/etc/security/limits.conf` or equivalent for your system
 * **Script timeout**: Configure appropriate timeout values in your trigger conditions to prevent long-running scripts from blocking the pipeline
   * The `timeout_ms` parameter controls how long a script can run before being terminated
+  * The timeout covers input delivery, output collection, and waiting for the script to finish. On Unix, a timeout terminates the script's process group, including descendant processes that remain in that group. On other platforms, only the direct script process is terminated.
+  * Background processes that inherit the script's stdout or stderr may prevent execution from completing until those streams are closed. Similarly, a descendant retaining stdin without reading it may block large input writes. If the configured timeout expires, processes remaining in the script's process group are terminated on Unix.
+  * After a script has completed, the Monitor does not terminate processes the script left running in the background; cleaning them up is the script's responsibility. Scripts should not rely on this either way, since it may change in a future release.
 * **Resource usage**: Complex scripts may consume significant CPU or memory resources
   * Consider optimizing resource-intensive operations in your scripts
   * Monitor system performance during high-volume periods
