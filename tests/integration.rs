@@ -50,6 +50,7 @@ mod integration {
 	}
 	mod bootstrap {
 		mod main;
+		mod shutdown;
 	}
 	mod mocks;
 
