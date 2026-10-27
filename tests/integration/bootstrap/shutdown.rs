@@ -269,10 +269,9 @@ async fn run_monitor_and_signal(signal: libc::c_int) -> ChildOutcome {
 		}
 	}
 
-	// The current code registers its SIGINT handler lazily, when the `ctrl_c()`
-	// future is first polled, which happens *after* the readiness line has been
-	// logged. Without this grace period the positive control could race on a
-	// loaded machine and be killed by the default signal action instead.
+	// Give the child a moment after the readiness line before signalling. Before
+	// #522 the SIGINT handler was registered lazily, after that line was logged;
+	// the fix registers eagerly, so this grace period is now belt and braces.
 	tokio::time::sleep(PRE_SIGNAL_GRACE).await;
 
 	send_signal(&child, signal);
