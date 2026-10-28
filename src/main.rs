@@ -189,21 +189,50 @@ impl Cli {
 /// Registers the shutdown signals now and returns a future that resolves with the
 /// name of the first one received.
 ///
-/// Registration happens eagerly, at call time, so a signal arriving right after the
-/// "Service started" line is logged cannot hit the default signal action.
+/// Registration happens eagerly, at call time, before any network watcher is started,
+/// so a signal arriving during startup is buffered by tokio and handled as soon as the
+/// returned future is awaited;
+///
+/// `SIGHUP` follows the daemon convention honoured by `nohup`: if it was already ignored
+/// (`SIG_IGN`) when the process started, it is left ignored rather than turned into a
+/// shutdown request. `SIGINT` and `SIGTERM` are always handled.
 #[cfg(unix)]
 fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = &'static str>> {
-	use tokio::signal::unix::{signal, SignalKind};
+	use tokio::signal::unix::{signal, Signal, SignalKind};
+
+	// Query the inherited SIGHUP disposition before registering anything: installing a
+	// handler would replace an inherited SIG_IGN.
+	// SAFETY: a null `act` makes `sigaction` read-only, and `old` is a valid, zeroed
+	// out-parameter that lives for the duration of the call.
+	let sighup_ignored = unsafe {
+		let mut old: libc::sigaction = std::mem::zeroed();
+		if libc::sigaction(libc::SIGHUP, std::ptr::null(), &mut old) == -1 {
+			return Err(std::io::Error::last_os_error());
+		}
+		old.sa_sigaction == libc::SIG_IGN
+	};
 
 	let mut interrupt = signal(SignalKind::interrupt())?;
 	let mut terminate = signal(SignalKind::terminate())?;
-	let mut hangup = signal(SignalKind::hangup())?;
+	let mut hangup: Option<Signal> = if sighup_ignored {
+		info!("SIGHUP was ignored at startup; leaving it ignored");
+		None
+	} else {
+		Some(signal(SignalKind::hangup())?)
+	};
 
 	Ok(async move {
 		tokio::select! {
 			_ = interrupt.recv() => "SIGINT",
 			_ = terminate.recv() => "SIGTERM",
-			_ = hangup.recv() => "SIGHUP",
+			_ = async {
+				match hangup.as_mut() {
+					Some(hangup) => {
+						hangup.recv().await;
+					}
+					None => std::future::pending::<()>().await,
+				}
+			} => "SIGHUP",
 		}
 	})
 }
@@ -382,6 +411,11 @@ async fn main() -> Result<()> {
 	)
 	.await?;
 
+	// Register the signal handlers before the first watcher starts: a watcher can already
+	// be running trigger scripts while later networks are still connecting. A signal that
+	// arrives during startup is buffered by tokio and handled once `shutdown` is awaited.
+	let shutdown = shutdown_signal()?;
+
 	for network in networks_with_monitors {
 		match network.network_type {
 			BlockChainType::EVM => {
@@ -464,10 +498,6 @@ async fn main() -> Result<()> {
 		}
 	}
 
-	// Register the signal handlers before announcing readiness so that a signal sent
-	// right after the "Service started" line is logged is already handled.
-	let shutdown = shutdown_signal()?;
-
 	info!("Service started. Press Ctrl+C or send SIGTERM to shutdown");
 
 	if let Some(metrics_future) = metrics_server {
@@ -475,12 +505,12 @@ async fn main() -> Result<()> {
 			signal = shutdown => {
 				info!("Shutdown signal received ({}), stopping services...", signal);
 			}
-		  result = metrics_future => {
-			if let Err(e) = result {
-			  error!("Metrics server error: {}", e);
+			result = metrics_future => {
+				if let Err(e) = result {
+					error!("Metrics server error: {}", e);
+				}
+				info!("Metrics server stopped, shutting down services...");
 			}
-			info!("Metrics server stopped, shutting down services...");
-		  }
 		}
 	} else {
 		let signal = shutdown.await;

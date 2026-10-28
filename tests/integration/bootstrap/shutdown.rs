@@ -3,12 +3,14 @@
 //! See <https://github.com/OpenZeppelin/openzeppelin-monitor/issues/522>.
 //!
 //! Each test spawns a real `openzeppelin-monitor` subprocess, waits until it
-//! reports readiness, sends it exactly one signal and then asserts that the
-//! process went through the common graceful shutdown path in `main` (exit code
-//! 0 and `"Shutdown complete"` logged). `SIGINT` acts as the positive control,
-//! while `SIGTERM` and `SIGHUP` exercise the bug reported in #522: only
-//! `tokio::signal::ctrl_c()` is registered, so those two signals terminate the
-//! process through the default signal action instead.
+//! reports readiness, signals it and then asserts that the process went through
+//! the common graceful shutdown path in `main` (exit code 0 and
+//! `"Shutdown complete"` logged). The original three tests send one signal each
+//! (`SIGINT`, `SIGTERM`, `SIGHUP`); the fourth sends `SIGHUP` followed by
+//! `SIGTERM`. Before the fix for #522 only `tokio::signal::ctrl_c()` was
+//! registered, so `SIGTERM` and `SIGHUP` terminated the process through the
+//! default signal action; these tests guard against a regression, with `SIGINT`
+//! as the positive control.
 //!
 //! A fourth test starts the process with `SIGHUP` already set to `SIG_IGN`, as
 //! `nohup` does, and checks that the inherited disposition is respected: the
@@ -21,7 +23,8 @@
 //! graceful path through the other `select!` arm and masks the bug.
 //!
 //! Scope: these tests verify only that a termination signal reaches the
-//! graceful shutdown path. They do not spawn trigger scripts and make no
+//! graceful shutdown path, and, in the fourth test, that an inherited ignored
+//! `SIGHUP` disposition is preserved. They do not spawn trigger scripts and make no
 //! assertions about script processes. Script cancellation is covered
 //! separately by the PR #520 tests in `src/services/trigger/script/executor.rs`,
 //! which check that `ProcessGroupGuard` kills a script's whole process group
