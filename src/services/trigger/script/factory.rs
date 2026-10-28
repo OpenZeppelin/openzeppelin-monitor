@@ -47,12 +47,7 @@ impl ScriptExecutorFactory {
 mod tests {
 	use super::*;
 	use crate::{
-		models::{
-			EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, MonitorMatch, ScriptLanguage,
-		},
-		utils::tests::{
-			builders::evm::monitor::MonitorBuilder, evm::transaction::TransactionBuilder,
-		},
+		models::ScriptLanguage, utils::tests::builders::evm::monitor_match::MonitorMatchBuilder,
 	};
 
 	/// Every supported language
@@ -70,21 +65,6 @@ mod tests {
 			.as_any()
 			.downcast_ref::<InterpreterExecutor>()
 			.unwrap_or_else(|| panic!("{:?} should map to InterpreterExecutor", language))
-	}
-
-	fn create_test_monitor_match() -> MonitorMatch {
-		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: MonitorBuilder::new()
-				.name("test_monitor")
-				.networks(vec!["ethereum_mainnet".to_string()])
-				.build(),
-			transaction: TransactionBuilder::new().build(),
-			receipt: Some(EVMTransactionReceipt::default()),
-			logs: Some(vec![]),
-			network_slug: "ethereum_mainnet".to_string(),
-			matched_on: MatchConditions::default(),
-			matched_on_args: None,
-		}))
 	}
 
 	#[test]
@@ -140,7 +120,7 @@ mod tests {
 		for (language, script) in &scripts {
 			let executor = ScriptExecutorFactory::create(language, script, &[]);
 			let result = executor
-				.execute(create_test_monitor_match(), &5000, None, false)
+				.execute(MonitorMatchBuilder::new().build(), &5000, None, false)
 				.await;
 			assert!(
 				matches!(result, Ok(true)),

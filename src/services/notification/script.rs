@@ -87,14 +87,10 @@ impl ScriptExecutor for ScriptNotifier {
 mod tests {
 	use super::*;
 	use crate::{
-		models::{
-			EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, Monitor, MonitorMatch,
-			NotificationMessage, SecretString, SecretValue, TriggerType,
-		},
+		models::{NotificationMessage, SecretString, SecretValue, TriggerType},
 		services::notification::NotificationService,
 		utils::tests::{
-			builders::evm::monitor::MonitorBuilder, evm::transaction::TransactionBuilder,
-			trigger::TriggerBuilder,
+			builders::evm::monitor_match::MonitorMatchBuilder, trigger::TriggerBuilder,
 		},
 	};
 	use std::{collections::HashMap, time::Instant};
@@ -107,32 +103,6 @@ mod tests {
 			runtime_arguments: vec![],
 			timeout_ms: 1000,
 		}
-	}
-
-	fn create_test_monitor(
-		name: &str,
-		networks: Vec<&str>,
-		paused: bool,
-		triggers: Vec<&str>,
-	) -> Monitor {
-		MonitorBuilder::new()
-			.name(name)
-			.networks(networks.into_iter().map(|s| s.to_string()).collect())
-			.paused(paused)
-			.triggers(triggers.into_iter().map(|s| s.to_string()).collect())
-			.build()
-	}
-
-	fn create_test_monitor_match() -> MonitorMatch {
-		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: create_test_monitor("test_monitor", vec!["ethereum_mainnet"], false, vec![]),
-			transaction: TransactionBuilder::new().build(),
-			receipt: Some(EVMTransactionReceipt::default()),
-			logs: Some(vec![]),
-			network_slug: "ethereum_mainnet".to_string(),
-			matched_on: MatchConditions::default(),
-			matched_on_args: None,
-		}))
 	}
 
 	#[test]
@@ -165,7 +135,7 @@ mod tests {
 	async fn test_script_notify_with_valid_script() {
 		let config = create_test_script_config();
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
-		let monitor_match = create_test_monitor_match();
+		let monitor_match = MonitorMatchBuilder::new().build();
 		let script_content = (ScriptLanguage::Python, "print(True)".to_string());
 
 		let result = notifier
@@ -184,7 +154,7 @@ mod tests {
 			timeout_ms: 1000, // Timeout longer than sleep time
 		};
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
-		let monitor_match = create_test_monitor_match();
+		let monitor_match = MonitorMatchBuilder::new().build();
 
 		let script_content = (
 			ScriptLanguage::Python,
@@ -214,7 +184,7 @@ mod tests {
 			timeout_ms: 400, // Set timeout lower than the sleep time
 		};
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
-		let monitor_match = create_test_monitor_match();
+		let monitor_match = MonitorMatchBuilder::new().build();
 
 		let script_content = (
 			ScriptLanguage::Python,
@@ -240,7 +210,7 @@ mod tests {
 	async fn test_script_notify_with_invalid_script() {
 		let config = create_test_script_config();
 		let notifier = ScriptNotifier::from_config(&config).unwrap();
-		let monitor_match = create_test_monitor_match();
+		let monitor_match = MonitorMatchBuilder::new().build();
 		let script_content = (ScriptLanguage::Python, "invalid syntax".to_string());
 
 		let result = notifier
@@ -269,7 +239,7 @@ mod tests {
         .build();
 
 		let variables = HashMap::new();
-		let monitor_match = create_test_monitor_match();
+		let monitor_match = MonitorMatchBuilder::new().build();
 		let trigger_scripts = HashMap::new(); // Empty map, so script won't be found
 
 		let result = service

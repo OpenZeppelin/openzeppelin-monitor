@@ -9,6 +9,7 @@ pub mod builders {
 	// Chain specific test helpers
 	pub mod evm {
 		pub mod monitor;
+		pub mod monitor_match;
 		pub mod receipt;
 		pub mod transaction;
 	}
