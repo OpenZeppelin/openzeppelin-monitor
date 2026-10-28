@@ -10,6 +10,11 @@
 //! `tokio::signal::ctrl_c()` is registered, so those two signals terminate the
 //! process through the default signal action instead.
 //!
+//! A fourth test starts the process with `SIGHUP` already set to `SIG_IGN`, as
+//! `nohup` does, and checks that the inherited disposition is respected: the
+//! service must keep running on `SIGHUP` and still shut down gracefully on
+//! `SIGTERM`.
+//!
 //! The metrics server is deliberately disabled (`METRICS_ENABLED=false`, no
 //! `--metrics` flag): Actix installs its own `SIGINT`/`SIGTERM`/`SIGQUIT`
 //! handlers and would resolve the metrics future on `SIGTERM`, which enters the
@@ -45,6 +50,8 @@ use crate::integration::mocks::create_evm_valid_server_mock_network_response;
 
 /// Prefix of the log line that marks the service as ready to receive signals.
 const READINESS_MARKER: &str = "Service started";
+/// Log line emitted when a signal enters the graceful shutdown path.
+const SHUTDOWN_SIGNAL_MARKER: &str = "Shutdown signal received";
 /// Log line emitted at the end of the common graceful shutdown path.
 const SHUTDOWN_COMPLETE_MARKER: &str = "Shutdown complete";
 
@@ -53,6 +60,10 @@ const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const PRE_SIGNAL_GRACE: Duration = Duration::from_millis(250);
+/// How long a child that must *ignore* a signal is watched before concluding it
+/// survived. Longer than the 1 s sleep in the graceful path, so a wrongly
+/// handled signal has time to exit fully and leave a clear failure signature.
+const OBSERVATION_WINDOW: Duration = Duration::from_secs(3);
 
 type OutputBuffer = Arc<Mutex<Vec<String>>>;
 
@@ -194,19 +205,121 @@ fn send_signal(child: &Child, signal: libc::c_int) {
 	}
 }
 
-/// Spawns the monitor binary against a mocked RPC endpoint, waits until it is
-/// ready, sends `signal` once and returns the exit status and captured output.
-async fn run_monitor_and_signal(signal: libc::c_int) -> ChildOutcome {
+/// A spawned monitor that has logged readiness and is waiting for a signal.
+///
+/// Owns every resource the child depends on, so nothing is dropped before
+/// [`RunningMonitor::finish`] has reaped the process and drained its output.
+struct RunningMonitor {
+	started: Instant,
+	child: Child,
+	stdout_buf: OutputBuffer,
+	stderr_buf: OutputBuffer,
+	stdout_task: JoinHandle<()>,
+	stderr_task: JoinHandle<()>,
+	/// Kept alive until the end of the test so the config tree outlives the child.
+	temp_dir: tempfile::TempDir,
+	/// The `net_version` mock must outlive the child's RPC probe.
+	_net_version_mock: mockito::Mock,
+	_server: mockito::ServerGuard,
+}
+
+impl RunningMonitor {
+	/// Kills the child and drains the readers so a panic can include all output.
+	async fn kill_and_drain(&mut self) {
+		kill_and_reap(&mut self.child).await;
+		drain_readers(&mut self.stdout_task, &mut self.stderr_task).await;
+	}
+
+	fn output_snapshot(&self) -> String {
+		format!(
+			"--- stdout ---\n{}\n--- stderr ---\n{}",
+			snapshot(&self.stdout_buf),
+			snapshot(&self.stderr_buf),
+		)
+	}
+
+	/// Waits for the child to exit after `signal` was sent, joins the reader
+	/// tasks and returns the exit status together with the captured output.
+	async fn finish(mut self, signal: libc::c_int) -> ChildOutcome {
+		let status = match tokio::time::timeout(EXIT_TIMEOUT, self.child.wait()).await {
+			Ok(Ok(status)) => status,
+			Ok(Err(e)) => {
+				self.kill_and_drain().await;
+				panic!(
+					"failed to wait for child after signal {signal}: {e}\n{}",
+					self.output_snapshot(),
+				);
+			}
+			Err(_) => {
+				self.kill_and_drain().await;
+				panic!(
+					"child did not exit within {EXIT_TIMEOUT:?} after signal {signal}\n{}",
+					self.output_snapshot(),
+				);
+			}
+		};
+
+		// The child is gone, so both pipes reach EOF and the readers finish promptly.
+		// Await them before inspecting the buffers, otherwise trailing output (such
+		// as the final "Shutdown complete" line) could still be in flight.
+		let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
+			let (a, b) = tokio::join!(&mut self.stdout_task, &mut self.stderr_task);
+			a.and(b)
+		})
+		.await;
+		match drained {
+			Ok(Ok(())) => {}
+			Ok(Err(e)) => panic!(
+				"output reader task panicked: {e}\n{}",
+				self.output_snapshot(),
+			),
+			Err(_) => panic!(
+				"output reader tasks did not finish within {DRAIN_TIMEOUT:?} after child exit\n{}",
+				self.output_snapshot(),
+			),
+		}
+
+		let stdout = self
+			.stdout_buf
+			.lock()
+			.expect("output buffer poisoned")
+			.clone();
+		let stderr = self
+			.stderr_buf
+			.lock()
+			.expect("output buffer poisoned")
+			.clone();
+
+		drop(self.temp_dir);
+
+		ChildOutcome {
+			status,
+			stdout,
+			stderr,
+			wall_time: self.started.elapsed(),
+		}
+	}
+}
+
+/// Spawns the monitor binary against a mocked RPC endpoint and waits until it
+/// is ready to receive signals.
+///
+/// The child's `SIGHUP` disposition is always set explicitly between `fork` and
+/// `exec`, so the tests do not depend on what the test runner inherited (for
+/// example under `nohup cargo test`): `SIG_IGN` when `ignore_sighup` is true,
+/// exactly as it would be under `nohup`, and `SIG_DFL` otherwise. Ignored
+/// dispositions are inherited across `exec`; handlers are reset to default.
+async fn start_monitor(ignore_sighup: bool) -> RunningMonitor {
 	let started = Instant::now();
 
 	let mut server = Server::new_async().await;
-	let _net_version_mock = create_evm_valid_server_mock_network_response(&mut server);
+	let net_version_mock = create_evm_valid_server_mock_network_response(&mut server);
 
-	// Kept alive until the end of the test so the config tree outlives the child.
 	let temp_dir = tempfile::TempDir::new().expect("failed to create temp dir");
 	write_minimal_config(temp_dir.path(), &server.url());
 
-	let mut child = Command::new(env!("CARGO_BIN_EXE_openzeppelin-monitor"))
+	let mut command = Command::new(env!("CARGO_BIN_EXE_openzeppelin-monitor"));
+	command
 		.current_dir(temp_dir.path())
 		.env("LOG_MODE", "stdout")
 		.env("LOG_LEVEL", "info")
@@ -216,7 +329,31 @@ async fn run_monitor_and_signal(signal: libc::c_int) -> ChildOutcome {
 		.stdin(Stdio::null())
 		.stdout(Stdio::piped())
 		.stderr(Stdio::piped())
-		.kill_on_drop(true)
+		.kill_on_drop(true);
+
+	// SAFETY: the closure runs in the forked child before `exec`, where only
+	// async-signal-safe operations are allowed. It captures only the `bool` and
+	// performs no allocation, locking or logging: a zeroed `sigaction` on the
+	// stack, `sigemptyset`, `sigaction` and `io::Error::last_os_error()` are all
+	// permitted there. The disposition is set explicitly in both fixture modes
+	// (`SIG_IGN` or `SIG_DFL`) so nothing is inherited from the test runner.
+	unsafe {
+		command.pre_exec(move || {
+			let mut action: libc::sigaction = std::mem::zeroed();
+			action.sa_sigaction = if ignore_sighup {
+				libc::SIG_IGN
+			} else {
+				libc::SIG_DFL
+			};
+			libc::sigemptyset(&mut action.sa_mask);
+			if libc::sigaction(libc::SIGHUP, &action, std::ptr::null_mut()) == -1 {
+				return Err(std::io::Error::last_os_error());
+			}
+			Ok(())
+		});
+	}
+
+	let mut child = command
 		.spawn()
 		.expect("failed to spawn openzeppelin-monitor");
 
@@ -224,16 +361,28 @@ async fn run_monitor_and_signal(signal: libc::c_int) -> ChildOutcome {
 	let stderr_buf: OutputBuffer = Arc::default();
 	let (stdout_tx, mut stdout_rx) = mpsc::unbounded_channel::<String>();
 
-	let mut stdout_task = spawn_reader(
+	let stdout_task = spawn_reader(
 		child.stdout.take().expect("stdout not piped"),
 		Arc::clone(&stdout_buf),
 		Some(stdout_tx),
 	);
-	let mut stderr_task = spawn_reader(
+	let stderr_task = spawn_reader(
 		child.stderr.take().expect("stderr not piped"),
 		Arc::clone(&stderr_buf),
 		None,
 	);
+
+	let mut monitor = RunningMonitor {
+		started,
+		child,
+		stdout_buf,
+		stderr_buf,
+		stdout_task,
+		stderr_task,
+		temp_dir,
+		_net_version_mock: net_version_mock,
+		_server: server,
+	};
 
 	// Wait for readiness: the first stdout line containing the marker prefix.
 	let readiness = tokio::time::timeout(READINESS_TIMEOUT, async {
@@ -250,21 +399,17 @@ async fn run_monitor_and_signal(signal: libc::c_int) -> ChildOutcome {
 	match readiness {
 		Ok(true) => {}
 		Ok(false) => {
-			kill_and_reap(&mut child).await;
-			drain_readers(&mut stdout_task, &mut stderr_task).await;
+			monitor.kill_and_drain().await;
 			panic!(
-				"child stdout closed before readiness marker {READINESS_MARKER:?} appeared\n--- stdout ---\n{}\n--- stderr ---\n{}",
-				snapshot(&stdout_buf),
-				snapshot(&stderr_buf),
+				"child stdout closed before readiness marker {READINESS_MARKER:?} appeared\n{}",
+				monitor.output_snapshot(),
 			);
 		}
 		Err(_) => {
-			kill_and_reap(&mut child).await;
-			drain_readers(&mut stdout_task, &mut stderr_task).await;
+			monitor.kill_and_drain().await;
 			panic!(
-				"timed out after {READINESS_TIMEOUT:?} waiting for readiness marker {READINESS_MARKER:?}\n--- stdout ---\n{}\n--- stderr ---\n{}",
-				snapshot(&stdout_buf),
-				snapshot(&stderr_buf),
+				"timed out after {READINESS_TIMEOUT:?} waiting for readiness marker {READINESS_MARKER:?}\n{}",
+				monitor.output_snapshot(),
 			);
 		}
 	}
@@ -274,63 +419,15 @@ async fn run_monitor_and_signal(signal: libc::c_int) -> ChildOutcome {
 	// the fix registers eagerly, so this grace period is now belt and braces.
 	tokio::time::sleep(PRE_SIGNAL_GRACE).await;
 
-	send_signal(&child, signal);
+	monitor
+}
 
-	let status = match tokio::time::timeout(EXIT_TIMEOUT, child.wait()).await {
-		Ok(Ok(status)) => status,
-		Ok(Err(e)) => {
-			kill_and_reap(&mut child).await;
-			drain_readers(&mut stdout_task, &mut stderr_task).await;
-			panic!(
-				"failed to wait for child after signal {signal}: {e}\n--- stdout ---\n{}\n--- stderr ---\n{}",
-				snapshot(&stdout_buf),
-				snapshot(&stderr_buf),
-			);
-		}
-		Err(_) => {
-			kill_and_reap(&mut child).await;
-			drain_readers(&mut stdout_task, &mut stderr_task).await;
-			panic!(
-				"child did not exit within {EXIT_TIMEOUT:?} after signal {signal}\n--- stdout ---\n{}\n--- stderr ---\n{}",
-				snapshot(&stdout_buf),
-				snapshot(&stderr_buf),
-			);
-		}
-	};
-
-	// The child is gone, so both pipes reach EOF and the readers finish promptly.
-	// Await them before inspecting the buffers, otherwise trailing output (such
-	// as the final "Shutdown complete" line) could still be in flight.
-	let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
-		let (a, b) = tokio::join!(stdout_task, stderr_task);
-		a.and(b)
-	})
-	.await;
-	match drained {
-		Ok(Ok(())) => {}
-		Ok(Err(e)) => panic!(
-			"output reader task panicked: {e}\n--- stdout ---\n{}\n--- stderr ---\n{}",
-			snapshot(&stdout_buf),
-			snapshot(&stderr_buf),
-		),
-		Err(_) => panic!(
-			"output reader tasks did not finish within {DRAIN_TIMEOUT:?} after child exit\n--- stdout ---\n{}\n--- stderr ---\n{}",
-			snapshot(&stdout_buf),
-			snapshot(&stderr_buf),
-		),
-	}
-
-	let stdout = stdout_buf.lock().expect("output buffer poisoned").clone();
-	let stderr = stderr_buf.lock().expect("output buffer poisoned").clone();
-
-	drop(temp_dir);
-
-	ChildOutcome {
-		status,
-		stdout,
-		stderr,
-		wall_time: started.elapsed(),
-	}
+/// Spawns the monitor binary against a mocked RPC endpoint, waits until it is
+/// ready, sends `signal` once and returns the exit status and captured output.
+async fn run_monitor_and_signal(signal: libc::c_int) -> ChildOutcome {
+	let monitor = start_monitor(false).await;
+	send_signal(&monitor.child, signal);
+	monitor.finish(signal).await
 }
 
 fn assert_graceful_shutdown(signal_name: &str, outcome: &ChildOutcome) {
@@ -366,4 +463,58 @@ async fn test_sighup_triggers_graceful_shutdown() {
 async fn test_sigint_triggers_graceful_shutdown() {
 	let outcome = run_monitor_and_signal(libc::SIGINT).await;
 	assert_graceful_shutdown("SIGINT", &outcome);
+}
+
+/// A `SIG_IGN` disposition inherited at startup (the `nohup` convention) must be
+/// respected: `SIGHUP` keeps the service running, `SIGTERM` still shuts it down.
+#[tokio::test]
+async fn test_sighup_ignored_at_startup_stays_ignored() {
+	let mut monitor = start_monitor(true).await;
+
+	send_signal(&monitor.child, libc::SIGHUP);
+
+	// `Child::wait()` is cancel safe: an elapsed timeout leaves the child untouched
+	// and `finish` can wait on it again.
+	match tokio::time::timeout(OBSERVATION_WINDOW, monitor.child.wait()).await {
+		Err(_) => {
+			// The child survived the whole window. Also rule out a SIGHUP-initiated
+			// shutdown that merely outlasted the window, so that the graceful exit
+			// asserted below can only be the SIGTERM's.
+			let shutdown_started = monitor
+				.stdout_buf
+				.lock()
+				.expect("output buffer poisoned")
+				.iter()
+				.any(|line| line.contains(SHUTDOWN_SIGNAL_MARKER));
+			if shutdown_started {
+				monitor.kill_and_drain().await;
+				panic!(
+					"SIGHUP was SIG_IGN at startup but the child logged {SHUTDOWN_SIGNAL_MARKER:?} \
+					 within {OBSERVATION_WINDOW:?} instead of ignoring it\n{}",
+					monitor.output_snapshot(),
+				);
+			}
+		}
+		Ok(Ok(status)) => {
+			monitor.kill_and_drain().await;
+			panic!(
+				"SIGHUP was SIG_IGN at startup but the child exited within {OBSERVATION_WINDOW:?} \
+				 instead of ignoring it: status={status:?} code={:?} signal={:?}\n{}",
+				status.code(),
+				status.signal(),
+				monitor.output_snapshot(),
+			);
+		}
+		Ok(Err(e)) => {
+			monitor.kill_and_drain().await;
+			panic!(
+				"failed to wait for child after SIGHUP: {e}\n{}",
+				monitor.output_snapshot(),
+			);
+		}
+	}
+
+	send_signal(&monitor.child, libc::SIGTERM);
+	let outcome = monitor.finish(libc::SIGTERM).await;
+	assert_graceful_shutdown("SIGTERM after ignored SIGHUP", &outcome);
 }
