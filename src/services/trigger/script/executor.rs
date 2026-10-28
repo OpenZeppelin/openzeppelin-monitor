@@ -1604,7 +1604,7 @@ sys.exit(1)
 				assert!(
 					e.to_string()
 						.contains("Script execution failed: This is a python test error message!"),
-					"got: {e}"
+					"unexpected error: {e}"
 				);
 			}
 			_ => panic!("Expected ExecutionError"),
@@ -1644,7 +1644,7 @@ sys.exit(1)
 				assert!(
 					e.to_string()
 						.contains("Script execution failed: This is a JS test error message!"),
-					"got: {e}"
+					"unexpected error: {e}"
 				);
 			}
 			_ => panic!("Expected ExecutionError"),
@@ -1671,7 +1671,7 @@ exit 1
 				assert!(
 					e.to_string()
 						.contains("Script execution failed: This is a bash test error message!"),
-					"got: {e}"
+					"unexpected error: {e}"
 				);
 			}
 			_ => panic!("Expected ExecutionError"),
