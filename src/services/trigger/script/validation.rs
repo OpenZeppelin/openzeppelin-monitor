@@ -37,13 +37,7 @@ pub fn validate_script_config(
 		.and_then(|ext| ext.to_str())
 		.unwrap_or("");
 
-	let valid_extension = match language {
-		ScriptLanguage::Python => extension == "py",
-		ScriptLanguage::JavaScript => extension == "js",
-		ScriptLanguage::Bash => extension == "sh",
-	};
-
-	if !valid_extension {
+	if extension != language.extension() {
 		return Err(ConfigError::validation_error(
 			format!(
 				"Script file extension does not match specified language {:?}: {}",

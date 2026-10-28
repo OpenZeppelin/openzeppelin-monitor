@@ -86,6 +86,7 @@ pub use blockchain::solana::{
 };
 
 // Re-export core types
+#[allow(deprecated)]
 pub use core::{
 	AddressWithSpec, BlockRecoveryConfig, EventCondition, FunctionCondition, MatchConditions,
 	MaxPastBlocks, Monitor, Network, NotificationMessage, RpcUrl, ScriptLanguage,

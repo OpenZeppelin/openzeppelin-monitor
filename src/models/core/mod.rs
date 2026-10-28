@@ -9,6 +9,7 @@ mod monitor;
 mod network;
 mod trigger;
 
+#[allow(deprecated)]
 pub use monitor::{
 	AddressWithSpec, EventCondition, FunctionCondition, MatchConditions, Monitor, ScriptLanguage,
 	TransactionCondition, TransactionStatus, TriggerConditions, SCRIPT_LANGUAGE_EXTENSIONS,

@@ -143,6 +143,7 @@ pub enum ScriptLanguage {
 ///
 /// Kept for compatibility; the extensions come from [`ScriptLanguage::extension`],
 /// which is the source of truth and is checked for exhaustiveness by the compiler.
+#[deprecated(note = "use ScriptLanguage::extension")]
 pub const SCRIPT_LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
 	(&ScriptLanguage::Python, ScriptLanguage::Python.extension()),
 	(
@@ -194,6 +195,7 @@ mod tests {
 	}
 
 	#[test]
+	#[allow(deprecated)]
 	fn test_script_language_extensions_match_extension() {
 		assert_eq!(SCRIPT_LANGUAGE_EXTENSIONS.len(), 3);
 		for (language, extension) in SCRIPT_LANGUAGE_EXTENSIONS {
