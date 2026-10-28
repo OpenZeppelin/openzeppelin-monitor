@@ -419,7 +419,6 @@ mod tests {
 		}))
 	}
 
-	// Keep the old function name for backward compatibility
 	#[tokio::test]
 	async fn test_slack_notification_invalid_config() {
 		let service = NotificationService::new();

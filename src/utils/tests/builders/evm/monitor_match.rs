@@ -14,7 +14,7 @@ use crate::{
 ///
 /// Defaults to a match on `ethereum_mainnet` for a monitor built with
 /// [`MonitorBuilder`], a transaction built with [`TransactionBuilder`], a
-/// default receipt, no logs and no matched conditions.
+/// default receipt, empty logs and no matched conditions.
 pub struct MonitorMatchBuilder {
 	monitor: Monitor,
 	transaction: EVMTransaction,
