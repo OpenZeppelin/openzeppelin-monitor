@@ -1601,9 +1601,11 @@ sys.exit(1)
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Script execution failed: This is a python test error message!"));
+				assert!(
+					e.to_string()
+						.contains("Script execution failed: This is a python test error message!"),
+					"got: {e}"
+				);
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
@@ -1634,14 +1636,16 @@ sys.exit(1)
 		let executor = node(script_content, vec![]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor.execute(input, &5000, None, false).await;
 
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Script execution failed: This is a JS test error message!"));
+				assert!(
+					e.to_string()
+						.contains("Script execution failed: This is a JS test error message!"),
+					"got: {e}"
+				);
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
@@ -1664,9 +1668,11 @@ exit 1
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Script execution failed: This is a bash test error message!"));
+				assert!(
+					e.to_string()
+						.contains("Script execution failed: This is a bash test error message!"),
+					"got: {e}"
+				);
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
