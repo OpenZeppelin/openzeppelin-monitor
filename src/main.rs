@@ -29,7 +29,7 @@ use crate::{
 		create_block_handler, create_trigger_handler, get_contract_specs, has_active_monitors,
 		initialize_services, Result,
 	},
-	models::{BlockChainType, Network, ScriptLanguage},
+	models::{BlockChainType, Monitor, Network, ScriptLanguage},
 	repositories::{
 		MonitorRepository, MonitorService, NetworkRepository, NetworkService, TriggerRepository,
 	},
@@ -58,7 +58,7 @@ use std::env::{set_var, var};
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
 use tokio_cron_scheduler::JobScheduler;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 type MonitorServiceType = MonitorService<
 	MonitorRepository<NetworkRepository, TriggerRepository>,
@@ -204,7 +204,9 @@ async fn main() -> Result<()> {
 
 	// If --check flag is provided, only validate configuration and exit
 	if cli.check {
-		validate_configuration().await;
+		if validate_configuration().await.is_err() {
+			std::process::exit(1);
+		}
 		return Ok(());
 	}
 
@@ -754,7 +756,11 @@ async fn test_monitor_execution(config: MonitorExecutionTestConfig) -> Result<()
 }
 
 /// Validates configuration files and their structure
-async fn validate_configuration() {
+///
+/// # Errors
+/// Returns an error if the services fail to initialize or if the trigger scripts of the active
+/// monitors can't be read, both of which also stop startup. Each case is logged.
+async fn validate_configuration() -> Result<()> {
 	info!("Validating configuration files...");
 
 	// Initialize services in validation mode to check configurations
@@ -765,42 +771,228 @@ async fn validate_configuration() {
 	>(None, None, None)
 	.await
 	{
-		Ok((_, _, active_monitors, networks, _, _, _)) => {
+		Ok((_, trigger_execution_service, active_monitors, networks, _, _, _)) => {
 			info!("✓ Core services initialized successfully");
-
-			// Check if we have any monitors configured
-			if active_monitors.is_empty() {
-				error!("No active monitors found. Please refer to the documentation quickstart ({}) for configuration setup.", DOCUMENTATION_URL);
-				return;
-			}
-			info!("✓ Found {} active monitor(s)", active_monitors.len());
-
-			// Check if we have any networks with active monitors
-			let networks_with_monitors: Vec<&Network> = networks
-				.values()
-				.filter(|network| has_active_monitors(&active_monitors, &network.slug))
-				.collect();
-
-			if networks_with_monitors.is_empty() {
-				error!("No networks with active monitors found. Please refer to the documentation quickstart ({}) for network configuration.", DOCUMENTATION_URL);
-				return;
-			}
-			info!(
-				"✓ Found {} network(s) with active monitors",
-				networks_with_monitors.len()
-			);
-
-			info!("Configuration validation completed successfully!");
+			check_loaded_configuration(&*trigger_execution_service, &active_monitors, &networks)
+				.await
 		}
 		Err(e) => {
 			error!("{}.\nPlease refer to the documentation quickstart ({}) for proper configuration setup.", e, DOCUMENTATION_URL);
+			Err(e)
 		}
 	}
+}
+
+/// Runs the checks startup makes once the services are initialized
+///
+/// # Errors
+/// Returns an error if the trigger scripts of the active monitors can't be loaded, which
+/// stops startup. No active monitor, or no network with one, is only a warning, since
+/// startup then exits with success.
+async fn check_loaded_configuration<T: TriggerExecutionServiceTrait>(
+	trigger_execution_service: &T,
+	active_monitors: &[Monitor],
+	networks: &HashMap<String, Network>,
+) -> Result<()> {
+	if let Err(e) = trigger_execution_service
+		.load_scripts(active_monitors)
+		.await
+	{
+		error!("{}.\nPlease refer to the documentation quickstart ({}) for proper configuration setup.", e, DOCUMENTATION_URL);
+		return Err(e.into());
+	}
+
+	if check_active_monitors(active_monitors, networks) {
+		info!("Configuration validation completed successfully!");
+	}
+	Ok(())
+}
+
+/// Checks that at least one monitor is active and that at least one network has an active
+/// monitor, logging a warning when not
+///
+/// Returns true if at least one network has an active monitor.
+fn check_active_monitors(active_monitors: &[Monitor], networks: &HashMap<String, Network>) -> bool {
+	// Check if we have any monitors configured
+	if active_monitors.is_empty() {
+		warn!("No active monitors found. Please refer to the documentation quickstart ({}) for configuration setup.", DOCUMENTATION_URL);
+		return false;
+	}
+	info!("✓ Found {} active monitor(s)", active_monitors.len());
+
+	// Check if we have any networks with active monitors
+	let networks_with_monitors: Vec<&Network> = networks
+		.values()
+		.filter(|network| has_active_monitors(active_monitors, &network.slug))
+		.collect();
+
+	if networks_with_monitors.is_empty() {
+		warn!("No networks with active monitors found. Please refer to the documentation quickstart ({}) for network configuration.", DOCUMENTATION_URL);
+		return false;
+	}
+	info!(
+		"✓ Found {} network(s) with active monitors",
+		networks_with_monitors.len()
+	);
+	true
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::{
+		models::Trigger,
+		repositories::TriggerService,
+		services::notification::NotificationService,
+		utils::tests::builders::{
+			evm::monitor::MonitorBuilder, network::NetworkBuilder, trigger::TriggerBuilder,
+		},
+	};
+	use tracing_test::traced_test;
+
+	fn networks(slugs: &[&str]) -> HashMap<String, Network> {
+		slugs
+			.iter()
+			.map(|slug| (slug.to_string(), NetworkBuilder::new().slug(slug).build()))
+			.collect()
+	}
+
+	fn trigger_execution_service(
+		triggers: Vec<Trigger>,
+	) -> TriggerExecutionService<TriggerRepository> {
+		let triggers = triggers
+			.into_iter()
+			.map(|trigger| (trigger.name.clone(), trigger))
+			.collect();
+		let trigger_service =
+			TriggerService::new_with_repository(TriggerRepository { triggers }).unwrap();
+		TriggerExecutionService::new(trigger_service, NotificationService::new())
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_check_active_monitors_warns_without_active_monitors() {
+		assert!(!check_active_monitors(
+			&[],
+			&networks(&["ethereum_mainnet"])
+		));
+		assert!(logs_contain("No active monitors found"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_check_active_monitors_warns_without_a_network_for_them() {
+		let monitor = MonitorBuilder::new()
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.build();
+		assert!(!check_active_monitors(&[monitor], &networks(&["sepolia"])));
+		assert!(logs_contain("No networks with active monitors found"));
+	}
+
+	#[test]
+	fn test_check_active_monitors_passes_with_a_network_for_a_monitor() {
+		let monitor = MonitorBuilder::new()
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.build();
+		assert!(check_active_monitors(
+			&[monitor],
+			&networks(&["ethereum_mainnet", "sepolia"])
+		));
+	}
+
+	#[tokio::test]
+	#[traced_test]
+	async fn test_check_loaded_configuration_passes_without_active_monitors() {
+		let result = check_loaded_configuration(
+			&trigger_execution_service(vec![]),
+			&[],
+			&networks(&["ethereum_mainnet"]),
+		)
+		.await;
+		assert!(result.is_ok());
+		assert!(logs_contain("No active monitors found"));
+		assert!(!logs_contain(
+			"Configuration validation completed successfully!"
+		));
+	}
+
+	#[tokio::test]
+	async fn test_check_loaded_configuration_passes_with_readable_scripts() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let script_path = temp_dir.path().join("notify.py");
+		std::fs::write(&script_path, "print(True)").unwrap();
+		let trigger = TriggerBuilder::new()
+			.name("notify")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Python)
+			.build();
+		let monitor = MonitorBuilder::new()
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.triggers(vec!["notify".to_string()])
+			.build();
+
+		let result = check_loaded_configuration(
+			&trigger_execution_service(vec![trigger]),
+			&[monitor],
+			&networks(&["ethereum_mainnet"]),
+		)
+		.await;
+		assert!(result.is_ok());
+	}
+
+	#[tokio::test]
+	#[cfg(unix)] // Unix permissions make the script unreadable
+	async fn test_check_loaded_configuration_fails_with_an_unreadable_trigger_script() {
+		use std::os::unix::fs::PermissionsExt;
+
+		let temp_dir = tempfile::tempdir().unwrap();
+		let script_path = temp_dir.path().join("notify.py");
+		std::fs::write(&script_path, "print(True)").unwrap();
+		std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+		let trigger = TriggerBuilder::new()
+			.name("notify")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Python)
+			.build();
+		let monitor = MonitorBuilder::new()
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.triggers(vec!["notify".to_string()])
+			.build();
+
+		let result = check_loaded_configuration(
+			&trigger_execution_service(vec![trigger]),
+			&[monitor],
+			&networks(&["ethereum_mainnet"]),
+		)
+		.await;
+
+		std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+		let error = result.unwrap_err();
+		assert!(error.to_string().contains("Failed to read script file"));
+	}
+
+	#[tokio::test]
+	async fn test_check_loaded_configuration_fails_with_a_non_utf8_filter_script() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let script_path = temp_dir.path().join("filter.py");
+		std::fs::write(&script_path, [0x70, 0x72, 0xff, 0xfe, 0x0a]).unwrap();
+		let monitor = MonitorBuilder::new()
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Python,
+				None,
+			)
+			.build();
+
+		let result = check_loaded_configuration(
+			&trigger_execution_service(vec![]),
+			&[monitor],
+			&networks(&["ethereum_mainnet"]),
+		)
+		.await;
+		let error = result.unwrap_err();
+		assert!(error.to_string().contains("Failed to read script file"));
+	}
 
 	#[tokio::test]
 	async fn test_monitor_execution_without_network_slug_with_block_number() {
