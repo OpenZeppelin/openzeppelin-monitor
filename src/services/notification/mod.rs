@@ -361,14 +361,12 @@ mod tests {
 	use super::*;
 	use crate::{
 		models::{
-			AddressWithSpec, EVMMonitorMatch, EVMTransactionReceipt, EventCondition,
-			FunctionCondition, MatchConditions, Monitor, MonitorMatch, NotificationMessage,
-			ScriptLanguage, SecretString, SecretValue, SolanaMonitorMatch, TransactionCondition,
-			TriggerType,
+			AddressWithSpec, EventCondition, FunctionCondition, MatchConditions, Monitor,
+			MonitorMatch, NotificationMessage, ScriptLanguage, SecretString, SecretValue,
+			SolanaMonitorMatch, TransactionCondition, TriggerType,
 		},
 		utils::tests::builders::{
-			evm::monitor::MonitorBuilder as EVMMonitorBuilder,
-			evm::transaction::TransactionBuilder as EVMTransactionBuilder,
+			evm::monitor_match::MonitorMatchBuilder,
 			solana::block::BlockBuilder as SolanaBlockBuilder,
 			solana::monitor::MonitorBuilder as SolanaMonitorBuilder,
 			solana::transaction::TransactionBuilder as SolanaTransactionBuilder,
@@ -376,35 +374,6 @@ mod tests {
 		},
 	};
 	use std::collections::HashMap;
-
-	fn create_test_evm_monitor(
-		event_conditions: Vec<EventCondition>,
-		function_conditions: Vec<FunctionCondition>,
-		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithSpec>,
-	) -> Monitor {
-		let mut builder = EVMMonitorBuilder::new()
-			.name("test")
-			.networks(vec!["evm_mainnet".to_string()]);
-
-		// Add all conditions
-		for event in event_conditions {
-			builder = builder.event(&event.signature, event.expression);
-		}
-		for function in function_conditions {
-			builder = builder.function(&function.signature, function.expression);
-		}
-		for transaction in transaction_conditions {
-			builder = builder.transaction(transaction.status, transaction.expression);
-		}
-
-		// Add addresses
-		for addr in addresses {
-			builder = builder.address(&addr.address);
-		}
-
-		builder.build()
-	}
 
 	fn create_test_solana_monitor(
 		event_conditions: Vec<EventCondition>,
@@ -435,22 +404,6 @@ mod tests {
 		builder.build()
 	}
 
-	fn create_mock_evm_monitor_match() -> MonitorMatch {
-		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: create_test_evm_monitor(vec![], vec![], vec![], vec![]),
-			transaction: EVMTransactionBuilder::new().build(),
-			receipt: Some(EVMTransactionReceipt::default()),
-			logs: Some(vec![]),
-			network_slug: "evm_mainnet".to_string(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}))
-	}
-
 	fn create_mock_solana_monitor_match() -> MonitorMatch {
 		MonitorMatch::Solana(Box::new(SolanaMonitorMatch {
 			monitor: create_test_solana_monitor(vec![], vec![], vec![], vec![]),
@@ -467,10 +420,6 @@ mod tests {
 	}
 
 	// Keep the old function name for backward compatibility
-	fn create_mock_monitor_match() -> MonitorMatch {
-		create_mock_evm_monitor_match()
-	}
-
 	#[tokio::test]
 	async fn test_slack_notification_invalid_config() {
 		let service = NotificationService::new();
@@ -486,7 +435,7 @@ mod tests {
 			.execute(
 				&trigger,
 				&variables,
-				&create_mock_monitor_match(),
+				&MonitorMatchBuilder::new().build(),
 				&HashMap::new(),
 			)
 			.await;
@@ -516,7 +465,7 @@ mod tests {
 			.execute(
 				&trigger,
 				&variables,
-				&create_mock_monitor_match(),
+				&MonitorMatchBuilder::new().build(),
 				&HashMap::new(),
 			)
 			.await;
@@ -544,7 +493,7 @@ mod tests {
 			.execute(
 				&trigger,
 				&variables,
-				&create_mock_monitor_match(),
+				&MonitorMatchBuilder::new().build(),
 				&HashMap::new(),
 			)
 			.await;
@@ -574,7 +523,7 @@ mod tests {
 			.execute(
 				&trigger,
 				&variables,
-				&create_mock_monitor_match(),
+				&MonitorMatchBuilder::new().build(),
 				&HashMap::new(),
 			)
 			.await;
@@ -604,7 +553,7 @@ mod tests {
 			.execute(
 				&trigger,
 				&variables,
-				&create_mock_monitor_match(),
+				&MonitorMatchBuilder::new().build(),
 				&HashMap::new(),
 			)
 			.await;
@@ -635,7 +584,7 @@ mod tests {
 			.execute(
 				&trigger,
 				&variables,
-				&create_mock_monitor_match(),
+				&MonitorMatchBuilder::new().build(),
 				&HashMap::new(),
 			)
 			.await;

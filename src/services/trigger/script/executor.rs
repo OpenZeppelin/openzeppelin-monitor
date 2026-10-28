@@ -300,15 +300,7 @@ async fn process_command(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		models::{
-			AddressWithSpec, EVMMonitorMatch, EVMReceiptLog, EventCondition, FunctionCondition,
-			MatchConditions, Monitor, MonitorMatch, ScriptLanguage, TransactionCondition,
-		},
-		utils::tests::evm::{
-			monitor::MonitorBuilder, receipt::ReceiptBuilder, transaction::TransactionBuilder,
-		},
-	};
+	use crate::{models::ScriptLanguage, utils::tests::evm::monitor_match::MonitorMatchBuilder};
 	use std::{fs, path::Path, time::Instant};
 
 	fn read_fixture(filename: &str) -> String {
@@ -348,57 +340,6 @@ mod tests {
 		interpreter(program, eval_flag, script, runtime_arguments)
 	}
 
-	/// Creates a test monitor with customizable parameters
-	fn create_test_monitor(
-		event_conditions: Vec<EventCondition>,
-		function_conditions: Vec<FunctionCondition>,
-		transaction_conditions: Vec<TransactionCondition>,
-		addresses: Vec<AddressWithSpec>,
-	) -> Monitor {
-		let mut builder = MonitorBuilder::new()
-			.name("test")
-			.networks(vec!["evm_mainnet".to_string()]);
-
-		for event in event_conditions {
-			builder = builder.event(&event.signature, event.expression);
-		}
-		for function in function_conditions {
-			builder = builder.function(&function.signature, function.expression);
-		}
-		for transaction in transaction_conditions {
-			builder = builder.transaction(transaction.status, transaction.expression);
-		}
-
-		builder = builder.addresses_with_spec(
-			addresses
-				.into_iter()
-				.map(|a| (a.address, a.contract_spec))
-				.collect(),
-		);
-
-		builder.build()
-	}
-
-	fn create_test_evm_logs() -> Vec<EVMReceiptLog> {
-		ReceiptBuilder::new().build().logs.clone()
-	}
-
-	fn create_mock_monitor_match() -> MonitorMatch {
-		MonitorMatch::EVM(Box::new(EVMMonitorMatch {
-			monitor: create_test_monitor(vec![], vec![], vec![], vec![]),
-			transaction: TransactionBuilder::new().build(),
-			receipt: Some(ReceiptBuilder::new().build()),
-			logs: Some(create_test_evm_logs()),
-			network_slug: "evm_mainnet".to_string(),
-			matched_on: MatchConditions {
-				functions: vec![],
-				events: vec![],
-				transactions: vec![],
-			},
-			matched_on_args: None,
-		}))
-	}
-
 	#[tokio::test]
 	async fn test_python_script_executor_success() {
 		let script_content = r#"
@@ -417,7 +358,7 @@ print(result)
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 
 		let timeout = 1000;
 		let result = executor.execute(input, &timeout, None, false).await;
@@ -439,7 +380,7 @@ print(result)
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		match result {
@@ -470,7 +411,7 @@ print("true")
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
@@ -507,7 +448,7 @@ print("true")
 
 		let executor = node(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -538,7 +479,7 @@ print("true")
 
 		let executor = node(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_err());
 		match result {
@@ -562,7 +503,7 @@ echo "true"
 "#;
 		let executor = sh(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -581,7 +522,7 @@ echo "not a boolean"
 
 		let executor = sh(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		match result {
@@ -606,7 +547,7 @@ input_json = sys.stdin.read()
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 
 		match result {
@@ -628,7 +569,7 @@ print("     true    ")  # Should handle whitespace correctly
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -650,7 +591,7 @@ print("     true    ")  # Should handle whitespace correctly
 		let executor = python(script_content, vec![]);
 
 		// Create an invalid MonitorMatch that will fail JSON serialization
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
@@ -674,7 +615,7 @@ print("true")
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
@@ -704,7 +645,7 @@ else:
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(!result.unwrap());
 	}
@@ -733,7 +674,7 @@ else:
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 
 		// Test with matching argument
 		let args = vec![String::from("test_argument")];
@@ -775,7 +716,7 @@ else:
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 
 		// Test with correct combination
 		let args = vec![
@@ -802,7 +743,7 @@ else:
 	async fn test_python_script_executor_with_verbose_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
 		let executor = python(&script_content, vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let args = vec![String::from("--verbose")];
 		let result = executor
 			.execute(input.clone(), &1000, Some(&args), false)
@@ -817,7 +758,7 @@ else:
 		let script_content = read_fixture("evm_filter_by_arguments.py");
 		let executor = python(&script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let args = vec![String::from("--wrong_arg"), String::from("--test")];
 		let result = executor
 			.execute(input.clone(), &1000, Some(&args), false)
@@ -836,7 +777,7 @@ input_json = sys.stdin.read()
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, true).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -853,7 +794,7 @@ sys.exit(1)
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, true).await;
 
 		assert!(result.is_err());
@@ -878,7 +819,7 @@ time.sleep(0.3)
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let start_time = Instant::now();
 		let result = executor.execute(input, &1000, None, true).await;
 		let elapsed = start_time.elapsed();
@@ -901,7 +842,7 @@ time.sleep(0.5)
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let start_time = Instant::now();
 		let result = executor.execute(input, &400, None, true).await;
 		let elapsed = start_time.elapsed();
@@ -925,7 +866,7 @@ time.sleep(0.5)
 		let script = format!("echo $$ > '{}'; exec sleep 30", pid_path.display());
 
 		let executor = sh(&script, vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
 			executor.execute(input, &2000, None, false).await
 		}));
@@ -973,7 +914,7 @@ time.sleep(0.5)
 		executor: InterpreterExecutor,
 		timeout_ms: u32,
 	) -> Option<Result<bool, anyhow::Error>> {
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let args = large_args();
 		tokio::time::timeout(
 			OUTER_TIMEOUT,
@@ -1284,7 +1225,7 @@ print(True)
 		// Generous so the pid file exists before the timeout fires on a loaded CI runner.
 		const DESCENDANT_TIMEOUT_MS: u32 = 2000;
 		let executor = sh(&script, vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
 			executor
 				.execute(input, &DESCENDANT_TIMEOUT_MS, None, false)
@@ -1331,7 +1272,7 @@ print(True)
 		);
 
 		let executor = sh(&script, vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
 			executor.execute(input, &30_000, None, false).await
 		}));
@@ -1405,7 +1346,7 @@ print("true", flush=True)
 
 		const SCRIPT_TIMEOUT: u32 = 3000;
 		let executor = python(&script_content, vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let args = large_args();
 		let spawned_at = Instant::now();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
@@ -1459,7 +1400,7 @@ print("true", flush=True)
 	#[tokio::test]
 	async fn test_large_stdin_early_exit_success_notification_path() {
 		let executor = sh("echo true", vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let args = large_args();
 
 		let result = tokio::time::timeout(
@@ -1488,7 +1429,7 @@ print("true", flush=True)
 		// runner.
 		const SCRIPT_TIMEOUT: u32 = 2000;
 		let executor = sh(&script, vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
 			executor.execute(input, &SCRIPT_TIMEOUT, None, false).await
 		}));
@@ -1528,7 +1469,7 @@ print("true", flush=True)
 		);
 
 		let executor = sh(&script, vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
 			executor.execute(input, &5000, None, false).await
 		}));
@@ -1654,7 +1595,7 @@ sys.exit(1)
 
 		let executor = python(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 
 		assert!(result.is_err());
@@ -1692,7 +1633,7 @@ sys.exit(1)
 
 		let executor = node(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 
 		assert!(result.is_err());
@@ -1718,7 +1659,7 @@ exit 1
 
 		let executor = sh(script_content, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		match result {
@@ -1751,7 +1692,7 @@ process.stdin.on('end', () => {
 			vec!["--max-old-space-size=4096".to_string()],
 		);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -1761,7 +1702,7 @@ process.stdin.on('end', () => {
 	async fn test_javascript_script_executor_without_runtime_arguments() {
 		let executor = node(JS_EXEC_ARGV_SCRIPT, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
@@ -1783,7 +1724,7 @@ print("true")
 			vec!["-W".to_string(), "error".to_string()],
 		);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		assert!(result
@@ -1796,7 +1737,7 @@ print("true")
 	async fn test_python_script_executor_without_runtime_arguments_ignores_warning() {
 		let executor = python(PYTHON_WARNING_SCRIPT, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -1813,7 +1754,7 @@ echo "true"
 		// `-e` makes the shell exit on the first failing command
 		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, vec!["-e".to_string()]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		assert!(result
@@ -1826,7 +1767,7 @@ echo "true"
 	async fn test_bash_script_executor_without_runtime_arguments_continues_after_failure() {
 		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, vec![]);
 
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -1835,7 +1776,7 @@ echo "true"
 	#[tokio::test]
 	async fn test_interpreter_executor_unknown_program_reports_program_name() {
 		let executor = interpreter("definitely-not-a-program", "-c", "true", vec![]);
-		let input = create_mock_monitor_match();
+		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
 		let err = result.unwrap_err().to_string();
