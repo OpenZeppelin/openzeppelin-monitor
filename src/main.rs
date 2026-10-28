@@ -457,7 +457,6 @@ async fn main() -> Result<()> {
 	Ok(())
 }
 
-
 /// Wait until the process should shut down.
 ///
 /// Always listens for Ctrl+C. On Unix also listens for SIGTERM and SIGHUP so
@@ -471,7 +470,8 @@ async fn wait_for_shutdown_signal(
 	{
 		use tokio::signal::unix::{signal, SignalKind};
 
-		let mut sigterm = signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");
+		let mut sigterm =
+			signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");
 		let mut sighup = signal(SignalKind::hangup()).expect("failed to register SIGHUP handler");
 		let ctrl_c = tokio::signal::ctrl_c();
 
