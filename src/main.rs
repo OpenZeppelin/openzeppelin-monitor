@@ -16,7 +16,7 @@
 //! 2. Initializes core services (monitoring, filtering, notifications)
 //! 3. Sets up blockchain watchers for networks with active monitors
 //! 4. Processes blocks and triggers notifications based on configured conditions
-//! 5. Handles graceful shutdown on Ctrl+C
+//! 5. Handles graceful shutdown on Ctrl+C (and SIGTERM/SIGHUP on Unix)
 
 pub mod bootstrap;
 pub mod models;
@@ -435,27 +435,7 @@ async fn main() -> Result<()> {
 
 	info!("Service started. Press Ctrl+C to shutdown");
 
-	let ctrl_c = tokio::signal::ctrl_c();
-
-	if let Some(metrics_future) = metrics_server {
-		tokio::select! {
-				result = ctrl_c => {
-					if let Err(e) = result {
-			  error!("Error waiting for Ctrl+C: {}", e);
-			}
-			info!("Shutdown signal received, stopping services...");
-		  }
-		  result = metrics_future => {
-			if let Err(e) = result {
-			  error!("Metrics server error: {}", e);
-			}
-			info!("Metrics server stopped, shutting down services...");
-		  }
-		}
-	} else {
-		let _ = ctrl_c.await;
-		info!("Shutdown signal received, stopping services...");
-	}
+	wait_for_shutdown_signal(metrics_server).await;
 
 	// Common shutdown logic
 	let _ = shutdown_tx.send(true);
@@ -475,6 +455,91 @@ async fn main() -> Result<()> {
 
 	info!("Shutdown complete");
 	Ok(())
+}
+
+
+/// Wait until the process should shut down.
+///
+/// Always listens for Ctrl+C. On Unix also listens for SIGTERM and SIGHUP so
+/// container/orchestrator stops and terminal hangups run the same graceful path
+/// (dropping in-flight trigger futures / `ProcessGroupGuard`) instead of the
+/// default signal action (see #522).
+async fn wait_for_shutdown_signal(
+	metrics_server: Option<impl std::future::Future<Output = std::io::Result<()>>>,
+) {
+	#[cfg(unix)]
+	{
+		use tokio::signal::unix::{signal, SignalKind};
+
+		let mut sigterm = signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");
+		let mut sighup = signal(SignalKind::hangup()).expect("failed to register SIGHUP handler");
+		let ctrl_c = tokio::signal::ctrl_c();
+
+		if let Some(metrics_future) = metrics_server {
+			tokio::select! {
+				result = ctrl_c => {
+					if let Err(e) = result {
+						error!("Error waiting for Ctrl+C: {}", e);
+					}
+					info!("Shutdown signal received, stopping services...");
+				}
+				_ = sigterm.recv() => {
+					info!("SIGTERM received, stopping services...");
+				}
+				_ = sighup.recv() => {
+					info!("SIGHUP received, stopping services...");
+				}
+				result = metrics_future => {
+					if let Err(e) = result {
+						error!("Metrics server error: {}", e);
+					}
+					info!("Metrics server stopped, shutting down services...");
+				}
+			}
+		} else {
+			tokio::select! {
+				result = ctrl_c => {
+					if let Err(e) = result {
+						error!("Error waiting for Ctrl+C: {}", e);
+					}
+					info!("Shutdown signal received, stopping services...");
+				}
+				_ = sigterm.recv() => {
+					info!("SIGTERM received, stopping services...");
+				}
+				_ = sighup.recv() => {
+					info!("SIGHUP received, stopping services...");
+				}
+			}
+		}
+	}
+
+	#[cfg(not(unix))]
+	{
+		let ctrl_c = tokio::signal::ctrl_c();
+
+		if let Some(metrics_future) = metrics_server {
+			tokio::select! {
+				result = ctrl_c => {
+					if let Err(e) = result {
+						error!("Error waiting for Ctrl+C: {}", e);
+					}
+					info!("Shutdown signal received, stopping services...");
+				}
+				result = metrics_future => {
+					if let Err(e) = result {
+						error!("Metrics server error: {}", e);
+					}
+					info!("Metrics server stopped, shutting down services...");
+				}
+			}
+		} else {
+			if let Err(e) = ctrl_c.await {
+				error!("Error waiting for Ctrl+C: {}", e);
+			}
+			info!("Shutdown signal received, stopping services...");
+		}
+	}
 }
 
 /// Tests the execution of a blockchain monitor configuration file.
