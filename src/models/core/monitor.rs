@@ -140,13 +140,28 @@ pub enum ScriptLanguage {
 }
 
 /// Static mapping of script languages to their file extensions
+///
+/// Kept for compatibility; the extensions come from [`ScriptLanguage::extension`],
+/// which is the source of truth and is checked for exhaustiveness by the compiler.
 pub const SCRIPT_LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
-	(&ScriptLanguage::Python, "py"),
-	(&ScriptLanguage::JavaScript, "js"),
-	(&ScriptLanguage::Bash, "sh"),
+	(&ScriptLanguage::Python, ScriptLanguage::Python.extension()),
+	(
+		&ScriptLanguage::JavaScript,
+		ScriptLanguage::JavaScript.extension(),
+	),
+	(&ScriptLanguage::Bash, ScriptLanguage::Bash.extension()),
 ];
 
 impl ScriptLanguage {
+	/// File extension (without the leading dot) expected for scripts of this language.
+	pub const fn extension(&self) -> &'static str {
+		match self {
+			ScriptLanguage::Python => "py",
+			ScriptLanguage::JavaScript => "js",
+			ScriptLanguage::Bash => "sh",
+		}
+	}
+
 	/// Interpreter used to run scripts of this language, as `(program, eval_flag)`:
 	/// the binary and the flag that makes it evaluate a script given on the command line.
 	pub fn interpreter(&self) -> (&'static str, &'static str) {
@@ -169,5 +184,20 @@ mod tests {
 		assert_eq!(ScriptLanguage::Python.interpreter(), ("python3", "-c"));
 		assert_eq!(ScriptLanguage::JavaScript.interpreter(), ("node", "-e"));
 		assert_eq!(ScriptLanguage::Bash.interpreter(), ("sh", "-c"));
+	}
+
+	#[test]
+	fn test_script_language_extension() {
+		assert_eq!(ScriptLanguage::Python.extension(), "py");
+		assert_eq!(ScriptLanguage::JavaScript.extension(), "js");
+		assert_eq!(ScriptLanguage::Bash.extension(), "sh");
+	}
+
+	#[test]
+	fn test_script_language_extensions_match_extension() {
+		assert_eq!(SCRIPT_LANGUAGE_EXTENSIONS.len(), 3);
+		for (language, extension) in SCRIPT_LANGUAGE_EXTENSIONS {
+			assert_eq!(language.extension(), *extension);
+		}
 	}
 }
