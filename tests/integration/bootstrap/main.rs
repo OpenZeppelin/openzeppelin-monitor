@@ -13,7 +13,7 @@ use crate::integration::{
 use openzeppelin_monitor::{
 	bootstrap::{
 		create_block_handler, create_trigger_handler, get_contract_specs, initialize_services,
-		process_block,
+		process_block, ProcessBlockOutcome,
 	},
 	models::{
 		AddressWithSpec, BlockChainType, ContractSpec, EVMContractSpec, EVMMonitorMatch,
@@ -241,6 +241,7 @@ async fn test_create_trigger_handler() {
 		block_number: 100,
 		network_slug: "ethereum_mainnet".to_string(),
 		processing_results: vec![create_test_monitor_match(BlockChainType::EVM)],
+		filter_failed: false,
 	};
 
 	let handle = trigger_handler(&processed_block);
@@ -269,6 +270,7 @@ async fn test_create_trigger_handler_empty_matches() {
 		block_number: 100,
 		network_slug: "ethereum_mainnet".to_string(),
 		processing_results: vec![],
+		filter_failed: false,
 	};
 
 	let handle = trigger_handler(&processed_block);
@@ -509,6 +511,7 @@ print(True)  # Always return true for test
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		}))],
+		filter_failed: false,
 	};
 
 	let handle = trigger_handler(&processed_block);
@@ -559,8 +562,8 @@ async fn test_process_block() {
 		"Shutdown signal was unexpectedly triggered"
 	);
 	assert!(
-		result.is_some(),
-		"Expected Some result when no shutdown signal"
+		matches!(result, ProcessBlockOutcome::Success(_)),
+		"Expected Success when no shutdown signal"
 	);
 }
 
@@ -599,8 +602,8 @@ async fn test_process_block_with_shutdown() {
 	.await;
 
 	assert!(
-		result.is_none(),
-		"Expected None when shutdown signal is received"
+		matches!(result, ProcessBlockOutcome::Shutdown),
+		"Expected Shutdown when shutdown signal is received"
 	);
 }
 

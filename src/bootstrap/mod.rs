@@ -159,12 +159,13 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 					block_number: block.number().unwrap_or(0),
 					network_slug: network.slug.clone(),
 					processing_results: Vec::new(),
+					filter_failed: false,
 				};
 
 				if !applicable_monitors.is_empty() {
 					let mut shutdown_rx = shutdown_tx.subscribe();
 
-					let matches = match network.network_type {
+					let outcome = match network.network_type {
 						BlockChainType::EVM => match client_pools.get_evm_client(&network).await {
 							Ok(client) => {
 								process_block(
@@ -178,7 +179,10 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 								)
 								.await
 							}
-							Err(_) => None,
+							Err(e) => {
+								tracing::error!(error = %e, "Failed to get EVM client");
+								ProcessBlockOutcome::Failed
+							}
 						},
 						BlockChainType::Stellar => {
 							match client_pools.get_stellar_client(&network).await {
@@ -194,7 +198,10 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 									)
 									.await
 								}
-								Err(_) => None,
+								Err(e) => {
+									tracing::error!(error = %e, "Failed to get Stellar client");
+									ProcessBlockOutcome::Failed
+								}
 							}
 						}
 						BlockChainType::Midnight => {
@@ -211,7 +218,10 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 									)
 									.await
 								}
-								Err(_) => None,
+								Err(e) => {
+									tracing::error!(error = %e, "Failed to get Midnight client");
+									ProcessBlockOutcome::Failed
+								}
 							}
 						}
 						BlockChainType::Solana => {
@@ -230,19 +240,41 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 								}
 								Err(e) => {
 									tracing::error!(error = %e, "Failed to get Solana client");
-									None
+									ProcessBlockOutcome::Failed
 								}
 							}
 						}
 					};
 
-					processed_block.processing_results = matches.unwrap_or_default();
+					match outcome {
+						ProcessBlockOutcome::Success(matches) => {
+							processed_block.processing_results = matches;
+						}
+						// Treat Shutdown like Failed for the checkpoint: a cancelled
+						// filter must not look like "no matches" and advance past the block.
+						ProcessBlockOutcome::Failed | ProcessBlockOutcome::Shutdown => {
+							processed_block.filter_failed = true;
+						}
+					}
 				}
 
 				processed_block
 			})
 		},
 	)
+}
+
+/// Outcome of filtering a single block.
+#[derive(Debug)]
+pub enum ProcessBlockOutcome {
+	/// Filter succeeded (possibly with zero matches).
+	Success(Vec<MonitorMatch>),
+	/// Filter failed (RPC error, etc.); the block must not be treated as empty.
+	Failed,
+	/// Processing was cancelled by a shutdown signal.
+	/// Treated like [`Failed`] for checkpoint purposes so a cancelled filter
+	/// cannot advance the watcher past the block.
+	Shutdown,
 }
 
 /// Processes a single block for all applicable monitors.
@@ -262,17 +294,28 @@ pub async fn process_block<T>(
 	contract_specs: Option<&[(String, ContractSpec)]>,
 	filter_service: &FilterService,
 	shutdown_rx: &mut watch::Receiver<bool>,
-) -> Option<Vec<MonitorMatch>>
+) -> ProcessBlockOutcome
 where
 	T: BlockChainClient + BlockFilterFactory<T>,
 {
 	tokio::select! {
 		result = filter_service.filter_block(client, network, block, applicable_monitors, contract_specs) => {
-			result.ok()
+			match result {
+				Ok(matches) => ProcessBlockOutcome::Success(matches),
+				Err(e) => {
+					tracing::error!(
+						error = %e,
+						network = %network.slug,
+						block = ?block.number(),
+						"Failed to filter block"
+					);
+					ProcessBlockOutcome::Failed
+				}
+			}
 		}
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");
-			None
+			ProcessBlockOutcome::Shutdown
 		}
 	}
 }

@@ -165,35 +165,85 @@ where
 				// Process through block handler
 				let processed_block = (block_handler)(block, network.clone()).await;
 
-				// Execute trigger handler
-				let _handle = (trigger_handler)(&processed_block);
+				// A filter failure must not be marked Recovered or fire triggers —
+				// keep the missed entry Pending/Failed so remaining retries apply.
+				if processed_block.filter_failed {
+					let new_retry_count = entry.retry_count + 1;
+					let error_msg = "Filter failed while recovering block".to_string();
+					let new_status = if new_retry_count >= recovery_config.max_retries {
+						MissedBlockStatus::Failed
+					} else {
+						MissedBlockStatus::Pending
+					};
 
-				// Mark as Recovered
-				if let Err(e) = block_storage
-					.update_missed_block_status(
-						&network.slug,
-						block_number,
-						MissedBlockStatus::Recovered,
-						None,
-					)
-					.await
-				{
-					tracing::warn!(
+					if let Err(e) = block_storage
+						.update_missed_block_status(
+							&network.slug,
+							block_number,
+							new_status.clone(),
+							Some(error_msg.clone()),
+						)
+						.await
+					{
+						tracing::warn!(
+							network = %network.slug,
+							block = block_number,
+							error = %e,
+							"Failed to update block status after filter failure"
+						);
+					}
+
+					if new_status == MissedBlockStatus::Failed {
+						result.failed += 1;
+						tracing::error!(
+							network = %network.slug,
+							block = block_number,
+							retries = new_retry_count,
+							"Block recovery filter failed after max retries"
+						);
+					} else {
+						tracing::warn!(
+							network = %network.slug,
+							block = block_number,
+							retry = new_retry_count,
+							"Block recovery filter failed, will retry"
+						);
+						tokio::time::sleep(tokio::time::Duration::from_millis(
+							recovery_config.retry_delay_ms,
+						))
+						.await;
+					}
+				} else {
+					// Execute trigger handler
+					let _handle = (trigger_handler)(&processed_block);
+
+					// Mark as Recovered
+					if let Err(e) = block_storage
+						.update_missed_block_status(
+							&network.slug,
+							block_number,
+							MissedBlockStatus::Recovered,
+							None,
+						)
+						.await
+					{
+						tracing::warn!(
+							network = %network.slug,
+							block = block_number,
+							error = %e,
+							"Failed to update block status to Recovered"
+						);
+					}
+
+					recovered_blocks.push(block_number);
+					result.recovered += 1;
+
+					tracing::info!(
 						network = %network.slug,
 						block = block_number,
-						error = %e,
-						"Failed to update block status to Recovered"
+						"Successfully recovered missed block"
 					);
 				}
-
-				recovered_blocks.push(block_number);
-				result.recovered += 1;
-
-				tracing::info!(
-					network = %network.slug,
-					block = block_number,
-					"Successfully recovered missed block"
-				);
 			}
 			Ok(_) => {
 				// Block not found (empty response)
@@ -334,10 +384,11 @@ mod tests {
 	use super::*;
 	use crate::models::{BlockChainType, MaxPastBlocks, RpcUrl, SecretString, SecretValue};
 	use crate::services::blockwatcher::storage::{
-		BlockStorage, FileBlockStorage, MissedBlockEntry,
+		BlockStorage, FileBlockStorage, MissedBlockEntry, MissedBlockStatus,
 	};
 	use crate::services::blockwatcher::tracker::BlockTracker;
 	use std::sync::atomic::{AtomicUsize, Ordering};
+	use std::sync::Arc;
 	use tempfile::tempdir;
 
 	fn create_test_network() -> Network {
@@ -594,6 +645,7 @@ mod tests {
 					network_slug: network.slug,
 					block_number: block.number().unwrap_or(0),
 					processing_results: vec![],
+					filter_failed: false,
 				}
 			}) as BoxFuture<'static, ProcessedBlock>
 		})
@@ -844,6 +896,128 @@ mod tests {
 			.unwrap();
 		assert_eq!(remaining.len(), 1);
 		assert_eq!(remaining[0].retry_count, 1);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_filter_failed_keeps_pending_and_bumps_retry() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.max_retries = 3;
+		recovery_config.retry_delay_ms = 10;
+
+		let rpc_client = MockRpcClient::new(1000, vec![]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let trigger_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+		let block_handler = Arc::new(|block: BlockType, network: Network| {
+			Box::pin(async move {
+				ProcessedBlock {
+					network_slug: network.slug,
+					block_number: block.number().unwrap_or(0),
+					processing_results: vec![],
+					filter_failed: true,
+				}
+			}) as BoxFuture<'static, ProcessedBlock>
+		});
+		let trigger_handler = {
+			let trigger_count = trigger_count.clone();
+			Arc::new(move |_block: &ProcessedBlock| {
+				trigger_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+				tokio::spawn(async move {})
+			})
+		};
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(result.attempted, 1);
+		assert_eq!(result.recovered, 0);
+		assert_eq!(result.failed, 0);
+		assert_eq!(
+			trigger_count.load(std::sync::atomic::Ordering::SeqCst),
+			0,
+			"filter_failed recovery must not fire triggers"
+		);
+
+		let remaining = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert_eq!(remaining.len(), 1);
+		assert_eq!(remaining[0].block_number, 100);
+		assert_eq!(remaining[0].retry_count, 1);
+		assert_eq!(remaining[0].status, MissedBlockStatus::Pending);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_filter_failed_marks_failed_at_max_retries() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_missed_blocks("test_network", &[100])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.max_retries = 1;
+		recovery_config.retry_delay_ms = 10;
+
+		let rpc_client = MockRpcClient::new(1000, vec![]);
+		let block_tracker = Arc::new(BlockTracker::new(100));
+
+		let block_handler = Arc::new(|block: BlockType, network: Network| {
+			Box::pin(async move {
+				ProcessedBlock {
+					network_slug: network.slug,
+					block_number: block.number().unwrap_or(0),
+					processing_results: vec![],
+					filter_failed: true,
+				}
+			}) as BoxFuture<'static, ProcessedBlock>
+		});
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(result.attempted, 1);
+		assert_eq!(result.recovered, 0);
+		assert_eq!(result.failed, 1);
+
+		let remaining = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		// Failed entries are excluded by get_missed_blocks (retry_count/status filter).
+		assert!(remaining.is_empty());
 	}
 
 	#[tokio::test]

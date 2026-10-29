@@ -1,6 +1,10 @@
 use futures::future::BoxFuture;
 use mockall::predicate;
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+	collections::{HashMap, VecDeque},
+	sync::Arc,
+};
+use tokio::sync::Mutex;
 use tokio_cron_scheduler::JobScheduler;
 
 use crate::integration::mocks::{
@@ -261,6 +265,7 @@ async fn test_normal_block_range() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -278,6 +283,7 @@ async fn test_normal_block_range() {
 		block_handler,
 		trigger_handler,
 		block_tracker_arc,
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -309,6 +315,7 @@ async fn test_fresh_start_processing() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -325,6 +332,7 @@ async fn test_fresh_start_processing() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -357,6 +365,7 @@ async fn test_no_new_blocks() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -371,6 +380,7 @@ async fn test_no_new_blocks() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -435,6 +445,7 @@ async fn test_concurrent_processing() {
 					block_number,
 					network_slug: network.slug,
 					processing_results: vec![],
+					filter_failed: false,
 				}
 			}) as BoxFuture<'static, ProcessedBlock>
 		})
@@ -450,6 +461,7 @@ async fn test_concurrent_processing() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -524,6 +536,7 @@ async fn test_ordered_trigger_handling() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -550,6 +563,7 @@ async fn test_ordered_trigger_handling() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -605,6 +619,7 @@ async fn test_block_storage_enabled() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -618,6 +633,7 @@ async fn test_block_storage_enabled() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -658,6 +674,7 @@ async fn test_max_past_blocks_limit() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -671,6 +688,7 @@ async fn test_max_past_blocks_limit() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -735,6 +753,7 @@ async fn test_max_past_blocks_limit_recommended() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -749,6 +768,7 @@ async fn test_max_past_blocks_limit_recommended() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -788,6 +808,7 @@ async fn test_confirmation_blocks() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -802,6 +823,7 @@ async fn test_confirmation_blocks() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -836,6 +858,7 @@ async fn test_process_new_blocks_storage_error() {
 				block_number: 101,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -850,6 +873,7 @@ async fn test_process_new_blocks_storage_error() {
 		block_handler,
 		trigger_handler,
 		Arc::new(MockBlockTracker::default()),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -884,6 +908,7 @@ async fn test_process_new_blocks_network_errors() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -898,6 +923,7 @@ async fn test_process_new_blocks_network_errors() {
 		block_handler,
 		trigger_handler,
 		Arc::new(MockBlockTracker::default()),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -936,6 +962,7 @@ async fn test_process_new_blocks_get_blocks_error() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -949,6 +976,7 @@ async fn test_process_new_blocks_get_blocks_error() {
 		block_handler,
 		trigger_handler,
 		Arc::new(MockBlockTracker::default()),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -1019,6 +1047,7 @@ async fn test_process_new_blocks_storage_save_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1032,6 +1061,7 @@ async fn test_process_new_blocks_storage_save_error() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -1097,6 +1127,7 @@ async fn test_process_new_blocks_save_last_processed_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1110,6 +1141,7 @@ async fn test_process_new_blocks_save_last_processed_error() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -1178,6 +1210,7 @@ async fn test_process_new_blocks_storage_delete_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1191,6 +1224,7 @@ async fn test_process_new_blocks_storage_delete_error() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -1210,6 +1244,7 @@ async fn test_network_block_watcher_new() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1245,6 +1280,7 @@ async fn test_network_block_watcher_start_stop() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1292,6 +1328,7 @@ async fn test_block_watcher_service_start_stop_network() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1367,6 +1404,7 @@ async fn test_block_watcher_service_new() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1415,6 +1453,7 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1428,6 +1467,7 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 		block_handler,
 		trigger_handler,
 		Arc::new(MockBlockTracker::default()),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -1447,6 +1487,7 @@ async fn test_scheduler_errors() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2228,6 +2269,7 @@ async fn test_missed_block_detection_and_saving() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2241,12 +2283,131 @@ async fn test_missed_block_detection_and_saving() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
 	assert!(
 		result.is_ok(),
 		"Process should succeed and save missed blocks"
+	);
+}
+
+#[tokio::test]
+async fn test_filter_failed_holds_checkpoint_and_saves_missed() {
+	// Sibling of test_missed_block_detection_and_saving for #517/#528:
+	// a handler that reports filter_failed must save that block as missed and
+	// hold the checkpoint at first_failed - 1 when recovery is disabled.
+	let mut network = create_test_network("Test Network", "test-network", BlockChainType::EVM);
+	network.store_blocks = Some(true);
+	network.recovery_config = None;
+	network.max_past_blocks = Some(MaxPastBlocks::Limited(50));
+	network.confirmation_blocks = 1;
+
+	let blocks = vec![
+		create_test_block(BlockChainType::EVM, 101),
+		create_test_block(BlockChainType::EVM, 102),
+		create_test_block(BlockChainType::EVM, 103),
+	];
+
+	let mut block_storage = MockBlockStorage::new();
+	block_storage
+		.expect_get_last_processed_block()
+		.with(predicate::always())
+		.returning(|_| Ok(Some(100)))
+		.times(1);
+
+	// Dense stream with no gaps: detect_missing_blocks returns empty.
+	// Filter-failed block 102 must still be saved via the filter_failed path.
+	block_storage
+		.expect_save_missed_blocks()
+		.with(
+			predicate::eq("test-network"),
+			predicate::function(|blocks: &[u64]| blocks == [102]),
+		)
+		.returning(|_, _| Ok(()))
+		.times(1);
+
+	block_storage
+		.expect_delete_blocks()
+		.with(predicate::always())
+		.returning(|_| Ok(()))
+		.times(1);
+
+	block_storage
+		.expect_save_blocks()
+		.with(predicate::always(), predicate::always())
+		.returning(|_, _| Ok(()))
+		.times(1);
+
+	// Checkpoint held just before the first filter-failed block.
+	block_storage
+		.expect_save_last_processed_block()
+		.with(predicate::always(), predicate::eq(101))
+		.returning(|_, _| Ok(()))
+		.times(1);
+
+	let block_storage = Arc::new(block_storage);
+
+	let mut block_tracker = MockBlockTracker::default();
+	block_tracker
+		.expect_reset_expected_next()
+		.withf(|_, block: &u64| *block == 101)
+		.returning(|_, _| ())
+		.times(1);
+	block_tracker
+		.expect_detect_missing_blocks()
+		.returning(|_, _| vec![])
+		.times(1);
+	for &block_num in &[101, 102, 103] {
+		block_tracker
+			.expect_check_processed_block()
+			.withf(move |_, num: &u64| *num == block_num)
+			.returning(|_, _| BlockCheckResult::Ok)
+			.times(1);
+	}
+
+	let mut rpc_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	// latest=104, confirmation_blocks=1 => confirmed head 103; range 101..=103.
+	rpc_client
+		.expect_get_latest_block_number()
+		.returning(|| Ok(104))
+		.times(1);
+	rpc_client
+		.expect_get_blocks()
+		.with(predicate::eq(101), predicate::eq(Some(103)))
+		.returning(move |_, _| Ok(blocks.clone()))
+		.times(1);
+
+	let block_handler = Arc::new(|block: BlockType, network: Network| {
+		Box::pin(async move {
+			let block_number = block.number().unwrap_or(0);
+			ProcessedBlock {
+				block_number,
+				network_slug: network.slug,
+				processing_results: vec![],
+				filter_failed: block_number == 102,
+			}
+		}) as BoxFuture<'static, ProcessedBlock>
+	});
+
+	let trigger_handler = Arc::new(|_: &ProcessedBlock| tokio::spawn(async {}));
+
+	let result = process_new_blocks(
+		&network,
+		&rpc_client,
+		block_storage.clone(),
+		block_handler,
+		trigger_handler,
+		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
+	)
+	.await;
+
+	assert!(
+		result.is_ok(),
+		"Process should succeed, save filter-failed as missed, and hold checkpoint: {:?}",
+		result.err()
 	);
 }
 
@@ -2318,6 +2479,7 @@ async fn test_missed_block_save_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2331,6 +2493,7 @@ async fn test_missed_block_save_error() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -2411,6 +2574,7 @@ async fn test_missed_block_detection_store_disabled() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2424,6 +2588,7 @@ async fn test_missed_block_detection_store_disabled() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -2463,6 +2628,7 @@ async fn test_scheduled_job_execution_success() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2548,6 +2714,7 @@ async fn test_scheduled_job_execution_with_processing_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2677,6 +2844,7 @@ async fn test_duplicate_block_detection() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2701,6 +2869,7 @@ async fn test_duplicate_block_detection() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -2774,6 +2943,7 @@ async fn test_missed_blocks_with_store_blocks_none() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2787,6 +2957,7 @@ async fn test_missed_blocks_with_store_blocks_none() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -2844,6 +3015,7 @@ async fn test_empty_blocks_from_rpc_despite_having_new_blocks() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2857,6 +3029,7 @@ async fn test_empty_blocks_from_rpc_despite_having_new_blocks() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -2949,6 +3122,7 @@ async fn test_out_of_order_in_cleanup_phase() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2962,6 +3136,7 @@ async fn test_out_of_order_in_cleanup_phase() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -3048,6 +3223,7 @@ async fn test_duplicate_detection_main_loop() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -3071,6 +3247,7 @@ async fn test_duplicate_detection_main_loop() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -3206,6 +3383,7 @@ async fn test_out_of_order_detection_main_loop() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -3229,6 +3407,7 @@ async fn test_out_of_order_detection_main_loop() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 
@@ -3320,6 +3499,7 @@ async fn test_duplicate_detection_in_cleanup_phase() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_failed: false,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -3343,6 +3523,7 @@ async fn test_duplicate_detection_in_cleanup_phase() {
 		block_handler,
 		trigger_handler,
 		Arc::new(block_tracker),
+		Arc::new(Mutex::new(HashMap::new())),
 	)
 	.await;
 

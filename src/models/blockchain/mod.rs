@@ -181,6 +181,10 @@ pub struct ProcessedBlock {
 	pub block_number: u64,
 	pub network_slug: String,
 	pub processing_results: Vec<MonitorMatch>,
+	/// True when filtering this block failed (RPC error, etc.). Empty
+	/// `processing_results` alone means the filter succeeded with no matches.
+	#[serde(default)]
+	pub filter_failed: bool,
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use std::{
 	collections::{BTreeMap, HashMap},
 	sync::Arc,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::instrument;
 
@@ -39,9 +39,17 @@ const CATCHUP_BATCH_SIZE: u64 = 30;
 /// recovery can interleave. The next tick resumes from the per-batch checkpoint.
 const MAX_BATCHES_PER_TICK: u64 = 100;
 
+/// Max consecutive main-watcher checkpoint holds for the same filter-failed block
+/// when recovery is disabled. After this many holds the watcher advances with a
+/// warning so Unlimited lookback cannot stall forever on a deterministic failure.
+const MAX_FILTER_FAIL_HOLDS: u32 = 3;
+
 struct BatchProcessSummary {
 	block_count: usize,
 	stream_kind: FetchStreamKind,
+	/// Last block that is safe to treat as fully processed. When a filter fails
+	/// mid-batch this is `first_failed - 1` so the next run retries from there.
+	checkpoint_block: u64,
 }
 
 struct BatchProcessingContext<'a, S, H, T, TR> {
@@ -51,6 +59,8 @@ struct BatchProcessingContext<'a, S, H, T, TR> {
 	trigger_handler: &'a Arc<T>,
 	block_tracker: &'a Arc<TR>,
 	latest_confirmed_block: u64,
+	/// Per-block consecutive hold counts for filter failures (recovery-off path).
+	filter_fail_holds: &'a Arc<Mutex<HashMap<u64, u32>>>,
 }
 
 struct BatchProcessingOptions {
@@ -87,6 +97,25 @@ fn log_checkpoint_lag(network: &Network, checkpoint_block: u64, latest_confirmed
 		"Block checkpoint lag is {} blocks",
 		lag
 	);
+}
+
+async fn save_missed_blocks_if_enabled<S: BlockStorage>(
+	network: &Network,
+	block_storage: &Arc<S>,
+	blocks: &[u64],
+	kind: &str,
+) -> Result<(), BlockWatcherError> {
+	if blocks.is_empty() {
+		return Ok(());
+	}
+	let recovery_enabled = network.recovery_config.as_ref().is_some_and(|c| c.enabled);
+	if network.store_blocks.unwrap_or(false) || recovery_enabled {
+		block_storage
+			.save_missed_blocks(&network.slug, blocks)
+			.await
+			.with_context(|| format!("Failed to save {} {} blocks", blocks.len(), kind))?;
+	}
+	Ok(())
 }
 
 async fn process_block_batch<
@@ -132,14 +161,7 @@ async fn process_block_batch<
 			missed_blocks
 		);
 
-		// Save missed blocks in batch (enabled if store_blocks OR recovery is enabled)
-		let recovery_enabled = network.recovery_config.as_ref().is_some_and(|c| c.enabled);
-		if network.store_blocks.unwrap_or(false) || recovery_enabled {
-			block_storage
-				.save_missed_blocks(&network.slug, &missed_blocks)
-				.await
-				.with_context(|| format!("Failed to save {} missed blocks", missed_blocks.len()))?;
-		}
+		save_missed_blocks_if_enabled(network, block_storage, &missed_blocks, "missed").await?;
 	}
 
 	// Create channels for our pipeline
@@ -148,12 +170,14 @@ async fn process_block_batch<
 	let (trigger_tx, trigger_rx) = mpsc::channel::<ProcessedBlock>(channel_size);
 
 	// Stage 1: Block Processing Pipeline
+	// Returns the list of filter-failed block numbers (see #517).
 	let process_handle = tokio::spawn({
 		let network = network.clone();
 		let block_handler = Arc::clone(context.block_handler);
 		let mut trigger_tx = trigger_tx.clone();
 
 		async move {
+			let mut filter_failed = Vec::<u64>::new();
 			// Process blocks concurrently, up to 32 at a time
 			let mut results = process_rx
 				.map(|(block, _)| {
@@ -165,13 +189,16 @@ async fn process_block_batch<
 
 			// Process all results and send them to trigger channel
 			while let Some(result) = results.next().await {
+				if result.filter_failed {
+					filter_failed.push(result.block_number);
+				}
 				trigger_tx
 					.send(result)
 					.await
 					.with_context(|| "Failed to send processed block")?;
 			}
 
-			Ok::<(), BlockWatcherError>(())
+			Ok::<Vec<u64>, BlockWatcherError>(filter_failed)
 		}
 	});
 
@@ -308,8 +335,69 @@ async fn process_block_batch<
 
 	// Wait for both pipeline stages to complete
 	let (process_result, trigger_result) = tokio::join!(process_handle, trigger_handle);
-	process_result.map_err(|e| anyhow::anyhow!("Block processing task failed: {}", e))??;
+	let mut filter_failed =
+		process_result.map_err(|e| anyhow::anyhow!("Block processing task failed: {}", e))??;
 	trigger_result.map_err(|e| anyhow::anyhow!("Trigger processing task failed: {}", e))??;
+
+	filter_failed.sort_unstable();
+	filter_failed.dedup();
+
+	let mut effective_checkpoint = checkpoint_block;
+	if !filter_failed.is_empty() {
+		tracing::error!(
+			network = %network.slug,
+			count = filter_failed.len(),
+			"Filter failed for {} blocks: {:?}",
+			filter_failed.len(),
+			filter_failed
+		);
+
+		save_missed_blocks_if_enabled(network, block_storage, &filter_failed, "filter-failed")
+			.await?;
+
+		// When recovery is enabled, missed-block storage owns the retry (bounded
+		// by max_retries). Holding the checkpoint would stall Unlimited lookback
+		// forever on deterministic failures and double-retry with recovery.
+		// Only hold the checkpoint when recovery is off so the next main-watcher
+		// tick can retry; recovery-enabled paths keep advancing.
+		// Cap consecutive holds per block so a deterministic failure cannot stall
+		// Unlimited forever; after MAX_FILTER_FAIL_HOLDS, advance with a warning
+		// (missed save already ran above when store_blocks/recovery allow it).
+		let recovery_enabled = network.recovery_config.as_ref().is_some_and(|c| c.enabled);
+		if !recovery_enabled {
+			if let Some(&first_failed) = filter_failed.first() {
+				let mut holds = context.filter_fail_holds.lock().await;
+				let count = holds.entry(first_failed).or_insert(0);
+				*count = count.saturating_add(1);
+				if *count > MAX_FILTER_FAIL_HOLDS {
+					tracing::warn!(
+						network = %network.slug,
+						block = first_failed,
+						holds = *count,
+						max_holds = MAX_FILTER_FAIL_HOLDS,
+						"Filter failed for block {} on {} consecutive holds; advancing checkpoint and skipping further main-watcher retries for this block",
+						first_failed,
+						*count
+					);
+					holds.remove(&first_failed);
+					// Do not hold — leave effective_checkpoint as the batch checkpoint.
+				} else {
+					effective_checkpoint = first_failed.saturating_sub(1).min(checkpoint_block);
+				}
+			}
+		} else {
+			// Recovery owns retries; clear any stale hold counters for these blocks.
+			let mut holds = context.filter_fail_holds.lock().await;
+			for block in &filter_failed {
+				holds.remove(block);
+			}
+		}
+	} else {
+		// Successful batch with no filter failures: drop hold counters for
+		// blocks covered by this checkpoint so a later unrelated failure starts fresh.
+		let mut holds = context.filter_fail_holds.lock().await;
+		holds.retain(|&block, _| block > checkpoint_block);
+	}
 
 	if network.store_blocks.unwrap_or(false) {
 		if delete_blocks_before_save {
@@ -328,7 +416,7 @@ async fn process_block_batch<
 	save_checkpoint(
 		block_storage,
 		network,
-		checkpoint_block,
+		effective_checkpoint,
 		context.latest_confirmed_block,
 	)
 	.await?;
@@ -336,6 +424,7 @@ async fn process_block_batch<
 	Ok(BatchProcessSummary {
 		block_count: blocks.len(),
 		stream_kind,
+		checkpoint_block: effective_checkpoint,
 	})
 }
 
@@ -393,6 +482,8 @@ where
 	pub scheduler: J,
 	pub block_tracker: Arc<BlockTracker>,
 	pub run_lock: Arc<tokio::sync::Mutex<()>>,
+	/// Consecutive filter-fail checkpoint holds per block (recovery-off path).
+	pub filter_fail_holds: Arc<Mutex<HashMap<u64, u32>>>,
 }
 
 /// Map of active block watchers
@@ -462,6 +553,7 @@ where
 			scheduler,
 			block_tracker,
 			run_lock: Arc::new(tokio::sync::Mutex::new(())),
+			filter_fail_holds: Arc::new(Mutex::new(HashMap::new())),
 		})
 	}
 
@@ -509,6 +601,7 @@ where
 		let trigger_handler = self.trigger_handler.clone();
 		let block_tracker = self.block_tracker.clone();
 		let run_lock = self.run_lock.clone();
+		let filter_fail_holds = self.filter_fail_holds.clone();
 
 		let job = Job::new_async(self.network.cron_schedule.as_str(), move |_uuid, _l| {
 			let network = network.clone();
@@ -518,6 +611,7 @@ where
 			let rpc_client = rpc_client.clone();
 			let trigger_handler = trigger_handler.clone();
 			let run_lock = run_lock.clone();
+			let filter_fail_holds = filter_fail_holds.clone();
 			Box::pin(async move {
 				let _guard = run_lock.lock().await;
 				let _ = process_new_blocks(
@@ -527,6 +621,7 @@ where
 					block_handler,
 					trigger_handler,
 					block_tracker,
+					filter_fail_holds,
 				)
 				.await
 				.map_err(|e| {
@@ -758,6 +853,7 @@ where
 /// * `block_handler` - Handler function for processed blocks
 /// * `trigger_handler` - Handler function for processed blocks
 /// * `block_tracker` - Tracker implementation for block processing
+/// * `filter_fail_holds` - Per-block consecutive hold counts when recovery is off
 ///
 /// # Returns
 /// * `Result<(), BlockWatcherError>` - Success or error
@@ -775,6 +871,7 @@ pub async fn process_new_blocks<
 	block_handler: Arc<H>,
 	trigger_handler: Arc<T>,
 	block_tracker: Arc<TR>,
+	filter_fail_holds: Arc<Mutex<HashMap<u64, u32>>>,
 ) -> Result<(), BlockWatcherError> {
 	let start_time = std::time::Instant::now();
 
@@ -842,6 +939,7 @@ pub async fn process_new_blocks<
 		trigger_handler: &trigger_handler,
 		block_tracker: &block_tracker,
 		latest_confirmed_block,
+		filter_fail_holds: &filter_fail_holds,
 	};
 
 	if last_processed_block == 0 {
@@ -861,7 +959,7 @@ pub async fn process_new_blocks<
 		.await?;
 		total_blocks_processed += summary.block_count;
 		stream_kind = summary.stream_kind;
-		checkpoint_block = latest_confirmed_block;
+		checkpoint_block = summary.checkpoint_block;
 	} else if last_processed_block < latest_confirmed_block {
 		// The per-network run_lock serializes cron ticks while long catch-ups are still running.
 		let mut batch_start = start_block;
@@ -912,9 +1010,20 @@ pub async fn process_new_blocks<
 				Ok(summary) => {
 					total_blocks_processed += summary.block_count;
 					stream_kind = summary.stream_kind;
-					checkpoint_block = batch_end;
+					checkpoint_block = summary.checkpoint_block;
 					blocks_deleted = blocks_deleted || network.store_blocks.unwrap_or(false);
 					batches_processed_this_tick += 1;
+					// A filter failure rolls the checkpoint back before batch_end; stop
+					// this tick so a later batch cannot advance past the failed block.
+					if summary.checkpoint_block < batch_end {
+						tracing::warn!(
+							network = %network.slug,
+							checkpoint = summary.checkpoint_block,
+							batch_end,
+							"Stopping catch-up after a filter failure so the failed block can be retried"
+						);
+						break;
+					}
 				}
 				Err(error) => {
 					tracing::error!(
@@ -952,7 +1061,7 @@ pub async fn process_new_blocks<
 		.await?;
 		total_blocks_processed += summary.block_count;
 		stream_kind = summary.stream_kind;
-		checkpoint_block = latest_confirmed_block;
+		checkpoint_block = summary.checkpoint_block;
 	}
 
 	log_checkpoint_lag(network, checkpoint_block, latest_confirmed_block);
@@ -1124,6 +1233,27 @@ mod tests {
 					network_slug: network.slug,
 					block_number: block.number().unwrap_or(0),
 					processing_results: vec![],
+					filter_failed: false,
+				}
+			}) as BoxFuture<'static, ProcessedBlock>
+		})
+	}
+
+	fn create_failing_block_handler(
+		fail_blocks: Vec<u64>,
+	) -> Arc<
+		impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
+	> {
+		let fail_blocks = std::sync::Arc::new(fail_blocks);
+		Arc::new(move |block: BlockType, network: Network| {
+			let fail_blocks = fail_blocks.clone();
+			Box::pin(async move {
+				let block_number = block.number().unwrap_or(0);
+				ProcessedBlock {
+					network_slug: network.slug,
+					block_number,
+					processing_results: vec![],
+					filter_failed: fail_blocks.contains(&block_number),
 				}
 			}) as BoxFuture<'static, ProcessedBlock>
 		})
@@ -1164,6 +1294,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1201,6 +1332,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1234,6 +1366,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1268,6 +1401,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1308,6 +1442,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1354,6 +1489,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1401,6 +1537,7 @@ mod tests {
 			block_handler.clone(),
 			trigger_handler.clone(),
 			block_tracker.clone(),
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1424,6 +1561,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1475,6 +1613,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1516,6 +1655,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1554,6 +1694,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1585,6 +1726,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1628,6 +1770,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1665,6 +1808,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1700,6 +1844,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1709,6 +1854,194 @@ mod tests {
 			.await
 			.unwrap();
 		assert!(!missed.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_holds_checkpoint_on_filter_fail_without_recovery() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 100)
+			.await
+			.unwrap();
+
+		// Recovery off: a filter failure must hold the checkpoint so the next tick retries.
+		// latest=115, confirmation_blocks=12 => confirmed head 103, so 101..=103 are processed.
+		let mut network = create_test_network();
+		network.store_blocks = Some(false);
+		network.recovery_config = None;
+
+		let rpc_client = MockRpcClient::new(115).with_blocks(vec![
+			create_evm_block(101),
+			create_evm_block(102),
+			create_evm_block(103),
+		]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		// Fail the middle block; checkpoint must not advance past it.
+		let block_handler = create_failing_block_handler(vec![102]);
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		let last = storage
+			.get_last_processed_block("test_network")
+			.await
+			.unwrap()
+			.expect("checkpoint saved");
+		assert_eq!(
+			last, 101,
+			"checkpoint must stop just before the first filter-failed block"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_advances_checkpoint_on_filter_fail_with_recovery() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 100)
+			.await
+			.unwrap();
+
+		let mut network = create_test_network_with_recovery();
+		network.store_blocks = Some(false);
+
+		let rpc_client = MockRpcClient::new(115).with_blocks(vec![
+			create_evm_block(101),
+			create_evm_block(102),
+			create_evm_block(103),
+		]);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_failing_block_handler(vec![102]);
+		let trigger_handler = create_trigger_handler();
+
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
+		)
+		.await;
+
+		assert!(result.is_ok());
+		// Recovery owns the retry; main watcher should still advance past the failed block.
+		let last = storage
+			.get_last_processed_block("test_network")
+			.await
+			.unwrap()
+			.expect("checkpoint saved");
+		assert_eq!(
+			last, 103,
+			"recovery-enabled path should not hold the checkpoint"
+		);
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(
+			missed.iter().any(|e| e.block_number == 102),
+			"filter-failed block must be saved for recovery"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_process_new_blocks_advances_after_max_filter_fail_holds() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+
+		storage
+			.save_last_processed_block("test_network", 100)
+			.await
+			.unwrap();
+
+		let mut network = create_test_network();
+		network.store_blocks = Some(true);
+		network.recovery_config = None;
+		network.max_past_blocks = Some(MaxPastBlocks::Unlimited);
+
+		// No with_blocks: generate the requested range each tick so retries from
+		// a held checkpoint (start=102) do not re-feed already-processed 101.
+		let rpc_client = MockRpcClient::new(115);
+
+		let block_tracker = Arc::new(BlockTracker::new(100));
+		let block_handler = create_failing_block_handler(vec![102]);
+		let trigger_handler = create_trigger_handler();
+		let holds = Arc::new(Mutex::new(HashMap::new()));
+
+		// First MAX_FILTER_FAIL_HOLDS ticks hold the checkpoint.
+		for _ in 0..MAX_FILTER_FAIL_HOLDS {
+			let result = process_new_blocks(
+				&network,
+				&rpc_client,
+				storage.clone(),
+				block_handler.clone(),
+				trigger_handler.clone(),
+				block_tracker.clone(),
+				holds.clone(),
+			)
+			.await;
+			assert!(result.is_ok());
+			let last = storage
+				.get_last_processed_block("test_network")
+				.await
+				.unwrap()
+				.expect("checkpoint saved");
+			assert_eq!(
+				last, 101,
+				"checkpoint must hold before max holds are exhausted"
+			);
+		}
+
+		// Next tick exceeds the cap and advances past the failed block.
+		let result = process_new_blocks(
+			&network,
+			&rpc_client,
+			storage.clone(),
+			block_handler,
+			trigger_handler,
+			block_tracker,
+			holds.clone(),
+		)
+		.await;
+		assert!(result.is_ok());
+		let last = storage
+			.get_last_processed_block("test_network")
+			.await
+			.unwrap()
+			.expect("checkpoint saved");
+		assert_eq!(
+			last, 103,
+			"after max consecutive holds the checkpoint must advance"
+		);
+		let missed = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert!(
+			missed.iter().any(|e| e.block_number == 102),
+			"skipped filter-failed block must remain saved as missed when store_blocks is on"
+		);
+		assert!(
+			!holds.lock().await.contains_key(&102),
+			"hold counter for the skipped block must be cleared"
+		);
 	}
 
 	// ============ Solana missed block detection tests ============
@@ -1854,6 +2187,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1897,6 +2231,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1941,6 +2276,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -1984,6 +2320,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -2031,6 +2368,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -2092,6 +2430,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -2139,6 +2478,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -2254,6 +2594,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
@@ -2302,6 +2643,7 @@ mod tests {
 			block_handler,
 			trigger_handler,
 			block_tracker,
+			Arc::new(Mutex::new(HashMap::new())),
 		)
 		.await;
 
