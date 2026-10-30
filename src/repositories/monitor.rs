@@ -11,7 +11,7 @@ use std::{collections::HashMap, marker::PhantomData, path::Path};
 use async_trait::async_trait;
 
 use crate::{
-	models::{ConfigLoader, Monitor, Network, Trigger, SCRIPT_LANGUAGE_EXTENSIONS},
+	models::{ConfigLoader, Monitor, Network, Trigger},
 	repositories::{
 		error::RepositoryError,
 		network::{NetworkRepository, NetworkRepositoryTrait, NetworkService},
@@ -165,20 +165,7 @@ impl<
 				}
 
 				// Validate file extension matches the specified language
-				let expected_extension = match SCRIPT_LANGUAGE_EXTENSIONS
-					.iter()
-					.find(|(lang, _)| *lang == &condition.language)
-					.map(|(_, ext)| *ext)
-				{
-					Some(ext) => ext,
-					None => {
-						validation_errors.push(format!(
-							"Monitor '{}' uses unsupported script language {:?}",
-							monitor_name, condition.language
-						));
-						continue;
-					}
-				};
+				let expected_extension = condition.language.extension();
 
 				match script_path.extension().and_then(|ext| ext.to_str()) {
 					Some(ext) if ext == expected_extension => (), // Valid extension

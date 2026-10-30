@@ -37,13 +37,7 @@ pub fn validate_script_config(
 		.and_then(|ext| ext.to_str())
 		.unwrap_or("");
 
-	let valid_extension = match language {
-		ScriptLanguage::Python => extension == "py",
-		ScriptLanguage::JavaScript => extension == "js",
-		ScriptLanguage::Bash => extension == "sh",
-	};
-
-	if !valid_extension {
+	if extension != language.extension() {
 		return Err(ConfigError::validation_error(
 			format!(
 				"Script file extension does not match specified language {:?}: {}",
@@ -83,6 +77,32 @@ mod tests {
 
 		assert!(result.is_ok());
 		fs::remove_file(python_path).unwrap();
+	}
+
+	#[test]
+	fn test_validate_script_config_valid_javascript() {
+		let temp_file = NamedTempFile::new().unwrap();
+		let path = temp_file.path().to_str().unwrap().to_string();
+		let javascript_path = path + ".js";
+		fs::rename(temp_file.path(), &javascript_path).unwrap();
+
+		let result = validate_script_config(&javascript_path, &ScriptLanguage::JavaScript, &1000);
+
+		assert!(result.is_ok());
+		fs::remove_file(javascript_path).unwrap();
+	}
+
+	#[test]
+	fn test_validate_script_config_valid_bash() {
+		let temp_file = NamedTempFile::new().unwrap();
+		let path = temp_file.path().to_str().unwrap().to_string();
+		let bash_path = path + ".sh";
+		fs::rename(temp_file.path(), &bash_path).unwrap();
+
+		let result = validate_script_config(&bash_path, &ScriptLanguage::Bash, &1000);
+
+		assert!(result.is_ok());
+		fs::remove_file(bash_path).unwrap();
 	}
 
 	#[test]
