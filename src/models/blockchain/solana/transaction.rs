@@ -246,7 +246,7 @@ impl Transaction {
 
 	/// Get all program IDs invoked in this transaction, including inner instructions (CPIs)
 	pub fn program_ids(&self) -> Vec<String> {
-		let account_keys = &self.0.transaction.account_keys;
+		let account_keys = self.accounts();
 
 		let resolve_program_id = |ix: &Instruction| -> Option<String> {
 			if let Some(program_id) = &ix.program_id {

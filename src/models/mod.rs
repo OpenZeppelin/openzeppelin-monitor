@@ -72,6 +72,7 @@ pub use blockchain::solana::{
 	// Other Solana types
 	SolanaInnerInstruction,
 	SolanaInstruction,
+	SolanaLoadedAddresses,
 	SolanaMatchArguments,
 	SolanaMatchParamEntry,
 	SolanaMatchParamsMap,

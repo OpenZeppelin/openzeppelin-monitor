@@ -45,7 +45,7 @@ pub use monitor::{
 };
 pub use transaction::{
 	InnerInstruction as SolanaInnerInstruction, Instruction as SolanaInstruction,
-	ParsedInstruction as SolanaParsedInstruction, Transaction as SolanaTransaction,
-	TransactionInfo as SolanaTransactionInfo, TransactionMessage as SolanaTransactionMessage,
-	TransactionMeta as SolanaTransactionMeta,
+	LoadedAddresses as SolanaLoadedAddresses, ParsedInstruction as SolanaParsedInstruction,
+	Transaction as SolanaTransaction, TransactionInfo as SolanaTransactionInfo,
+	TransactionMessage as SolanaTransactionMessage, TransactionMeta as SolanaTransactionMeta,
 };
