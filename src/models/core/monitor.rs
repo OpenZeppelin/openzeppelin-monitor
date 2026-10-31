@@ -139,11 +139,18 @@ pub enum ScriptLanguage {
 	Bash,
 }
 
-/// Static mapping of script languages to their file extensions
+/// Static mapping of script languages to their file extensions.
+///
+/// Kept for downstream compatibility; nothing in this crate reads it anymore.
+/// [`ScriptLanguage::extension`] is the source of truth and is exhaustive.
+#[deprecated(note = "use ScriptLanguage::extension")]
 pub const SCRIPT_LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
-	(&ScriptLanguage::Python, "py"),
-	(&ScriptLanguage::JavaScript, "js"),
-	(&ScriptLanguage::Bash, "sh"),
+	(&ScriptLanguage::Python, ScriptLanguage::Python.extension()),
+	(
+		&ScriptLanguage::JavaScript,
+		ScriptLanguage::JavaScript.extension(),
+	),
+	(&ScriptLanguage::Bash, ScriptLanguage::Bash.extension()),
 ];
 
 impl ScriptLanguage {
