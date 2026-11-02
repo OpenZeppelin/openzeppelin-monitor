@@ -385,21 +385,26 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 									%problem,
 									"Malformed Solana loadedAddresses metadata"
 								);
-								// Reject malformed lists as a whole rather than dropping individual entries.
-								// If writable addresses are unavailable, readonly program indices may
-								// no longer resolve correctly.
+								// Keep intact lists, but mark missing offsets so account_key cannot
+								// attribute a shifted readonly address to the wrong program index.
 								let valid_list = |key| {
-									loaded
-										.get(key)
-										.and_then(|value| {
-											serde_json::from_value::<Vec<String>>(value.clone())
-												.ok()
-										})
-										.unwrap_or_default()
+									match loaded.get(key) {
+										None => (Vec::new(), true), // Same default as LoadedAddresses.
+										Some(value) => match serde_json::from_value::<Vec<String>>(
+											value.clone(),
+										) {
+											Ok(addresses) => (addresses, true),
+											Err(_) => (Vec::new(), false),
+										},
+									}
 								};
+								let (writable, writable_valid) = valid_list("writable");
+								let (readonly, readonly_valid) = valid_list("readonly");
 								Some(SolanaLoadedAddresses {
-									writable: valid_list("writable"),
-									readonly: valid_list("readonly"),
+									writable,
+									readonly,
+									writable_valid,
+									readonly_valid,
 								})
 							}
 						}
@@ -2271,6 +2276,8 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert!(loaded.writable.is_empty());
 		assert_eq!(loaded.readonly, ["R1"]);
+		assert!(loaded.writable_valid && loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), Some("R1"));
 		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
 	}
 
@@ -2283,6 +2290,9 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert!(loaded.writable.is_empty());
 		assert_eq!(loaded.readonly, ["R1", "R2"]);
+		assert!(!loaded.writable_valid);
+		assert!(loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), None);
 		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
 		assert!(logs_contain("sig_loaded"));
 		assert!(logs_contain("invalid type"));
@@ -2309,6 +2319,9 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert_eq!(loaded.writable, ["W1", "W2"]);
 		assert!(loaded.readonly.is_empty());
+		assert!(loaded.writable_valid);
+		assert!(!loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), Some("W1"));
 		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
 		assert!(logs_contain("sig_loaded"));
 	}

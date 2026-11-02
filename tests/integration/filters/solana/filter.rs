@@ -235,6 +235,52 @@ async fn test_filter_matches_lookup_table_program() -> Result<(), Box<FilterErro
 }
 
 #[tokio::test]
+async fn test_filter_ignores_shifted_readonly_program_after_malformed_writable(
+) -> Result<(), Box<FilterError>> {
+	let mut mock_response: Value = serde_json::from_str(include_str!(
+		"../../fixtures/solana/block_with_lookup_table_programs.json"
+	))
+	.unwrap();
+	let readonly_program = mock_response["result"]["transactions"][0]["meta"]["loadedAddresses"]
+		["readonly"][0]
+		.as_str()
+		.unwrap()
+		.to_string();
+	let raw_tx = &mut mock_response["result"]["transactions"][0];
+	raw_tx["meta"]["loadedAddresses"]["writable"] = json!("malformed");
+	raw_tx["meta"]["innerInstructions"][0]["instructions"][0]["programIdIndex"] = json!(15);
+
+	let mut mock_solana = MockSolanaTransportClient::new();
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let blocks = client.get_blocks(461606152, None).await.unwrap();
+	let BlockType::Solana(block) = &blocks[0] else {
+		panic!("Expected Solana block");
+	};
+	let tx = &block.transactions[0];
+	assert_eq!(tx.0.transaction.account_keys.len(), 15);
+	assert!(tx.accounts().contains(&readonly_program));
+
+	let mut monitor =
+		make_monitor_with_transactions(create_test_monitor(), TransactionStatus::Success);
+	monitor.addresses[0].address = readonly_program;
+	let matches = FilterService::new()
+		.filter_block(
+			&client,
+			&create_test_network(),
+			&blocks[0],
+			&[monitor],
+			None,
+		)
+		.await?;
+	assert!(matches.is_empty());
+	assert_eq!(tx.account_key(15), None);
+	Ok(())
+}
+
+#[tokio::test]
 async fn test_filter_transactions_success_status() -> Result<(), Box<FilterError>> {
 	let network = create_test_network();
 	let filter_service = FilterService::new();

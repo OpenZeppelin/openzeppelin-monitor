@@ -141,7 +141,7 @@ pub struct TransactionMeta {
 }
 
 /// Addresses loaded from address lookup tables in versioned transactions
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadedAddresses {
 	/// Writable addresses loaded from lookup tables
@@ -151,6 +151,40 @@ pub struct LoadedAddresses {
 	/// Readonly addresses loaded from lookup tables
 	#[serde(default)]
 	pub readonly: Vec<String>,
+
+	/// Whether the writable list was parsed intact.
+	/// False is serialized so a transaction round-trip cannot restore unsafe index lookup.
+	#[serde(
+		default = "valid_loaded_address_list",
+		skip_serializing_if = "is_valid_loaded_address_list"
+	)]
+	pub writable_valid: bool,
+
+	/// Whether the readonly list was parsed intact.
+	#[serde(
+		default = "valid_loaded_address_list",
+		skip_serializing_if = "is_valid_loaded_address_list"
+	)]
+	pub readonly_valid: bool,
+}
+
+fn valid_loaded_address_list() -> bool {
+	true
+}
+
+fn is_valid_loaded_address_list(valid: &bool) -> bool {
+	*valid
+}
+
+impl Default for LoadedAddresses {
+	fn default() -> Self {
+		Self {
+			writable: Vec::new(),
+			readonly: Vec::new(),
+			writable_valid: true,
+			readonly_valid: true,
+		}
+	}
 }
 
 /// Token balance information
@@ -274,21 +308,26 @@ impl Transaction {
 
 	/// Resolves an account index over static keys, then loaded writable, then loaded readonly.
 	pub fn account_key(&self, index: usize) -> Option<&str> {
-		let loaded = self
-			.0
-			.meta
-			.as_ref()
-			.and_then(|m| m.loaded_addresses.as_ref());
-		self.0
-			.transaction
-			.account_keys
-			.iter()
-			.chain(
-				loaded
-					.into_iter()
-					.flat_map(|l| l.writable.iter().chain(&l.readonly)),
-			)
-			.nth(index)
+		let static_keys = &self.0.transaction.account_keys;
+		if let Some(key) = static_keys.get(index) {
+			return Some(key);
+		}
+
+		let loaded = self.0.meta.as_ref()?.loaded_addresses.as_ref()?;
+		if !loaded.writable_valid {
+			// Without the writable count, the readonly index offset is unknown.
+			return None;
+		}
+		let loaded_index = index - static_keys.len();
+		if let Some(key) = loaded.writable.get(loaded_index) {
+			return Some(key);
+		}
+		if !loaded.readonly_valid {
+			return None;
+		}
+		loaded
+			.readonly
+			.get(loaded_index - loaded.writable.len())
 			.map(String::as_str)
 	}
 
@@ -424,6 +463,7 @@ mod tests {
 		tx_info.meta.as_mut().unwrap().loaded_addresses = Some(LoadedAddresses {
 			writable: vec!["W1".to_string(), "W2".to_string()],
 			readonly: vec!["R1".to_string(), "R2".to_string()],
+			..LoadedAddresses::default()
 		});
 		let tx = Transaction(tx_info);
 
@@ -456,6 +496,79 @@ mod tests {
 	}
 
 	#[test]
+	fn test_account_key_skips_invalid_loaded_ranges() {
+		let mut tx_info = create_test_transaction(true);
+		tx_info.transaction.instructions[0].program_id_index = 2;
+		tx_info.transaction.instructions[0].program_id = Some("Explicit".to_string());
+		let meta = tx_info.meta.as_mut().unwrap();
+		meta.loaded_addresses = Some(LoadedAddresses {
+			readonly: vec!["R1".to_string()],
+			writable_valid: false,
+			..LoadedAddresses::default()
+		});
+		let tx = Transaction(tx_info.clone());
+		assert_eq!(
+			tx.account_key(0),
+			Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+		);
+		assert_eq!(tx.account_key(2), None);
+		assert_eq!(tx.accounts()[2], "R1");
+		assert_eq!(tx.program_ids(), ["Explicit"]);
+
+		tx_info.meta.as_mut().unwrap().loaded_addresses = Some(LoadedAddresses {
+			writable: vec!["W1".to_string()],
+			readonly_valid: false,
+			..LoadedAddresses::default()
+		});
+		let tx = Transaction(tx_info);
+		assert_eq!(tx.account_key(2), Some("W1"));
+		assert_eq!(tx.account_key(3), None);
+	}
+
+	#[test]
+	fn test_loaded_addresses_serde_preserves_index_validity() {
+		let valid = LoadedAddresses {
+			writable: vec!["W1".to_string()],
+			readonly: vec!["R1".to_string()],
+			..LoadedAddresses::default()
+		};
+		assert_eq!(
+			serde_json::to_value(&valid).unwrap(),
+			serde_json::json!({"writable": ["W1"], "readonly": ["R1"]})
+		);
+		let valid_round_trip: LoadedAddresses =
+			serde_json::from_value(serde_json::to_value(valid).unwrap()).unwrap();
+		assert!(valid_round_trip.writable_valid && valid_round_trip.readonly_valid);
+
+		let mut tx_info = create_test_transaction(true);
+		tx_info.transaction.instructions[0].program_id_index = 2;
+		tx_info.meta.as_mut().unwrap().loaded_addresses = Some(LoadedAddresses {
+			readonly: vec!["R1".to_string()],
+			writable_valid: false,
+			..LoadedAddresses::default()
+		});
+		let serialized = serde_json::to_value(Transaction(tx_info)).unwrap();
+		assert_eq!(
+			serialized["meta"]["loadedAddresses"]["writableValid"],
+			false
+		);
+		let restored: Transaction = serde_json::from_value(serialized).unwrap();
+		assert!(
+			!restored
+				.meta
+				.as_ref()
+				.unwrap()
+				.loaded_addresses
+				.as_ref()
+				.unwrap()
+				.writable_valid
+		);
+		assert_eq!(restored.accounts()[2], "R1");
+		assert_eq!(restored.account_key(2), None);
+		assert!(restored.program_ids().is_empty());
+	}
+
+	#[test]
 	fn test_program_ids_resolves_loaded_addresses_and_explicit_ids_in_order() {
 		let mut tx_info = create_test_transaction(true);
 		tx_info.transaction.instructions = vec![
@@ -481,6 +594,7 @@ mod tests {
 		meta.loaded_addresses = Some(LoadedAddresses {
 			writable: vec!["W1".to_string(), "W2".to_string()],
 			readonly: vec!["R1".to_string(), "R2".to_string()],
+			..LoadedAddresses::default()
 		});
 		meta.inner_instructions = vec![InnerInstruction {
 			index: 0,
@@ -575,6 +689,7 @@ mod tests {
 			meta.loaded_addresses = Some(LoadedAddresses {
 				writable: vec!["WritableALTAddress111111111111111111".to_string()],
 				readonly: vec!["ReadonlyALTAddress111111111111111111".to_string()],
+				..LoadedAddresses::default()
 			});
 		}
 
