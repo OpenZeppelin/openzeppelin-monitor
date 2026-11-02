@@ -43,6 +43,13 @@ const ARRAY_KINDS: &[&str] = &[
 	"tuple[]",
 ];
 
+/// Returns whether `kind` is a fixed-size byte array, `bytes1` through `bytes32`.
+fn is_fixed_bytes_kind(kind: &str) -> bool {
+	kind.strip_prefix("bytes")
+		.and_then(|size| size.parse::<u8>().ok())
+		.is_some_and(|size| (1..=32).contains(&size))
+}
+
 pub struct EVMConditionEvaluator<'a> {
 	args: &'a EVMArgs,
 }
@@ -733,13 +740,16 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 			return self.compare_u256(lhs_value_str, operator, rhs_literal);
 		}
 
-		if ARRAY_KINDS.contains(&lhs_kind.as_str()) {
+		if ARRAY_KINDS.contains(&lhs_kind.as_str())
+			|| lhs_kind.strip_suffix("[]").is_some_and(is_fixed_bytes_kind)
+		{
 			return self.compare_array(lhs_value_str, operator, rhs_literal);
 		}
 
 		match lhs_kind.as_str() {
 			"address" => self.compare_address(lhs_value_str, operator, rhs_literal),
-			"string" | "bytes" | "bytes32" => {
+			"string" | "bytes" => self.compare_string(lhs_value_str, operator, rhs_literal),
+			kind if is_fixed_bytes_kind(kind) => {
 				self.compare_string(lhs_value_str, operator, rhs_literal)
 			}
 			"bool" => self.compare_boolean(lhs_value_str, operator, rhs_literal),
@@ -1895,6 +1905,31 @@ mod tests {
 			)
 			.unwrap());
 
+		assert!(evaluator
+			.compare_final_values(
+				"bytes4",
+				"0xdeadbeef",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("0xDEADBEEF")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_final_values(
+				"bytes32",
+				"0xab",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("0xab")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_final_values(
+				"bytes4[]",
+				r#"["0x12345678","0xdeadbeef"]"#,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("0xdeadbeef")
+			)
+			.unwrap());
+
 		// Test routing to compare_boolean
 		assert!(evaluator
 			.compare_final_values(
@@ -1940,6 +1975,16 @@ mod tests {
 			res_unsupported,
 			Err(EvaluationError::TypeMismatch(_))
 		));
+
+		for kind in ["bytes0", "bytes33"] {
+			let res = evaluator.compare_final_values(
+				kind,
+				"0xab",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("0xab"),
+			);
+			assert!(matches!(res, Err(EvaluationError::TypeMismatch(_))));
+		}
 	}
 
 	/// --- Test cases for get_kind_from_json_value ---

@@ -2257,6 +2257,37 @@ mod tests {
 	}
 
 	#[test]
+	fn test_evaluate_expression_fixed_bytes_comparisons() {
+		let filter = create_test_filter();
+		let mut word = [0u8; 32];
+		word[..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+		let value = format_token_value(&DynSolValue::FixedBytes(word.into(), 4));
+		let args = vec![create_test_param("selector", &value, "bytes4")];
+
+		assert!(filter
+			.evaluate_expression("selector == 0xdeadbeef", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("selector == '0xDEADBEEF'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("selector == 0x12345678", &args)
+			.unwrap());
+
+		let selectors = format_token_value(&DynSolValue::Array(vec![DynSolValue::FixedBytes(
+			word.into(),
+			4,
+		)]));
+		let args = vec![create_test_param("selectors", &selectors, "bytes4[]")];
+		assert!(filter
+			.evaluate_expression("selectors contains 0xdeadbeef", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("selectors contains 0x12345678", &args)
+			.unwrap());
+	}
+
+	#[test]
 	fn test_evaluate_expression_boolean_comparisons() {
 		let filter = create_test_filter();
 		let args = vec![create_test_param("is_active", "true", "bool")];
