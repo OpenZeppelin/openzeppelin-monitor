@@ -307,6 +307,9 @@ impl Transaction {
 	}
 
 	/// Resolves an account index over static keys, then loaded writable, then loaded readonly.
+	/// Returns `None` for out-of-range indices or untrusted loaded metadata: an invalid
+	/// writable list blocks all loaded indices, while an invalid readonly list blocks
+	/// readonly indices only.
 	pub fn account_key(&self, index: usize) -> Option<&str> {
 		let static_keys = &self.0.transaction.account_keys;
 		if let Some(key) = static_keys.get(index) {
@@ -539,6 +542,10 @@ mod tests {
 		let valid_round_trip: LoadedAddresses =
 			serde_json::from_value(serde_json::to_value(valid).unwrap()).unwrap();
 		assert!(valid_round_trip.writable_valid && valid_round_trip.readonly_valid);
+		let legacy: LoadedAddresses =
+			serde_json::from_value(serde_json::json!({"readonly": ["R1"]})).unwrap();
+		assert!(legacy.writable.is_empty());
+		assert!(legacy.writable_valid && legacy.readonly_valid);
 
 		let mut tx_info = create_test_transaction(true);
 		tx_info.transaction.instructions[0].program_id_index = 2;

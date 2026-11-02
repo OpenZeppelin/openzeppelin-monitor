@@ -5,6 +5,7 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
+use serde::Deserialize;
 use serde_json::json;
 use std::marker::PhantomData;
 use tracing::instrument;
@@ -375,28 +376,35 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				loaded_addresses: match m.get("loadedAddresses") {
 					None | Some(serde_json::Value::Null) => None,
 					Some(loaded) => {
-						match serde_json::from_value::<SolanaLoadedAddresses>(loaded.clone()) {
-							Ok(addresses) => Some(addresses),
+						match SolanaLoadedAddresses::deserialize(loaded) {
+							Ok(mut addresses) => {
+								if loaded.get("writable").is_none() {
+									addresses.writable_valid = false;
+									let error = "missing writable list";
+									tracing::warn!(
+										%signature,
+										slot,
+										error = %error,
+										"Malformed Solana loadedAddresses metadata"
+									);
+								}
+								Some(addresses)
+							}
 							Err(error) => {
-								let problem: String = error.to_string().chars().take(160).collect();
 								tracing::warn!(
 									%signature,
 									slot,
-									%problem,
+									error = %error,
 									"Malformed Solana loadedAddresses metadata"
 								);
 								// Keep intact lists, but mark missing offsets so account_key cannot
 								// attribute a shifted readonly address to the wrong program index.
-								let valid_list = |key| {
-									match loaded.get(key) {
-										None => (Vec::new(), true), // Same default as LoadedAddresses.
-										Some(value) => match serde_json::from_value::<Vec<String>>(
-											value.clone(),
-										) {
-											Ok(addresses) => (addresses, true),
-											Err(_) => (Vec::new(), false),
-										},
-									}
+								let valid_list = |key| match loaded.get(key) {
+									None => (Vec::new(), key != "writable"),
+									Some(value) => match Vec::<String>::deserialize(value) {
+										Ok(addresses) => (addresses, true),
+										Err(_) => (Vec::new(), false),
+									},
 								};
 								let (writable, writable_valid) = valid_list("writable");
 								let (readonly, readonly_valid) = valid_list("readonly");
@@ -2266,6 +2274,8 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert_eq!(loaded.writable, ["W1"]);
 		assert!(loaded.readonly.is_empty());
+		assert!(loaded.writable_valid && loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), Some("W1"));
 		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
 	}
 
@@ -2276,9 +2286,52 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert!(loaded.writable.is_empty());
 		assert_eq!(loaded.readonly, ["R1"]);
+		assert!(!loaded.writable_valid && loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), None);
+		assert_eq!(tx.accounts()[2], "R1");
+		let restored: SolanaTransaction =
+			serde_json::from_value(serde_json::to_value(&tx).unwrap()).unwrap();
+		assert_eq!(restored.account_key(2), None);
+		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
+		assert!(logs_contain("missing writable list"));
+		logs_assert(|lines| {
+			if lines.iter().any(|line| {
+				line.contains(" WARN ")
+					&& line.contains("Malformed Solana loadedAddresses metadata")
+					&& line.contains("error=missing writable list")
+			}) {
+				Ok(())
+			} else {
+				Err("Expected missing writable WARN".to_string())
+			}
+		});
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_empty_writable_loaded_addresses() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({
+			"writable": [], "readonly": ["R1"]
+		})));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert!(loaded.writable.is_empty());
+		assert_eq!(loaded.readonly, ["R1"]);
 		assert!(loaded.writable_valid && loaded.readonly_valid);
 		assert_eq!(tx.account_key(2), Some("R1"));
 		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_missing_writable_and_malformed_readonly() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({
+			"readonly": false
+		})));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert!(loaded.writable.is_empty() && loaded.readonly.is_empty());
+		assert!(!loaded.writable_valid && !loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), None);
+		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
 	}
 
 	#[test]
@@ -2301,7 +2354,7 @@ mod tests {
 				line.contains(" WARN ")
 					&& line.contains("Malformed Solana loadedAddresses metadata")
 					&& line.contains("signature=sig_loaded")
-					&& line.contains("problem=invalid type")
+					&& line.contains("error=invalid type")
 			}) {
 				Ok(())
 			} else {
@@ -2335,6 +2388,8 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert!(loaded.writable.is_empty());
 		assert_eq!(loaded.readonly, ["R1"]);
+		assert!(!loaded.writable_valid && loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), None);
 		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
 		assert!(logs_contain("sig_loaded"));
 	}
@@ -2348,6 +2403,9 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert_eq!(loaded.writable, ["W1"]);
 		assert!(loaded.readonly.is_empty());
+		assert!(loaded.writable_valid && !loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), Some("W1"));
+		assert_eq!(tx.account_key(3), None);
 		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
 		assert!(logs_contain("sig_loaded"));
 	}
@@ -2361,6 +2419,8 @@ mod tests {
 		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
 		assert!(loaded.writable.is_empty());
 		assert!(loaded.readonly.is_empty());
+		assert!(!loaded.writable_valid && !loaded.readonly_valid);
+		assert_eq!(tx.account_key(2), None);
 		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
 		assert!(logs_contain("sig_loaded"));
 	}

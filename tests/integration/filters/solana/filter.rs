@@ -281,6 +281,62 @@ async fn test_filter_ignores_shifted_readonly_program_after_malformed_writable(
 }
 
 #[tokio::test]
+async fn test_filter_ignores_shifted_readonly_program_after_missing_writable(
+) -> Result<(), Box<FilterError>> {
+	let mut mock_response: Value = serde_json::from_str(include_str!(
+		"../../fixtures/solana/block_with_lookup_table_programs.json"
+	))
+	.unwrap();
+	let raw_tx = &mut mock_response["result"]["transactions"][0];
+	assert!(raw_tx["transaction"]["message"]["addressTableLookups"]
+		.as_array()
+		.unwrap()
+		.iter()
+		.any(|lookup| !lookup["writableIndexes"].as_array().unwrap().is_empty()));
+	let readonly_program = raw_tx["meta"]["loadedAddresses"]["readonly"][0]
+		.as_str()
+		.unwrap()
+		.to_string();
+	raw_tx["meta"]["loadedAddresses"]
+		.as_object_mut()
+		.unwrap()
+		.remove("writable");
+	raw_tx["meta"]["innerInstructions"][0]["instructions"][0]["programIdIndex"] = json!(15);
+
+	let mut mock_solana = MockSolanaTransportClient::new();
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let blocks = client.get_blocks(461606152, None).await.unwrap();
+	let BlockType::Solana(block) = &blocks[0] else {
+		panic!("Expected Solana block");
+	};
+	let tx = &block.transactions[0];
+	assert_eq!(tx.0.transaction.account_keys.len(), 15);
+	let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+	assert!(!loaded.writable_valid && loaded.readonly_valid);
+	assert_eq!(loaded.readonly.len(), 9);
+	assert!(tx.accounts().contains(&readonly_program));
+
+	let mut monitor =
+		make_monitor_with_transactions(create_test_monitor(), TransactionStatus::Success);
+	monitor.addresses[0].address = readonly_program;
+	let matches = FilterService::new()
+		.filter_block(
+			&client,
+			&create_test_network(),
+			&blocks[0],
+			&[monitor],
+			None,
+		)
+		.await?;
+	assert!(matches.is_empty());
+	assert_eq!(tx.account_key(15), None);
+	Ok(())
+}
+
+#[tokio::test]
 async fn test_filter_transactions_success_status() -> Result<(), Box<FilterError>> {
 	let network = create_test_network();
 	let filter_service = FilterService::new();
