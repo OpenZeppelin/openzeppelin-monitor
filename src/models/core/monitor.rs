@@ -139,14 +139,33 @@ pub enum ScriptLanguage {
 	Bash,
 }
 
-/// Static mapping of script languages to their file extensions
+/// Static mapping of script languages to their file extensions.
+///
+/// Kept for downstream compatibility; nothing in this crate reads it anymore.
+/// [`ScriptLanguage::extension`] is the source of truth and is exhaustive.
+#[deprecated(since = "1.8.0", note = "use ScriptLanguage::extension")]
 pub const SCRIPT_LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
-	(&ScriptLanguage::Python, "py"),
-	(&ScriptLanguage::JavaScript, "js"),
-	(&ScriptLanguage::Bash, "sh"),
+	(&ScriptLanguage::Python, ScriptLanguage::Python.extension()),
+	(
+		&ScriptLanguage::JavaScript,
+		ScriptLanguage::JavaScript.extension(),
+	),
+	(&ScriptLanguage::Bash, ScriptLanguage::Bash.extension()),
 ];
 
 impl ScriptLanguage {
+	/// File extension (without the leading dot) expected for scripts of this language.
+	///
+	/// The `match` is exhaustive on purpose: a new `ScriptLanguage` variant without an
+	/// extension fails to compile instead of being rejected at runtime.
+	pub const fn extension(&self) -> &'static str {
+		match self {
+			ScriptLanguage::Python => "py",
+			ScriptLanguage::JavaScript => "js",
+			ScriptLanguage::Bash => "sh",
+		}
+	}
+
 	/// Interpreter used to run scripts of this language, as `(program, eval_flag)`:
 	/// the binary and the flag that makes it evaluate a script given on the command line.
 	pub fn interpreter(&self) -> (&'static str, &'static str) {
@@ -169,5 +188,14 @@ mod tests {
 		assert_eq!(ScriptLanguage::Python.interpreter(), ("python3", "-c"));
 		assert_eq!(ScriptLanguage::JavaScript.interpreter(), ("node", "-e"));
 		assert_eq!(ScriptLanguage::Bash.interpreter(), ("sh", "-c"));
+	}
+
+	#[test]
+	fn test_script_language_extension() {
+		// The expected extensions are literals on purpose: this is the one place, besides the
+		// implementation, where the full mapping is written out.
+		assert_eq!(ScriptLanguage::Python.extension(), "py");
+		assert_eq!(ScriptLanguage::JavaScript.extension(), "js");
+		assert_eq!(ScriptLanguage::Bash.extension(), "sh");
 	}
 }

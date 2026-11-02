@@ -9,9 +9,11 @@ mod monitor;
 mod network;
 mod trigger;
 
+#[allow(deprecated)]
+pub use monitor::SCRIPT_LANGUAGE_EXTENSIONS;
 pub use monitor::{
 	AddressWithSpec, EventCondition, FunctionCondition, MatchConditions, Monitor, ScriptLanguage,
-	TransactionCondition, TransactionStatus, TriggerConditions, SCRIPT_LANGUAGE_EXTENSIONS,
+	TransactionCondition, TransactionStatus, TriggerConditions,
 };
 pub use network::{BlockRecoveryConfig, MaxPastBlocks, Network, RpcUrl};
 pub use trigger::{
