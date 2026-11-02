@@ -143,7 +143,7 @@ pub enum ScriptLanguage {
 ///
 /// Kept for downstream compatibility; nothing in this crate reads it anymore.
 /// [`ScriptLanguage::extension`] is the source of truth and is exhaustive.
-#[deprecated(note = "use ScriptLanguage::extension")]
+#[deprecated(since = "1.8.0", note = "use ScriptLanguage::extension")]
 pub const SCRIPT_LANGUAGE_EXTENSIONS: &[(&ScriptLanguage, &str)] = &[
 	(&ScriptLanguage::Python, ScriptLanguage::Python.extension()),
 	(
