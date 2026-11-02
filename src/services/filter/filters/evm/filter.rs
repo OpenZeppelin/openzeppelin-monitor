@@ -2273,6 +2273,18 @@ mod tests {
 		assert!(!filter
 			.evaluate_expression("selector == 0x12345678", &args)
 			.unwrap());
+
+		let selectors = format_token_value(&DynSolValue::Array(vec![DynSolValue::FixedBytes(
+			word.into(),
+			4,
+		)]));
+		let args = vec![create_test_param("selectors", &selectors, "bytes4[]")];
+		assert!(filter
+			.evaluate_expression("selectors contains 0xdeadbeef", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("selectors contains 0x12345678", &args)
+			.unwrap());
 	}
 
 	#[test]
