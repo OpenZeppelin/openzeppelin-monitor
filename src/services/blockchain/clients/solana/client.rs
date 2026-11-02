@@ -369,20 +369,42 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 				inner_instructions,
 				log_messages,
 				compute_units_consumed: m.get("computeUnitsConsumed").and_then(|c| c.as_u64()),
-				loaded_addresses: m.get("loadedAddresses").and_then(|loaded| {
-					let addresses = |key: &str| -> Option<Vec<String>> {
-						loaded
-							.get(key)?
-							.as_array()?
-							.iter()
-							.map(|address| address.as_str().map(str::to_string))
-							.collect()
-					};
-					Some(SolanaLoadedAddresses {
-						writable: addresses("writable")?,
-						readonly: addresses("readonly")?,
-					})
-				}),
+				// The RPC requests JSON encoding, whose accountKeys contain only static keys.
+				// jsonParsed accountKeys already include lookup-table keys, so appending these
+				// addresses to a jsonParsed message would count them twice.
+				loaded_addresses: match m.get("loadedAddresses") {
+					None | Some(serde_json::Value::Null) => None,
+					Some(loaded) => {
+						match serde_json::from_value::<SolanaLoadedAddresses>(loaded.clone()) {
+							Ok(addresses) => Some(addresses),
+							Err(error) => {
+								let problem: String = error.to_string().chars().take(160).collect();
+								tracing::warn!(
+									%signature,
+									slot,
+									%problem,
+									"Malformed Solana loadedAddresses metadata"
+								);
+								// Reject malformed lists as a whole rather than dropping individual entries.
+								// If writable addresses are unavailable, readonly program indices may
+								// no longer resolve correctly.
+								let valid_list = |key| {
+									loaded
+										.get(key)
+										.and_then(|value| {
+											serde_json::from_value::<Vec<String>>(value.clone())
+												.ok()
+										})
+										.unwrap_or_default()
+								};
+								Some(SolanaLoadedAddresses {
+									writable: valid_list("writable"),
+									readonly: valid_list("readonly"),
+								})
+							}
+						}
+					}
+				},
 			}
 		});
 
@@ -1171,6 +1193,7 @@ mod tests {
 	use serde::Serialize;
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use std::sync::Arc;
+	use tracing_test::traced_test;
 
 	/// Configurable mock transport for unit tests.
 	/// Returns preset responses based on the RPC method name.
@@ -2193,32 +2216,144 @@ mod tests {
 		);
 	}
 
-	#[test]
-	fn test_parse_single_transaction_without_loaded_addresses() {
+	fn parse_transaction_with_loaded_addresses(
+		loaded: Option<serde_json::Value>,
+	) -> SolanaTransaction {
 		let client = mock_client();
-		for loaded in [None, Some(json!({ "writable": ["W1"] }))] {
-			let mut meta =
-				json!({ "err": null, "fee": 5000, "preBalances": [], "postBalances": [] });
-			if let Some(loaded) = loaded {
-				meta["loadedAddresses"] = loaded;
-			}
-			let raw_tx = json!({
-				"transaction": {
-					"signatures": ["sig_without_loaded"],
-					"message": { "accountKeys": ["A1", "A2"], "instructions": [], "recentBlockhash": "hash1" }
-				},
-				"meta": meta
-			});
-			let tx = client
-				.parse_single_transaction(100, &raw_tx)
-				.unwrap()
-				.expect("should parse transaction");
-			assert!(tx.meta.as_ref().unwrap().loaded_addresses.is_none());
-			assert_eq!(tx.accounts(), vec!["A1".to_string(), "A2".to_string()]);
+		let mut meta = json!({ "err": null, "fee": 5000, "preBalances": [], "postBalances": [] });
+		if let Some(loaded) = loaded {
+			meta["loadedAddresses"] = loaded;
 		}
+		let raw_tx = json!({
+			"transaction": {
+				"signatures": ["sig_loaded"],
+				"message": { "accountKeys": ["A1", "A2"], "instructions": [], "recentBlockhash": "hash1" }
+			},
+			"meta": meta
+		});
+		client
+			.parse_single_transaction(100, &raw_tx)
+			.unwrap()
+			.expect("should parse transaction")
 	}
 
 	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_without_loaded_addresses() {
+		let tx = parse_transaction_with_loaded_addresses(None);
+		assert!(tx.meta.as_ref().unwrap().loaded_addresses.is_none());
+		assert_eq!(tx.accounts(), vec!["A1", "A2"]);
+		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_null_loaded_addresses() {
+		let tx = parse_transaction_with_loaded_addresses(Some(serde_json::Value::Null));
+		assert!(tx.meta.as_ref().unwrap().loaded_addresses.is_none());
+		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_only_writable_loaded_addresses() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({ "writable": ["W1"] })));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert_eq!(loaded.writable, ["W1"]);
+		assert!(loaded.readonly.is_empty());
+		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_only_readonly_loaded_addresses() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({ "readonly": ["R1"] })));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert!(loaded.writable.is_empty());
+		assert_eq!(loaded.readonly, ["R1"]);
+		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_malformed_writable_loaded_addresses() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({
+			"writable": "invalid", "readonly": ["R1", "R2"]
+		})));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert!(loaded.writable.is_empty());
+		assert_eq!(loaded.readonly, ["R1", "R2"]);
+		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
+		assert!(logs_contain("sig_loaded"));
+		assert!(logs_contain("invalid type"));
+		logs_assert(|lines| {
+			if lines.iter().any(|line| {
+				line.contains(" WARN ")
+					&& line.contains("Malformed Solana loadedAddresses metadata")
+					&& line.contains("signature=sig_loaded")
+					&& line.contains("problem=invalid type")
+			}) {
+				Ok(())
+			} else {
+				Err("Expected malformed loadedAddresses WARN with transaction context".to_string())
+			}
+		});
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_malformed_readonly_loaded_addresses() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({
+			"writable": ["W1", "W2"], "readonly": false
+		})));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert_eq!(loaded.writable, ["W1", "W2"]);
+		assert!(loaded.readonly.is_empty());
+		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
+		assert!(logs_contain("sig_loaded"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_non_string_loaded_address() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({
+			"writable": ["W1", 42, "W2"], "readonly": ["R1"]
+		})));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert!(loaded.writable.is_empty());
+		assert_eq!(loaded.readonly, ["R1"]);
+		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
+		assert!(logs_contain("sig_loaded"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_non_string_readonly_loaded_address() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({
+			"writable": ["W1"], "readonly": ["R1", 42, "R2"]
+		})));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert_eq!(loaded.writable, ["W1"]);
+		assert!(loaded.readonly.is_empty());
+		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
+		assert!(logs_contain("sig_loaded"));
+	}
+
+	#[test]
+	#[traced_test]
+	fn test_parse_single_transaction_with_both_loaded_address_lists_malformed() {
+		let tx = parse_transaction_with_loaded_addresses(Some(json!({
+			"writable": [42], "readonly": "invalid"
+		})));
+		let loaded = tx.meta.as_ref().unwrap().loaded_addresses.as_ref().unwrap();
+		assert!(loaded.writable.is_empty());
+		assert!(loaded.readonly.is_empty());
+		assert!(logs_contain("Malformed Solana loadedAddresses metadata"));
+		assert!(logs_contain("sig_loaded"));
+	}
+
+	#[test]
+	#[traced_test]
 	fn test_parse_single_transaction_with_loaded_addresses() {
 		let client = mock_client();
 		let raw_tx = json!({
@@ -2259,6 +2394,7 @@ mod tests {
 			tx.program_ids(),
 			vec!["Router".to_string(), "AmmProgram".to_string()]
 		);
+		assert!(!logs_contain("Malformed Solana loadedAddresses metadata"));
 	}
 
 	#[test]

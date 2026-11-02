@@ -12,7 +12,10 @@ use openzeppelin_monitor::{
 		SolanaMatchArguments, SolanaMonitorMatch, SolanaTransaction, SolanaTransactionInfo,
 		SolanaTransactionMessage, SolanaTransactionMeta, TransactionCondition, TransactionStatus,
 	},
-	services::filter::{handle_match, FilterError, FilterService},
+	services::{
+		blockchain::{BlockChainClient, SolanaClient},
+		filter::{handle_match, FilterError, FilterService},
+	},
 };
 
 use crate::integration::{
@@ -21,7 +24,7 @@ use crate::integration::{
 };
 
 use openzeppelin_monitor::models::Network;
-use serde_json::json;
+use serde_json::{json, Value};
 
 fn create_test_network() -> Network {
 	Network {
@@ -154,6 +157,81 @@ fn create_test_solana_block_with_transactions(transactions: Vec<SolanaTransactio
 		block_height: Some(123456789),
 		transactions,
 	})))
+}
+
+#[tokio::test]
+async fn test_filter_matches_lookup_table_program() -> Result<(), Box<FilterError>> {
+	let mut mock_solana = MockSolanaTransportClient::new();
+	let mock_response: Value = serde_json::from_str(include_str!(
+		"../../fixtures/solana/block_with_lookup_table_programs.json"
+	))
+	.unwrap();
+	mock_solana
+		.expect_send_raw_request()
+		.returning(move |_: &str, _: Option<Vec<Value>>| Ok(mock_response.clone()));
+	let client = SolanaClient::<MockSolanaTransportClient>::new_with_transport(mock_solana);
+	let blocks = client.get_blocks(461606152, None).await.unwrap();
+	assert_eq!(blocks.len(), 1);
+	let BlockType::Solana(block) = &blocks[0] else {
+		panic!("Expected Solana block");
+	};
+	assert_eq!(block.transactions.len(), 1);
+	let tx = &block.transactions[0];
+	assert_eq!(tx.0.transaction.account_keys.len(), 15);
+	let meta = tx.meta.as_ref().unwrap();
+	let loaded = meta.loaded_addresses.as_ref().unwrap();
+	assert_eq!(loaded.writable.len(), 10);
+	assert_eq!(loaded.readonly.len(), 9);
+	assert!(meta
+		.inner_instructions
+		.iter()
+		.flat_map(|group| &group.instructions)
+		.any(|ix| ix.program_id_index == 29));
+	assert_eq!(
+		tx.account_key(29),
+		Some("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C")
+	);
+
+	let mut monitor =
+		make_monitor_with_transactions(create_test_monitor(), TransactionStatus::Success);
+	monitor.addresses = vec![AddressWithSpec {
+		address: "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C".to_string(),
+		contract_spec: None,
+	}];
+	let matches = FilterService::new()
+		.filter_block(
+			&client,
+			&create_test_network(),
+			&blocks[0],
+			std::slice::from_ref(&monitor),
+			None,
+		)
+		.await?;
+	assert_eq!(matches.len(), 1);
+	let MonitorMatch::Solana(matched) = &matches[0] else {
+		panic!("Expected Solana match");
+	};
+	assert_eq!(matched.matched_on.transactions.len(), 1);
+	assert_eq!(
+		matched.transaction.signature(),
+		"3E1iaK2L9WD1mZJivfJsuVbGEMdMCM8Md9nat3Cn62kFQWFNoTKe5kfWByna8yTU5k6Li8cM6tJzWrXtBvgvg299"
+	);
+
+	// This account is present in the lookup table but never invoked as a program.
+	let non_invoked_program = "CRRS5ieQmBrZjWhcj99JuGrT5tyuWDaGAXLXLFjbAtjQ";
+	assert_eq!(tx.account_key(31), Some(non_invoked_program));
+	monitor.addresses[0].address = non_invoked_program.to_string();
+	let matches = FilterService::new()
+		.filter_block(
+			&client,
+			&create_test_network(),
+			&blocks[0],
+			&[monitor],
+			None,
+		)
+		.await?;
+	assert!(matches.is_empty());
+	Ok(())
 }
 
 #[tokio::test]

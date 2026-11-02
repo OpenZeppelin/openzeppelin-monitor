@@ -246,14 +246,12 @@ impl Transaction {
 
 	/// Get all program IDs invoked in this transaction, including inner instructions (CPIs)
 	pub fn program_ids(&self) -> Vec<String> {
-		let account_keys = self.accounts();
-
 		let resolve_program_id = |ix: &Instruction| -> Option<String> {
 			if let Some(program_id) = &ix.program_id {
 				return Some(program_id.clone());
 			}
 			let idx = ix.program_id_index as usize;
-			account_keys.get(idx).cloned()
+			self.account_key(idx).map(str::to_string)
 		};
 
 		let mut program_ids: Vec<String> = self
@@ -272,6 +270,26 @@ impl Transaction {
 		}
 
 		program_ids
+	}
+
+	/// Resolves an account index over static keys, then loaded writable, then loaded readonly.
+	pub fn account_key(&self, index: usize) -> Option<&str> {
+		let loaded = self
+			.0
+			.meta
+			.as_ref()
+			.and_then(|m| m.loaded_addresses.as_ref());
+		self.0
+			.transaction
+			.account_keys
+			.iter()
+			.chain(
+				loaded
+					.into_iter()
+					.flat_map(|l| l.writable.iter().chain(&l.readonly)),
+			)
+			.nth(index)
+			.map(String::as_str)
 	}
 
 	/// Get the fee payer address (first account in account_keys by Solana convention)
@@ -398,6 +416,92 @@ mod tests {
 			program_ids[0],
 			"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 		);
+	}
+
+	#[test]
+	fn test_account_key_resolves_static_and_loaded_addresses() {
+		let mut tx_info = create_test_transaction(true);
+		tx_info.meta.as_mut().unwrap().loaded_addresses = Some(LoadedAddresses {
+			writable: vec!["W1".to_string(), "W2".to_string()],
+			readonly: vec!["R1".to_string(), "R2".to_string()],
+		});
+		let tx = Transaction(tx_info);
+
+		assert_eq!(
+			tx.account_key(0),
+			Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+		);
+		assert_eq!(tx.account_key(1), Some("11111111111111111111111111111111"));
+		assert_eq!(tx.account_key(2), Some("W1"));
+		assert_eq!(tx.account_key(3), Some("W2"));
+		assert_eq!(tx.account_key(4), Some("R1"));
+		assert_eq!(tx.account_key(5), Some("R2"));
+		assert_eq!(tx.account_key(6), None);
+	}
+
+	#[test]
+	fn test_account_key_without_loaded_addresses_or_metadata() {
+		let mut tx_info = create_test_transaction(true);
+		let tx = Transaction(tx_info.clone());
+		assert_eq!(tx.account_key(1), Some("11111111111111111111111111111111"));
+		assert_eq!(tx.account_key(2), None);
+
+		tx_info.meta = None;
+		let tx = Transaction(tx_info);
+		assert_eq!(
+			tx.account_key(0),
+			Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+		);
+		assert_eq!(tx.account_key(2), None);
+	}
+
+	#[test]
+	fn test_program_ids_resolves_loaded_addresses_and_explicit_ids_in_order() {
+		let mut tx_info = create_test_transaction(true);
+		tx_info.transaction.instructions = vec![
+			Instruction {
+				program_id_index: 2,
+				..Instruction::default()
+			},
+			Instruction {
+				program_id_index: u8::MAX,
+				program_id: Some("Explicit".to_string()),
+				..Instruction::default()
+			},
+			Instruction {
+				program_id_index: 5,
+				..Instruction::default()
+			},
+			Instruction {
+				program_id_index: 6,
+				..Instruction::default()
+			},
+		];
+		let meta = tx_info.meta.as_mut().unwrap();
+		meta.loaded_addresses = Some(LoadedAddresses {
+			writable: vec!["W1".to_string(), "W2".to_string()],
+			readonly: vec!["R1".to_string(), "R2".to_string()],
+		});
+		meta.inner_instructions = vec![InnerInstruction {
+			index: 0,
+			instructions: vec![
+				Instruction {
+					program_id_index: 3,
+					..Instruction::default()
+				},
+				Instruction {
+					program_id_index: 4,
+					..Instruction::default()
+				},
+				Instruction {
+					program_id_index: 6,
+					..Instruction::default()
+				},
+			],
+		}];
+
+		let tx = Transaction(tx_info);
+		assert_eq!(tx.program_ids(), ["W1", "Explicit", "R2", "W2", "R1"]);
 	}
 
 	#[test]
