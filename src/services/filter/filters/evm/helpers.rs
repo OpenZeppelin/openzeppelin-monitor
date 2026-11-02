@@ -107,7 +107,8 @@ pub fn normalize_signature(signature: &str) -> String {
 pub fn format_token_value(token: &DynSolValue) -> String {
 	match token {
 		DynSolValue::Address(addr) => format!("0x{:x}", addr),
-		DynSolValue::FixedBytes(bytes, _) => format!("0x{}", hex::encode(bytes)),
+		// The value is stored left-aligned in a 32-byte word; only the first `size` bytes are part of it.
+		DynSolValue::FixedBytes(bytes, size) => format!("0x{}", hex::encode(&bytes[..*size])),
 		DynSolValue::Bytes(bytes) => format!("0x{}", hex::encode(bytes)),
 		DynSolValue::Int(num, _) => num.to_string(),
 		DynSolValue::Uint(num, _) => num.to_string(),
@@ -159,7 +160,7 @@ pub fn dyn_value_to_string(val: &DynSolValue) -> String {
 		DynSolValue::Address(addr) => format!("\"0x{:x}\"", addr),
 		DynSolValue::Uint(u, _) => u.to_string(),
 		DynSolValue::Int(i, _) => i.to_string(),
-		DynSolValue::FixedBytes(bytes, _) => format!("\"0x{}\"", hex::encode(bytes)),
+		DynSolValue::FixedBytes(bytes, size) => format!("\"0x{}\"", hex::encode(&bytes[..*size])),
 		DynSolValue::Bytes(bytes) => format!("\"0x{}\"", hex::encode(bytes)),
 		DynSolValue::Array(arr) => format!(
 			"[{}]",
@@ -467,6 +468,17 @@ mod tests {
 			format!("0x{}", hex::encode(hash_bytes))
 		);
 
+		// Test FixedBytes smaller than 32 bytes
+		let mut selector_word = [0u8; 32];
+		selector_word[..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+		assert_eq!(
+			format_token_value(&DynSolValue::FixedBytes(
+				alloy::primitives::FixedBytes::<32>::from(selector_word),
+				4
+			)),
+			"0xdeadbeef"
+		);
+
 		// Test Numbers
 		assert_eq!(
 			format_token_value(&DynSolValue::Int(I256::try_from(-123).unwrap(), 256)),
@@ -686,9 +698,7 @@ mod tests {
 		fixed_bytes[0..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 		let fixed_bytes_val =
 			DynSolValue::FixedBytes(alloy::primitives::FixedBytes::<32>::from(fixed_bytes), 4);
-		let fixed_bytes_result = dyn_value_to_string(&fixed_bytes_val);
-		assert!(fixed_bytes_result.starts_with("\"0x"));
-		assert!(fixed_bytes_result.ends_with("\""));
+		assert_eq!(dyn_value_to_string(&fixed_bytes_val), "\"0xdeadbeef\"");
 
 		// Test Function
 		let function_bytes = [

@@ -739,7 +739,13 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 
 		match lhs_kind.as_str() {
 			"address" => self.compare_address(lhs_value_str, operator, rhs_literal),
-			"string" | "bytes" | "bytes32" => {
+			"string" | "bytes" => self.compare_string(lhs_value_str, operator, rhs_literal),
+			// Fixed-size byte arrays, `bytes1` through `bytes32`.
+			kind if kind
+				.strip_prefix("bytes")
+				.and_then(|size| size.parse::<u8>().ok())
+				.is_some_and(|size| (1..=32).contains(&size)) =>
+			{
 				self.compare_string(lhs_value_str, operator, rhs_literal)
 			}
 			"bool" => self.compare_boolean(lhs_value_str, operator, rhs_literal),
@@ -1895,6 +1901,23 @@ mod tests {
 			)
 			.unwrap());
 
+		assert!(evaluator
+			.compare_final_values(
+				"bytes4",
+				"0xdeadbeef",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("0xDEADBEEF")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_final_values(
+				"bytes32",
+				"0xab",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("0xab")
+			)
+			.unwrap());
+
 		// Test routing to compare_boolean
 		assert!(evaluator
 			.compare_final_values(
@@ -1940,6 +1963,16 @@ mod tests {
 			res_unsupported,
 			Err(EvaluationError::TypeMismatch(_))
 		));
+
+		for kind in ["bytes0", "bytes33"] {
+			let res = evaluator.compare_final_values(
+				kind,
+				"0xab",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("0xab"),
+			);
+			assert!(matches!(res, Err(EvaluationError::TypeMismatch(_))));
+		}
 	}
 
 	/// --- Test cases for get_kind_from_json_value ---
