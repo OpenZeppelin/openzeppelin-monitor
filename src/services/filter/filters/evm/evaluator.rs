@@ -15,12 +15,6 @@ use std::str::FromStr;
 
 pub type EVMArgs = [EVMMatchParamEntry];
 
-const UNSIGNED_INTEGER_KINDS: &[&str] = &[
-	"uint8", "uint16", "uint32", "uint64", "uint128", "uint256", "number",
-];
-
-const SIGNED_INTEGER_KINDS: &[&str] = &["int8", "int16", "int32", "int64", "int128", "int256"];
-
 const ARRAY_KINDS: &[&str] = &[
 	"array",
 	"uint8[]",
@@ -48,6 +42,14 @@ fn is_fixed_bytes_kind(kind: &str) -> bool {
 	kind.strip_prefix("bytes")
 		.and_then(|size| size.parse::<u8>().ok())
 		.is_some_and(|size| (1..=32).contains(&size))
+}
+
+/// Returns whether `kind` is `prefix` (`uint` or `int`) followed by a valid Solidity integer
+/// size, `8` through `256` in steps of 8.
+fn is_integer_kind(kind: &str, prefix: &str) -> bool {
+	kind.strip_prefix(prefix)
+		.and_then(|bits| bits.parse::<u16>().ok())
+		.is_some_and(|bits| bits % 8 == 0 && (8..=256).contains(&bits))
 }
 
 pub struct EVMConditionEvaluator<'a> {
@@ -732,17 +734,20 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 			rhs_literal
 		);
 
-		if SIGNED_INTEGER_KINDS.contains(&lhs_kind.as_str()) {
+		if is_integer_kind(&lhs_kind, "int") {
 			return self.compare_i256(lhs_value_str, operator, rhs_literal);
 		}
 
-		if UNSIGNED_INTEGER_KINDS.contains(&lhs_kind.as_str()) {
+		if lhs_kind == "number" || is_integer_kind(&lhs_kind, "uint") {
 			return self.compare_u256(lhs_value_str, operator, rhs_literal);
 		}
 
 		if ARRAY_KINDS.contains(&lhs_kind.as_str())
-			|| lhs_kind.strip_suffix("[]").is_some_and(is_fixed_bytes_kind)
-		{
+			|| lhs_kind.strip_suffix("[]").is_some_and(|kind| {
+				is_fixed_bytes_kind(kind)
+					|| is_integer_kind(kind, "uint")
+					|| is_integer_kind(kind, "int")
+			}) {
 			return self.compare_array(lhs_value_str, operator, rhs_literal);
 		}
 
@@ -1877,6 +1882,40 @@ mod tests {
 			)
 			.unwrap());
 
+		// Test routing for integer sizes other than powers of two
+		assert!(evaluator
+			.compare_final_values(
+				"uint24",
+				"3000",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Number("3000")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_final_values(
+				"int24",
+				"-887272",
+				&ComparisonOperator::Lt,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_final_values(
+				"uint160",
+				"79228162514264337593543950336",
+				&ComparisonOperator::Gt,
+				&LiteralValue::Number("0")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_final_values(
+				"uint24[]",
+				"[500,3000]",
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("3000")
+			)
+			.unwrap());
+
 		// Test routing to compare_address
 		assert!(evaluator
 			.compare_final_values(
@@ -1976,7 +2015,9 @@ mod tests {
 			Err(EvaluationError::TypeMismatch(_))
 		));
 
-		for kind in ["bytes0", "bytes33"] {
+		for kind in [
+			"bytes0", "bytes33", "uint0", "uint7", "uint264", "int0", "int260",
+		] {
 			let res = evaluator.compare_final_values(
 				kind,
 				"0xab",
