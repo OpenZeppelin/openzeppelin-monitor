@@ -403,6 +403,7 @@ pub async fn get_contract_specs<P: ClientPoolTrait + 'static>(
 /// # Arguments
 /// * `shutdown_tx` - Watch channel for shutdown signals
 /// * `trigger_service` - Service for executing triggers
+/// * `active_monitors_trigger_scripts` - Preloaded trigger scripts, shared by every trigger task
 ///
 /// # Returns
 /// Returns a function that handles trigger execution for matching monitors
@@ -411,10 +412,11 @@ pub fn create_trigger_handler<S: TriggerExecutionServiceTrait + Send + Sync + 's
 	trigger_service: Arc<S>,
 	active_monitors_trigger_scripts: HashMap<String, (ScriptLanguage, String)>,
 ) -> Arc<impl Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()> + Send + Sync> {
+	let active_monitors_trigger_scripts = Arc::new(active_monitors_trigger_scripts);
 	Arc::new(move |block: &ProcessedBlock| {
 		let mut shutdown_rx = shutdown_tx.subscribe();
 		let trigger_service = trigger_service.clone();
-		let trigger_scripts = active_monitors_trigger_scripts.clone();
+		let trigger_scripts = Arc::clone(&active_monitors_trigger_scripts);
 		let block = block.clone();
 
 		tokio::spawn(async move {
