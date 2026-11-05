@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use crate::services::trigger::ScriptExecutor as _;
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
 	services::notification::{NotificationError, ScriptExecutor},

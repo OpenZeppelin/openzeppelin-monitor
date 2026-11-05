@@ -33,8 +33,8 @@ use crate::{
 		filter::{evm_helpers, handle_match, stellar_helpers, FilterService},
 		notification::NotificationService,
 		trigger::{
-			ScriptError, ScriptExecutorFactory, TriggerError, TriggerExecutionService,
-			TriggerExecutionServiceTrait,
+			ScriptError, ScriptExecutor, ScriptExecutorFactory, TriggerError,
+			TriggerExecutionService, TriggerExecutionServiceTrait,
 		},
 	},
 	utils::normalize_string,
