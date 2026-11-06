@@ -519,6 +519,13 @@ impl<T> EVMBlockFilter<T> {
 		abi: &ContractSpec,
 		log: &EVMReceiptLog,
 	) -> Option<EVMMatchParamsMap> {
+		// A log can have no topics at all (LOG0, e.g. an anonymous event with no indexed params),
+		// so there is no selector to look up
+		let Some(selector) = log.topics.first() else {
+			tracing::debug!("Skipping log without topics from {:?}", log.address);
+			return None;
+		};
+
 		// Create contract object from ABI
 		let contract = match abi {
 			ContractSpec::EVM(evm_spec) => {
@@ -535,13 +542,6 @@ impl<T> EVMBlockFilter<T> {
 				}
 			}
 			_ => return None,
-		};
-
-		// A log can have no topics at all (LOG0, e.g. an anonymous event with no indexed params),
-		// so there is no selector to look up
-		let Some(selector) = log.topics.first() else {
-			tracing::debug!("Skipping log without topics from {:?}", log.address);
-			return None;
 		};
 
 		// Find the matching Event
