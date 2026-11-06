@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use crate::{
 	models::{MonitorMatch, ScriptLanguage, TriggerTypeConfig},
 	services::notification::{NotificationError, ScriptExecutor},
-	services::trigger::ScriptExecutorFactory,
+	services::trigger::{ScriptExecutor as _, ScriptExecutorFactory},
 };
 
 /// A notification handler that executes scripts when triggered

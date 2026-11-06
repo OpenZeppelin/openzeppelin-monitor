@@ -5,15 +5,13 @@
 use crate::models::MonitorMatch;
 use anyhow::Context;
 use async_trait::async_trait;
-use std::{any::Any, process::Stdio, time::Duration};
+use std::{process::Stdio, time::Duration};
 use tokio::{io::AsyncWriteExt, time::timeout};
 
 /// A trait that defines the interface for executing custom scripts in different languages.
 /// Implementors must be both Send and Sync to ensure thread safety.
 #[async_trait]
-pub trait ScriptExecutor: Send + Sync + Any {
-	/// Enables downcasting by returning a reference to `Any`
-	fn as_any(&self) -> &dyn Any;
+pub trait ScriptExecutor: Send + Sync {
 	/// Executes the script with the given MonitorMatch input.
 	///
 	/// # Arguments
@@ -34,22 +32,22 @@ pub trait ScriptExecutor: Send + Sync + Any {
 }
 
 /// Executes a script by handing its content to an interpreter via an eval flag.
-pub struct InterpreterExecutor {
+#[derive(Debug, Clone, Copy)]
+pub struct InterpreterExecutor<'a> {
 	/// Interpreter binary, e.g. `python3`, `node`, `sh`
-	pub program: &'static str,
+	pub(crate) program: &'static str,
 	/// Flag that makes the interpreter evaluate the script given on the command line (`-c` / `-e`)
-	pub eval_flag: &'static str,
-	/// Content of the script to be executed
-	pub script_content: String,
-	/// Arguments passed to the interpreter itself, before the eval flag
-	pub runtime_arguments: Vec<String>,
+	pub(crate) eval_flag: &'static str,
+	/// Content of the script to be executed, borrowed from the configuration for the duration
+	/// of one execution
+	pub(crate) script_content: &'a str,
+	/// Arguments passed to the interpreter itself, before the eval flag, borrowed from the
+	/// configuration for the duration of one execution
+	pub(crate) runtime_arguments: &'a [String],
 }
 
 #[async_trait]
-impl ScriptExecutor for InterpreterExecutor {
-	fn as_any(&self) -> &dyn Any {
-		self
-	}
+impl ScriptExecutor for InterpreterExecutor<'_> {
 	async fn execute(
 		&self,
 		input: MonitorMatch,
@@ -67,9 +65,9 @@ impl ScriptExecutor for InterpreterExecutor {
 
 		let mut command = tokio::process::Command::new(self.program);
 		command
-			.args(&self.runtime_arguments)
+			.args(self.runtime_arguments)
 			.arg(self.eval_flag)
-			.arg(&self.script_content)
+			.arg(self.script_content)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
@@ -311,31 +309,31 @@ mod tests {
 			.unwrap_or_else(|_| panic!("Failed to read fixture file: {}", filename))
 	}
 
-	fn interpreter(
+	fn interpreter<'a>(
 		program: &'static str,
 		eval_flag: &'static str,
-		script: &str,
-		runtime_arguments: Vec<String>,
-	) -> InterpreterExecutor {
+		script: &'a str,
+		runtime_arguments: &'a [String],
+	) -> InterpreterExecutor<'a> {
 		InterpreterExecutor {
 			program,
 			eval_flag,
-			script_content: script.to_string(),
+			script_content: script,
 			runtime_arguments,
 		}
 	}
 
-	fn python(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
+	fn python<'a>(script: &'a str, runtime_arguments: &'a [String]) -> InterpreterExecutor<'a> {
 		let (program, eval_flag) = ScriptLanguage::Python.interpreter();
 		interpreter(program, eval_flag, script, runtime_arguments)
 	}
 
-	fn node(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
+	fn node<'a>(script: &'a str, runtime_arguments: &'a [String]) -> InterpreterExecutor<'a> {
 		let (program, eval_flag) = ScriptLanguage::JavaScript.interpreter();
 		interpreter(program, eval_flag, script, runtime_arguments)
 	}
 
-	fn sh(script: &str, runtime_arguments: Vec<String>) -> InterpreterExecutor {
+	fn sh<'a>(script: &'a str, runtime_arguments: &'a [String]) -> InterpreterExecutor<'a> {
 		let (program, eval_flag) = ScriptLanguage::Bash.interpreter();
 		interpreter(program, eval_flag, script, runtime_arguments)
 	}
@@ -356,7 +354,7 @@ result = test()
 print(result)
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 
@@ -378,7 +376,7 @@ result = test()
 print(result)
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -409,7 +407,7 @@ print("More debug info")
 print("true")
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 
@@ -446,7 +444,7 @@ print("true")
 		})();
 		"#;
 
-		let executor = node(script_content, vec![]);
+		let executor = node(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -477,7 +475,7 @@ print("true")
 		})();
 		"#;
 
-		let executor = node(script_content, vec![]);
+		let executor = node(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -501,7 +499,7 @@ sleep 0.1  # Small delay to ensure process startup
 echo "debugging..."
 echo "true"
 "#;
-		let executor = sh(script_content, vec![]);
+		let executor = sh(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -520,7 +518,7 @@ echo "debugging..."
 echo "not a boolean"
 "#;
 
-		let executor = sh(script_content, vec![]);
+		let executor = sh(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -545,7 +543,7 @@ input_json = sys.stdin.read()
 # This script produces no output
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -567,7 +565,7 @@ print("   ")
 print("     true    ")  # Should handle whitespace correctly
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -588,7 +586,7 @@ print("     true    ")  # Should handle whitespace correctly
 	exit(1)
 	"#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = MonitorMatchBuilder::new().build();
@@ -613,7 +611,7 @@ print("false")
 print("true")
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 
@@ -643,7 +641,7 @@ else:
     print("false")
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -672,7 +670,7 @@ else:
     print("false")
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 
@@ -714,7 +712,7 @@ else:
     print("false")
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 
@@ -742,7 +740,7 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_verbose_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
-		let executor = python(&script_content, vec![]);
+		let executor = python(&script_content, &[]);
 		let input = MonitorMatchBuilder::new().build();
 		let args = vec![String::from("--verbose")];
 		let result = executor
@@ -756,7 +754,7 @@ else:
 	#[tokio::test]
 	async fn test_python_script_executor_with_wrong_arg() {
 		let script_content = read_fixture("evm_filter_by_arguments.py");
-		let executor = python(&script_content, vec![]);
+		let executor = python(&script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let args = vec![String::from("--wrong_arg"), String::from("--test")];
@@ -775,7 +773,7 @@ import sys
 input_json = sys.stdin.read()
 "#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, true).await;
@@ -792,7 +790,7 @@ sys.stderr.write("Error: something went wrong\n")
 sys.exit(1)
 		"#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, true).await;
@@ -817,7 +815,7 @@ input_json = sys.stdin.read()
 time.sleep(0.3)
 		"#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let start_time = Instant::now();
@@ -840,7 +838,7 @@ input_json = sys.stdin.read()
 time.sleep(0.5)
 		"#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let start_time = Instant::now();
@@ -865,9 +863,9 @@ time.sleep(0.5)
 		let pid_path = temp_dir.path().join("pid");
 		let script = format!("echo $$ > '{}'; exec sleep 30", pid_path.display());
 
-		let executor = sh(&script, vec![]);
 		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			let executor = sh(&script, &[]);
 			executor.execute(input, &2000, None, false).await
 		}));
 
@@ -911,7 +909,7 @@ time.sleep(0.5)
 	/// Runs `execute()` with the large payload under the outer timeout. Returns `None` when the
 	/// outer timeout fired, i.e. `execute()` neither returned nor honored its own timeout.
 	async fn execute_large_input(
-		executor: InterpreterExecutor,
+		executor: InterpreterExecutor<'_>,
 		timeout_ms: u32,
 	) -> Option<Result<bool, anyhow::Error>> {
 		let input = MonitorMatchBuilder::new().build();
@@ -1086,7 +1084,7 @@ import time
 time.sleep(3)
 print(True)
 "#;
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let start = Instant::now();
 		let result = execute_large_input(executor, SCRIPT_TIMEOUT_MS).await;
@@ -1118,7 +1116,7 @@ sys.stdin.read()
 print(True)
 "#
 		);
-		let executor = python(&script_content, vec![]);
+		let executor = python(&script_content, &[]);
 
 		let result = execute_large_input(executor, 5000).await;
 		match result {
@@ -1141,7 +1139,7 @@ sys.stdin.read()
 print(True)
 "#
 		);
-		let executor = python(&script_content, vec![]);
+		let executor = python(&script_content, &[]);
 
 		let result = execute_large_input(executor, 5000).await;
 		match result {
@@ -1156,7 +1154,7 @@ print(True)
 	/// gone. That must not mask the child's real result.
 	#[tokio::test]
 	async fn test_large_stdin_early_exit_success_is_reported() {
-		let executor = sh("echo true", vec![]);
+		let executor = sh("echo true", &[]);
 
 		let result = execute_large_input(executor, 5000).await;
 		match result {
@@ -1171,7 +1169,7 @@ print(True)
 	/// error has to come from `process_script_output`, not from the stdin write.
 	#[tokio::test]
 	async fn test_large_stdin_early_exit_failure_is_reported() {
-		let executor = sh("echo oops >&2; exit 3", vec![]);
+		let executor = sh("echo oops >&2; exit 3", &[]);
 
 		let result = execute_large_input(executor, 5000).await;
 		match result {
@@ -1197,7 +1195,7 @@ import sys
 sys.stdin.read()
 print(True)
 "#;
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let result = execute_large_input(executor, 5000).await;
 		match result {
@@ -1224,9 +1222,9 @@ print(True)
 
 		// Generous so the pid file exists before the timeout fires on a loaded CI runner.
 		const DESCENDANT_TIMEOUT_MS: u32 = 2000;
-		let executor = sh(&script, vec![]);
 		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			let executor = sh(&script, &[]);
 			executor
 				.execute(input, &DESCENDANT_TIMEOUT_MS, None, false)
 				.await
@@ -1271,9 +1269,9 @@ print(True)
 			descendant_pid_path.display()
 		);
 
-		let executor = sh(&script, vec![]);
 		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			let executor = sh(&script, &[]);
 			executor.execute(input, &30_000, None, false).await
 		}));
 
@@ -1345,11 +1343,11 @@ print("true", flush=True)
 		);
 
 		const SCRIPT_TIMEOUT: u32 = 3000;
-		let executor = python(&script_content, vec![]);
 		let input = MonitorMatchBuilder::new().build();
 		let args = large_args();
 		let spawned_at = Instant::now();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			let executor = python(&script_content, &[]);
 			executor
 				.execute(input, &SCRIPT_TIMEOUT, Some(&args), false)
 				.await
@@ -1399,7 +1397,7 @@ print("true", flush=True)
 	/// successfully without reading the large payload is still reported as `Ok(true)`.
 	#[tokio::test]
 	async fn test_large_stdin_early_exit_success_notification_path() {
-		let executor = sh("echo true", vec![]);
+		let executor = sh("echo true", &[]);
 		let input = MonitorMatchBuilder::new().build();
 		let args = large_args();
 
@@ -1428,9 +1426,9 @@ print("true", flush=True)
 		// Generous so the `getpgid` check below runs before the timeout fires on a loaded CI
 		// runner.
 		const SCRIPT_TIMEOUT: u32 = 2000;
-		let executor = sh(&script, vec![]);
 		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			let executor = sh(&script, &[]);
 			executor.execute(input, &SCRIPT_TIMEOUT, None, false).await
 		}));
 
@@ -1468,9 +1466,9 @@ print("true", flush=True)
 			pid_path.display()
 		);
 
-		let executor = sh(&script, vec![]);
 		let input = MonitorMatchBuilder::new().build();
 		let mut task = AbortOnDrop::new(tokio::spawn(async move {
+			let executor = sh(&script, &[]);
 			executor.execute(input, &5000, None, false).await
 		}));
 
@@ -1593,7 +1591,7 @@ print("This is a python test error message!", file=sys.stderr)
 sys.exit(1)
 		"#;
 
-		let executor = python(script_content, vec![]);
+		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1631,7 +1629,7 @@ sys.exit(1)
 		});
 		"#;
 
-		let executor = node(script_content, vec![]);
+		let executor = node(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1657,7 +1655,7 @@ echo "This is a bash test error message!" >&2
 exit 1
 "#;
 
-		let executor = sh(script_content, vec![]);
+		let executor = sh(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1687,10 +1685,8 @@ process.stdin.on('end', () => {
 
 	#[tokio::test]
 	async fn test_javascript_script_executor_with_runtime_arguments() {
-		let executor = node(
-			JS_EXEC_ARGV_SCRIPT,
-			vec!["--max-old-space-size=4096".to_string()],
-		);
+		let runtime_arguments = vec!["--max-old-space-size=4096".to_string()];
+		let executor = node(JS_EXEC_ARGV_SCRIPT, &runtime_arguments);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -1700,7 +1696,7 @@ process.stdin.on('end', () => {
 
 	#[tokio::test]
 	async fn test_javascript_script_executor_without_runtime_arguments() {
-		let executor = node(JS_EXEC_ARGV_SCRIPT, vec![]);
+		let executor = node(JS_EXEC_ARGV_SCRIPT, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &5000, None, false).await;
@@ -1719,10 +1715,8 @@ print("true")
 	#[tokio::test]
 	async fn test_python_script_executor_with_runtime_arguments() {
 		// `-W error` turns the warning into an exception, so the script fails
-		let executor = python(
-			PYTHON_WARNING_SCRIPT,
-			vec!["-W".to_string(), "error".to_string()],
-		);
+		let runtime_arguments = vec!["-W".to_string(), "error".to_string()];
+		let executor = python(PYTHON_WARNING_SCRIPT, &runtime_arguments);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1735,7 +1729,7 @@ print("true")
 
 	#[tokio::test]
 	async fn test_python_script_executor_without_runtime_arguments_ignores_warning() {
-		let executor = python(PYTHON_WARNING_SCRIPT, vec![]);
+		let executor = python(PYTHON_WARNING_SCRIPT, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1752,7 +1746,8 @@ echo "true"
 	#[tokio::test]
 	async fn test_bash_script_executor_with_runtime_arguments() {
 		// `-e` makes the shell exit on the first failing command
-		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, vec!["-e".to_string()]);
+		let runtime_arguments = vec!["-e".to_string()];
+		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, &runtime_arguments);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1765,7 +1760,7 @@ echo "true"
 
 	#[tokio::test]
 	async fn test_bash_script_executor_without_runtime_arguments_continues_after_failure() {
-		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, vec![]);
+		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
@@ -1775,7 +1770,7 @@ echo "true"
 
 	#[tokio::test]
 	async fn test_interpreter_executor_unknown_program_reports_program_name() {
-		let executor = interpreter("definitely-not-a-program", "-c", "true", vec![]);
+		let executor = interpreter("definitely-not-a-program", "-c", "true", &[]);
 		let input = MonitorMatchBuilder::new().build();
 		let result = executor.execute(input, &1000, None, false).await;
 		assert!(result.is_err());
