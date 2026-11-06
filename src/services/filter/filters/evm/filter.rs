@@ -519,6 +519,13 @@ impl<T> EVMBlockFilter<T> {
 		abi: &ContractSpec,
 		log: &EVMReceiptLog,
 	) -> Option<EVMMatchParamsMap> {
+		// A log can have no topics at all (LOG0, e.g. an anonymous event with no indexed params),
+		// so there is no selector to look up
+		let Some(selector) = log.topics.first() else {
+			tracing::debug!("Skipping log without topics from {:?}", log.address);
+			return None;
+		};
+
 		// Create contract object from ABI
 		let contract = match abi {
 			ContractSpec::EVM(evm_spec) => {
@@ -544,11 +551,11 @@ impl<T> EVMBlockFilter<T> {
 				AbiItem::Event(e) => Some(e),
 				_ => None,
 			})
-			.find(|e| e.selector() == log.topics[0])
+			.find(|e| e.selector() == *selector)
 		{
 			Some(event) => event,
 			None => {
-				tracing::debug!("No matching event found for log topic: {:?}", log.topics[0]);
+				tracing::debug!("No matching event found for log topic: {:?}", selector);
 				return None;
 			}
 		};
@@ -558,7 +565,7 @@ impl<T> EVMBlockFilter<T> {
 			Some(data) => data,
 			None => {
 				FilterError::internal_error(
-					format!("Failed to create log data: {:?}", log.topics[0]),
+					format!("Failed to create log data: {:?}", selector),
 					None,
 					None,
 				);
@@ -2031,6 +2038,57 @@ mod tests {
 		assert_eq!(
 			involved_addresses[0],
 			"0x0000000000000000000000000000000000004321"
+		);
+	}
+
+	#[test]
+	fn test_find_matching_events_log_without_topics() {
+		let filter = create_test_filter();
+		let mut matched_events = Vec::new();
+		let mut matched_on_args = EVMMatchArguments {
+			events: Some(Vec::new()),
+			functions: None,
+		};
+		let mut involved_addresses = Vec::new();
+
+		let monitor = create_test_monitor(
+			vec![EventCondition {
+				signature: "Transfer(address,address,uint256)".to_string(),
+				expression: None,
+			}],
+			vec![],
+			vec![],
+			vec![create_test_address(
+				"0x0000000000000000000000000000000000004321",
+				Some(create_test_abi("event")),
+			)],
+		);
+
+		let transfer = create_test_log(
+			Address::from_str("0x0000000000000000000000000000000000004321").unwrap(),
+			"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+			Address::from_str("0x0000000000000000000000000000000000001234").unwrap(),
+			Address::from_str("0x0000000000000000000000000000000000005678").unwrap(),
+			"0000000000000000000000000000000000000000000000000000000000000064",
+		);
+		// LOG0, e.g. an anonymous event with no indexed params: eth_getLogs returns "topics": []
+		let log0 = EVMReceiptLog {
+			topics: vec![],
+			..transfer.clone()
+		};
+
+		filter.find_matching_events_for_transaction(
+			&[log0, transfer],
+			&monitor,
+			&mut matched_events,
+			&mut matched_on_args,
+			&mut involved_addresses,
+		);
+
+		assert_eq!(matched_events.len(), 1);
+		assert_eq!(
+			matched_events[0].signature,
+			"Transfer(address,address,uint256)"
 		);
 	}
 
