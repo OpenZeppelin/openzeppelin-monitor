@@ -32,17 +32,18 @@ pub trait ScriptExecutor: Send + Sync {
 }
 
 /// Executes a script by handing its content to an interpreter via an eval flag.
+#[derive(Debug, Clone, Copy)]
 pub struct InterpreterExecutor<'a> {
 	/// Interpreter binary, e.g. `python3`, `node`, `sh`
-	pub program: &'static str,
+	pub(crate) program: &'static str,
 	/// Flag that makes the interpreter evaluate the script given on the command line (`-c` / `-e`)
-	pub eval_flag: &'static str,
+	pub(crate) eval_flag: &'static str,
 	/// Content of the script to be executed, borrowed from the configuration for the duration
 	/// of one execution
-	pub script_content: &'a str,
+	pub(crate) script_content: &'a str,
 	/// Arguments passed to the interpreter itself, before the eval flag, borrowed from the
 	/// configuration for the duration of one execution
-	pub runtime_arguments: &'a [String],
+	pub(crate) runtime_arguments: &'a [String],
 }
 
 #[async_trait]
