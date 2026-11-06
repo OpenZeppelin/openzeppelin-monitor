@@ -11,7 +11,9 @@ use std::marker::PhantomData;
 use async_trait::async_trait;
 use base64::Engine;
 use serde_json::Value;
-use stellar_xdr::curr::{FeeBumpTransactionInnerTx, OperationBody, TransactionEnvelope};
+use stellar_xdr::curr::{
+	FeeBumpTransactionInnerTx, OperationBody, TransactionEnvelope, TransactionV1Envelope,
+};
 use tracing::instrument;
 
 use crate::{
@@ -50,6 +52,24 @@ pub struct StellarBlockFilter<T> {
 }
 
 impl<T> StellarBlockFilter<T> {
+	/// Returns the transaction whose operations should be checked, using the inner
+	/// transaction of a fee-bump envelope
+	///
+	/// # Arguments
+	/// * `envelope` - The decoded transaction envelope
+	///
+	/// # Returns
+	/// The V1 transaction envelope, or None for a V0 or missing envelope
+	fn inner_transaction(envelope: Option<&TransactionEnvelope>) -> Option<&TransactionV1Envelope> {
+		match envelope {
+			Some(TransactionEnvelope::Tx(tx)) => Some(tx),
+			Some(TransactionEnvelope::TxFeeBump(tx_fee_bump)) => match &tx_fee_bump.tx.inner_tx {
+				FeeBumpTransactionInnerTx::Tx(inner_tx) => Some(inner_tx),
+			},
+			_ => None,
+		}
+	}
+
 	/// Finds matching transactions based on monitor conditions
 	///
 	/// # Arguments
@@ -79,16 +99,7 @@ impl<T> StellarBlockFilter<T> {
 		let mut tx_operations: Vec<TxOperation> = vec![];
 
 		if let Some(decoded) = transaction.decoded() {
-			let tx_to_process = match &decoded.envelope {
-				Some(TransactionEnvelope::Tx(tx)) => Some(tx),
-				Some(TransactionEnvelope::TxFeeBump(tx_fee_bump)) => {
-					match &tx_fee_bump.tx.inner_tx {
-						FeeBumpTransactionInnerTx::Tx(inner_tx) => Some(inner_tx),
-					}
-				}
-				_ => None,
-			};
-			if let Some(tx) = tx_to_process {
+			if let Some(tx) = Self::inner_transaction(decoded.envelope.as_ref()) {
 				let from = tx.tx.source_account.to_string();
 				for operation in tx.tx.operations.iter() {
 					match &operation.body {
@@ -332,16 +343,8 @@ impl<T> StellarBlockFilter<T> {
 		matched_on_args: &mut StellarMatchArguments,
 	) {
 		let mut handle_operations = |tx: &Option<TransactionEnvelope>| {
-			let tx_to_process = match tx {
-				Some(TransactionEnvelope::Tx(tx)) => tx,
-				Some(TransactionEnvelope::TxFeeBump(tx_fee_bump)) => {
-					match &tx_fee_bump.tx.inner_tx {
-						FeeBumpTransactionInnerTx::Tx(inner_tx) => inner_tx,
-					}
-				}
-				_ => {
-					return;
-				}
+			let Some(tx_to_process) = Self::inner_transaction(tx.as_ref()) else {
+				return;
 			};
 
 			for operation in tx_to_process.tx.operations.iter() {
