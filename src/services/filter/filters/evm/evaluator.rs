@@ -9,6 +9,7 @@ use crate::{
 		LiteralValue,
 	},
 };
+use alloy::primitives::U256;
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
 use std::str::FromStr;
@@ -79,6 +80,14 @@ impl<'a> EVMConditionEvaluator<'a> {
 			}
 			JsonValue::Number(n) => {
 				let lhs_val_str = n.to_string();
+				// Hex literals compare by value, as they do for scalar integers.
+				if let Some(hex) = rhs_str
+					.strip_prefix("0x")
+					.or_else(|| rhs_str.strip_prefix("0X"))
+				{
+					return U256::from_str_radix(hex, 16)
+						.is_ok_and(|rhs| U256::from_str(&lhs_val_str).is_ok_and(|lhs| lhs == rhs));
+				}
 				match (Decimal::from_str(&lhs_val_str), Decimal::from_str(rhs_str)) {
 					(Ok(lhs_dec), Ok(rhs_dec)) => {
 						// Both are valid decimals, compare them numerically
@@ -1388,6 +1397,28 @@ mod tests {
 				&LiteralValue::Str("true")
 			)
 			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_array_json_contains_hex_number() {
+		let evaluator = create_evaluator();
+		let lhs_json_array = r#"[500, 3000, -1]"#;
+		for (literal, expected) in [
+			(LiteralValue::Str("0xbb8"), true),
+			(LiteralValue::Str("0xBB8"), true),
+			(LiteralValue::Number("3000"), true),
+			(LiteralValue::Str("0x1f4"), true),
+			(LiteralValue::Number("-1"), true),
+			(LiteralValue::Str("0x64"), false),
+		] {
+			assert_eq!(
+				evaluator
+					.compare_array(lhs_json_array, &ComparisonOperator::Contains, &literal)
+					.unwrap(),
+				expected,
+				"{literal:?}"
+			);
+		}
 	}
 
 	#[test]
