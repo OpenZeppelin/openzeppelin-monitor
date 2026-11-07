@@ -2306,6 +2306,22 @@ mod tests {
 	}
 
 	#[test]
+	fn test_evaluate_expression_array_contains_hex_number() {
+		let filter = create_test_filter();
+		let args = vec![create_test_param("fees", "[500,3000]", "uint256[]")];
+
+		assert!(filter
+			.evaluate_expression("fees contains 0xbb8", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("fees contains 3000", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("fees contains 0x64", &args)
+			.unwrap());
+	}
+
+	#[test]
 	fn test_evaluate_expression_boolean_comparisons() {
 		let filter = create_test_filter();
 		let args = vec![create_test_param("is_active", "true", "bool")];
