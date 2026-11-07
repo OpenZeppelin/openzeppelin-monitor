@@ -11,6 +11,13 @@ use openzeppelin_monitor::services::filter::{
 use proptest::{prelude::*, test_runner::Config};
 use serde_json::json;
 
+/// Mirrors the evaluator's integer kind check: `prefix` followed by 8 to 256 bits in steps of 8.
+fn is_integer_kind(kind: &str, prefix: &str) -> bool {
+	kind.strip_prefix(prefix)
+		.and_then(|bits| bits.parse::<u16>().ok())
+		.is_some_and(|bits| bits % 8 == 0 && (8..=256).contains(&bits))
+}
+
 // Generator for alloy DynSolValue values
 prop_compose! {
 	fn generate_token()(
@@ -285,14 +292,16 @@ prop_compose! {
 			// Unsigned integers
 			Just("uint8"), Just("uint16"), Just("uint32"), Just("uint64"),
 			Just("uint128"), Just("uint256"), Just("number"),
+			Just("uint24"), Just("uint96"), Just("uint160"),
 			// Signed integers
 			Just("int8"), Just("int16"), Just("int32"), Just("int64"),
 			Just("int128"), Just("int256"),
+			Just("int24"), Just("int160"),
 			// Arrays
 			Just("array"), Just("uint8[]"), Just("uint16[]"), Just("uint32[]"),
 			Just("uint64[]"), Just("uint128[]"), Just("uint256[]"),
 			Just("int8[]"), Just("int16[]"), Just("int32[]"), Just("int64[]"),
-			Just("int128[]"), Just("int256[]"), Just("string[]"),
+			Just("int128[]"), Just("int256[]"), Just("uint24[]"), Just("int24[]"), Just("string[]"),
 			Just("address[]"), Just("bool[]"), Just("fixed[]"), Just("ufixed[]"),
 			Just("bytes[]"), Just("bytes32[]"), Just("tuple[]"),
 			// Other types
@@ -452,10 +461,10 @@ proptest! {
 		// Result via direct call (match on normalized kind)
 		let normalized_kind = kind.to_lowercase();
 		let direct_result = match normalized_kind.as_str() {
-			k if ["uint8", "uint16", "uint32", "uint64", "uint128", "uint256", "number"].contains(&k) => {
+			k if k == "number" || is_integer_kind(k, "uint") => {
 				evaluator.compare_u256(&value, &operator, &literal)
 			},
-			k if ["int8", "int16", "int32", "int64", "int128", "int256"].contains(&k) => {
+			k if is_integer_kind(k, "int") => {
 				evaluator.compare_i256(&value, &operator, &literal)
 			},
 			"address" => evaluator.compare_address(&value, &operator, &literal),
@@ -496,11 +505,12 @@ proptest! {
 
 		// Skip if it's an invalid kind after normalization
 		if !["uint8", "uint16", "uint32", "uint64", "uint128", "uint256", "number",
+			  "uint24", "uint96", "uint160", "int24", "int160",
 			  "int8", "int16", "int32", "int64", "int128", "int256",
 			  "address", "string", "bytes", "bytes32", "bool",
 			  "array", "uint8[]", "uint16[]", "uint32[]", "uint64[]", "uint128[]", "uint256[]",
 			  "int8[]", "int16[]", "int32[]", "int64[]", "int128[]", "int256[]",
-			  "string[]", "address[]", "bool[]", "bytes[]", "bytes32[]", "tuple[]"].contains(&base_kind.as_str()) {
+			  "uint24[]", "int24[]", "string[]", "address[]", "bool[]", "bytes[]", "bytes32[]", "tuple[]"].contains(&base_kind.as_str()) {
 			return Ok(());
 		}
 

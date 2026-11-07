@@ -15,25 +15,13 @@ use std::str::FromStr;
 
 pub type EVMArgs = [EVMMatchParamEntry];
 
+// Integer and fixed-size byte arrays are matched by size in `compare_final_values`.
 const ARRAY_KINDS: &[&str] = &[
 	"array",
-	"uint8[]",
-	"uint16[]",
-	"uint32[]",
-	"uint64[]",
-	"uint128[]",
-	"uint256[]",
-	"int8[]",
-	"int16[]",
-	"int32[]",
-	"int64[]",
-	"int128[]",
-	"int256[]",
 	"string[]",
 	"address[]",
 	"bool[]",
 	"bytes[]",
-	"bytes32[]",
 	"tuple[]",
 ];
 
