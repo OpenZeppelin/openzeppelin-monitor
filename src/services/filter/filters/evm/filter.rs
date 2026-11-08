@@ -2288,6 +2288,24 @@ mod tests {
 	}
 
 	#[test]
+	fn test_evaluate_expression_non_power_of_two_integer_sizes() {
+		let filter = create_test_filter();
+		// Uniswap V3 `Swap` event fields.
+		let args = vec![
+			create_test_param("sqrtPriceX96", "79228162514264337593543950336", "uint160"),
+			create_test_param("tick", "-887272", "int24"),
+			create_test_param("fee", "3000", "uint24"),
+		];
+
+		assert!(filter
+			.evaluate_expression("sqrtPriceX96 > 79228162514264337593543950335", &args)
+			.unwrap());
+		assert!(filter.evaluate_expression("tick < -887000", &args).unwrap());
+		assert!(filter.evaluate_expression("fee == 3000", &args).unwrap());
+		assert!(!filter.evaluate_expression("fee == 500", &args).unwrap());
+	}
+
+	#[test]
 	fn test_evaluate_expression_boolean_comparisons() {
 		let filter = create_test_filter();
 		let args = vec![create_test_param("is_active", "true", "bool")];
