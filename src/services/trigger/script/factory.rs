@@ -3,10 +3,7 @@
 //! This module maps a script language to the interpreter that runs it and creates
 //! the corresponding script executor.
 
-use crate::{
-	models::ScriptLanguage,
-	services::trigger::script::executor::{InterpreterExecutor, ScriptExecutor},
-};
+use crate::{models::ScriptLanguage, services::trigger::script::executor::InterpreterExecutor};
 
 /// Factory for creating script executors based on the script language.
 pub struct ScriptExecutorFactory;
@@ -26,26 +23,27 @@ impl ScriptExecutorFactory {
 	///
 	/// # Returns
 	///
-	/// Returns a boxed (Rust will allocate on the heap) trait object implementing the
-	/// `ScriptExecutor` trait
-	pub fn create(
+	/// Returns an [`InterpreterExecutor`] that borrows both `script_content` and
+	/// `runtime_arguments` for the duration of one execution; nothing is copied
+	pub fn create<'a>(
 		language: &ScriptLanguage,
-		script_content: &str,
-		runtime_arguments: &[String],
-	) -> Box<dyn ScriptExecutor> {
+		script_content: &'a str,
+		runtime_arguments: &'a [String],
+	) -> InterpreterExecutor<'a> {
 		let (program, eval_flag) = language.interpreter();
-		Box::new(InterpreterExecutor {
+		InterpreterExecutor {
 			program,
 			eval_flag,
-			script_content: script_content.to_string(),
-			runtime_arguments: runtime_arguments.to_vec(),
-		})
+			script_content,
+			runtime_arguments,
+		}
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::services::trigger::ScriptExecutor as _;
 	use crate::{
 		models::ScriptLanguage, utils::tests::builders::evm::monitor_match::MonitorMatchBuilder,
 	};
@@ -57,16 +55,6 @@ mod tests {
 		ScriptLanguage::Bash,
 	];
 
-	fn downcast<'a>(
-		executor: &'a dyn ScriptExecutor,
-		language: &ScriptLanguage,
-	) -> &'a InterpreterExecutor {
-		executor
-			.as_any()
-			.downcast_ref::<InterpreterExecutor>()
-			.unwrap_or_else(|| panic!("{:?} should map to InterpreterExecutor", language))
-	}
-
 	#[test]
 	fn test_create_maps_language_to_interpreter() {
 		// Compare against the shared mapping, so the factory cannot keep its own table.
@@ -74,7 +62,6 @@ mod tests {
 			let (program, eval_flag) = language.interpreter();
 			for script in ["print('Hello')", ""] {
 				let executor = ScriptExecutorFactory::create(language, script, &[]);
-				let executor = downcast(executor.as_ref(), language);
 				assert_eq!(executor.program, program, "program for {:?}", language);
 				assert_eq!(
 					executor.eval_flag, eval_flag,
@@ -92,9 +79,9 @@ mod tests {
 		for runtime_arguments in [vec![], vec!["--flag".to_string(), "value".to_string()]] {
 			for language in &LANGUAGES {
 				let executor = ScriptExecutorFactory::create(language, script, &runtime_arguments);
-				let executor = downcast(executor.as_ref(), language);
 				assert_eq!(
-					executor.runtime_arguments, runtime_arguments,
+					executor.runtime_arguments,
+					runtime_arguments.as_slice(),
 					"runtime arguments for {:?}",
 					language
 				);
