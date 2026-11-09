@@ -11,7 +11,9 @@ use std::marker::PhantomData;
 use async_trait::async_trait;
 use base64::Engine;
 use serde_json::Value;
-use stellar_xdr::curr::{FeeBumpTransactionInnerTx, OperationBody, TransactionEnvelope};
+use stellar_xdr::curr::{
+	FeeBumpTransactionInnerTx, OperationBody, TransactionEnvelope, TransactionV1Envelope,
+};
 use tracing::instrument;
 
 use crate::{
@@ -50,6 +52,24 @@ pub struct StellarBlockFilter<T> {
 }
 
 impl<T> StellarBlockFilter<T> {
+	/// Returns the transaction whose operations should be checked, using the inner
+	/// transaction of a fee-bump envelope
+	///
+	/// # Arguments
+	/// * `envelope` - The decoded transaction envelope
+	///
+	/// # Returns
+	/// The V1 transaction envelope, or None for a V0 or missing envelope
+	fn inner_transaction(envelope: Option<&TransactionEnvelope>) -> Option<&TransactionV1Envelope> {
+		match envelope {
+			Some(TransactionEnvelope::Tx(tx)) => Some(tx),
+			Some(TransactionEnvelope::TxFeeBump(tx_fee_bump)) => match &tx_fee_bump.tx.inner_tx {
+				FeeBumpTransactionInnerTx::Tx(inner_tx) => Some(inner_tx),
+			},
+			_ => None,
+		}
+	}
+
 	/// Finds matching transactions based on monitor conditions
 	///
 	/// # Arguments
@@ -79,7 +99,7 @@ impl<T> StellarBlockFilter<T> {
 		let mut tx_operations: Vec<TxOperation> = vec![];
 
 		if let Some(decoded) = transaction.decoded() {
-			if let Some(TransactionEnvelope::Tx(tx)) = &decoded.envelope {
+			if let Some(tx) = Self::inner_transaction(decoded.envelope.as_ref()) {
 				let from = tx.tx.source_account.to_string();
 				for operation in tx.tx.operations.iter() {
 					match &operation.body {
@@ -323,16 +343,8 @@ impl<T> StellarBlockFilter<T> {
 		matched_on_args: &mut StellarMatchArguments,
 	) {
 		let mut handle_operations = |tx: &Option<TransactionEnvelope>| {
-			let tx_to_process = match tx {
-				Some(TransactionEnvelope::Tx(tx)) => tx,
-				Some(TransactionEnvelope::TxFeeBump(tx_fee_bump)) => {
-					match &tx_fee_bump.tx.inner_tx {
-						FeeBumpTransactionInnerTx::Tx(inner_tx) => inner_tx,
-					}
-				}
-				_ => {
-					return;
-				}
+			let Some(tx_to_process) = Self::inner_transaction(tx.as_ref()) else {
+				return;
 			};
 
 			for operation in tx_to_process.tx.operations.iter() {
@@ -1441,6 +1453,53 @@ mod tests {
 		filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
 
 		assert_eq!(matched_transactions.len(), 0);
+	}
+
+	#[test]
+	fn test_find_matching_transaction_fee_bump_with_expression() {
+		let filter = create_test_filter();
+		let from = "GCXKG6RN4ONIEPCMNFB732A436Z5PNDSRLGWK7GBLCMQLIFO4S7EYWVU";
+		let to = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+
+		for is_fee_bump in [false, true] {
+			let transaction = create_test_transaction(
+				"SUCCESS",
+				"3389e9f0f1a65f19736cacf544c2e825313e8447f569233bb8db39aa607c8889",
+				1,
+				Some("150"),
+				Some(from),
+				Some(to),
+				None,
+				is_fee_bump,
+			);
+
+			for expression in [
+				"value > 100".to_string(),
+				format!("from == {}", from),
+				format!("to == {}", to),
+			] {
+				let mut matched_transactions = Vec::new();
+				let monitor = create_test_monitor(
+					vec![],
+					vec![],
+					vec![TransactionCondition {
+						status: TransactionStatus::Success,
+						expression: Some(expression.clone()),
+					}],
+					vec![],
+				);
+
+				filter.find_matching_transaction(&transaction, &monitor, &mut matched_transactions);
+
+				assert_eq!(
+					matched_transactions.len(),
+					1,
+					"is_fee_bump: {}, expression: {}",
+					is_fee_bump,
+					expression
+				);
+			}
+		}
 	}
 
 	#[test]
