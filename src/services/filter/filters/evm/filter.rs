@@ -635,14 +635,35 @@ impl<T> EVMBlockFilter<T> {
 	/// # Arguments
 	/// * `monitors` - Monitors applicable to the block being filtered
 	///
+	/// Addresses that are not valid 20-byte EVM addresses are left out, since the node
+	/// would reject the whole request because of one of them. Such an address can never
+	/// match a log or a transaction anyway.
+	///
 	/// # Returns
 	/// The sorted, de-duplicated, lowercase `0x`-prefixed addresses, or `None` when no
-	/// monitor declares an address, in which case the request is left unfiltered.
+	/// monitor declares a valid address, in which case the request is left unfiltered.
 	fn monitored_addresses(monitors: &[Monitor]) -> Option<Vec<String>> {
 		let mut addresses: Vec<String> = monitors
 			.iter()
-			.flat_map(|monitor| monitor.addresses.iter())
-			.map(|address| format!("0x{}", normalize_address(&address.address)))
+			.flat_map(|monitor| {
+				monitor
+					.addresses
+					.iter()
+					.map(move |address| (monitor.name.as_str(), address.address.as_str()))
+			})
+			.filter_map(|(monitor_name, address)| {
+				let normalized = format!("0x{}", normalize_address(address));
+				if normalized.parse::<Address>().is_ok() {
+					Some(normalized)
+				} else {
+					tracing::warn!(
+						monitor = monitor_name,
+						address,
+						"Ignoring invalid EVM address in eth_getLogs filter"
+					);
+					None
+				}
+			})
 			.collect();
 		addresses.sort_unstable();
 		addresses.dedup();
@@ -1151,6 +1172,26 @@ mod tests {
 		assert_eq!(EVMBlockFilter::<()>::monitored_addresses(&[]), None);
 		assert_eq!(
 			EVMBlockFilter::<()>::monitored_addresses(&[address_only_monitor(&[])]),
+			None
+		);
+	}
+
+	#[test]
+	fn test_monitored_addresses_leaves_out_invalid_addresses() {
+		let monitors = [address_only_monitor(&[
+			"0x1234",
+			"not an address",
+			"0x0000000000000000000000000000000000000003",
+		])];
+
+		assert_eq!(
+			EVMBlockFilter::<()>::monitored_addresses(&monitors),
+			Some(vec![
+				"0x0000000000000000000000000000000000000003".to_string()
+			])
+		);
+		assert_eq!(
+			EVMBlockFilter::<()>::monitored_addresses(&[address_only_monitor(&["0x1234"])]),
 			None
 		);
 	}
