@@ -367,7 +367,7 @@ print(result)
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -424,7 +424,7 @@ print("true")
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -462,7 +462,7 @@ print("true")
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -524,7 +524,7 @@ echo "true"
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -601,7 +601,7 @@ print("     true    ")  # Should handle whitespace correctly
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -652,7 +652,7 @@ print("true")
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -717,7 +717,7 @@ else:
 		let result = executor
 			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(!result.unwrap());
 
 		// Test with non-matching argument
@@ -725,7 +725,7 @@ else:
 		let result = executor
 			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -763,7 +763,7 @@ else:
 		let result = executor
 			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 
 		// Test with wrong argument
@@ -771,7 +771,7 @@ else:
 		let result = executor
 			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(!result.unwrap());
 	}
 
@@ -785,7 +785,7 @@ else:
 			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -800,7 +800,7 @@ else:
 			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(!result.unwrap());
 	}
 
@@ -817,7 +817,7 @@ input_json = sys.stdin.read()
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, true)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -870,7 +870,7 @@ time.sleep(0.3)
 
 		// A successful result already shows that the executor did not time out; a separate
 		// wall-clock upper bound could itself fail under CPU load.
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		// Verify that execution took at least 300ms (the sleep time)
 		assert!(elapsed.as_millis() >= 300);
 	}
@@ -881,7 +881,7 @@ time.sleep(0.3)
 import sys
 import time
 input_json = sys.stdin.read()
-time.sleep(0.5)
+time.sleep(30)
 		"#;
 
 		let executor = python(script_content, &[]);
@@ -891,9 +891,21 @@ time.sleep(0.5)
 		let result = executor.execute(input, &400, None, true).await;
 		let elapsed = start_time.elapsed();
 
-		assert!(result.is_err());
-		// Verify that execution took at least 300ms (the sleep time)
-		assert!(elapsed.as_millis() >= 400 && elapsed.as_millis() < 600);
+		match result {
+			Err(e) => assert!(e.to_string().contains("timed out"), "unexpected error: {e}"),
+			Ok(v) => panic!("expected a timeout error, got Ok({v})"),
+		}
+		// Lower bound: the executor waited for the full 400ms timeout before giving up.
+		assert!(
+			elapsed.as_millis() >= 400,
+			"execute() returned before the 400ms timeout (took {elapsed:?})"
+		);
+		// Upper bound: the executor returned at the timeout instead of waiting for the script,
+		// which sleeps for 30s. The bound is generous so it holds on a loaded machine.
+		assert!(
+			elapsed < Duration::from_secs(5),
+			"execute() waited for the script instead of returning at the timeout (took {elapsed:?})"
+		);
 	}
 
 	/// Proves that a script which outlives its timeout is actually killed, not just abandoned.
@@ -1750,7 +1762,7 @@ process.stdin.on('end', () => {
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -1762,7 +1774,7 @@ process.stdin.on('end', () => {
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(!result.unwrap());
 	}
 
@@ -1800,7 +1812,7 @@ print("true")
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
@@ -1836,7 +1848,7 @@ echo "true"
 		let result = executor
 			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
 			.await;
-		assert!(result.is_ok());
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 		assert!(result.unwrap());
 	}
 
