@@ -192,6 +192,7 @@ impl<T: TriggerRepositoryTrait + Send + Sync> TriggerExecutionServiceTrait
 					script_path,
 					arguments: _,
 					runtime_arguments: _,
+					interpreter: _,
 					timeout_ms: _,
 				} = &trigger_config.config
 				else {

@@ -495,6 +495,7 @@ print(True)  # Always return true for test
 		timeout_ms: 1000,
 		arguments: None,
 		runtime_arguments: vec![],
+		interpreter: None,
 	}];
 
 	let processed_block = ProcessedBlock {

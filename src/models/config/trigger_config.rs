@@ -1184,6 +1184,88 @@ mod tests {
 		assert_eq!(deserialized, trigger);
 	}
 
+	#[test]
+	fn test_script_trigger_interpreter_serde() {
+		// Configuration without the field must still load (backward compatibility)
+		// and must not grow an `interpreter` key when serialized
+		let without_field = r#"{
+			"name": "script_trigger",
+			"trigger_type": "script",
+			"config": {
+				"language": "Python",
+				"script_path": "./script.py",
+				"timeout_ms": 1000
+			}
+		}"#;
+		let trigger: Trigger =
+			serde_json::from_str(without_field).expect("config without interpreter should load");
+		match &trigger.config {
+			TriggerTypeConfig::Script { interpreter, .. } => {
+				assert_eq!(*interpreter, None);
+			}
+			_ => panic!("Expected script config"),
+		}
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert!(serialized["config"].get("interpreter").is_none());
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, trigger);
+
+		// A bare command name and an explicit path are both preserved verbatim
+		for expected in ["python3.11", "/opt/venv/bin/python"] {
+			let with_field = format!(
+				r#"{{
+					"name": "script_trigger",
+					"trigger_type": "script",
+					"config": {{
+						"language": "Python",
+						"script_path": "./script.py",
+						"interpreter": "{expected}",
+						"timeout_ms": 1000
+					}}
+				}}"#
+			);
+			let trigger: Trigger = serde_json::from_str(&with_field)
+				.unwrap_or_else(|e| panic!("interpreter {expected:?} should load: {e}"));
+			match &trigger.config {
+				TriggerTypeConfig::Script { interpreter, .. } => {
+					assert_eq!(interpreter.as_deref(), Some(expected));
+				}
+				_ => panic!("Expected script config"),
+			}
+			let serialized = serde_json::to_value(&trigger).unwrap();
+			assert_eq!(
+				serialized["config"]["interpreter"],
+				serde_json::json!(expected)
+			);
+			let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+			assert_eq!(deserialized, trigger);
+		}
+
+		// An explicit null behaves like an absent field
+		let with_null = r#"{
+			"name": "script_trigger",
+			"trigger_type": "script",
+			"config": {
+				"language": "Python",
+				"script_path": "./script.py",
+				"interpreter": null,
+				"timeout_ms": 1000
+			}
+		}"#;
+		let trigger: Trigger =
+			serde_json::from_str(with_null).expect("null interpreter should load");
+		match &trigger.config {
+			TriggerTypeConfig::Script { interpreter, .. } => {
+				assert_eq!(*interpreter, None);
+			}
+			_ => panic!("Expected script config"),
+		}
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert!(serialized["config"].get("interpreter").is_none());
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, trigger);
+	}
+
 	#[tokio::test]
 	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/triggers/invalid.json");

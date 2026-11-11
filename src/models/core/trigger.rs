@@ -150,6 +150,10 @@ pub enum TriggerTypeConfig {
 		/// Arguments passed to the script interpreter itself (before `-e` / `-c`)
 		#[serde(default, skip_serializing_if = "Vec::is_empty")]
 		runtime_arguments: Vec<String>,
+		/// Interpreter binary used to run the script, overriding the default for the language
+		/// (a command name resolved via `PATH`, or an explicit path)
+		#[serde(default, skip_serializing_if = "Option::is_none")]
+		interpreter: Option<String>,
 		/// Timeout in milliseconds
 		timeout_ms: u32,
 	},

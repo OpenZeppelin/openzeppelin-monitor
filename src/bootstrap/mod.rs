@@ -953,6 +953,7 @@ print(result)
 			timeout_ms: 1000,
 			arguments: None,
 			runtime_arguments: vec![],
+			interpreter: None,
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -975,6 +976,7 @@ print(result)
 			timeout_ms: 1000,
 			arguments: None,
 			runtime_arguments: vec![],
+			interpreter: None,
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,
@@ -1010,6 +1012,7 @@ print("true")
 			timeout_ms: 1000,
 			arguments: None,
 			runtime_arguments: vec!["-W".to_string(), "error".to_string()],
+			interpreter: None,
 		};
 		let result =
 			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
@@ -1032,6 +1035,7 @@ print("true")
 			timeout_ms: 1000,
 			arguments: None,
 			runtime_arguments: vec![],
+			interpreter: None,
 		};
 		let match_item = create_mock_monitor_match_from_path(
 			BlockChainType::EVM,

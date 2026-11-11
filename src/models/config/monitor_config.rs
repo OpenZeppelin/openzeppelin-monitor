@@ -474,6 +474,58 @@ mod tests {
 	}
 
 	#[test]
+	fn test_trigger_conditions_interpreter_serde() {
+		// Configuration without the field must still load (backward compatibility)
+		// and must not grow an `interpreter` key when serialized
+		let without_field = r#"{
+			"script_path": "./filter.py",
+			"language": "Python",
+			"timeout_ms": 1000
+		}"#;
+		let conditions: TriggerConditions =
+			serde_json::from_str(without_field).expect("config without interpreter should load");
+		assert_eq!(conditions.interpreter, None);
+		let serialized = serde_json::to_value(&conditions).unwrap();
+		assert!(serialized.get("interpreter").is_none());
+		let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, conditions);
+
+		// A bare command name and an explicit path are both preserved verbatim
+		for interpreter in ["python3.11", "/opt/venv/bin/python"] {
+			let with_field = format!(
+				r#"{{
+					"script_path": "./filter.py",
+					"language": "Python",
+					"interpreter": "{interpreter}",
+					"timeout_ms": 1000
+				}}"#
+			);
+			let conditions: TriggerConditions = serde_json::from_str(&with_field)
+				.unwrap_or_else(|e| panic!("interpreter {interpreter:?} should load: {e}"));
+			assert_eq!(conditions.interpreter.as_deref(), Some(interpreter));
+			let serialized = serde_json::to_value(&conditions).unwrap();
+			assert_eq!(serialized["interpreter"], serde_json::json!(interpreter));
+			let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
+			assert_eq!(deserialized, conditions);
+		}
+
+		// An explicit null behaves like an absent field
+		let with_null = r#"{
+			"script_path": "./filter.py",
+			"language": "Python",
+			"interpreter": null,
+			"timeout_ms": 1000
+		}"#;
+		let conditions: TriggerConditions =
+			serde_json::from_str(with_null).expect("null interpreter should load");
+		assert_eq!(conditions.interpreter, None);
+		let serialized = serde_json::to_value(&conditions).unwrap();
+		assert!(serialized.get("interpreter").is_none());
+		let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, conditions);
+	}
+
+	#[test]
 	fn test_validate_monitor_with_invalid_script_path() {
 		let invalid_monitor = MonitorBuilder::new()
 			.name("TestMonitor")

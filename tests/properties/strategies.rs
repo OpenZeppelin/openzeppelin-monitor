@@ -309,6 +309,8 @@ pub fn trigger_conditions_strategy() -> impl Strategy<Value = Vec<TriggerConditi
 				script_path,
 				arguments: Some(arguments.split(',').map(|s| s.to_string()).collect()),
 				runtime_arguments,
+				// Always `None`: arbitrary strings are not valid interpreters
+				interpreter: None,
 				language,
 				timeout_ms,
 			}]

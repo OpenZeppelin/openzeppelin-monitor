@@ -140,6 +140,7 @@ impl MonitorBuilder {
 			timeout_ms,
 			arguments,
 			runtime_arguments: vec![],
+			interpreter: None,
 			language,
 		});
 		self
