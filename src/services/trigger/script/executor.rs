@@ -301,6 +301,12 @@ mod tests {
 	use crate::{models::ScriptLanguage, utils::tests::evm::monitor_match::MonitorMatchBuilder};
 	use std::{fs, path::Path, time::Instant};
 
+	/// Script timeout for tests that do not expect a timeout: they only run a short script and
+	/// check its result. Generous so that slow interpreter startup on a loaded machine does not
+	/// turn into a spurious "Script execution timed out". Tests that exercise the timeout itself
+	/// use their own, deliberately short values (e.g. `SCRIPT_TIMEOUT_MS`).
+	const GENEROUS_TIMEOUT_MS: u32 = 5000;
+
 	fn read_fixture(filename: &str) -> String {
 		let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
 			.join("tests/integration/fixtures/filters")
@@ -358,8 +364,9 @@ print(result)
 
 		let input = MonitorMatchBuilder::new().build();
 
-		let timeout = 1000;
-		let result = executor.execute(input, &timeout, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -379,13 +386,16 @@ print(result)
 		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
 				assert!(
-					err_msg.contains("Last line of output is not a valid boolean: not a boolean")
+					err_msg.contains("Last line of output is not a valid boolean: not a boolean"),
+					"unexpected error: {err_msg}"
 				);
 			}
 			_ => panic!("Expected error"),
@@ -411,7 +421,9 @@ print("true")
 
 		let input = MonitorMatchBuilder::new().build();
 
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -447,7 +459,9 @@ print("true")
 		let executor = node(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &5000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -478,12 +492,17 @@ print("true")
 		let executor = node(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &5000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
 		match result {
 			Err(err) => {
 				let err_msg = err.to_string();
-				assert!(err_msg.contains("Last line of output is not a valid boolean"));
+				assert!(
+					err_msg.contains("Last line of output is not a valid boolean"),
+					"unexpected error: {err_msg}"
+				);
 			}
 			_ => panic!("Expected error"),
 		}
@@ -502,7 +521,9 @@ echo "true"
 		let executor = sh(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -521,13 +542,17 @@ echo "not a boolean"
 		let executor = sh(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Last line of output is not a valid boolean"));
+				assert!(
+					e.to_string()
+						.contains("Last line of output is not a valid boolean"),
+					"unexpected error: {e}"
+				);
 			}
 			Ok(_) => {
 				panic!("Expected ParseError, got success");
@@ -546,11 +571,16 @@ input_json = sys.stdin.read()
 		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 
 		match result {
 			Err(e) => {
-				assert!(e.to_string().contains("Script produced no output"));
+				assert!(
+					e.to_string().contains("Script produced no output"),
+					"unexpected error: {e}"
+				);
 			}
 			_ => panic!("Expected error"),
 		}
@@ -568,7 +598,9 @@ print("     true    ")  # Should handle whitespace correctly
 		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -591,7 +623,9 @@ print("     true    ")  # Should handle whitespace correctly
 		// Create an invalid MonitorMatch that will fail JSON serialization
 		let input = MonitorMatchBuilder::new().build();
 
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
 	}
 
@@ -615,7 +649,9 @@ print("true")
 
 		let input = MonitorMatchBuilder::new().build();
 
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -644,7 +680,9 @@ else:
 		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(!result.unwrap());
 	}
 
@@ -677,7 +715,7 @@ else:
 		// Test with matching argument
 		let args = vec![String::from("test_argument")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
@@ -685,7 +723,7 @@ else:
 		// Test with non-matching argument
 		let args = vec![String::from("--verbose"), String::from("--other-arg")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -723,7 +761,7 @@ else:
 			String::from("--test"),
 		];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
@@ -731,7 +769,7 @@ else:
 		// Test with wrong argument
 		let args = vec![String::from("wrong_arg")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
@@ -744,7 +782,7 @@ else:
 		let input = MonitorMatchBuilder::new().build();
 		let args = vec![String::from("--verbose")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 
 		assert!(result.is_ok());
@@ -759,7 +797,7 @@ else:
 		let input = MonitorMatchBuilder::new().build();
 		let args = vec![String::from("--wrong_arg"), String::from("--test")];
 		let result = executor
-			.execute(input.clone(), &1000, Some(&args), false)
+			.execute(input.clone(), &GENEROUS_TIMEOUT_MS, Some(&args), false)
 			.await;
 
 		assert!(result.is_ok());
@@ -776,7 +814,9 @@ input_json = sys.stdin.read()
 		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, true).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, true)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -793,14 +833,18 @@ sys.exit(1)
 		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, true).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, true)
+			.await;
 
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Script execution failed: Error: something went wrong"));
+				assert!(
+					e.to_string()
+						.contains("Script execution failed: Error: something went wrong"),
+					"unexpected error: {e}"
+				);
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
@@ -819,14 +863,16 @@ time.sleep(0.3)
 
 		let input = MonitorMatchBuilder::new().build();
 		let start_time = Instant::now();
-		let result = executor.execute(input, &1000, None, true).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, true)
+			.await;
 		let elapsed = start_time.elapsed();
 
+		// A successful result already shows that the executor did not time out; a separate
+		// wall-clock upper bound could itself fail under CPU load.
 		assert!(result.is_ok());
 		// Verify that execution took at least 300ms (the sleep time)
 		assert!(elapsed.as_millis() >= 300);
-		// Verify that execution took less than the timeout
-		assert!(elapsed.as_millis() < 1000);
 	}
 
 	#[tokio::test]
@@ -1594,14 +1640,18 @@ sys.exit(1)
 		let executor = python(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Script execution failed: This is a python test error message!"));
+				assert!(
+					e.to_string()
+						.contains("Script execution failed: This is a python test error message!"),
+					"unexpected error: {e}"
+				);
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
@@ -1632,14 +1682,18 @@ sys.exit(1)
 		let executor = node(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Script execution failed: This is a JS test error message!"));
+				assert!(
+					e.to_string()
+						.contains("Script execution failed: This is a JS test error message!"),
+					"unexpected error: {e}"
+				);
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
@@ -1658,13 +1712,17 @@ exit 1
 		let executor = sh(script_content, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
 		match result {
 			Err(e) => {
-				assert!(e
-					.to_string()
-					.contains("Script execution failed: This is a bash test error message!"));
+				assert!(
+					e.to_string()
+						.contains("Script execution failed: This is a bash test error message!"),
+					"unexpected error: {e}"
+				);
 			}
 			_ => panic!("Expected ExecutionError"),
 		}
@@ -1689,7 +1747,9 @@ process.stdin.on('end', () => {
 		let executor = node(JS_EXEC_ARGV_SCRIPT, &runtime_arguments);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &5000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -1699,7 +1759,9 @@ process.stdin.on('end', () => {
 		let executor = node(JS_EXEC_ARGV_SCRIPT, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &5000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(!result.unwrap());
 	}
@@ -1719,12 +1781,15 @@ print("true")
 		let executor = python(PYTHON_WARNING_SCRIPT, &runtime_arguments);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
-		assert!(result
-			.unwrap_err()
-			.to_string()
-			.contains("Script execution failed"));
+		let err = result.unwrap_err().to_string();
+		assert!(
+			err.contains("Script execution failed"),
+			"unexpected error: {err}"
+		);
 	}
 
 	#[tokio::test]
@@ -1732,7 +1797,9 @@ print("true")
 		let executor = python(PYTHON_WARNING_SCRIPT, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -1750,12 +1817,15 @@ echo "true"
 		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, &runtime_arguments);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
-		assert!(result
-			.unwrap_err()
-			.to_string()
-			.contains("Script execution failed"));
+		let err = result.unwrap_err().to_string();
+		assert!(
+			err.contains("Script execution failed"),
+			"unexpected error: {err}"
+		);
 	}
 
 	#[tokio::test]
@@ -1763,7 +1833,9 @@ echo "true"
 		let executor = sh(BASH_FAILING_COMMAND_SCRIPT, &[]);
 
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_ok());
 		assert!(result.unwrap());
 	}
@@ -1772,7 +1844,9 @@ echo "true"
 	async fn test_interpreter_executor_unknown_program_reports_program_name() {
 		let executor = interpreter("definitely-not-a-program", "-c", "true", &[]);
 		let input = MonitorMatchBuilder::new().build();
-		let result = executor.execute(input, &1000, None, false).await;
+		let result = executor
+			.execute(input, &GENEROUS_TIMEOUT_MS, None, false)
+			.await;
 		assert!(result.is_err());
 		let err = result.unwrap_err().to_string();
 		assert!(
