@@ -277,8 +277,8 @@ graph TD
 * RPC Client initialization (per active network): `net_version`
 * Fetching the latest block number (per cron iteration): `eth_blockNumber`
 * Fetching block data (per block): `eth_getBlockByNumber`
-* Fetching block logs (per block): `eth_getLogs`
-* Fetching transaction receipt (only when needed):
+* Fetching block logs (per block, filtered to the addresses of the applicable monitors): `eth_getLogs`
+* Fetching transaction receipt (only for transactions whose sender, recipient or log emitter is a monitored address, and only when needed):
   * When monitor condition requires receipt-specific fields (e.g., `gas_used`)
   * When monitoring transaction status and no logs are present to validate status
 

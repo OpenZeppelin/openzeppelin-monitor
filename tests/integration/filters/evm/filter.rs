@@ -121,6 +121,79 @@ fn make_monitor_with_tuples_expression_equality(mut monitor: Monitor) -> Monitor
 }
 
 #[tokio::test]
+async fn test_filter_block_requests_only_monitored_logs_and_receipts(
+) -> Result<(), Box<FilterError>> {
+	let test_data = TestDataBuilder::new("evm").build();
+	let sender = Address::repeat_byte(1);
+	let stranger = Address::repeat_byte(2);
+	let monitored_hash = B256::repeat_byte(1);
+	let stranger_hash = B256::repeat_byte(2);
+	let mut block = EVMBlock::default();
+	block.0.number = Some(U64::from(1));
+	block.0.transactions = vec![
+		TransactionBuilder::new()
+			.hash(monitored_hash)
+			.from(sender)
+			.to(stranger)
+			.build(),
+		TransactionBuilder::new()
+			.hash(stranger_hash)
+			.from(stranger)
+			.to(stranger)
+			.build(),
+	];
+
+	let mut transport = MockEVMTransportClient::new();
+	// The block's logs are requested once, filtered to the monitored address.
+	transport
+		.expect_send_raw_request()
+		.withf(move |method, params| {
+			method == "eth_getLogs"
+				&& params.as_ref().unwrap()[0]["address"] == json!([format!("{sender:#x}")])
+		})
+		.once()
+		.returning(|_, _| Ok(json!({"result": []})));
+	// The status condition needs a receipt, but only for the transaction that can match;
+	// any other request (such as the stranger's receipt) fails the test.
+	transport
+		.expect_send_raw_request()
+		.withf(move |method, params| {
+			method == "eth_getTransactionReceipt"
+				&& serde_json::from_value::<B256>(params.as_ref().unwrap()[0].clone()).unwrap()
+					== monitored_hash
+		})
+		.once()
+		.returning(move |_, _| {
+			let receipt = ReceiptBuilder::new()
+				.transaction_hash(monitored_hash)
+				.status(true)
+				.gas_used(U256::from(21_000))
+				.build();
+			Ok(json!({"result": receipt}))
+		});
+
+	let mut monitor = make_monitor_with_transactions(test_data.monitor.clone(), false);
+	monitor.addresses = vec![AddressWithSpec {
+		address: format!("{sender:#x}"),
+		contract_spec: None,
+	}];
+	let block = BlockType::EVM(Box::new(block));
+	let client = EvmClient::new_with_transport(transport);
+	let matches = FilterService::new()
+		.filter_block(&client, &test_data.network, &block, &[monitor], None)
+		.await?;
+	let hashes: Vec<_> = matches
+		.iter()
+		.map(|matched| match matched {
+			MonitorMatch::EVM(matched) => matched.transaction.hash,
+			_ => panic!("Expected EVM match"),
+		})
+		.collect();
+	assert_eq!(hashes, vec![monitored_hash]);
+	Ok(())
+}
+
+#[tokio::test]
 async fn test_monitor_transaction_status_with_mixed_block_logs() -> Result<(), Box<FilterError>> {
 	let test_data = TestDataBuilder::new("evm").build();
 	let sender = Address::repeat_byte(1);
