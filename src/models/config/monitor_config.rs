@@ -5,7 +5,7 @@
 
 use crate::{
 	models::{config::error::ConfigError, ConfigLoader, Monitor, SecretValue},
-	services::trigger::validate_script_config,
+	services::trigger::{validate_script_config, validate_script_interpreter},
 	utils::normalize_string,
 };
 use async_trait::async_trait;
@@ -172,13 +172,14 @@ impl ConfigLoader for Monitor {
 			));
 		}
 
-		// Validate trigger conditions (focus on script path, timeout, and language)
+		// Validate trigger conditions (script path, timeout, language, and interpreter)
 		for trigger_condition in &self.trigger_conditions {
 			validate_script_config(
 				&trigger_condition.script_path,
 				&trigger_condition.language,
 				&trigger_condition.timeout_ms,
 			)?;
+			validate_script_interpreter(trigger_condition.interpreter.as_deref())?;
 		}
 
 		// Log a warning if the monitor uses an insecure protocol
@@ -523,6 +524,67 @@ mod tests {
 		assert!(serialized.get("interpreter").is_none());
 		let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
 		assert_eq!(deserialized, conditions);
+	}
+
+	/// Builds an otherwise valid monitor whose trigger condition uses `interpreter`.
+	/// The returned `TempDir` owns the script file and must outlive the validation call.
+	fn monitor_with_interpreter(interpreter: &str) -> (TempDir, Monitor) {
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("filter.sh");
+		fs::write(&script_path, "#!/bin/sh\necho true").unwrap();
+
+		let mut monitor = MonitorBuilder::new()
+			.name("TestMonitor")
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Bash,
+				None,
+			)
+			.build();
+		monitor.trigger_conditions[0].interpreter = Some(interpreter.to_string());
+
+		(temp_dir, monitor)
+	}
+
+	#[test]
+	fn test_validate_monitor_rejects_whitespace_only_interpreter() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("   ");
+
+		let error = monitor.validate().unwrap_err().to_string();
+		assert!(error.contains("interpreter"), "unexpected error: {error}");
+	}
+
+	#[test]
+	fn test_validate_monitor_rejects_interpreter_not_on_path() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("definitely-not-a-program");
+
+		let error = monitor.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("definitely-not-a-program"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[test]
+	fn test_validate_monitor_rejects_interpreter_with_flags() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("python3 -u");
+
+		let error = monitor.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("runtime_arguments"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_validate_monitor_accepts_interpreter_on_path() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("sh");
+
+		let result = monitor.validate();
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 	}
 
 	#[test]

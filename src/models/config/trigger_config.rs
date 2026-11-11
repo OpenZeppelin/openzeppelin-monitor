@@ -13,7 +13,7 @@ use crate::{
 		config::error::ConfigError, ConfigLoader, SecretValue, Trigger, TriggerType,
 		TriggerTypeConfig, WebhookPayloadMode,
 	},
-	services::trigger::validate_script_config,
+	services::trigger::{validate_script_config, validate_script_interpreter},
 	utils::normalize_string,
 };
 
@@ -600,10 +600,12 @@ impl ConfigLoader for Trigger {
 					script_path,
 					language,
 					timeout_ms,
+					interpreter,
 					..
 				} = &self.config
 				{
 					validate_script_config(script_path, language, timeout_ms)?;
+					validate_script_interpreter(interpreter.as_deref())?;
 				}
 			}
 		}
@@ -1264,6 +1266,66 @@ mod tests {
 		assert!(serialized["config"].get("interpreter").is_none());
 		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
 		assert_eq!(deserialized, trigger);
+	}
+
+	/// Builds an otherwise valid script trigger that uses `interpreter`.
+	/// The returned `TempDir` owns the script file and must outlive the validation call.
+	fn script_trigger_with_interpreter(interpreter: &str) -> (TempDir, Trigger) {
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("notify.sh");
+		std::fs::write(&script_path, "#!/bin/sh\necho done").unwrap();
+
+		let mut trigger = TriggerBuilder::new()
+			.name("test_script")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Bash)
+			.build();
+		match &mut trigger.config {
+			TriggerTypeConfig::Script { interpreter: i, .. } => {
+				*i = Some(interpreter.to_string());
+			}
+			_ => panic!("Expected script config"),
+		}
+
+		(temp_dir, trigger)
+	}
+
+	#[test]
+	fn test_script_trigger_rejects_whitespace_only_interpreter() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("   ");
+
+		let error = trigger.validate().unwrap_err().to_string();
+		assert!(error.contains("interpreter"), "unexpected error: {error}");
+	}
+
+	#[test]
+	fn test_script_trigger_rejects_interpreter_not_on_path() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("definitely-not-a-program");
+
+		let error = trigger.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("definitely-not-a-program"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[test]
+	fn test_script_trigger_rejects_interpreter_with_flags() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("python3 -u");
+
+		let error = trigger.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("runtime_arguments"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_script_trigger_accepts_interpreter_on_path() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("sh");
+
+		let result = trigger.validate();
+		assert!(result.is_ok(), "unexpected error: {result:?}");
 	}
 
 	#[tokio::test]
