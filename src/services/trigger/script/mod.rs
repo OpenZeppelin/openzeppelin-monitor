@@ -11,4 +11,6 @@ mod validation;
 pub use error::ScriptError;
 pub use executor::{process_script_output, InterpreterExecutor, ScriptExecutor};
 pub use factory::ScriptExecutorFactory;
+#[cfg(unix)]
+pub(crate) use validation::interpreter_is_writable_by_others;
 pub use validation::{validate_script_config, validate_script_interpreter};

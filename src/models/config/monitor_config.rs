@@ -207,6 +207,17 @@ impl ConfigLoader for Monitor {
 					);
 				}
 			}
+
+			// Check the permissions of an interpreter that is configured as an explicit path
+			if crate::services::trigger::interpreter_is_writable_by_others(
+				condition.interpreter.as_deref(),
+			) {
+				tracing::warn!(
+					"Monitor '{}' trigger conditions interpreter file has overly permissive write permissions: {}. The recommended permissions are `755` (`rwxr-xr-x`)",
+					self.name,
+					condition.interpreter.as_deref().unwrap_or_default()
+				);
+			}
 		}
 	}
 
@@ -754,6 +765,164 @@ mod tests {
 		assert!(logs_contain(
 			"script file has overly permissive write permissions"
 		));
+	}
+
+	/// Text that only the interpreter permission warning contains
+	#[cfg(unix)]
+	const INTERPRETER_PERMISSION_WARNING: &str =
+		"interpreter file has overly permissive write permissions";
+
+	/// Creates a file with the given permission bits. The file is only inspected, never executed.
+	#[cfg(unix)]
+	fn create_file_with_mode(dir: &std::path::Path, name: &str, mode: u32) -> std::path::PathBuf {
+		use std::os::unix::fs::PermissionsExt;
+		let file_path = dir.join(name);
+		std::fs::write(&file_path, "").unwrap();
+		std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(mode)).unwrap();
+		file_path
+	}
+
+	/// Builds a monitor whose trigger condition script has mode `644`, so that only the
+	/// interpreter can cause a permission warning
+	#[cfg(unix)]
+	fn monitor_for_interpreter_permissions(
+		dir: &std::path::Path,
+		interpreter: Option<&str>,
+	) -> Monitor {
+		let script_path = create_file_with_mode(dir, "filter.sh", 0o644);
+		let mut monitor = MonitorBuilder::new()
+			.name("TestMonitor")
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Bash,
+				None,
+			)
+			.build();
+		monitor.trigger_conditions[0].interpreter = interpreter.map(str::to_string);
+		monitor
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_group_and_world_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o777);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a 777 interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_group_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o775);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a group-writable (775) interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_world_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o757);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a world-writable (757) interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_symlink_to_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		// The permissions of the file the link points to are what counts
+		let target = create_file_with_mode(temp_dir.path(), "interpreter3.11", 0o777);
+		let interpreter = temp_dir.path().join("interpreter3");
+		std::os::unix::fs::symlink(&target, &interpreter).unwrap();
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"the permissions of the symlink target (777) should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_does_not_warn_for_755_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o755);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a 755 interpreter should not be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_does_not_warn_for_interpreter_command_name() {
+		let temp_dir = TempDir::new().unwrap();
+		let monitor = monitor_for_interpreter_permissions(temp_dir.path(), Some("sh"));
+
+		monitor.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a command name resolved through PATH is not checked"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_does_not_warn_without_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let monitor = monitor_for_interpreter_permissions(temp_dir.path(), None);
+
+		monitor.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"no interpreter is configured, so there is nothing to report"
+		);
 	}
 
 	#[tokio::test]

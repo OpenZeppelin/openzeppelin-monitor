@@ -9,6 +9,8 @@ mod script;
 mod service;
 
 pub use error::TriggerError;
+#[cfg(unix)]
+pub(crate) use script::interpreter_is_writable_by_others;
 pub use script::{
 	process_script_output, validate_script_config, validate_script_interpreter,
 	InterpreterExecutor, ScriptError, ScriptExecutor, ScriptExecutorFactory,

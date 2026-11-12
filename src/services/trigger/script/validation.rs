@@ -127,8 +127,7 @@ fn validate_script_interpreter_with_path(
 		""
 	};
 
-	// Same rule as `execvp`: a value with a path separator is never searched in `PATH`
-	if interpreter.contains(std::path::is_separator) {
+	if is_explicit_interpreter_path(interpreter) {
 		let metadata = std::fs::metadata(interpreter).map_err(|e| {
 			ConfigError::validation_error(
 				format!(
@@ -189,6 +188,40 @@ fn validate_script_interpreter_with_path(
 	}
 
 	Ok(())
+}
+
+/// Whether an interpreter value is an explicit path, as opposed to a command name
+///
+/// Same rule as `execvp`: a value that contains a path separator is used as a path and is
+/// never searched in `PATH`.
+fn is_explicit_interpreter_path(interpreter: &str) -> bool {
+	interpreter.contains(std::path::is_separator)
+}
+
+/// Whether a configured interpreter is an explicit path to a file that is writable by its
+/// group or by others (`mode & 0o022 != 0`, the same mask as the script file check)
+///
+/// Whoever can replace the interpreter can run code with the privileges of the Monitor, so
+/// the configuration validators log a warning for such a file. This is advisory only and is
+/// not part of [`validate_script_interpreter`].
+///
+/// Returns `false` when no interpreter is configured, when it is a command name (programs
+/// resolved through `PATH` are not checked), and when the metadata cannot be read (a missing
+/// file is reported by the validation). Symlinks are followed, so the permissions of the
+/// real binary are checked; a symlink itself always reports `777`.
+#[cfg(unix)]
+pub(crate) fn interpreter_is_writable_by_others(interpreter: Option<&str>) -> bool {
+	use std::os::unix::fs::PermissionsExt;
+
+	let Some(interpreter) = interpreter else {
+		return false;
+	};
+	if !is_explicit_interpreter_path(interpreter) {
+		return false;
+	}
+	std::fs::metadata(interpreter)
+		.map(|metadata| metadata.permissions().mode() & 0o022 != 0)
+		.unwrap_or(false)
 }
 
 /// Searches the directories of a `PATH` value for an executable file named `command`
@@ -596,6 +629,83 @@ mod tests {
 
 		let found = find_executable_in_path("my-interpreter", Some(temp_dir.path().as_os_str()));
 		assert_eq!(found, None);
+	}
+
+	#[test]
+	fn test_is_explicit_interpreter_path() {
+		for path in [
+			"/usr/bin/python3",
+			"./venv/bin/python",
+			"venv/bin/python",
+			"bin/",
+		] {
+			assert!(is_explicit_interpreter_path(path), "{path:?} is a path");
+		}
+		for command in ["python3", "python3.11", "python3 -u", ""] {
+			assert!(
+				!is_explicit_interpreter_path(command),
+				"{command:?} is a command name"
+			);
+		}
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_interpreter_is_writable_by_others() {
+		let temp_dir = tempfile::tempdir().unwrap();
+
+		// Group-writable, world-writable or both
+		for mode in [0o777, 0o775, 0o757, 0o722] {
+			let file_path =
+				create_file_with_mode(temp_dir.path(), &format!("interpreter-{mode:o}"), mode);
+			assert!(
+				interpreter_is_writable_by_others(file_path.to_str()),
+				"mode {mode:o} should be reported"
+			);
+		}
+
+		// Writable by the owner only
+		for mode in [0o755, 0o700, 0o555] {
+			let file_path =
+				create_file_with_mode(temp_dir.path(), &format!("interpreter-{mode:o}"), mode);
+			assert!(
+				!interpreter_is_writable_by_others(file_path.to_str()),
+				"mode {mode:o} should not be reported"
+			);
+		}
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_interpreter_is_writable_by_others_follows_symlinks() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let link = temp_dir.path().join("interpreter3");
+
+		// A symlink itself reports `777`; only the target counts
+		let safe_target = create_file_with_mode(temp_dir.path(), "safe", 0o755);
+		std::os::unix::fs::symlink(&safe_target, &link).unwrap();
+		assert!(!interpreter_is_writable_by_others(link.to_str()));
+
+		fs::remove_file(&link).unwrap();
+		let writable_target = create_file_with_mode(temp_dir.path(), "writable", 0o777);
+		std::os::unix::fs::symlink(&writable_target, &link).unwrap();
+		assert!(interpreter_is_writable_by_others(link.to_str()));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_interpreter_is_writable_by_others_ignores_unchecked_values() {
+		// No interpreter configured
+		assert!(!interpreter_is_writable_by_others(None));
+
+		// A command name is never looked up, even if a writable file of that name exists in
+		// a `PATH` directory or in the current directory
+		assert!(!interpreter_is_writable_by_others(Some("sh")));
+
+		// Unreadable metadata is skipped; validation reports the missing file
+		let temp_dir = tempfile::tempdir().unwrap();
+		let missing = temp_dir.path().join("missing-interpreter");
+		assert!(!interpreter_is_writable_by_others(missing.to_str()));
 	}
 
 	#[test]
