@@ -189,10 +189,13 @@ mod tests {
 			)
 			.await;
 		match result {
-			Err(e) => assert!(
-				e.to_string().contains("Script execution failed"),
-				"python3 should fail on the shell script itself, got: {e}"
-			),
+			Err(e) => {
+				let message = e.to_string();
+				assert!(
+					message.contains("Script execution failed") && message.contains("SyntaxError"),
+					"expected a Python syntax error, got: {message}"
+				);
+			}
 			Ok(v) => panic!("python3 should reject a shell script, got Ok({v})"),
 		}
 

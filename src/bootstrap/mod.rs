@@ -491,7 +491,7 @@ async fn execute_trigger_condition(
 ) -> bool {
 	let executor = ScriptExecutorFactory::create(
 		&script_content.0,
-		None,
+		trigger_condition.interpreter.as_deref(),
 		&script_content.1,
 		&trigger_condition.runtime_arguments,
 	);
@@ -1026,6 +1026,80 @@ print("true")
 		let result =
 			execute_trigger_condition(&trigger_condition, &match_item, &script_content).await;
 		assert!(result); // Without the flag the warning only goes to stderr
+	}
+
+	/// Valid shell, but a syntax error in Python: tells `sh` and `python3` apart without
+	/// writing an executable file
+	#[cfg(unix)]
+	const SHELL_ONLY_SCRIPT: &str = "cat >/dev/null; echo true";
+
+	/// Runs `script` as a Python trigger condition with the given interpreter override
+	#[cfg(unix)]
+	async fn execute_python_condition_with_interpreter(
+		script: &str,
+		interpreter: Option<&str>,
+	) -> bool {
+		let temp_file = create_temp_script(script);
+		let trigger_condition = TriggerConditions {
+			language: ScriptLanguage::Python,
+			script_path: temp_file.path().to_str().unwrap().to_string(),
+			timeout_ms: 5000,
+			arguments: None,
+			runtime_arguments: vec![],
+			interpreter: interpreter.map(str::to_string),
+		};
+		let match_item = create_mock_monitor_match_from_path(
+			BlockChainType::EVM,
+			Some(temp_file.path().to_str().unwrap()),
+		);
+		let script_content = (ScriptLanguage::Python, script.to_string());
+
+		execute_trigger_condition(&trigger_condition, &match_item, &script_content).await
+	}
+
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_execute_trigger_condition_default_interpreter_rejects_shell_script() {
+		// Premise for the override test below: `python3` cannot run the shell-only script
+		let result = execute_python_condition_with_interpreter(SHELL_ONLY_SCRIPT, None).await;
+		assert!(
+			!result,
+			"the default python3 interpreter should fail on a shell-only script"
+		);
+	}
+
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_execute_trigger_condition_uses_interpreter_override() {
+		let result = execute_python_condition_with_interpreter(SHELL_ONLY_SCRIPT, Some("sh")).await;
+		assert!(
+			result,
+			"the configured `sh` interpreter should run the shell-only script and print true"
+		);
+	}
+
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_execute_trigger_condition_missing_interpreter_returns_false() {
+		// A path that is never created, so the result does not depend on what is on `PATH`.
+		// The config object is built directly, which bypasses config-load validation on purpose.
+		let temp_dir = tempfile::tempdir().unwrap();
+		let missing = temp_dir.path().join("missing-interpreter");
+
+		// The script itself is valid Python and would return true with the default interpreter.
+		//
+		// This is the fail-open case that config validation exists to prevent: a false result
+		// means `run_trigger_filters` does not filter the match out, so it goes on to
+		// notification.
+		let result = execute_python_condition_with_interpreter(
+			"import sys; sys.stdin.read(); print(True)",
+			Some(missing.to_str().unwrap()),
+		)
+		.await;
+		assert!(
+			!result,
+			"a missing interpreter should fail the condition instead of falling back to python3"
+		);
 	}
 
 	#[tokio::test]

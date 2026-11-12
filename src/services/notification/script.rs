@@ -44,12 +44,12 @@ impl ScriptExecutor for ScriptNotifier {
 				language,
 				arguments,
 				runtime_arguments,
-				interpreter: _,
+				interpreter,
 				timeout_ms,
 			} => {
 				let executor = ScriptExecutorFactory::create(
 					language,
-					None,
+					interpreter.as_deref(),
 					&script_content.1,
 					runtime_arguments,
 				);
@@ -148,6 +148,99 @@ mod tests {
 			.script_notify(&monitor_match, &script_content)
 			.await;
 		assert!(result.is_ok());
+	}
+
+	/// Valid shell, but a syntax error in Python: tells `sh` and `python3` apart without
+	/// writing an executable file
+	#[cfg(unix)]
+	const SHELL_ONLY_SCRIPT: &str = "cat >/dev/null; echo true";
+
+	/// Runs `script` as a Python script notification with the given interpreter override
+	#[cfg(unix)]
+	async fn notify_python_script_with_interpreter(
+		script: &str,
+		interpreter: Option<&str>,
+	) -> Result<(), NotificationError> {
+		let config = TriggerTypeConfig::Script {
+			language: ScriptLanguage::Python,
+			script_path: "test_script.py".to_string(),
+			arguments: None,
+			runtime_arguments: vec![],
+			interpreter: interpreter.map(str::to_string),
+			timeout_ms: 5000,
+		};
+		let notifier = ScriptNotifier::from_config(&config).unwrap();
+		let monitor_match = MonitorMatchBuilder::new().build();
+		let script_content = (ScriptLanguage::Python, script.to_string());
+
+		notifier
+			.script_notify(&monitor_match, &script_content)
+			.await
+	}
+
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_script_notify_default_interpreter_rejects_shell_script() {
+		// Premise for the override test below: `python3` cannot run the shell-only script.
+		// On this path the executor ignores the script's output; only the exit status counts.
+		let result = notify_python_script_with_interpreter(SHELL_ONLY_SCRIPT, None).await;
+		match &result {
+			Err(e) => {
+				let message = e.to_string();
+				assert!(
+					message.contains("Script execution failed") && message.contains("SyntaxError"),
+					"expected a Python syntax error, got {:?}",
+					result
+				);
+			}
+			Ok(()) => panic!(
+				"python3 should fail on a shell-only script, got {:?}",
+				result
+			),
+		}
+	}
+
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_script_notify_uses_interpreter_override() {
+		let result = notify_python_script_with_interpreter(SHELL_ONLY_SCRIPT, Some("sh")).await;
+		assert!(
+			result.is_ok(),
+			"the configured `sh` interpreter should run the shell-only script, got {:?}",
+			result
+		);
+	}
+
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn test_script_notify_missing_interpreter_fails() {
+		// A path that is never created, so the result does not depend on what is on `PATH`.
+		// The config object is built directly, which bypasses config-load validation on purpose.
+		let temp_dir = tempfile::tempdir().unwrap();
+		let missing = temp_dir.path().join("missing-interpreter");
+		let missing = missing.to_str().unwrap();
+
+		// The script itself is valid Python and succeeds with the default interpreter
+		let result = notify_python_script_with_interpreter(
+			"import sys; sys.stdin.read(); print(True)",
+			Some(missing),
+		)
+		.await;
+		match &result {
+			Err(e) => {
+				let message = e.to_string();
+				assert!(
+					message.contains("Failed to spawn") && message.contains(missing),
+					"expected a spawn error naming {:?}, got {:?}",
+					missing,
+					result
+				);
+			}
+			Ok(()) => panic!(
+				"a missing interpreter should fail instead of falling back to python3, got {:?}",
+				result
+			),
+		}
 	}
 
 	#[tokio::test]
