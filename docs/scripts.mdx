@@ -604,7 +604,7 @@ Integrate your custom notification script with the triggers by following the [co
 
 ## Runtime Arguments
 
-Both filter scripts (`trigger_conditions`) and notification scripts (`script` triggers) accept an optional `runtime_arguments` field. It defaults to an empty list when omitted. These values are command line options for the script interpreter itself and are placed on the interpreter's command line before the script (`node <runtime_arguments> -e <script>`, `python3 <runtime_arguments> -c <script>`, `sh <runtime_arguments> -c <script>`).
+Both filter scripts (`trigger_conditions`) and notification scripts (`script` triggers) accept an optional `runtime_arguments` field. It defaults to an empty list when omitted. These values are command line options for the script interpreter itself and are placed on the interpreter's command line before the script (with the default interpreters: `node <runtime_arguments> -e <script>`, `python3 <runtime_arguments> -c <script>`, `sh <runtime_arguments> -c <script>`).
 
 ```json
 {
@@ -616,7 +616,7 @@ Both filter scripts (`trigger_conditions`) and notification scripts (`script` tr
 }
 ```
 
-* **`runtime_arguments`** are interpreter options. They are consumed by `node`, `python3` or `sh` and never reach your script. Typical uses are memory limits (`--max-old-space-size=4096`) or loading an env file (`--env-file=./config/scripts/.env`). Every option must be supported by the interpreter version installed on the host, for example `--env-file` requires Node.js 20.6 or later.
+* **`runtime_arguments`** are interpreter options. They are consumed by the interpreter (`node`, `python3` or `sh` by default) and never reach your script. Typical uses are memory limits (`--max-old-space-size=4096`) or loading an env file (`--env-file=./config/scripts/.env`). Every option must be supported by the interpreter version installed on the host, for example `--env-file` requires Node.js 20.6 or later.
 * **`arguments`** are script options. They are serialised into the `args` array of the JSON document the script reads from `stdin`, exactly as before.
 * **Environment variables** such as `UV_THREADPOOL_SIZE` or `NODE_OPTIONS` are not runtime arguments. Scripts inherit the environment of the Monitor process, so set them where you start the Monitor (shell, service unit, container) rather than in the configuration.
 * Runtime arguments are passed to the interpreter verbatim, so they must only come from trusted configuration files.
@@ -630,7 +630,56 @@ Invalid or unsupported interpreter options make the interpreter exit before the 
 
 ### Shell compatibility
 
-Scripts configured with `"language": "Bash"` are currently executed with `sh -c`, not with the `bash` executable. Runtime arguments are therefore passed to the host's `/bin/sh`, and the behaviour depends on which shell that is: on typical Debian and Ubuntu installations `/bin/sh` is `dash`, while on macOS it is usually based on Bash. Portable options such as `-e`, `-u` and `-x` work on both. Bash-specific options such as `-o pipefail` or `-O extglob` may fail on `dash`, so check the host's `/bin/sh` before relying on them.
+Scripts configured with `"language": "Bash"` are executed with `sh -c` by default, not with the `bash` executable. Runtime arguments are then passed to the host's `sh`, and the behaviour depends on which shell that is: on typical Debian and Ubuntu installations `/bin/sh` is `dash`, while on macOS it is usually based on Bash. Portable options such as `-e`, `-u` and `-x` work on both. Bash-specific options such as `-o pipefail` or `-O extglob` may fail on `dash`, so check the host's `sh` before relying on them.
+
+To run these scripts with Bash instead, set `"interpreter": "bash"`. See [Interpreter](#interpreter).
+
+## Interpreter
+
+Both filter scripts (`trigger_conditions`) and notification scripts (`script` triggers) accept an optional `interpreter` field. It names the program that runs the script. When it is omitted, the default for the language is used, as before: `python3` for Python, `node` for JavaScript and `sh` for Bash.
+
+```json
+{
+  "script_path": "./config/filters/evm_filter_block_number.sh",
+  "language": "Bash",
+  "interpreter": "bash",
+  "arguments": ["--verbose"],
+  "timeout_ms": 1000
+}
+```
+
+* **A command name**, such as `bash` or `python3.11`, is looked up in the directories of the `PATH` environment variable of the Monitor process. `PATH` must be set for this; if it is not, use a path instead.
+* **A path to an executable**, such as `/usr/local/bin/python3.12` or `./venv/bin/python`, is used directly. Any value that contains a path separator is treated as a path and is not looked up in `PATH`. A relative path is resolved against the current working directory of the Monitor process, not against the directory of the script or of the configuration file. Symbolic links are followed.
+* **The language still decides how the script is handed over.** The script is passed on the command line after `-c` for Python and Bash, and after `-e` for JavaScript, whichever interpreter is configured. The interpreter must therefore accept that flag in the resulting command line (`<interpreter> <runtime_arguments> <flag> <script>`). `bash` works for `"language": "Bash"` because it accepts `-c <script>` like `sh` does. For JavaScript, `bun` (1.0.12 or later) accepts `-e <script>` like `node` does, while Deno evaluates code through its `eval` subcommand instead of an `-e` flag and is not a drop-in replacement.
+* **The value is a single program, used verbatim.** It is not parsed by a shell and is not split on spaces. Interpreter options belong in [`runtime_arguments`](#runtime-arguments), as shown below.
+* The interpreter runs with the privileges of the Monitor process, so the value must only come from trusted configuration files.
+
+The following is rejected when the configuration is loaded, because it names a program called `python3 -u`, not `python3` with the option `-u`:
+
+```json
+{
+  "interpreter": "python3 -u"
+}
+```
+
+Configure the program and its options separately instead. This example runs `./venv/bin/python -u -c <script>`:
+
+```json
+{
+  "script_path": "./config/filters/evm_filter_block_number.py",
+  "language": "Python",
+  "interpreter": "./venv/bin/python",
+  "runtime_arguments": ["-u"],
+  "timeout_ms": 1000
+}
+```
+
+<Callout type='warn'>
+
+
+The interpreter is checked when the configuration is loaded. A value that is empty, a command name that is not found in `PATH`, or a path that does not point to a file the Monitor process is allowed to execute is a configuration error. The check is done up front because of how filter scripts fail: a script that cannot be started does not filter out the match, so a mistyped interpreter would otherwise result in unintended notifications.
+
+</Callout>
 
 ## Performance Considerations
 
