@@ -491,6 +491,7 @@ async fn execute_trigger_condition(
 ) -> bool {
 	let executor = ScriptExecutorFactory::create(
 		&script_content.0,
+		None,
 		&script_content.1,
 		&trigger_condition.runtime_arguments,
 	);

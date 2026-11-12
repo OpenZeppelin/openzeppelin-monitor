@@ -47,8 +47,12 @@ impl ScriptExecutor for ScriptNotifier {
 				interpreter: _,
 				timeout_ms,
 			} => {
-				let executor =
-					ScriptExecutorFactory::create(language, &script_content.1, runtime_arguments);
+				let executor = ScriptExecutorFactory::create(
+					language,
+					None,
+					&script_content.1,
+					runtime_arguments,
+				);
 
 				let result = executor
 					.execute(
