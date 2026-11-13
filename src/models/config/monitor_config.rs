@@ -3,6 +3,8 @@
 //! This module implements the ConfigLoader trait for Monitor configurations,
 //! allowing monitors to be loaded from JSON files.
 
+#[cfg(unix)]
+use crate::services::trigger::interpreter_is_writable_by_others;
 use crate::{
 	models::{config::error::ConfigError, ConfigLoader, Monitor, SecretValue},
 	services::trigger::{validate_script_config, validate_script_interpreter},
@@ -209,9 +211,7 @@ impl ConfigLoader for Monitor {
 			}
 
 			// Check the permissions of an interpreter that is configured as an explicit path
-			if crate::services::trigger::interpreter_is_writable_by_others(
-				condition.interpreter.as_deref(),
-			) {
+			if interpreter_is_writable_by_others(condition.interpreter.as_deref()) {
 				tracing::warn!(
 					"Monitor '{}' trigger conditions interpreter file has overly permissive write permissions: {}. The recommended permissions are `755` (`rwxr-xr-x`)",
 					self.name,
@@ -250,6 +250,8 @@ impl ConfigLoader for Monitor {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	#[cfg(unix)]
+	use crate::utils::tests::create_file_with_mode;
 	use crate::{
 		models::core::{ScriptLanguage, TransactionStatus, TriggerConditions},
 		utils::tests::builders::evm::monitor::MonitorBuilder,
@@ -771,16 +773,6 @@ mod tests {
 	#[cfg(unix)]
 	const INTERPRETER_PERMISSION_WARNING: &str =
 		"interpreter file has overly permissive write permissions";
-
-	/// Creates a file with the given permission bits. The file is only inspected, never executed.
-	#[cfg(unix)]
-	fn create_file_with_mode(dir: &std::path::Path, name: &str, mode: u32) -> std::path::PathBuf {
-		use std::os::unix::fs::PermissionsExt;
-		let file_path = dir.join(name);
-		std::fs::write(&file_path, "").unwrap();
-		std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(mode)).unwrap();
-		file_path
-	}
 
 	/// Builds a monitor whose trigger condition script has mode `644`, so that only the
 	/// interpreter can cause a permission warning

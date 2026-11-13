@@ -8,6 +8,8 @@ use email_address::EmailAddress;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
 
+#[cfg(unix)]
+use crate::services::trigger::interpreter_is_writable_by_others;
 use crate::{
 	models::{
 		config::error::ConfigError, ConfigLoader, SecretValue, Trigger, TriggerType,
@@ -655,9 +657,7 @@ impl ConfigLoader for Trigger {
 
 					// Check the permissions of an interpreter that is configured as an
 					// explicit path
-					if crate::services::trigger::interpreter_is_writable_by_others(
-						interpreter.as_deref(),
-					) {
+					if interpreter_is_writable_by_others(interpreter.as_deref()) {
 						tracing::warn!(
 							"Script interpreter file has overly permissive write permissions: {}. The recommended permissions are `755` (`rwxr-xr-x`)",
 							interpreter.as_deref().unwrap_or_default()
@@ -726,6 +726,8 @@ mod tests {
 	use crate::models::NotificationMessage;
 	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
+	#[cfg(unix)]
+	use crate::utils::tests::create_file_with_mode;
 	use crate::utils::RetryConfig;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
@@ -1507,16 +1509,6 @@ mod tests {
 	#[cfg(unix)]
 	const INTERPRETER_PERMISSION_WARNING: &str =
 		"interpreter file has overly permissive write permissions";
-
-	/// Creates a file with the given permission bits. The file is only inspected, never executed.
-	#[cfg(unix)]
-	fn create_file_with_mode(dir: &std::path::Path, name: &str, mode: u32) -> std::path::PathBuf {
-		use std::os::unix::fs::PermissionsExt;
-		let file_path = dir.join(name);
-		std::fs::write(&file_path, "").unwrap();
-		std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(mode)).unwrap();
-		file_path
-	}
 
 	/// Builds a script trigger whose script has mode `644`, so that only the interpreter can
 	/// cause a permission warning

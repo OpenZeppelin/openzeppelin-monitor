@@ -90,9 +90,9 @@ const WHITESPACE_HINT: &str = " (the value contains whitespace and is used verba
 #[allow(clippy::result_large_err)]
 pub fn validate_script_interpreter(interpreter: Option<&str>) -> Result<(), ConfigError> {
 	// Nothing to resolve; the defaults are not checked
-	if interpreter.is_none() {
+	let Some(interpreter) = interpreter else {
 		return Ok(());
-	}
+	};
 
 	let path = std::env::var_os("PATH");
 	validate_script_interpreter_with_path(interpreter, path.as_deref())
@@ -106,13 +106,9 @@ pub fn validate_script_interpreter(interpreter: Option<&str>) -> Result<(), Conf
 /// it wrong would accept a configuration that fails when the script runs.
 #[allow(clippy::result_large_err)]
 fn validate_script_interpreter_with_path(
-	interpreter: Option<&str>,
+	interpreter: &str,
 	path: Option<&OsStr>,
 ) -> Result<(), ConfigError> {
-	let Some(interpreter) = interpreter else {
-		return Ok(());
-	};
-
 	if interpreter.trim().is_empty() {
 		return Err(ConfigError::validation_error(
 			"Script interpreter must not be empty".to_string(),
@@ -275,6 +271,8 @@ fn is_executable_by_current_user(_path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	#[cfg(unix)]
+	use crate::utils::tests::create_file_with_mode;
 	use std::fs;
 	use tempfile::NamedTempFile;
 
@@ -360,21 +358,10 @@ mod tests {
 		fs::remove_file(python_path).unwrap();
 	}
 
-	/// Creates a file named `name` in `dir` with the given permission bits
-	#[cfg(unix)]
-	fn create_file_with_mode(dir: &Path, name: &str, mode: u32) -> PathBuf {
-		use std::os::unix::fs::PermissionsExt;
-		let file_path = dir.join(name);
-		fs::write(&file_path, "#!/bin/sh\n").unwrap();
-		fs::set_permissions(&file_path, fs::Permissions::from_mode(mode)).unwrap();
-		file_path
-	}
-
 	#[test]
 	fn test_validate_script_interpreter_none() {
+		// No lookup happens: the public function returns before `PATH` is read
 		assert!(validate_script_interpreter(None).is_ok());
-		// No lookup happens, so a missing PATH does not matter either
-		assert!(validate_script_interpreter_with_path(None, None).is_ok());
 	}
 
 	#[test]
@@ -507,7 +494,7 @@ mod tests {
 		create_file_with_mode(temp_dir.path(), "my-interpreter", 0o755);
 
 		let result = validate_script_interpreter_with_path(
-			Some("my-interpreter"),
+			"my-interpreter",
 			Some(temp_dir.path().as_os_str()),
 		);
 		assert!(result.is_ok(), "unexpected error: {result:?}");
@@ -518,7 +505,7 @@ mod tests {
 		let temp_dir = tempfile::tempdir().unwrap();
 
 		let error = validate_script_interpreter_with_path(
-			Some("definitely-not-a-program"),
+			"definitely-not-a-program",
 			Some(temp_dir.path().as_os_str()),
 		)
 		.unwrap_err()
@@ -543,12 +530,10 @@ mod tests {
 		let temp_dir = tempfile::tempdir().unwrap();
 		create_file_with_mode(temp_dir.path(), "python3", 0o755);
 
-		let error = validate_script_interpreter_with_path(
-			Some("python3 -u"),
-			Some(temp_dir.path().as_os_str()),
-		)
-		.unwrap_err()
-		.to_string();
+		let error =
+			validate_script_interpreter_with_path("python3 -u", Some(temp_dir.path().as_os_str()))
+				.unwrap_err()
+				.to_string();
 		assert!(
 			error.contains("'python3 -u' was not found"),
 			"unexpected error: {error}"
@@ -561,7 +546,7 @@ mod tests {
 
 	#[test]
 	fn test_validate_script_interpreter_command_without_path_variable() {
-		let error = validate_script_interpreter_with_path(Some("sh"), None)
+		let error = validate_script_interpreter_with_path("sh", None)
 			.unwrap_err()
 			.to_string();
 		assert!(

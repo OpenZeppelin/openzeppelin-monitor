@@ -677,7 +677,7 @@ Configure the program and its options separately instead. This example runs `./v
 <Callout type='warn'>
 
 
-The interpreter is checked when the configuration is loaded. A value that is empty, a command name that is not found in `PATH`, or a path that does not point to a file the Monitor process is allowed to execute is a configuration error. The check is done up front because of how filter scripts fail: a script that cannot be started does not filter out the match, so a mistyped interpreter would otherwise result in unintended notifications.
+The interpreter is checked when the configuration is loaded. A value that is empty, a command name that is not found in `PATH`, or a path that does not point to a file the Monitor process is allowed to execute is a configuration error. The check is done up front because of how filter scripts fail: a script that cannot be started does not filter out the match, so a mistyped interpreter would otherwise result in unintended notifications. The check runs only when the configuration is loaded. If the interpreter becomes unavailable later, for example while a virtual environment is being rebuilt, filter scripts cannot be started and no longer filter out matches, which can result in unintended notifications.
 
 </Callout>
 
