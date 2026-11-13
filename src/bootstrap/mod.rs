@@ -304,8 +304,15 @@ pub async fn process_block<T>(
 where
 	T: BlockChainClient + BlockFilterFactory<T>,
 {
+	// A receiver subscribed after shutdown was sent treats it as seen, so `changed()` would
+	// never fire for it
+	if *shutdown_rx.borrow() {
+		tracing::info!("Shutting down block processing task");
+		return Err(ProcessBlockError::Cancelled);
+	}
+
 	tokio::select! {
-		// Checked first, so once shutdown is signalled no new block is filtered
+		// Checked first, so a shutdown sent while waiting cancels the filter
 		biased;
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");

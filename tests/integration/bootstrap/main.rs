@@ -266,6 +266,45 @@ async fn test_create_block_handler_evm_filter_error() {
 	);
 }
 
+/// A block whose handler first runs after shutdown was signalled subscribes after the send,
+/// so it would never see `changed()` fire; it must still be cancelled.
+#[tokio::test]
+async fn test_create_block_handler_cancels_block_started_after_shutdown() {
+	// Keep a receiver alive so the send updates the value, as in-flight blocks do in main
+	let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
+	let block = create_test_block(BlockChainType::EVM, 100);
+	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	let mut mock_client = MockEvmClientTrait::new();
+	mock_client
+		.expect_get_logs_for_blocks()
+		.returning(|_, _, _| Ok(vec![]));
+	let mut mock_pool = MockClientPool::new();
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx.clone(),
+		Arc::new(FilterService::new()),
+		monitors,
+		Arc::new(mock_pool),
+		vec![],
+	);
+
+	let handling = block_handler(block, network);
+	shutdown_tx.send(true).unwrap();
+	let result = handling.await;
+
+	assert_eq!(result.filter_status, BlockFilterStatus::Cancelled);
+}
+
 /// Serves EVM blocks without transactions, up to a fixed head
 #[derive(Clone)]
 struct FixedHeadClient {

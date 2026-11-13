@@ -167,6 +167,21 @@ pub trait BlockStorage: Clone + Send + Sync {
 		error: Option<String>,
 	) -> Result<(), anyhow::Error>;
 
+	/// Puts a missed block back to `Pending` without counting a retry, for a recovery
+	/// attempt that was interrupted rather than failed
+	///
+	/// # Arguments
+	/// * `network_id` - Unique identifier for the network
+	/// * `block_number` - Block number to put back
+	///
+	/// # Returns
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn requeue_missed_block(
+		&self,
+		network_id: &str,
+		block_number: u64,
+	) -> Result<(), anyhow::Error>;
+
 	/// Removes recovered blocks from storage
 	///
 	/// # Arguments
@@ -400,6 +415,20 @@ impl BlockStorage for FileBlockStorage {
 			if error.is_some() {
 				entry.last_error = error;
 			}
+		}
+
+		self.save_missed_blocks_json(network_id, &entries).await
+	}
+
+	async fn requeue_missed_block(
+		&self,
+		network_id: &str,
+		block_number: u64,
+	) -> Result<(), anyhow::Error> {
+		let mut entries = self.load_missed_blocks_json(network_id).await?;
+
+		if let Some(entry) = entries.iter_mut().find(|e| e.block_number == block_number) {
+			entry.status = MissedBlockStatus::Pending;
 		}
 
 		self.save_missed_blocks_json(network_id, &entries).await
@@ -1092,6 +1121,31 @@ mod tests {
 		let content = tokio::fs::read_to_string(&json_path).await.unwrap();
 		let entries: Vec<MissedBlockEntry> = serde_json::from_str(&content).unwrap();
 		assert_eq!(entries[0].last_error, Some("First error".to_string()));
+	}
+
+	#[tokio::test]
+	async fn test_requeue_missed_block_does_not_use_a_retry() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+		storage.save_missed_blocks("test", &[100]).await.unwrap();
+		storage
+			.update_missed_block_status("test", 100, MissedBlockStatus::Recovering, None)
+			.await
+			.unwrap();
+
+		storage.requeue_missed_block("test", 100).await.unwrap();
+
+		let pending = storage
+			.get_missed_blocks("test", 1000, 1000, 1)
+			.await
+			.unwrap();
+		assert_eq!(
+			pending.len(),
+			1,
+			"the block is eligible again, even with max_retries 1"
+		);
+		assert_eq!(pending[0].status, MissedBlockStatus::Pending);
+		assert_eq!(pending[0].retry_count, 0);
 	}
 
 	#[tokio::test]

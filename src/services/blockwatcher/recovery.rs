@@ -47,7 +47,8 @@ pub struct RecoveryResult {
 ///    - Mark as `Recovering`
 ///    - Fetch via RPC and run it through the block handler
 ///    - If the filter finished: run the trigger handler, mark `Recovered`, remove from file
-///    - If the fetch or the filter failed, or shutdown cancelled the filter: increment
+///    - If shutdown cancelled the filter: put the block back to `Pending` and stop
+///    - If the fetch or the filter failed: increment
 ///      `retry_count`, record error, apply `retry_delay_ms`
 ///    - If `retry_count >= max_retries`: mark as `Failed`
 /// 6. Return statistics
@@ -167,24 +168,42 @@ where
 				let processed_block = (block_handler)(block, network.clone()).await;
 
 				// A filter that did not finish found nothing; the block stays missed
-				let filter_error = match processed_block.filter_status {
-					BlockFilterStatus::Completed => None,
-					BlockFilterStatus::Failed => Some("Filtering the block failed"),
-					BlockFilterStatus::Cancelled => {
-						Some("Filtering the block was cancelled by shutdown")
+				match processed_block.filter_status {
+					BlockFilterStatus::Completed => {}
+					BlockFilterStatus::Failed => {
+						record_failed_attempt(
+							network,
+							recovery_config,
+							block_storage.as_ref(),
+							&entry,
+							"Filtering the block failed".to_string(),
+							&mut result,
+						)
+						.await;
+						continue;
 					}
-				};
-				if let Some(error_msg) = filter_error {
-					record_failed_attempt(
-						network,
-						recovery_config,
-						block_storage.as_ref(),
-						&entry,
-						error_msg.to_string(),
-						&mut result,
-					)
-					.await;
-					continue;
+					BlockFilterStatus::Cancelled => {
+						// Shutting down: the attempt did not fail, so it does not use a retry,
+						// and the remaining blocks are left for the next run
+						if let Err(e) = block_storage
+							.requeue_missed_block(&network.slug, block_number)
+							.await
+						{
+							tracing::warn!(
+								network = %network.slug,
+								block = block_number,
+								error = %e,
+								"Failed to put block back to Pending after cancelled recovery"
+							);
+						}
+						tracing::info!(
+							network = %network.slug,
+							block = block_number,
+							"Recovery cancelled by shutdown; block {} will be retried on the next run",
+							block_number
+						);
+						break;
+					}
 				}
 
 				// Execute trigger handler
@@ -562,6 +581,16 @@ mod tests {
 				.await
 		}
 
+		async fn requeue_missed_block(
+			&self,
+			network_id: &str,
+			block_number: u64,
+		) -> Result<(), anyhow::Error> {
+			self.inner
+				.requeue_missed_block(network_id, block_number)
+				.await
+		}
+
 		async fn remove_recovered_blocks(
 			&self,
 			network_id: &str,
@@ -708,8 +737,9 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_recovery_cancelled_filter_keeps_block_pending_without_trigger() {
+		// One retry only: a cancelled attempt must not use it up
 		let (result, pending, triggers) =
-			recover_block_with_filter_status(BlockFilterStatus::Cancelled, 3).await;
+			recover_block_with_filter_status(BlockFilterStatus::Cancelled, 1).await;
 
 		assert_eq!(result.attempted, 1);
 		assert_eq!(result.recovered, 0, "a cancelled filter is not a recovery");
@@ -717,6 +747,42 @@ mod tests {
 		assert_eq!(triggers, 0);
 		assert_eq!(pending.len(), 1);
 		assert_eq!(pending[0].status, MissedBlockStatus::Pending);
+		assert_eq!(pending[0].retry_count, 0);
+	}
+
+	#[tokio::test]
+	async fn test_recovery_stops_after_cancelled_filter() {
+		let temp_dir = tempdir().unwrap();
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		storage
+			.save_missed_blocks("test_network", &[100, 101])
+			.await
+			.unwrap();
+
+		let network = create_test_network();
+		let mut recovery_config = create_recovery_config();
+		recovery_config.retry_delay_ms = 10;
+
+		let result = process_missed_blocks(
+			&network,
+			&recovery_config,
+			&MockRpcClient::new(1000, vec![]),
+			storage.clone(),
+			create_block_handler_with_status(BlockFilterStatus::Cancelled),
+			create_trigger_handler(),
+			Arc::new(BlockTracker::new(100)),
+		)
+		.await
+		.unwrap();
+
+		// Shutdown is under way, so the second block is left for the next run
+		assert_eq!(result.attempted, 1);
+		let pending = storage
+			.get_missed_blocks("test_network", 1000, 1000, 3)
+			.await
+			.unwrap();
+		assert_eq!(pending.len(), 2);
+		assert!(pending.iter().all(|entry| entry.retry_count == 0));
 	}
 
 	#[tokio::test]

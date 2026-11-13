@@ -72,6 +72,7 @@ mock! {
 		async fn delete_blocks(&self, network_slug: &str) -> Result<(), anyhow::Error>;
 		async fn get_missed_blocks(&self, network_id: &str, max_block_age: u64, current_block: u64, max_retries: u32) -> Result<Vec<MissedBlockEntry>, anyhow::Error>;
 		async fn update_missed_block_status(&self, network_id: &str, block_number: u64, status: MissedBlockStatus, error: Option<String>) -> Result<(), anyhow::Error>;
+		async fn requeue_missed_block(&self, network_id: &str, block_number: u64) -> Result<(), anyhow::Error>;
 		async fn remove_recovered_blocks(&self, network_id: &str, block_numbers: &[u64]) -> Result<(), anyhow::Error>;
 		async fn prune_old_missed_blocks(&self, network_id: &str, max_block_age: u64, current_block: u64) -> Result<usize, anyhow::Error>;
 	}
