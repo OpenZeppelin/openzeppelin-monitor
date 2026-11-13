@@ -141,7 +141,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 	/// * `addresses` - Optional list of addresses to filter logs by
 	/// # Returns
 	/// * `Result<Vec<EVMReceiptLog>, anyhow::Error>` - Collection of matching logs or error
-	#[instrument(skip(self), fields(from_block, to_block))]
+	#[instrument(skip(self))]
 	async fn get_logs_for_blocks(
 		&self,
 		from_block: u64,
@@ -242,5 +242,62 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 			.buffered(32)
 			.try_collect()
 			.await
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::services::blockchain::transports::TransportError;
+	use reqwest_middleware::ClientWithMiddleware;
+	use serde::Serialize;
+	use serde_json::Value;
+	use tracing_test::traced_test;
+
+	/// Transport whose requests always fail after logging, as the endpoint manager does
+	/// when an RPC answers HTTP 429
+	#[derive(Clone)]
+	struct FailingTransport;
+
+	#[async_trait]
+	impl BlockchainTransport for FailingTransport {
+		async fn get_current_url(&self) -> String {
+			"http://localhost:8545".to_string()
+		}
+
+		async fn send_raw_request<P>(
+			&self,
+			method: &str,
+			_params: Option<P>,
+		) -> Result<Value, TransportError>
+		where
+			P: Into<Value> + Send + Clone + Serialize,
+		{
+			tracing::warn!(
+				"Request {} failed with status 429 Too Many Requests",
+				method
+			);
+			Err(TransportError::network("rate limit exceeded", None, None))
+		}
+
+		fn update_endpoint_manager_client(
+			&mut self,
+			_client: ClientWithMiddleware,
+		) -> Result<(), anyhow::Error> {
+			Ok(())
+		}
+	}
+
+	#[tokio::test]
+	#[traced_test]
+	async fn test_get_logs_for_blocks_span_records_block_range() {
+		let client = EvmClient::new_with_transport(FailingTransport);
+
+		let result = client.get_logs_for_blocks(11931475, 11931476, None).await;
+
+		assert!(result.is_err());
+		// Errors logged inside the span name the blocks whose logs could not be fetched
+		assert!(logs_contain("from_block=11931475"));
+		assert!(logs_contain("to_block=11931476"));
 	}
 }
