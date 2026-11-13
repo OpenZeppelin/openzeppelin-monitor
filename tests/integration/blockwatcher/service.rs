@@ -8,7 +8,9 @@ use crate::integration::mocks::{
 	MockEVMTransportClient, MockEvmClientTrait, MockJobScheduler,
 };
 use openzeppelin_monitor::{
-	models::{BlockChainType, BlockType, MaxPastBlocks, Network, ProcessedBlock},
+	models::{
+		BlockChainType, BlockFilterStatus, BlockType, MaxPastBlocks, Network, ProcessedBlock,
+	},
 	services::blockwatcher::{
 		process_new_blocks, BlockCheckResult, BlockTracker, BlockTrackerTrait, BlockWatcherError,
 		BlockWatcherService, NetworkBlockWatcher,
@@ -261,6 +263,7 @@ async fn test_normal_block_range() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -309,6 +312,7 @@ async fn test_fresh_start_processing() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -357,6 +361,7 @@ async fn test_no_new_blocks() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -435,6 +440,7 @@ async fn test_concurrent_processing() {
 					block_number,
 					network_slug: network.slug,
 					processing_results: vec![],
+					filter_status: BlockFilterStatus::Completed,
 				}
 			}) as BoxFuture<'static, ProcessedBlock>
 		})
@@ -524,6 +530,7 @@ async fn test_ordered_trigger_handling() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -605,6 +612,7 @@ async fn test_block_storage_enabled() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -658,6 +666,7 @@ async fn test_max_past_blocks_limit() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -735,6 +744,7 @@ async fn test_max_past_blocks_limit_recommended() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -788,6 +798,7 @@ async fn test_confirmation_blocks() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -836,6 +847,7 @@ async fn test_process_new_blocks_storage_error() {
 				block_number: 101,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -884,6 +896,7 @@ async fn test_process_new_blocks_network_errors() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -936,6 +949,7 @@ async fn test_process_new_blocks_get_blocks_error() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1019,6 +1033,7 @@ async fn test_process_new_blocks_storage_save_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1097,6 +1112,7 @@ async fn test_process_new_blocks_save_last_processed_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1178,6 +1194,7 @@ async fn test_process_new_blocks_storage_delete_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1210,6 +1227,7 @@ async fn test_network_block_watcher_new() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1245,6 +1263,7 @@ async fn test_network_block_watcher_start_stop() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1292,6 +1311,7 @@ async fn test_block_watcher_service_start_stop_network() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1367,6 +1387,7 @@ async fn test_block_watcher_service_new() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1415,6 +1436,7 @@ async fn test_process_new_blocks_get_blocks_error_fresh_start() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -1447,6 +1469,7 @@ async fn test_scheduler_errors() {
 				block_number: 0,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2228,6 +2251,7 @@ async fn test_missed_block_detection_and_saving() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2318,6 +2342,7 @@ async fn test_missed_block_save_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2411,6 +2436,7 @@ async fn test_missed_block_detection_store_disabled() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2463,6 +2489,7 @@ async fn test_scheduled_job_execution_success() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2548,6 +2575,7 @@ async fn test_scheduled_job_execution_with_processing_error() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2677,6 +2705,7 @@ async fn test_duplicate_block_detection() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2774,6 +2803,7 @@ async fn test_missed_blocks_with_store_blocks_none() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2844,6 +2874,7 @@ async fn test_empty_blocks_from_rpc_despite_having_new_blocks() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -2949,6 +2980,7 @@ async fn test_out_of_order_in_cleanup_phase() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -3048,6 +3080,7 @@ async fn test_duplicate_detection_main_loop() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -3206,6 +3239,7 @@ async fn test_out_of_order_detection_main_loop() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});
@@ -3320,6 +3354,7 @@ async fn test_duplicate_detection_in_cleanup_phase() {
 				block_number,
 				network_slug: network.slug,
 				processing_results: vec![],
+				filter_status: BlockFilterStatus::Completed,
 			}
 		}) as BoxFuture<'static, ProcessedBlock>
 	});

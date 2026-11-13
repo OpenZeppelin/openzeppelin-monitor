@@ -496,6 +496,12 @@ A Network configuration defines connection details and operational parameters fo
 
 When RPC failures or network issues cause blocks to be missed during normal monitoring cycles, the missed block recovery feature can automatically retry fetching and processing them. This runs as a separate background job to avoid impacting the main monitoring loop.
 
+A block is also missed when its filter fails after the block was fetched, for example when the RPC rate-limits `eth_getLogs`. Such a block is never counted as processed with no matches:
+
+* With `recovery_config` enabled, the block is saved as missed and the recovery job retries it. The monitor keeps processing later blocks.
+* Without it, the last processed block stays just before the failed block, so the next run processes it again, together with the blocks after it. Triggers for those later blocks are held back until that run, so none of them fires twice. If the block still fails after 3 retries, it is skipped with an error log (and saved as missed when `store_blocks` is enabled), so one block cannot stop the network. As with any other block, a block that falls outside `max_past_blocks` before it is retried is skipped; use `"unlimited"` or enable `recovery_config` if that matters.
+* If the monitor is shutting down while a block is being filtered, the block is processed again after restart.
+
 **Example Recovery Configuration**
 
 ```json
