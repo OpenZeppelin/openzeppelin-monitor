@@ -9,8 +9,9 @@
 
 use alloy::core::dyn_abi::{DynSolType, DynSolValue, EventExt};
 use alloy::core::json_abi::{AbiItem, JsonAbi};
-use alloy::primitives::{LogData, U64};
+use alloy::primitives::{Address, LogData, U64};
 use async_trait::async_trait;
+use std::collections::{BTreeSet, HashSet};
 use std::marker::PhantomData;
 use tracing::instrument;
 
@@ -626,6 +627,100 @@ impl<T> EVMBlockFilter<T> {
 		})
 	}
 
+	/// Largest number of addresses passed as the `address` filter of `eth_getLogs`.
+	///
+	/// Nodes cap that filter (geth rejects more addresses than its `--rpc.logquerylimit`,
+	/// 1000 by default) and hosted providers have their own limits, so above this the
+	/// request is left unfiltered rather than failing on every block.
+	const MAX_GET_LOGS_ADDRESSES: usize = 100;
+
+	/// Parses the addresses watched by a monitor.
+	///
+	/// Addresses that are not valid 20-byte EVM addresses are left out, since the node
+	/// would reject an `eth_getLogs` filter because of one of them. Such an address can
+	/// never match a log or a transaction anyway.
+	///
+	/// # Arguments
+	/// * `monitor` - Monitor whose addresses to parse
+	///
+	/// # Returns
+	/// The distinct valid addresses of the monitor
+	fn parse_monitor_addresses(monitor: &Monitor) -> HashSet<Address> {
+		monitor
+			.addresses
+			.iter()
+			.filter_map(|address| {
+				let parsed =
+					format!("0x{}", normalize_address(&address.address)).parse::<Address>();
+				if parsed.is_err() {
+					tracing::warn!(
+						monitor = monitor.name.as_str(),
+						address = address.address.as_str(),
+						"Ignoring invalid EVM address of monitor"
+					);
+				}
+				parsed.ok()
+			})
+			.collect()
+	}
+
+	/// Builds the `address` filter of `eth_getLogs` from the addresses of the monitors
+	/// applicable to the block.
+	///
+	/// Event matching only ever looks at logs emitted by a monitored address, so the node
+	/// does not need to return any other log of the block.
+	///
+	/// # Arguments
+	/// * `monitor_addresses` - Parsed addresses of each monitor, see
+	///   [`Self::parse_monitor_addresses`]
+	///
+	/// # Returns
+	/// The sorted, de-duplicated, lowercase `0x`-prefixed addresses, or `None` when no
+	/// monitor declares a valid address or there are more than
+	/// [`Self::MAX_GET_LOGS_ADDRESSES`], in which case the request is left unfiltered.
+	fn logs_address_filter(monitor_addresses: &[HashSet<Address>]) -> Option<Vec<String>> {
+		let addresses: BTreeSet<&Address> = monitor_addresses.iter().flatten().collect();
+		if addresses.is_empty() {
+			return None;
+		}
+		if addresses.len() > Self::MAX_GET_LOGS_ADDRESSES {
+			tracing::warn!(
+				addresses = addresses.len(),
+				max = Self::MAX_GET_LOGS_ADDRESSES,
+				"Too many monitored addresses for the eth_getLogs filter, requesting every log of the block"
+			);
+			return None;
+		}
+		Some(
+			addresses
+				.into_iter()
+				.map(|address| h160_to_string(*address))
+				.collect(),
+		)
+	}
+
+	/// Checks whether a transaction can match a monitor at all: its sender, its recipient
+	/// or the emitter of one of its logs must be a monitored address.
+	///
+	/// # Arguments
+	/// * `addresses` - Addresses watched by the monitor, see [`Self::parse_monitor_addresses`]
+	/// * `transaction` - Transaction to check
+	/// * `logs` - Logs emitted by the transaction
+	///
+	/// # Returns
+	/// `true` if the transaction touches one of the monitor's addresses, `false` otherwise
+	fn touches_monitored_address(
+		addresses: &HashSet<Address>,
+		transaction: &EVMTransaction,
+		logs: &[EVMReceiptLog],
+	) -> bool {
+		transaction
+			.from
+			.is_some_and(|from| addresses.contains(&from))
+			|| transaction.to.is_some_and(|to| addresses.contains(&to))
+			|| logs.iter().any(|log| addresses.contains(&log.address))
+	}
+
 	/// Checks if a monitor has any transaction conditions that require a receipt
 	///
 	/// # Arguments
@@ -690,13 +785,23 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 		let current_block_number = evm_block.number.unwrap_or(U64::from(0)).to::<u64>();
 
-		// Get logs for the block
-		// We use this to get all the logs for a single block.
+		// Get the logs of the block emitted by the addresses the monitors watch.
+		// Event matching only looks at logs from monitored addresses, so the other logs of
+		// the block are never used; leaving them out keeps the response small on busy
+		// networks, where a block can carry thousands of unrelated logs.
 		// We could further optimize by getting logs for a range of blocks and calling this in the parent function
 		// However, due to limitations by certain RPC providers (e.g. Quicknode only allows a block range of 5),
 		// it's safer to just fetch the logs for a single block at a time as it's more reliable.
+		// Parsed once per monitor: the sets feed the eth_getLogs filter and the
+		// per-transaction check below.
+		let monitor_addresses: Vec<HashSet<Address>> =
+			monitors.iter().map(Self::parse_monitor_addresses).collect();
 		let all_block_logs = client
-			.get_logs_for_blocks(current_block_number, current_block_number, None)
+			.get_logs_for_blocks(
+				current_block_number,
+				current_block_number,
+				Self::logs_address_filter(&monitor_addresses),
+			)
 			.await?;
 
 		tracing::debug!(
@@ -727,7 +832,7 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 
 		tracing::debug!("Processing {} transactions with logs", logs_by_tx.len());
 
-		for monitor in monitors {
+		for (monitor, addresses) in monitors.iter().zip(&monitor_addresses) {
 			tracing::debug!("Processing monitor: {:?}", monitor.name);
 			let monitored_addresses: Vec<String> = monitor
 				.addresses
@@ -741,6 +846,13 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 				let empty_logs = Vec::new();
 				let logs = logs_by_tx.get(&tx_hash).unwrap_or(&empty_logs);
 				let tx_hash_str = tx_hash.clone();
+
+				// A match requires a monitored address among the sender, the recipient and the
+				// emitters of the transaction's logs (see `has_address_match` below), so a
+				// transaction that touches none of them is skipped before its receipt is fetched.
+				if !Self::touches_monitored_address(addresses, transaction, logs) {
+					continue;
+				}
 
 				// Other transactions' logs cannot establish this transaction's status.
 				let receipt = if self.needs_receipt(monitor, logs) {
@@ -1041,6 +1153,141 @@ mod tests {
 			log_type: None,
 			removed: Some(false),
 		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Test cases for logs_address_filter and touches_monitored_address:
+	//////////////////////////////////////////////////////////////////////////////
+	const TRANSFER_SIGNATURE: &str =
+		"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+	fn address_only_monitor(addresses: &[&str]) -> Monitor {
+		create_test_monitor(
+			vec![],
+			vec![],
+			vec![],
+			addresses
+				.iter()
+				.map(|address| AddressWithSpec {
+					address: address.to_string(),
+					contract_spec: None,
+				})
+				.collect(),
+		)
+	}
+
+	fn logs_address_filter(monitors: &[Monitor]) -> Option<Vec<String>> {
+		let monitor_addresses: Vec<HashSet<Address>> = monitors
+			.iter()
+			.map(EVMBlockFilter::<()>::parse_monitor_addresses)
+			.collect();
+		EVMBlockFilter::<()>::logs_address_filter(&monitor_addresses)
+	}
+
+	#[test]
+	fn test_logs_address_filter_merges_normalizes_and_dedups() {
+		let monitors = [
+			address_only_monitor(&[
+				"0xABCDEF0000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+			]),
+			address_only_monitor(&["abcdef0000000000000000000000000000000001"]),
+		];
+
+		assert_eq!(
+			logs_address_filter(&monitors),
+			Some(vec![
+				"0x0000000000000000000000000000000000000002".to_string(),
+				"0xabcdef0000000000000000000000000000000001".to_string(),
+			])
+		);
+	}
+
+	#[test]
+	fn test_logs_address_filter_is_none_without_addresses() {
+		assert_eq!(logs_address_filter(&[]), None);
+		assert_eq!(logs_address_filter(&[address_only_monitor(&[])]), None);
+	}
+
+	#[test]
+	fn test_logs_address_filter_leaves_out_invalid_addresses() {
+		let monitors = [address_only_monitor(&[
+			"0x1234",
+			"not an address",
+			"0x0000000000000000000000000000000000000003",
+		])];
+
+		assert_eq!(
+			logs_address_filter(&monitors),
+			Some(vec![
+				"0x0000000000000000000000000000000000000003".to_string()
+			])
+		);
+		assert_eq!(
+			logs_address_filter(&[address_only_monitor(&["0x1234"])]),
+			None
+		);
+	}
+
+	#[test]
+	fn test_logs_address_filter_is_none_above_the_cap() {
+		let max = EVMBlockFilter::<()>::MAX_GET_LOGS_ADDRESSES;
+		let addresses: Vec<String> = (1..=max + 1).map(|i| format!("{:#042x}", i)).collect();
+		let monitor = |addresses: &[String]| {
+			address_only_monitor(&addresses.iter().map(String::as_str).collect::<Vec<_>>())
+		};
+
+		assert_eq!(
+			logs_address_filter(&[monitor(&addresses[..max])]).map(|filter| filter.len()),
+			Some(max)
+		);
+		// The same addresses spread over several monitors still count once.
+		assert_eq!(
+			logs_address_filter(&[monitor(&addresses[..max]), monitor(&addresses[..max])])
+				.map(|filter| filter.len()),
+			Some(max)
+		);
+		assert_eq!(logs_address_filter(&[monitor(&addresses)]), None);
+	}
+
+	#[test]
+	fn test_touches_monitored_address() {
+		let monitored = Address::repeat_byte(0xaa);
+		let other = Address::repeat_byte(0xbb);
+		// Mixed case on purpose: the comparison must ignore case.
+		let monitor =
+			address_only_monitor(&[&format!("0x{}", hex::encode_upper(monitored.as_slice()))]);
+		let addresses = EVMBlockFilter::<()>::parse_monitor_addresses(&monitor);
+		let transaction =
+			|from: Address, to: Address| TransactionBuilder::new().from(from).to(to).build();
+		let log_from =
+			|emitter: Address| create_test_log(emitter, TRANSFER_SIGNATURE, other, other, "00");
+
+		assert!(EVMBlockFilter::<()>::touches_monitored_address(
+			&addresses,
+			&transaction(monitored, other),
+			&[]
+		));
+		assert!(EVMBlockFilter::<()>::touches_monitored_address(
+			&addresses,
+			&transaction(other, monitored),
+			&[]
+		));
+		assert!(EVMBlockFilter::<()>::touches_monitored_address(
+			&addresses,
+			&transaction(other, other),
+			&[log_from(other), log_from(monitored)]
+		));
+		assert!(!EVMBlockFilter::<()>::touches_monitored_address(
+			&addresses,
+			&transaction(other, other),
+			&[]
+		));
+		assert!(!EVMBlockFilter::<()>::touches_monitored_address(
+			&addresses,
+			&transaction(other, other),
+			&[log_from(other)]
+		));
 	}
 
 	//////////////////////////////////////////////////////////////////////////////

@@ -701,7 +701,7 @@ In raw mode, the webhook sends the complete `MonitorMatch` object directly as th
 
 When using raw mode:
 * The `message` field is ignored
-* The payload contains the full monitor match including: monitor configuration, transaction details, receipt, logs, matched conditions, and decoded arguments
+* The payload contains the full monitor match including: monitor configuration, transaction details, receipt, the transaction's logs emitted by monitored addresses, matched conditions, and decoded arguments
 * This is particularly useful for integrations that need to process the complete event data programmatically
 
 ##### Discord Notifications
