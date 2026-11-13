@@ -127,6 +127,7 @@ impl TriggerBuilder {
 			script_path: script_path.to_string(),
 			arguments: None,
 			runtime_arguments: vec![],
+			interpreter: None,
 			language,
 			timeout_ms: 1000,
 		};

@@ -3,9 +3,11 @@
 //! This module implements the ConfigLoader trait for Monitor configurations,
 //! allowing monitors to be loaded from JSON files.
 
+#[cfg(unix)]
+use crate::services::trigger::interpreter_is_writable_by_others;
 use crate::{
 	models::{config::error::ConfigError, ConfigLoader, Monitor, SecretValue},
-	services::trigger::validate_script_config,
+	services::trigger::{validate_script_config, validate_script_interpreter},
 	utils::normalize_string,
 };
 use async_trait::async_trait;
@@ -172,13 +174,14 @@ impl ConfigLoader for Monitor {
 			));
 		}
 
-		// Validate trigger conditions (focus on script path, timeout, and language)
+		// Validate trigger conditions (script path, timeout, language, and interpreter)
 		for trigger_condition in &self.trigger_conditions {
 			validate_script_config(
 				&trigger_condition.script_path,
 				&trigger_condition.language,
 				&trigger_condition.timeout_ms,
 			)?;
+			validate_script_interpreter(trigger_condition.interpreter.as_deref())?;
 		}
 
 		// Log a warning if the monitor uses an insecure protocol
@@ -205,6 +208,15 @@ impl ConfigLoader for Monitor {
 						condition.script_path
 					);
 				}
+			}
+
+			// Check the permissions of an interpreter that is configured as an explicit path
+			if interpreter_is_writable_by_others(condition.interpreter.as_deref()) {
+				tracing::warn!(
+					"Monitor '{}' trigger conditions interpreter file has overly permissive write permissions: {}. The recommended permissions are `755` (`rwxr-xr-x`)",
+					self.name,
+					condition.interpreter.as_deref().unwrap_or_default()
+				);
 			}
 		}
 	}
@@ -238,6 +250,8 @@ impl ConfigLoader for Monitor {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	#[cfg(unix)]
+	use crate::utils::tests::create_file_with_mode;
 	use crate::{
 		models::core::{ScriptLanguage, TransactionStatus, TriggerConditions},
 		utils::tests::builders::evm::monitor::MonitorBuilder,
@@ -474,6 +488,119 @@ mod tests {
 	}
 
 	#[test]
+	fn test_trigger_conditions_interpreter_serde() {
+		// Configuration without the field must still load (backward compatibility)
+		// and must not grow an `interpreter` key when serialized
+		let without_field = r#"{
+			"script_path": "./filter.py",
+			"language": "Python",
+			"timeout_ms": 1000
+		}"#;
+		let conditions: TriggerConditions =
+			serde_json::from_str(without_field).expect("config without interpreter should load");
+		assert_eq!(conditions.interpreter, None);
+		let serialized = serde_json::to_value(&conditions).unwrap();
+		assert!(serialized.get("interpreter").is_none());
+		let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, conditions);
+
+		// A bare command name and an explicit path are both preserved verbatim
+		for interpreter in ["python3.11", "/opt/venv/bin/python"] {
+			let with_field = format!(
+				r#"{{
+					"script_path": "./filter.py",
+					"language": "Python",
+					"interpreter": "{interpreter}",
+					"timeout_ms": 1000
+				}}"#
+			);
+			let conditions: TriggerConditions = serde_json::from_str(&with_field)
+				.unwrap_or_else(|e| panic!("interpreter {interpreter:?} should load: {e}"));
+			assert_eq!(conditions.interpreter.as_deref(), Some(interpreter));
+			let serialized = serde_json::to_value(&conditions).unwrap();
+			assert_eq!(serialized["interpreter"], serde_json::json!(interpreter));
+			let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
+			assert_eq!(deserialized, conditions);
+		}
+
+		// An explicit null behaves like an absent field
+		let with_null = r#"{
+			"script_path": "./filter.py",
+			"language": "Python",
+			"interpreter": null,
+			"timeout_ms": 1000
+		}"#;
+		let conditions: TriggerConditions =
+			serde_json::from_str(with_null).expect("null interpreter should load");
+		assert_eq!(conditions.interpreter, None);
+		let serialized = serde_json::to_value(&conditions).unwrap();
+		assert!(serialized.get("interpreter").is_none());
+		let deserialized: TriggerConditions = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, conditions);
+	}
+
+	/// Builds an otherwise valid monitor whose trigger condition uses `interpreter`.
+	/// The returned `TempDir` owns the script file and must outlive the validation call.
+	fn monitor_with_interpreter(interpreter: &str) -> (TempDir, Monitor) {
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("filter.sh");
+		fs::write(&script_path, "#!/bin/sh\necho true").unwrap();
+
+		let mut monitor = MonitorBuilder::new()
+			.name("TestMonitor")
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Bash,
+				None,
+			)
+			.build();
+		monitor.trigger_conditions[0].interpreter = Some(interpreter.to_string());
+
+		(temp_dir, monitor)
+	}
+
+	#[test]
+	fn test_validate_monitor_rejects_whitespace_only_interpreter() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("   ");
+
+		let error = monitor.validate().unwrap_err().to_string();
+		assert!(error.contains("interpreter"), "unexpected error: {error}");
+	}
+
+	#[test]
+	fn test_validate_monitor_rejects_interpreter_not_on_path() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("definitely-not-a-program");
+
+		let error = monitor.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("definitely-not-a-program"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[test]
+	fn test_validate_monitor_rejects_interpreter_with_flags() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("python3 -u");
+
+		let error = monitor.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("runtime_arguments"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_validate_monitor_accepts_interpreter_on_path() {
+		let (_temp_dir, monitor) = monitor_with_interpreter("sh");
+
+		let result = monitor.validate();
+		assert!(result.is_ok(), "unexpected error: {result:?}");
+	}
+
+	#[test]
 	fn test_validate_monitor_with_invalid_script_path() {
 		let invalid_monitor = MonitorBuilder::new()
 			.name("TestMonitor")
@@ -640,6 +767,154 @@ mod tests {
 		assert!(logs_contain(
 			"script file has overly permissive write permissions"
 		));
+	}
+
+	/// Text that only the interpreter permission warning contains
+	#[cfg(unix)]
+	const INTERPRETER_PERMISSION_WARNING: &str =
+		"interpreter file has overly permissive write permissions";
+
+	/// Builds a monitor whose trigger condition script has mode `644`, so that only the
+	/// interpreter can cause a permission warning
+	#[cfg(unix)]
+	fn monitor_for_interpreter_permissions(
+		dir: &std::path::Path,
+		interpreter: Option<&str>,
+	) -> Monitor {
+		let script_path = create_file_with_mode(dir, "filter.sh", 0o644);
+		let mut monitor = MonitorBuilder::new()
+			.name("TestMonitor")
+			.networks(vec!["ethereum_mainnet".to_string()])
+			.trigger_condition(
+				script_path.to_str().unwrap(),
+				1000,
+				ScriptLanguage::Bash,
+				None,
+			)
+			.build();
+		monitor.trigger_conditions[0].interpreter = interpreter.map(str::to_string);
+		monitor
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_group_and_world_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o777);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a 777 interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_group_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o775);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a group-writable (775) interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_world_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o757);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a world-writable (757) interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_warns_for_symlink_to_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		// The permissions of the file the link points to are what counts
+		let target = create_file_with_mode(temp_dir.path(), "interpreter3.11", 0o777);
+		let interpreter = temp_dir.path().join("interpreter3");
+		std::os::unix::fs::symlink(&target, &interpreter).unwrap();
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"the permissions of the symlink target (777) should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_does_not_warn_for_755_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o755);
+		let monitor = monitor_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		monitor.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a 755 interpreter should not be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_does_not_warn_for_interpreter_command_name() {
+		let temp_dir = TempDir::new().unwrap();
+		let monitor = monitor_for_interpreter_permissions(temp_dir.path(), Some("sh"));
+
+		monitor.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a command name resolved through PATH is not checked"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_monitor_does_not_warn_without_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let monitor = monitor_for_interpreter_permissions(temp_dir.path(), None);
+
+		monitor.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"no interpreter is configured, so there is nothing to report"
+		);
 	}
 
 	#[tokio::test]

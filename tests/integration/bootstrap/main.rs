@@ -495,6 +495,7 @@ print(True)  # Always return true for test
 		timeout_ms: 1000,
 		arguments: None,
 		runtime_arguments: vec![],
+		interpreter: None,
 	}];
 
 	let processed_block = ProcessedBlock {
@@ -515,6 +516,90 @@ print(True)  # Always return true for test
 	handle
 		.await
 		.expect("Trigger handler task should complete successfully");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_create_trigger_handler_with_condition_interpreter_override() {
+	// Count the matches that pass the trigger conditions and reach trigger execution
+	let executions = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+	let executions_clone = executions.clone();
+
+	// Built directly: `create_trigger_handler` takes a ready-made service, so this test needs
+	// neither a trigger repository nor the mocked constructor (a global mockall context).
+	let mut trigger_execution_service =
+		MockTriggerExecutionService::<MockTriggerRepository>::default();
+	trigger_execution_service
+		.expect_execute()
+		.returning(move |_, _, _, _| {
+			executions_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+			Ok(())
+		});
+
+	// Valid shell, but a syntax error in Python: only `sh` can make this condition return true
+	let mut trigger_scripts = HashMap::new();
+	trigger_scripts.insert(
+		"test_trigger|test_script.py".to_string(),
+		(
+			ScriptLanguage::Python,
+			"cat >/dev/null; echo true".to_string(),
+		),
+	);
+
+	let (shutdown_tx, _) = watch::channel(false);
+	let trigger_handler = create_trigger_handler(
+		shutdown_tx,
+		Arc::new(trigger_execution_service),
+		trigger_scripts,
+	);
+
+	let processed_block_with_interpreter = |interpreter: Option<&str>| {
+		let mut monitor =
+			create_test_monitor("test_trigger", vec!["ethereum_mainnet"], false, vec![]);
+		monitor.trigger_conditions = vec![TriggerConditions {
+			script_path: "test_script.py".to_string(),
+			language: ScriptLanguage::Python,
+			timeout_ms: 5000,
+			arguments: None,
+			runtime_arguments: vec![],
+			interpreter: interpreter.map(str::to_string),
+		}];
+
+		ProcessedBlock {
+			block_number: 100,
+			network_slug: "ethereum_mainnet".to_string(),
+			processing_results: vec![MonitorMatch::EVM(Box::new(EVMMonitorMatch {
+				monitor,
+				transaction: TransactionBuilder::new().build(),
+				receipt: Some(EVMTransactionReceipt::default()),
+				logs: Some(vec![]),
+				network_slug: "ethereum_mainnet".to_string(),
+				matched_on: MatchConditions::default(),
+				matched_on_args: None,
+			}))],
+		}
+	};
+
+	// Premise: with the default interpreter the condition script fails, so the match is not
+	// filtered out and goes on to trigger execution
+	trigger_handler(&processed_block_with_interpreter(None))
+		.await
+		.expect("Trigger handler task should complete successfully");
+	assert_eq!(
+		executions.load(std::sync::atomic::Ordering::SeqCst),
+		1,
+		"python3 cannot run the shell-only condition, so the match should be executed"
+	);
+
+	// With the configured interpreter the condition returns true and filters the match out
+	trigger_handler(&processed_block_with_interpreter(Some("sh")))
+		.await
+		.expect("Trigger handler task should complete successfully");
+	assert_eq!(
+		executions.load(std::sync::atomic::Ordering::SeqCst),
+		1,
+		"the `sh` condition should filter the match out, so nothing more should be executed"
+	);
 }
 
 #[tokio::test]

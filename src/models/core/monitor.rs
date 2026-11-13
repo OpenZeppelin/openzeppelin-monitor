@@ -125,6 +125,11 @@ pub struct TriggerConditions {
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub runtime_arguments: Vec<String>,
 
+	/// Interpreter binary used to run the script, overriding the default for the language
+	/// (a command name resolved via `PATH`, or an explicit path)
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub interpreter: Option<String>,
+
 	/// The language of the script
 	pub language: ScriptLanguage,
 

@@ -1,5 +1,7 @@
 use openzeppelin_monitor::{
-	models::{EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, ScriptLanguage},
+	models::{
+		EVMMonitorMatch, MatchConditions, Monitor, MonitorMatch, ScriptLanguage, TriggerTypeConfig,
+	},
 	services::notification::{NotificationError, NotificationService},
 	utils::tests::{
 		evm::{monitor::MonitorBuilder, transaction::TransactionBuilder},
@@ -160,4 +162,57 @@ async fn test_notification_service_script_execution_with_runtime_arguments() {
 		.execute(&trigger, &HashMap::new(), &monitor_match, &trigger_scripts)
 		.await;
 	assert!(result.is_ok());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_notification_service_script_execution_with_interpreter_override() {
+	let notification_service = NotificationService::new();
+	let monitor_match = create_test_evm_match(create_test_monitor("test_monitor"));
+
+	// Valid shell, but a syntax error in Python: only `sh` can run this script
+	let mut trigger_scripts = HashMap::new();
+	trigger_scripts.insert(
+		"test_monitor|test_script.py".to_string(),
+		(
+			ScriptLanguage::Python,
+			"cat >/dev/null; echo true".to_string(),
+		),
+	);
+
+	let mut trigger = TriggerBuilder::new()
+		.name("test_trigger")
+		.script("test_script.py", ScriptLanguage::Python)
+		.script_timeout_ms(5000)
+		.build();
+
+	// Premise: the default interpreter for the language cannot run the script
+	let result = notification_service
+		.execute(&trigger, &HashMap::new(), &monitor_match, &trigger_scripts)
+		.await;
+	match &result {
+		Err(NotificationError::ExecutionError(ctx)) => assert!(
+			ctx.to_string().contains("SyntaxError"),
+			"expected a Python syntax error, got {:?}",
+			result
+		),
+		_ => panic!(
+			"python3 should fail on a shell-only script, got {:?}",
+			result
+		),
+	}
+
+	// With the configured interpreter the same script succeeds
+	match &mut trigger.config {
+		TriggerTypeConfig::Script { interpreter, .. } => *interpreter = Some("sh".to_string()),
+		_ => panic!("Expected script config"),
+	}
+	let result = notification_service
+		.execute(&trigger, &HashMap::new(), &monitor_match, &trigger_scripts)
+		.await;
+	assert!(
+		result.is_ok(),
+		"the configured `sh` interpreter should run the script, got {:?}",
+		result
+	);
 }

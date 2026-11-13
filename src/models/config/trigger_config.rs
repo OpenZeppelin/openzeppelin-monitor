@@ -8,12 +8,14 @@ use email_address::EmailAddress;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
 
+#[cfg(unix)]
+use crate::services::trigger::interpreter_is_writable_by_others;
 use crate::{
 	models::{
 		config::error::ConfigError, ConfigLoader, SecretValue, Trigger, TriggerType,
 		TriggerTypeConfig, WebhookPayloadMode,
 	},
-	services::trigger::validate_script_config,
+	services::trigger::{validate_script_config, validate_script_interpreter},
 	utils::normalize_string,
 };
 
@@ -600,10 +602,12 @@ impl ConfigLoader for Trigger {
 					script_path,
 					language,
 					timeout_ms,
+					interpreter,
 					..
 				} = &self.config
 				{
 					validate_script_config(script_path, language, timeout_ms)?;
+					validate_script_interpreter(interpreter.as_deref())?;
 				}
 			}
 		}
@@ -630,7 +634,12 @@ impl ConfigLoader for Trigger {
 				}
 			}
 			TriggerTypeConfig::Telegram { .. } => {}
-			TriggerTypeConfig::Script { script_path, .. } => {
+			#[cfg_attr(not(unix), allow(unused_variables))]
+			TriggerTypeConfig::Script {
+				script_path,
+				interpreter,
+				..
+			} => {
 				// Check script file permissions on Unix systems
 				#[cfg(unix)]
 				{
@@ -644,6 +653,15 @@ impl ConfigLoader for Trigger {
 								script_path
 							);
 						}
+					}
+
+					// Check the permissions of an interpreter that is configured as an
+					// explicit path
+					if interpreter_is_writable_by_others(interpreter.as_deref()) {
+						tracing::warn!(
+							"Script interpreter file has overly permissive write permissions: {}. The recommended permissions are `755` (`rwxr-xr-x`)",
+							interpreter.as_deref().unwrap_or_default()
+						);
 					}
 				}
 			}
@@ -708,6 +726,8 @@ mod tests {
 	use crate::models::NotificationMessage;
 	use crate::models::{core::Trigger, ScriptLanguage, SecretString};
 	use crate::utils::tests::builders::trigger::TriggerBuilder;
+	#[cfg(unix)]
+	use crate::utils::tests::create_file_with_mode;
 	use crate::utils::RetryConfig;
 	use std::{fs::File, io::Write, os::unix::fs::PermissionsExt};
 	use tempfile::TempDir;
@@ -1184,6 +1204,148 @@ mod tests {
 		assert_eq!(deserialized, trigger);
 	}
 
+	#[test]
+	fn test_script_trigger_interpreter_serde() {
+		// Configuration without the field must still load (backward compatibility)
+		// and must not grow an `interpreter` key when serialized
+		let without_field = r#"{
+			"name": "script_trigger",
+			"trigger_type": "script",
+			"config": {
+				"language": "Python",
+				"script_path": "./script.py",
+				"timeout_ms": 1000
+			}
+		}"#;
+		let trigger: Trigger =
+			serde_json::from_str(without_field).expect("config without interpreter should load");
+		match &trigger.config {
+			TriggerTypeConfig::Script { interpreter, .. } => {
+				assert_eq!(*interpreter, None);
+			}
+			_ => panic!("Expected script config"),
+		}
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert!(serialized["config"].get("interpreter").is_none());
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, trigger);
+
+		// A bare command name and an explicit path are both preserved verbatim
+		for expected in ["python3.11", "/opt/venv/bin/python"] {
+			let with_field = format!(
+				r#"{{
+					"name": "script_trigger",
+					"trigger_type": "script",
+					"config": {{
+						"language": "Python",
+						"script_path": "./script.py",
+						"interpreter": "{expected}",
+						"timeout_ms": 1000
+					}}
+				}}"#
+			);
+			let trigger: Trigger = serde_json::from_str(&with_field)
+				.unwrap_or_else(|e| panic!("interpreter {expected:?} should load: {e}"));
+			match &trigger.config {
+				TriggerTypeConfig::Script { interpreter, .. } => {
+					assert_eq!(interpreter.as_deref(), Some(expected));
+				}
+				_ => panic!("Expected script config"),
+			}
+			let serialized = serde_json::to_value(&trigger).unwrap();
+			assert_eq!(
+				serialized["config"]["interpreter"],
+				serde_json::json!(expected)
+			);
+			let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+			assert_eq!(deserialized, trigger);
+		}
+
+		// An explicit null behaves like an absent field
+		let with_null = r#"{
+			"name": "script_trigger",
+			"trigger_type": "script",
+			"config": {
+				"language": "Python",
+				"script_path": "./script.py",
+				"interpreter": null,
+				"timeout_ms": 1000
+			}
+		}"#;
+		let trigger: Trigger =
+			serde_json::from_str(with_null).expect("null interpreter should load");
+		match &trigger.config {
+			TriggerTypeConfig::Script { interpreter, .. } => {
+				assert_eq!(*interpreter, None);
+			}
+			_ => panic!("Expected script config"),
+		}
+		let serialized = serde_json::to_value(&trigger).unwrap();
+		assert!(serialized["config"].get("interpreter").is_none());
+		let deserialized: Trigger = serde_json::from_value(serialized).unwrap();
+		assert_eq!(deserialized, trigger);
+	}
+
+	/// Builds an otherwise valid script trigger that uses `interpreter`.
+	/// The returned `TempDir` owns the script file and must outlive the validation call.
+	fn script_trigger_with_interpreter(interpreter: &str) -> (TempDir, Trigger) {
+		let temp_dir = TempDir::new().unwrap();
+		let script_path = temp_dir.path().join("notify.sh");
+		std::fs::write(&script_path, "#!/bin/sh\necho done").unwrap();
+
+		let mut trigger = TriggerBuilder::new()
+			.name("test_script")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Bash)
+			.build();
+		match &mut trigger.config {
+			TriggerTypeConfig::Script { interpreter: i, .. } => {
+				*i = Some(interpreter.to_string());
+			}
+			_ => panic!("Expected script config"),
+		}
+
+		(temp_dir, trigger)
+	}
+
+	#[test]
+	fn test_script_trigger_rejects_whitespace_only_interpreter() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("   ");
+
+		let error = trigger.validate().unwrap_err().to_string();
+		assert!(error.contains("interpreter"), "unexpected error: {error}");
+	}
+
+	#[test]
+	fn test_script_trigger_rejects_interpreter_not_on_path() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("definitely-not-a-program");
+
+		let error = trigger.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("definitely-not-a-program"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[test]
+	fn test_script_trigger_rejects_interpreter_with_flags() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("python3 -u");
+
+		let error = trigger.validate().unwrap_err().to_string();
+		assert!(
+			error.contains("runtime_arguments"),
+			"unexpected error: {error}"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_script_trigger_accepts_interpreter_on_path() {
+		let (_temp_dir, trigger) = script_trigger_with_interpreter("sh");
+
+		let result = trigger.validate();
+		assert!(result.is_ok(), "unexpected error: {result:?}");
+	}
+
 	#[tokio::test]
 	async fn test_invalid_load_from_path() {
 		let path = Path::new("config/triggers/invalid.json");
@@ -1341,6 +1503,153 @@ mod tests {
 		assert!(logs_contain(
 			"Script file has overly permissive write permissions"
 		));
+	}
+
+	/// Text that only the interpreter permission warning contains
+	#[cfg(unix)]
+	const INTERPRETER_PERMISSION_WARNING: &str =
+		"interpreter file has overly permissive write permissions";
+
+	/// Builds a script trigger whose script has mode `644`, so that only the interpreter can
+	/// cause a permission warning
+	#[cfg(unix)]
+	fn trigger_for_interpreter_permissions(
+		dir: &std::path::Path,
+		interpreter: Option<&str>,
+	) -> Trigger {
+		let script_path = create_file_with_mode(dir, "notify.sh", 0o644);
+		let mut trigger = TriggerBuilder::new()
+			.name("test_script")
+			.script(script_path.to_str().unwrap(), ScriptLanguage::Bash)
+			.build();
+		match &mut trigger.config {
+			TriggerTypeConfig::Script { interpreter: i, .. } => {
+				*i = interpreter.map(str::to_string);
+			}
+			_ => panic!("Expected script config"),
+		}
+		trigger
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_warns_for_group_and_world_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o777);
+		let trigger = trigger_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		trigger.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a 777 interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_warns_for_group_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o775);
+		let trigger = trigger_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		trigger.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a group-writable (775) interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_warns_for_world_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o757);
+		let trigger = trigger_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		trigger.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a world-writable (757) interpreter should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_warns_for_symlink_to_writable_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		// The permissions of the file the link points to are what counts
+		let target = create_file_with_mode(temp_dir.path(), "interpreter3.11", 0o777);
+		let interpreter = temp_dir.path().join("interpreter3");
+		std::os::unix::fs::symlink(&target, &interpreter).unwrap();
+		let trigger = trigger_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		trigger.validate_protocol();
+		assert!(
+			logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"the permissions of the symlink target (777) should be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_does_not_warn_for_755_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let interpreter = create_file_with_mode(temp_dir.path(), "interpreter", 0o755);
+		let trigger = trigger_for_interpreter_permissions(
+			temp_dir.path(),
+			Some(interpreter.to_str().unwrap()),
+		);
+
+		trigger.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a 755 interpreter should not be reported"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_does_not_warn_for_interpreter_command_name() {
+		let temp_dir = TempDir::new().unwrap();
+		let trigger = trigger_for_interpreter_permissions(temp_dir.path(), Some("sh"));
+
+		trigger.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"a command name resolved through PATH is not checked"
+		);
+	}
+
+	#[cfg(unix)]
+	#[test]
+	#[traced_test]
+	fn test_validate_protocol_script_does_not_warn_without_interpreter() {
+		let temp_dir = TempDir::new().unwrap();
+		let trigger = trigger_for_interpreter_permissions(temp_dir.path(), None);
+
+		trigger.validate_protocol();
+		assert!(
+			!logs_contain(INTERPRETER_PERMISSION_WARNING),
+			"no interpreter is configured, so there is nothing to report"
+		);
 	}
 
 	#[test]
