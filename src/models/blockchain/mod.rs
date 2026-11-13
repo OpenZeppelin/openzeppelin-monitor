@@ -173,6 +173,22 @@ pub struct ChainConfiguration {
 	pub solana: Option<solana::SolanaMonitorConfig>,
 }
 
+/// Whether filtering a block ran to completion.
+///
+/// Only a `Completed` block may be counted as processed. The other two leave
+/// `processing_results` empty, so without this status a block whose filter never
+/// finished would look like a block with no matches.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BlockFilterStatus {
+	/// The filter finished. `processing_results` holds its matches, which may be none.
+	#[default]
+	Completed,
+	/// The filter returned an error, or no client was available for the network.
+	Failed,
+	/// Shutdown interrupted the filter before it finished.
+	Cancelled,
+}
+
 /// Structure to hold block processing results
 ///
 /// This is used to pass the results of block processing to the trigger handler
@@ -181,6 +197,9 @@ pub struct ProcessedBlock {
 	pub block_number: u64,
 	pub network_slug: String,
 	pub processing_results: Vec<MonitorMatch>,
+	/// Whether the filter finished for this block. See [`BlockFilterStatus`].
+	#[serde(default)]
+	pub filter_status: BlockFilterStatus,
 }
 
 #[cfg(test)]

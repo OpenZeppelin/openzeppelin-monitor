@@ -13,16 +13,20 @@ use crate::integration::{
 use openzeppelin_monitor::{
 	bootstrap::{
 		create_block_handler, create_trigger_handler, get_contract_specs, initialize_services,
-		process_block,
+		process_block, ProcessBlockError,
 	},
 	models::{
-		AddressWithSpec, BlockChainType, ContractSpec, EVMContractSpec, EVMMonitorMatch,
-		EVMTransactionReceipt, MatchConditions, Monitor, MonitorMatch, ProcessedBlock,
-		ScriptLanguage, SecretString, SecretValue, StellarBlock, StellarContractSpec,
-		StellarFormattedContractSpec, StellarMonitorMatch, TransactionType, Trigger,
-		TriggerConditions,
+		AddressWithSpec, BlockChainType, BlockFilterStatus, BlockType, ContractSpec,
+		EVMContractSpec, EVMMonitorMatch, EVMTransactionReceipt, MatchConditions, MaxPastBlocks,
+		Monitor, MonitorMatch, ProcessedBlock, ScriptLanguage, SecretString, SecretValue,
+		StellarBlock, StellarContractSpec, StellarFormattedContractSpec, StellarMonitorMatch,
+		TransactionType, Trigger, TriggerConditions,
 	},
 	services::{
+		blockchain::BlockChainClient,
+		blockwatcher::{
+			process_new_blocks, BlockStorage, BlockTracker, BlockTrackerTrait, FileBlockStorage,
+		},
 		filter::{stellar_helpers::are_same_address, FilterService},
 		notification::NotificationService,
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
@@ -41,7 +45,13 @@ use stellar_xdr::curr::{
 };
 
 use serde_json::json;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::HashMap,
+	sync::{
+		atomic::{AtomicBool, Ordering},
+		Arc,
+	},
+};
 use tokio::sync::watch;
 
 fn create_test_monitor(
@@ -207,6 +217,193 @@ async fn test_create_block_handler_evm() {
 	assert_eq!(result.network_slug, "ethereum_mainnet");
 	// The mock client should return no matches
 	assert!(result.processing_results.is_empty());
+	assert_eq!(result.filter_status, BlockFilterStatus::Completed);
+}
+
+#[tokio::test]
+async fn test_create_block_handler_evm_filter_error() {
+	let (shutdown_tx, _) = watch::channel(false);
+	let filter_service = Arc::new(FilterService::new());
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
+	let block = create_test_block(BlockChainType::EVM, 100);
+	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+
+	// eth_getLogs keeps failing, as in #517 where the RPC answered HTTP 429
+	let mut mock_client = MockEvmClientTrait::new();
+	mock_client
+		.expect_get_logs_for_blocks()
+		.return_once(|_, _, _| Err(anyhow::anyhow!("HTTP error: status 429 Too Many Requests")));
+
+	let mut mock_pool = MockClientPool::new();
+	mock_pool
+		.expect_get_evm_client()
+		.return_once(move |_| Ok(Arc::new(mock_client)));
+	let client_pool = Arc::new(mock_pool);
+
+	let network_monitors = vec![(network.clone(), monitors.clone())];
+	let contract_specs = get_contract_specs(&client_pool, &network_monitors).await;
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		filter_service,
+		monitors,
+		client_pool,
+		contract_specs,
+	);
+
+	let result = block_handler(block, network).await;
+	assert_eq!(result.block_number, 100);
+	assert!(result.processing_results.is_empty());
+	assert_eq!(
+		result.filter_status,
+		BlockFilterStatus::Failed,
+		"a failed filter must not look like a block with no matches"
+	);
+}
+
+/// Serves EVM blocks without transactions, up to a fixed head
+#[derive(Clone)]
+struct FixedHeadClient {
+	latest_block: u64,
+}
+
+#[async_trait::async_trait]
+impl BlockChainClient for FixedHeadClient {
+	async fn get_latest_block_number(&self) -> Result<u64, anyhow::Error> {
+		Ok(self.latest_block)
+	}
+
+	async fn get_blocks(
+		&self,
+		start_block: u64,
+		end_block: Option<u64>,
+	) -> Result<Vec<BlockType>, anyhow::Error> {
+		Ok((start_block..=end_block.unwrap_or(start_block))
+			.map(|block_number| create_test_block(BlockChainType::EVM, block_number))
+			.collect())
+	}
+}
+
+/// The #517 reproduction through the real block handler and block watcher: `eth_getLogs`
+/// for block 84 fails once with HTTP 429 on a network without recovery or stored blocks.
+#[tokio::test]
+async fn test_failed_get_logs_is_retried_on_next_run() {
+	let (shutdown_tx, _) = watch::channel(false);
+	let mut network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	network.confirmation_blocks = 0;
+	network.store_blocks = Some(false);
+	network.recovery_config = None;
+	network.max_past_blocks = Some(MaxPastBlocks::Limited(100));
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
+
+	let rate_limited = Arc::new(AtomicBool::new(false));
+	let logs_requested = Arc::new(std::sync::Mutex::new(Vec::new()));
+	let mut mock_pool = MockClientPool::new();
+	{
+		let rate_limited = rate_limited.clone();
+		let logs_requested = logs_requested.clone();
+		mock_pool.expect_get_evm_client().returning(move |_| {
+			let rate_limited = rate_limited.clone();
+			let logs_requested = logs_requested.clone();
+			let mut client = MockEvmClientTrait::new();
+			client
+				.expect_get_logs_for_blocks()
+				.returning(move |from_block, _, _| {
+					logs_requested.lock().unwrap().push(from_block);
+					if from_block == 84 && !rate_limited.swap(true, Ordering::SeqCst) {
+						return Err(anyhow::anyhow!("HTTP error: status 429 Too Many Requests"));
+					}
+					Ok(vec![])
+				});
+			Ok(Arc::new(client))
+		});
+	}
+
+	let block_handler = create_block_handler::<MockClientPool>(
+		shutdown_tx,
+		Arc::new(FilterService::new()),
+		monitors,
+		Arc::new(mock_pool),
+		vec![],
+	);
+	let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+	let trigger_handler = {
+		let triggered = triggered.clone();
+		Arc::new(move |block: &ProcessedBlock| {
+			triggered.lock().unwrap().push(block.block_number);
+			tokio::spawn(async {})
+		})
+	};
+
+	let temp_dir = tempfile::tempdir().unwrap();
+	let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+	storage
+		.save_last_processed_block("ethereum_mainnet", 80)
+		.await
+		.unwrap();
+	let block_tracker = Arc::new(BlockTracker::new(100));
+	let rpc_client = FixedHeadClient { latest_block: 88 };
+
+	// First run: blocks 81-88, and the filter of block 84 fails
+	process_new_blocks(
+		&network,
+		&rpc_client,
+		storage.clone(),
+		block_handler.clone(),
+		trigger_handler.clone(),
+		block_tracker.clone(),
+	)
+	.await
+	.unwrap();
+
+	assert!(
+		rate_limited.load(Ordering::SeqCst),
+		"block 84 should have been rate-limited"
+	);
+	assert_eq!(
+		storage
+			.get_last_processed_block("ethereum_mainnet")
+			.await
+			.unwrap(),
+		Some(83),
+		"the checkpoint must not move past block 84"
+	);
+	assert_eq!(*triggered.lock().unwrap(), vec![81, 82, 83]);
+
+	// Second run: block 84 is filtered again, now successfully
+	logs_requested.lock().unwrap().clear();
+	process_new_blocks(
+		&network,
+		&rpc_client,
+		storage.clone(),
+		block_handler,
+		trigger_handler,
+		block_tracker,
+	)
+	.await
+	.unwrap();
+
+	let mut requested = logs_requested.lock().unwrap().clone();
+	requested.sort_unstable();
+	assert_eq!(requested, (84..=88).collect::<Vec<_>>());
+	assert_eq!(
+		storage
+			.get_last_processed_block("ethereum_mainnet")
+			.await
+			.unwrap(),
+		Some(88)
+	);
+	assert_eq!(*triggered.lock().unwrap(), (81..=88).collect::<Vec<_>>());
 }
 
 #[tokio::test]
@@ -241,6 +438,7 @@ async fn test_create_trigger_handler() {
 		block_number: 100,
 		network_slug: "ethereum_mainnet".to_string(),
 		processing_results: vec![create_test_monitor_match(BlockChainType::EVM)],
+		filter_status: BlockFilterStatus::Completed,
 	};
 
 	let handle = trigger_handler(&processed_block);
@@ -269,6 +467,7 @@ async fn test_create_trigger_handler_empty_matches() {
 		block_number: 100,
 		network_slug: "ethereum_mainnet".to_string(),
 		processing_results: vec![],
+		filter_status: BlockFilterStatus::Completed,
 	};
 
 	let handle = trigger_handler(&processed_block);
@@ -400,6 +599,7 @@ async fn test_create_block_handler_evm_client_error() {
 	assert_eq!(result.block_number, 100);
 	assert_eq!(result.network_slug, "ethereum_mainnet");
 	assert!(result.processing_results.is_empty());
+	assert_eq!(result.filter_status, BlockFilterStatus::Failed);
 }
 
 #[tokio::test]
@@ -439,6 +639,7 @@ async fn test_create_block_handler_stellar_client_error() {
 	assert_eq!(result.block_number, 100);
 	assert_eq!(result.network_slug, "stellar_mainnet");
 	assert!(result.processing_results.is_empty());
+	assert_eq!(result.filter_status, BlockFilterStatus::Failed);
 }
 
 #[tokio::test]
@@ -510,6 +711,7 @@ print(True)  # Always return true for test
 			matched_on: MatchConditions::default(),
 			matched_on_args: None,
 		}))],
+		filter_status: BlockFilterStatus::Completed,
 	};
 
 	let handle = trigger_handler(&processed_block);
@@ -577,6 +779,7 @@ async fn test_create_trigger_handler_with_condition_interpreter_override() {
 				matched_on: MatchConditions::default(),
 				matched_on_args: None,
 			}))],
+			filter_status: BlockFilterStatus::Completed,
 		}
 	};
 
@@ -644,14 +847,51 @@ async fn test_process_block() {
 		"Shutdown signal was unexpectedly triggered"
 	);
 	assert!(
-		result.is_some(),
-		"Expected Some result when no shutdown signal"
+		matches!(result, Ok(ref matches) if matches.is_empty()),
+		"Expected an empty successful result when no shutdown signal, got {result:?}"
 	);
 }
 
 #[tokio::test]
-#[ignore]
-/// Skipping as this test is flaky and fails intermittently
+async fn test_process_block_returns_filter_error() {
+	let mut mock_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
+	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
+	let block = create_test_block(BlockChainType::EVM, 100);
+	let monitors = vec![create_test_monitor(
+		"test",
+		vec!["ethereum_mainnet"],
+		false,
+		vec![],
+	)];
+	let filter_service = FilterService::new();
+
+	#[allow(unused_variables)]
+	let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
+	mock_client
+		.expect_get_logs_for_blocks()
+		.return_once(|_, _, _| Err(anyhow::anyhow!("HTTP error: status 429 Too Many Requests")));
+
+	let result = process_block(
+		&mock_client,
+		&network,
+		&block,
+		&monitors,
+		None,
+		&filter_service,
+		&mut shutdown_rx,
+	)
+	.await;
+
+	assert!(
+		matches!(result, Err(ProcessBlockError::Filter(_))),
+		"Expected the filter error, got {result:?}"
+	);
+}
+
+/// Shutdown is checked before the filter, so a pending shutdown cancels the block without
+/// calling the client (the mock has no expectations and would panic if it were called).
+#[tokio::test]
 async fn test_process_block_with_shutdown() {
 	let mock_client = MockEvmClientTrait::<MockEVMTransportClient>::new();
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
@@ -684,8 +924,8 @@ async fn test_process_block_with_shutdown() {
 	.await;
 
 	assert!(
-		result.is_none(),
-		"Expected None when shutdown signal is received"
+		matches!(result, Err(ProcessBlockError::Cancelled)),
+		"Expected cancellation when shutdown signal is received, got {result:?}"
 	);
 }
 

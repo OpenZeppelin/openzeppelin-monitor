@@ -14,8 +14,8 @@ mod security;
 
 // Re-export blockchain types
 pub use blockchain::{
-	BlockChainType, BlockType, ChainConfiguration, ContractSpec, MonitorMatch, ProcessedBlock,
-	TransactionType,
+	BlockChainType, BlockFilterStatus, BlockType, ChainConfiguration, ContractSpec, MonitorMatch,
+	ProcessedBlock, TransactionType,
 };
 
 pub use blockchain::evm::{

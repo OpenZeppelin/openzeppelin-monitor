@@ -21,8 +21,8 @@ use tokio::sync::{watch, Mutex};
 
 use crate::{
 	models::{
-		BlockChainType, BlockType, ContractSpec, Monitor, MonitorMatch, Network, ProcessedBlock,
-		ScriptLanguage, TriggerConditions,
+		BlockChainType, BlockFilterStatus, BlockType, ContractSpec, Monitor, MonitorMatch, Network,
+		ProcessedBlock, ScriptLanguage, TriggerConditions,
 	},
 	repositories::{
 		MonitorRepositoryTrait, MonitorService, NetworkRepositoryTrait, NetworkService,
@@ -30,7 +30,7 @@ use crate::{
 	},
 	services::{
 		blockchain::{BlockChainClient, BlockFilterFactory, ClientPoolTrait},
-		filter::{evm_helpers, handle_match, stellar_helpers, FilterService},
+		filter::{evm_helpers, handle_match, stellar_helpers, FilterError, FilterService},
 		notification::NotificationService,
 		trigger::{
 			ScriptError, ScriptExecutor, ScriptExecutorFactory, TriggerError,
@@ -159,15 +159,31 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 					block_number: block.number().unwrap_or(0),
 					network_slug: network.slug.clone(),
 					processing_results: Vec::new(),
+					filter_status: BlockFilterStatus::Completed,
 				};
 
 				if !applicable_monitors.is_empty() {
 					let mut shutdown_rx = shutdown_tx.subscribe();
+					let block_number = processed_block.block_number;
 
-					let matches = match network.network_type {
+					let result = match network.network_type {
 						BlockChainType::EVM => match client_pools.get_evm_client(&network).await {
-							Ok(client) => {
-								process_block(
+							Ok(client) => process_block(
+								client.as_ref(),
+								&network,
+								&block,
+								&applicable_monitors,
+								Some(&contract_specs),
+								&filter_service,
+								&mut shutdown_rx,
+							)
+							.await
+							.map_err(|e| e.filter_status()),
+							Err(e) => Err(client_unavailable(&network, block_number, &e)),
+						},
+						BlockChainType::Stellar => {
+							match client_pools.get_stellar_client(&network).await {
+								Ok(client) => process_block(
 									client.as_ref(),
 									&network,
 									&block,
@@ -177,72 +193,90 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 									&mut shutdown_rx,
 								)
 								.await
-							}
-							Err(_) => None,
-						},
-						BlockChainType::Stellar => {
-							match client_pools.get_stellar_client(&network).await {
-								Ok(client) => {
-									process_block(
-										client.as_ref(),
-										&network,
-										&block,
-										&applicable_monitors,
-										Some(&contract_specs),
-										&filter_service,
-										&mut shutdown_rx,
-									)
-									.await
-								}
-								Err(_) => None,
+								.map_err(|e| e.filter_status()),
+								Err(e) => Err(client_unavailable(&network, block_number, &e)),
 							}
 						}
 						BlockChainType::Midnight => {
 							match client_pools.get_midnight_client(&network).await {
-								Ok(client) => {
-									process_block(
-										client.as_ref(),
-										&network,
-										&block,
-										&applicable_monitors,
-										Some(&contract_specs),
-										&filter_service,
-										&mut shutdown_rx,
-									)
-									.await
-								}
-								Err(_) => None,
+								Ok(client) => process_block(
+									client.as_ref(),
+									&network,
+									&block,
+									&applicable_monitors,
+									Some(&contract_specs),
+									&filter_service,
+									&mut shutdown_rx,
+								)
+								.await
+								.map_err(|e| e.filter_status()),
+								Err(e) => Err(client_unavailable(&network, block_number, &e)),
 							}
 						}
 						BlockChainType::Solana => {
 							match client_pools.get_solana_client(&network).await {
-								Ok(client) => {
-									process_block(
-										client.as_ref(),
-										&network,
-										&block,
-										&applicable_monitors,
-										Some(&contract_specs),
-										&filter_service,
-										&mut shutdown_rx,
-									)
-									.await
-								}
-								Err(e) => {
-									tracing::error!(error = %e, "Failed to get Solana client");
-									None
-								}
+								Ok(client) => process_block(
+									client.as_ref(),
+									&network,
+									&block,
+									&applicable_monitors,
+									Some(&contract_specs),
+									&filter_service,
+									&mut shutdown_rx,
+								)
+								.await
+								.map_err(|e| e.filter_status()),
+								Err(e) => Err(client_unavailable(&network, block_number, &e)),
 							}
 						}
 					};
 
-					processed_block.processing_results = matches.unwrap_or_default();
+					match result {
+						Ok(matches) => processed_block.processing_results = matches,
+						Err(filter_status) => processed_block.filter_status = filter_status,
+					}
 				}
 
 				processed_block
 			})
 		},
 	)
+}
+
+/// Logs that no client was available to filter a block, which leaves the block unfiltered.
+fn client_unavailable(
+	network: &Network,
+	block_number: u64,
+	error: &anyhow::Error,
+) -> BlockFilterStatus {
+	tracing::error!(
+		network = %network.slug,
+		block_number,
+		error = %error,
+		"Failed to get {} client to filter block {}",
+		network.network_type,
+		block_number
+	);
+	BlockFilterStatus::Failed
+}
+
+/// Why [`process_block`] did not finish filtering a block.
+#[derive(Debug)]
+pub enum ProcessBlockError {
+	/// The filter returned an error.
+	Filter(FilterError),
+	/// Shutdown interrupted the filter.
+	Cancelled,
+}
+
+impl ProcessBlockError {
+	/// The status to record for a block that this error left unfiltered.
+	pub fn filter_status(&self) -> BlockFilterStatus {
+		match self {
+			ProcessBlockError::Filter(_) => BlockFilterStatus::Failed,
+			ProcessBlockError::Cancelled => BlockFilterStatus::Cancelled,
+		}
+	}
 }
 
 /// Processes a single block for all applicable monitors.
@@ -254,6 +288,10 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 /// * `applicable_monitors` - List of monitors that apply to this network
 /// * `filter_service` - Service for filtering blockchain data
 /// * `shutdown_rx` - Receiver for shutdown signals
+///
+/// # Returns
+/// The matches found in the block, which may be none. An error means the block was not
+/// fully filtered, so it must not be counted as a block without matches.
 pub async fn process_block<T>(
 	client: &T,
 	network: &Network,
@@ -262,17 +300,29 @@ pub async fn process_block<T>(
 	contract_specs: Option<&[(String, ContractSpec)]>,
 	filter_service: &FilterService,
 	shutdown_rx: &mut watch::Receiver<bool>,
-) -> Option<Vec<MonitorMatch>>
+) -> std::result::Result<Vec<MonitorMatch>, ProcessBlockError>
 where
 	T: BlockChainClient + BlockFilterFactory<T>,
 {
 	tokio::select! {
-		result = filter_service.filter_block(client, network, block, applicable_monitors, contract_specs) => {
-			result.ok()
-		}
+		// Checked first, so once shutdown is signalled no new block is filtered
+		biased;
 		_ = shutdown_rx.changed() => {
 			tracing::info!("Shutting down block processing task");
-			None
+			Err(ProcessBlockError::Cancelled)
+		}
+		result = filter_service.filter_block(client, network, block, applicable_monitors, contract_specs) => {
+			result.map_err(|error| {
+				let block_number = block.number().unwrap_or(0);
+				tracing::error!(
+					network = %network.slug,
+					block_number,
+					error = %error,
+					"Failed to filter block {}",
+					block_number
+				);
+				ProcessBlockError::Filter(error)
+			})
 		}
 	}
 }

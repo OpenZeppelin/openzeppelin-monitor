@@ -93,6 +93,7 @@ mock! {
 		 async fn detect_missing_blocks(&self, network: &Network, fetched_blocks: &[BlockType]) -> Vec<u64>;
 		 async fn check_processed_block(&self, network: &Network, block_number: u64) -> BlockCheckResult;
 		 async fn reset_expected_next(&self, network: &Network, start_block: u64);
+		 async fn record_filter_failure(&self, network: &Network, block_number: u64) -> u32;
 	}
 }
 

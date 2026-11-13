@@ -57,6 +57,13 @@ pub trait BlockTrackerTrait {
 	/// This should be called at the start of each process_new_blocks execution to
 	/// synchronize expected_next with the start_block.
 	async fn reset_expected_next(&self, network: &Network, start_block: u64);
+
+	/// Records that filtering `block_number` failed and returns how many times in a row
+	/// it has failed, counting this one.
+	///
+	/// Only the most recent failed block is remembered for each network, so a failure of a
+	/// different block starts a new count at 1.
+	async fn record_filter_failure(&self, network: &Network, block_number: u64) -> u32;
 }
 
 /// BlockTracker is responsible for monitoring the sequence of processed blocks
@@ -74,6 +81,10 @@ pub struct BlockTracker {
 	expected_next: Arc<Mutex<HashMap<String, u64>>>,
 	/// Maximum number of blocks to keep in history per network
 	history_size: usize,
+	/// Most recent block whose filter failed for each network, with how many times in a
+	/// row it has failed
+	/// Key: network_slug, Value: (block number, consecutive failures)
+	filter_failures: Arc<Mutex<HashMap<String, (u64, u32)>>>,
 }
 
 #[async_trait]
@@ -93,6 +104,7 @@ impl BlockTrackerTrait for BlockTracker {
 			processed_history: Arc::new(Mutex::new(HashMap::new())),
 			expected_next: Arc::new(Mutex::new(HashMap::new())),
 			history_size,
+			filter_failures: Arc::new(Mutex::new(HashMap::new())),
 		}
 	}
 
@@ -216,6 +228,18 @@ impl BlockTrackerTrait for BlockTracker {
 				e.insert(start_block);
 			}
 		}
+	}
+
+	async fn record_filter_failure(&self, network: &Network, block_number: u64) -> u32 {
+		let mut filter_failures = self.filter_failures.lock().await;
+		let entry = filter_failures
+			.entry(network.slug.clone())
+			.or_insert((block_number, 0));
+		if entry.0 != block_number {
+			*entry = (block_number, 0);
+		}
+		entry.1 = entry.1.saturating_add(1);
+		entry.1
 	}
 }
 
@@ -375,5 +399,39 @@ mod tests {
 			BlockCheckResult::Ok
 		);
 		assert_eq!(tracker.get_last_block("test_network").await, Some(3));
+	}
+
+	#[tokio::test]
+	async fn test_record_filter_failure_counts_consecutive_failures_of_one_block() {
+		let tracker = BlockTracker::new(5);
+		let network = create_test_network("test-network", "test_network", true);
+
+		assert_eq!(tracker.record_filter_failure(&network, 84).await, 1);
+		assert_eq!(tracker.record_filter_failure(&network, 84).await, 2);
+		assert_eq!(tracker.record_filter_failure(&network, 84).await, 3);
+	}
+
+	#[tokio::test]
+	async fn test_record_filter_failure_restarts_count_for_another_block() {
+		let tracker = BlockTracker::new(5);
+		let network = create_test_network("test-network", "test_network", true);
+
+		assert_eq!(tracker.record_filter_failure(&network, 84).await, 1);
+		assert_eq!(tracker.record_filter_failure(&network, 84).await, 2);
+		// Block 84 got through and a later block failed: its count starts at 1
+		assert_eq!(tracker.record_filter_failure(&network, 90).await, 1);
+		// Block 84 failing again later is a new run of failures, not a continuation
+		assert_eq!(tracker.record_filter_failure(&network, 84).await, 1);
+	}
+
+	#[tokio::test]
+	async fn test_record_filter_failure_is_per_network() {
+		let tracker = BlockTracker::new(5);
+		let network1 = create_test_network("net-1", "net_1", true);
+		let network2 = create_test_network("net-2", "net_2", true);
+
+		assert_eq!(tracker.record_filter_failure(&network1, 84).await, 1);
+		assert_eq!(tracker.record_filter_failure(&network2, 84).await, 1);
+		assert_eq!(tracker.record_filter_failure(&network1, 84).await, 2);
 	}
 }
