@@ -178,13 +178,14 @@ pub struct ChainConfiguration {
 /// Only a `Completed` block may be counted as processed. The other two leave
 /// `processing_results` empty, so without this status a block whose filter never
 /// finished would look like a block with no matches.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BlockFilterStatus {
 	/// The filter finished. `processing_results` holds its matches, which may be none.
 	#[default]
 	Completed,
-	/// The filter returned an error, or no client was available for the network.
-	Failed,
+	/// The filter returned an error, or no client was available for the network. Holds the
+	/// error message.
+	Failed(String),
 	/// Shutdown interrupted the filter before it finished.
 	Cancelled,
 }

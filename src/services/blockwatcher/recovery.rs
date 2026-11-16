@@ -168,23 +168,25 @@ where
 				let processed_block = (block_handler)(block, network.clone()).await;
 
 				// A filter that did not finish found nothing; the block stays missed
-				match processed_block.filter_status {
+				match &processed_block.filter_status {
 					BlockFilterStatus::Completed => {}
-					BlockFilterStatus::Failed => {
+					BlockFilterStatus::Failed(error) => {
 						record_failed_attempt(
 							network,
 							recovery_config,
 							block_storage.as_ref(),
 							&entry,
-							"Filtering the block failed".to_string(),
+							error.clone(),
 							&mut result,
 						)
 						.await;
 						continue;
 					}
 					BlockFilterStatus::Cancelled => {
-						// Shutting down: the attempt did not fail, so it does not use a retry,
-						// and the remaining blocks are left for the next run
+						// Shutting down: the attempt did not fail, so it is not counted and
+						// does not use a retry, and the remaining blocks are left for the
+						// next run
+						result.attempted -= 1;
 						if let Err(e) = block_storage
 							.requeue_missed_block(&network.slug, block_number)
 							.await
@@ -356,7 +358,7 @@ mod tests {
 	use crate::models::{
 		BlockChainType, BlockFilterStatus, MaxPastBlocks, RpcUrl, SecretString, SecretValue,
 	};
-	use crate::services::blockwatcher::storage::{BlockStorage, FileBlockStorage};
+	use crate::services::blockwatcher::storage::{BlockStorage, FileBlockStorage, FilterHold};
 	use crate::services::blockwatcher::tracker::BlockTracker;
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use tempfile::tempdir;
@@ -534,6 +536,21 @@ mod tests {
 				.await
 		}
 
+		async fn get_filter_hold(
+			&self,
+			network_id: &str,
+		) -> Result<Option<FilterHold>, anyhow::Error> {
+			self.inner.get_filter_hold(network_id).await
+		}
+
+		async fn save_filter_hold(
+			&self,
+			network_id: &str,
+			hold: Option<FilterHold>,
+		) -> Result<(), anyhow::Error> {
+			self.inner.save_filter_hold(network_id, hold).await
+		}
+
 		async fn save_blocks(
 			&self,
 			network_id: &str,
@@ -643,6 +660,7 @@ mod tests {
 		impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
 	> {
 		Arc::new(move |block: BlockType, network: Network| {
+			let filter_status = filter_status.clone();
 			Box::pin(async move {
 				ProcessedBlock {
 					network_slug: network.slug,
@@ -661,6 +679,10 @@ mod tests {
 			counter.fetch_add(1, Ordering::SeqCst);
 			tokio::spawn(async move {})
 		})
+	}
+
+	fn filter_failed() -> BlockFilterStatus {
+		BlockFilterStatus::Failed("Network error: eth_getLogs failed with status 429".to_string())
 	}
 
 	/// Runs one recovery pass over missed block 100 with a filter that ends in `filter_status`
@@ -705,7 +727,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_recovery_filter_failure_keeps_block_pending_without_trigger() {
 		let (result, pending, triggers) =
-			recover_block_with_filter_status(BlockFilterStatus::Failed, 3).await;
+			recover_block_with_filter_status(filter_failed(), 3).await;
 
 		assert_eq!(result.attempted, 1);
 		assert_eq!(
@@ -721,12 +743,17 @@ mod tests {
 		assert_eq!(pending[0].block_number, 100);
 		assert_eq!(pending[0].retry_count, 1);
 		assert_eq!(pending[0].status, MissedBlockStatus::Pending);
+		assert_eq!(
+			pending[0].last_error.as_deref(),
+			Some("Network error: eth_getLogs failed with status 429"),
+			"the filter error is kept for debugging"
+		);
 	}
 
 	#[tokio::test]
 	async fn test_recovery_filter_failure_marks_block_failed_after_max_retries() {
 		let (result, pending, triggers) =
-			recover_block_with_filter_status(BlockFilterStatus::Failed, 1).await;
+			recover_block_with_filter_status(filter_failed(), 1).await;
 
 		assert_eq!(result.attempted, 1);
 		assert_eq!(result.recovered, 0);
@@ -741,7 +768,10 @@ mod tests {
 		let (result, pending, triggers) =
 			recover_block_with_filter_status(BlockFilterStatus::Cancelled, 1).await;
 
-		assert_eq!(result.attempted, 1);
+		assert_eq!(
+			result.attempted, 0,
+			"an attempt cut short by shutdown is not counted"
+		);
 		assert_eq!(result.recovered, 0, "a cancelled filter is not a recovery");
 		assert_eq!(result.failed, 0);
 		assert_eq!(triggers, 0);
@@ -776,7 +806,7 @@ mod tests {
 		.unwrap();
 
 		// Shutdown is under way, so the second block is left for the next run
-		assert_eq!(result.attempted, 1);
+		assert_eq!(result.attempted, 0);
 		let pending = storage
 			.get_missed_blocks("test_network", 1000, 1000, 3)
 			.await

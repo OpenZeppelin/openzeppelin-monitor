@@ -233,11 +233,17 @@ async fn test_create_block_handler_evm_filter_error() {
 	let block = create_test_block(BlockChainType::EVM, 100);
 	let network = create_test_network("Ethereum", "ethereum_mainnet", BlockChainType::EVM);
 
-	// eth_getLogs keeps failing, as in #517 where the RPC answered HTTP 429
+	// eth_getLogs keeps failing, as in #517 where the RPC answered HTTP 429. The client
+	// wraps the transport error, which names the RPC URL, in its own context
 	let mut mock_client = MockEvmClientTrait::new();
 	mock_client
 		.expect_get_logs_for_blocks()
-		.return_once(|_, _, _| Err(anyhow::anyhow!("HTTP error: status 429 Too Many Requests")));
+		.return_once(|_, _, _| {
+			Err(anyhow::anyhow!(
+				"HTTP error: status 429 Too Many Requests for URL https://rpc.example.com/v2/secret-api-key"
+			)
+			.context("Failed to get logs for blocks: 100 - 100"))
+		});
 
 	let mut mock_pool = MockClientPool::new();
 	mock_pool
@@ -259,10 +265,14 @@ async fn test_create_block_handler_evm_filter_error() {
 	let result = block_handler(block, network).await;
 	assert_eq!(result.block_number, 100);
 	assert!(result.processing_results.is_empty());
+	// A failed filter must not look like a block with no matches
+	let BlockFilterStatus::Failed(error) = &result.filter_status else {
+		panic!("expected a failed filter, got {:?}", result.filter_status);
+	};
+	// The cause is kept, but not the path of the RPC URL, which can hold an API key
 	assert_eq!(
-		result.filter_status,
-		BlockFilterStatus::Failed,
-		"a failed filter must not look like a block with no matches"
+		error,
+		"Failed to get logs for blocks: 100 - 100: HTTP error: status 429 Too Many Requests for URL rpc.example.com"
 	);
 }
 
@@ -638,7 +648,14 @@ async fn test_create_block_handler_evm_client_error() {
 	assert_eq!(result.block_number, 100);
 	assert_eq!(result.network_slug, "ethereum_mainnet");
 	assert!(result.processing_results.is_empty());
-	assert_eq!(result.filter_status, BlockFilterStatus::Failed);
+	assert!(
+		matches!(
+			&result.filter_status,
+			BlockFilterStatus::Failed(error) if error.contains("Failed to get EVM client")
+		),
+		"{:?}",
+		result.filter_status
+	);
 }
 
 #[tokio::test]
@@ -678,7 +695,14 @@ async fn test_create_block_handler_stellar_client_error() {
 	assert_eq!(result.block_number, 100);
 	assert_eq!(result.network_slug, "stellar_mainnet");
 	assert!(result.processing_results.is_empty());
-	assert_eq!(result.filter_status, BlockFilterStatus::Failed);
+	assert!(
+		matches!(
+			&result.filter_status,
+			BlockFilterStatus::Failed(error) if error.contains("Failed to get Stellar client")
+		),
+		"{:?}",
+		result.filter_status
+	);
 }
 
 #[tokio::test]

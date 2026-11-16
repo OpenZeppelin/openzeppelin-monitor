@@ -6,6 +6,7 @@
 //! - Last processed block tracking
 //! - Block deletion for cleanup
 //! - Missed block tracking and recovery
+//! - Filter hold tracking
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -59,6 +60,16 @@ impl MissedBlockEntry {
 	}
 }
 
+/// A checkpoint held before a block whose filter failed, so the next tick filters it again
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilterHold {
+	/// Last processed block when the hold was saved; the held block is the one after it.
+	/// The hold only applies while the last processed block is still this one.
+	pub checkpoint: u64,
+	/// Number of ticks in a row that ended with the checkpoint held
+	pub count: u32,
+}
+
 /// Interface for block storage implementations
 ///
 /// Defines the required functionality for storing and retrieving blocks
@@ -89,6 +100,29 @@ pub trait BlockStorage: Clone + Send + Sync {
 		&self,
 		network_id: &str,
 		block: u64,
+	) -> Result<(), anyhow::Error>;
+
+	/// Retrieves the filter hold of a network
+	///
+	/// # Arguments
+	/// * `network_id` - Unique identifier for the network
+	///
+	/// # Returns
+	/// * `Result<Option<FilterHold>, anyhow::Error>` - The saved hold or None if there is none
+	async fn get_filter_hold(&self, network_id: &str) -> Result<Option<FilterHold>, anyhow::Error>;
+
+	/// Saves the filter hold of a network, or removes it when `hold` is None
+	///
+	/// # Arguments
+	/// * `network_id` - Unique identifier for the network
+	/// * `hold` - Hold to save, or None to remove the saved one
+	///
+	/// # Returns
+	/// * `Result<(), anyhow::Error>` - Success or error
+	async fn save_filter_hold(
+		&self,
+		network_id: &str,
+		hold: Option<FilterHold>,
 	) -> Result<(), anyhow::Error>;
 
 	/// Saves a collection of blocks for a network
@@ -284,6 +318,42 @@ impl BlockStorage for FileBlockStorage {
 			.await
 			.map_err(|e| anyhow::anyhow!("Failed to save last processed block: {}", e))?;
 		Ok(())
+	}
+
+	/// Retrieves the filter hold from a network-specific file
+	async fn get_filter_hold(&self, network_id: &str) -> Result<Option<FilterHold>, anyhow::Error> {
+		let file_path = self.filter_hold_path(network_id);
+
+		if !file_path.exists() {
+			return Ok(None);
+		}
+
+		let content = tokio::fs::read_to_string(file_path)
+			.await
+			.map_err(|e| anyhow::anyhow!("Failed to read filter hold: {}", e))?;
+		let hold = serde_json::from_str(&content)
+			.map_err(|e| anyhow::anyhow!("Failed to parse filter hold: {}", e))?;
+		Ok(Some(hold))
+	}
+
+	/// Saves the filter hold to a network-specific file, or deletes the file
+	async fn save_filter_hold(
+		&self,
+		network_id: &str,
+		hold: Option<FilterHold>,
+	) -> Result<(), anyhow::Error> {
+		let file_path = self.filter_hold_path(network_id);
+
+		match hold {
+			Some(hold) => tokio::fs::write(file_path, serde_json::to_string(&hold)?)
+				.await
+				.map_err(|e| anyhow::anyhow!("Failed to save filter hold: {}", e)),
+			None => match tokio::fs::remove_file(file_path).await {
+				Ok(()) => Ok(()),
+				Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+				Err(e) => Err(anyhow::anyhow!("Failed to remove filter hold: {}", e)),
+			},
+		}
 	}
 
 	/// Saves blocks to a timestamped JSON file
@@ -485,6 +555,11 @@ impl BlockStorage for FileBlockStorage {
 }
 
 impl FileBlockStorage {
+	fn filter_hold_path(&self, network_id: &str) -> PathBuf {
+		self.storage_path
+			.join(format!("{}_filter_hold.json", network_id))
+	}
+
 	/// Loads missed blocks from JSON file, migrating from text format if needed
 	async fn load_missed_blocks_json(
 		&self,
@@ -1121,6 +1196,46 @@ mod tests {
 		let content = tokio::fs::read_to_string(&json_path).await.unwrap();
 		let entries: Vec<MissedBlockEntry> = serde_json::from_str(&content).unwrap();
 		assert_eq!(entries[0].last_error, Some("First error".to_string()));
+	}
+
+	#[tokio::test]
+	async fn test_filter_hold_is_saved_and_removed() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+		assert_eq!(storage.get_filter_hold("test").await.unwrap(), None);
+
+		let hold = FilterHold {
+			checkpoint: 100,
+			count: 2,
+		};
+		storage.save_filter_hold("test", Some(hold)).await.unwrap();
+
+		// Read through a second instance, as after a restart
+		let restarted = FileBlockStorage::new(temp_dir.path().to_path_buf());
+		assert_eq!(restarted.get_filter_hold("test").await.unwrap(), Some(hold));
+		assert_eq!(restarted.get_filter_hold("other").await.unwrap(), None);
+		// The checkpoint file is not touched
+		assert_eq!(
+			storage.get_last_processed_block("test").await.unwrap(),
+			None
+		);
+
+		storage.save_filter_hold("test", None).await.unwrap();
+		assert_eq!(storage.get_filter_hold("test").await.unwrap(), None);
+		// Removing a hold that is not there is not an error
+		storage.save_filter_hold("test", None).await.unwrap();
+	}
+
+	#[tokio::test]
+	async fn test_get_filter_hold_fails_on_unreadable_file() {
+		let temp_dir = tempfile::tempdir().unwrap();
+		let storage = FileBlockStorage::new(temp_dir.path().to_path_buf());
+		tokio::fs::write(temp_dir.path().join("test_filter_hold.json"), "not json")
+			.await
+			.unwrap();
+
+		let error = storage.get_filter_hold("test").await.unwrap_err();
+		assert!(error.to_string().contains("Failed to parse filter hold"));
 	}
 
 	#[tokio::test]

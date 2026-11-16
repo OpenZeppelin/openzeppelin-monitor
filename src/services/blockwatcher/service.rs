@@ -20,7 +20,7 @@ use crate::{
 		blockwatcher::{
 			error::BlockWatcherError,
 			recovery::process_missed_blocks,
-			storage::BlockStorage,
+			storage::{BlockStorage, FilterHold},
 			tracker::{BlockCheckResult, BlockTracker, BlockTrackerTrait},
 		},
 	},
@@ -39,13 +39,14 @@ const CATCHUP_BATCH_SIZE: u64 = 30;
 /// recovery can interleave. The next tick resumes from the per-batch checkpoint.
 const MAX_BATCHES_PER_TICK: u64 = 100;
 
-/// Maximum number of times in a row the checkpoint is held before a block whose filter
-/// fails, when recovery is disabled.
+/// Maximum number of ticks in a row that end with the checkpoint held before a block whose
+/// filter fails, when recovery is disabled.
 ///
 /// Holding lets the next tick retry the block. A block that fails every time (for example a
-/// ledger the RPC no longer serves) would otherwise stop the network for good, so after this
-/// many holds the watcher logs the block, saves it as missed when `store_blocks` is on, and
-/// moves past it.
+/// ledger the RPC no longer serves) would otherwise stop the network for good, and so would
+/// an RPC that fails every block. So the tick after this many holds does not hold: it logs
+/// every block whose filter fails, saves it as missed when `store_blocks` is on, and moves
+/// past it.
 const MAX_FILTER_FAILURE_HOLDS: u32 = 3;
 
 struct BatchProcessSummary {
@@ -54,22 +55,26 @@ struct BatchProcessSummary {
 	/// Checkpoint saved for the batch. Lower than the batch end when the checkpoint is held
 	/// before a block whose filter did not finish.
 	checkpoint_block: u64,
+	/// Why the checkpoint is held inside the batch, if it is.
+	hold: Option<HoldReason>,
 }
 
-/// What the trigger stage does with the rest of the batch after a block.
-enum DispatchOutcome {
-	/// Go on with the next block.
-	Continue,
-	/// Stop dispatching: the checkpoint is held before this block, so the next tick processes
-	/// it and every later block again. Triggering those later blocks now would fire them twice.
-	Hold,
+/// Why the checkpoint is held before a block.
+#[derive(Clone, Copy)]
+enum HoldReason {
+	/// The filter of the block failed.
+	FilterFailed,
+	/// Shutdown interrupted the filter of the block.
+	Cancelled,
 }
 
 /// Result of the trigger stage of a batch.
 #[derive(Default)]
 struct TriggerStageOutcome {
-	/// Block the checkpoint is held before, if any.
-	held_at: Option<u64>,
+	/// Block the checkpoint is held before, and why. The next tick processes that block and
+	/// every later one again, so the trigger stage dispatches nothing from it on: triggering
+	/// the later blocks now would fire them twice.
+	held: Option<(u64, HoldReason)>,
 	/// Blocks whose filter failed and that the batch moves past, to be saved as missed.
 	failed_blocks: Vec<u64>,
 }
@@ -87,6 +92,9 @@ struct BatchProcessingOptions {
 	batch_start: u64,
 	checkpoint_block: u64,
 	delete_blocks_before_save: bool,
+	/// Ticks in a row, before this one, that ended with the checkpoint held for a failed
+	/// filter.
+	filter_holds: u32,
 }
 
 async fn save_checkpoint<S: BlockStorage>(
@@ -176,25 +184,26 @@ async fn check_block_sequence<TR: BlockTrackerTrait>(
 }
 
 /// Hands a processed block to the trigger handler, or decides what to do with a block whose
-/// filter did not finish.
+/// filter did not finish. A hold is recorded in `outcome`.
 ///
 /// A block whose filter failed is retried by recovery when it is enabled, so the batch moves
-/// past it and it is saved as missed. Without recovery the checkpoint is held before it, up to
-/// [`MAX_FILTER_FAILURE_HOLDS`] times in a row, after which the block is skipped. A block cut
-/// short by shutdown always holds the checkpoint and is not counted against that limit.
+/// past it and it is saved as missed. Without recovery the checkpoint is held before it,
+/// unless the last [`MAX_FILTER_FAILURE_HOLDS`] ticks (`filter_holds`) already ended that way,
+/// in which case the block is skipped. A block cut short by shutdown always holds the
+/// checkpoint.
 async fn dispatch_processed_block<T, TR>(
 	network: &Network,
 	block_tracker: &TR,
 	trigger_handler: &T,
+	filter_holds: u32,
 	block: &ProcessedBlock,
 	outcome: &mut TriggerStageOutcome,
-) -> DispatchOutcome
-where
+) where
 	T: Fn(&ProcessedBlock) -> tokio::task::JoinHandle<()>,
 	TR: BlockTrackerTrait,
 {
 	let block_number = block.block_number;
-	match block.filter_status {
+	match &block.filter_status {
 		BlockFilterStatus::Completed => {}
 		BlockFilterStatus::Cancelled => {
 			tracing::info!(
@@ -203,41 +212,43 @@ where
 				"Filtering block {} was cancelled by shutdown; it will be processed again on the next run",
 				block_number
 			);
-			return DispatchOutcome::Hold;
+			outcome.held = Some((block_number, HoldReason::Cancelled));
+			return;
 		}
-		BlockFilterStatus::Failed if recovery_enabled(network) => {
+		BlockFilterStatus::Failed(error) if recovery_enabled(network) => {
 			tracing::warn!(
 				network = %network.slug,
 				block_number,
+				error = %error,
 				"Filtering block {} failed; saving it as missed for recovery",
 				block_number
 			);
 			outcome.failed_blocks.push(block_number);
 		}
-		BlockFilterStatus::Failed => {
-			let failures = block_tracker
-				.record_filter_failure(network, block_number)
-				.await;
-			if failures <= MAX_FILTER_FAILURE_HOLDS {
-				tracing::warn!(
-					network = %network.slug,
-					block_number,
-					failures,
-					max_holds = MAX_FILTER_FAILURE_HOLDS,
-					"Filtering block {} failed ({} of {} holds); it will be processed again on the next run",
-					block_number,
-					failures,
-					MAX_FILTER_FAILURE_HOLDS
-				);
-				return DispatchOutcome::Hold;
-			}
+		BlockFilterStatus::Failed(error) if filter_holds < MAX_FILTER_FAILURE_HOLDS => {
+			tracing::warn!(
+				network = %network.slug,
+				block_number,
+				error = %error,
+				hold = filter_holds + 1,
+				max_holds = MAX_FILTER_FAILURE_HOLDS,
+				"Filtering block {} failed (hold {} of {}); it will be processed again on the next run",
+				block_number,
+				filter_holds + 1,
+				MAX_FILTER_FAILURE_HOLDS
+			);
+			outcome.held = Some((block_number, HoldReason::FilterFailed));
+			return;
+		}
+		BlockFilterStatus::Failed(error) => {
 			tracing::error!(
 				network = %network.slug,
 				block_number,
-				failures,
-				"Filtering block {} failed {} times in a row; skipping it, so its matches are lost",
+				error = %error,
+				holds = filter_holds,
+				"Filtering block {} failed after {} holds in a row; skipping it, so its matches are lost",
 				block_number,
-				failures
+				filter_holds
 			);
 			outcome.failed_blocks.push(block_number);
 		}
@@ -247,7 +258,6 @@ where
 	if block.filter_status == BlockFilterStatus::Completed {
 		(trigger_handler)(block);
 	}
-	DispatchOutcome::Continue
 }
 
 async fn process_block_batch<
@@ -266,6 +276,7 @@ async fn process_block_batch<
 	let batch_start = options.batch_start;
 	let checkpoint_block = options.checkpoint_block;
 	let delete_blocks_before_save = options.delete_blocks_before_save;
+	let filter_holds = options.filter_holds;
 	let stream_kind = fetch_result.stream_kind;
 	let blocks = fetch_result.blocks;
 
@@ -343,9 +354,8 @@ async fn process_block_batch<
 
 			// Process all incoming blocks
 			while let Some(processed_block) = trigger_rx.next().await {
-				// Once held, keep receiving so the processing stage can finish, but dispatch
-				// nothing more: every later block is processed again on the next run
-				if outcome.held_at.is_some() {
+				// Once held, keep receiving so the processing stage can finish
+				if outcome.held.is_some() {
 					continue;
 				}
 
@@ -354,41 +364,37 @@ async fn process_block_batch<
 
 				// Dispatch blocks in order as long as we have the next expected block, so
 				// duplicates and out-of-order blocks are checked in execution order
-				while let Some(block) = pending_blocks.remove(&next_block_number) {
-					match dispatch_processed_block(
+				while outcome.held.is_none() {
+					let Some(block) = pending_blocks.remove(&next_block_number) else {
+						break;
+					};
+					dispatch_processed_block(
 						&network,
 						&*block_tracker,
 						&*trigger_handler,
+						filter_holds,
 						&block,
 						&mut outcome,
 					)
-					.await
-					{
-						DispatchOutcome::Continue => next_block_number += 1,
-						DispatchOutcome::Hold => {
-							outcome.held_at = Some(block.block_number);
-							break;
-						}
-					}
+					.await;
+					next_block_number += 1;
 				}
 			}
 
 			// Dispatch any remaining blocks in order after the channel is closed
-			if outcome.held_at.is_none() {
-				while let Some((_, block)) = pending_blocks.pop_first() {
-					if let DispatchOutcome::Hold = dispatch_processed_block(
-						&network,
-						&*block_tracker,
-						&*trigger_handler,
-						&block,
-						&mut outcome,
-					)
-					.await
-					{
-						outcome.held_at = Some(block.block_number);
-						break;
-					}
-				}
+			while outcome.held.is_none() {
+				let Some((_, block)) = pending_blocks.pop_first() else {
+					break;
+				};
+				dispatch_processed_block(
+					&network,
+					&*block_tracker,
+					&*trigger_handler,
+					filter_holds,
+					&block,
+					&mut outcome,
+				)
+				.await;
 			}
 			Ok::<TriggerStageOutcome, BlockWatcherError>(outcome)
 		}
@@ -430,8 +436,8 @@ async fn process_block_batch<
 	// there instead of counting the block as processed with no matches. It never goes below
 	// the batch start: a held block numbered outside the batch (an unknown number reads as 0)
 	// would otherwise save 0, which reads as a first run and jumps to the chain head
-	let checkpoint_block = match trigger_outcome.held_at {
-		Some(held_at) => held_at
+	let checkpoint_block = match trigger_outcome.held {
+		Some((held_at, _)) => held_at
 			.saturating_sub(1)
 			.max(batch_start.saturating_sub(1))
 			.min(checkpoint_block),
@@ -464,6 +470,7 @@ async fn process_block_batch<
 		block_count: blocks.len(),
 		stream_kind,
 		checkpoint_block,
+		hold: trigger_outcome.held.map(|(_, reason)| reason),
 	})
 }
 
@@ -925,22 +932,59 @@ pub async fn process_new_blocks<
 		.max_past_blocks
 		.unwrap_or(MaxPastBlocks::Limited(recommended_past_blocks));
 
+	// A hold saved by an earlier tick applies only while the checkpoint is where that tick
+	// left it. Once the checkpoint has moved, the held block has been dealt with.
+	let mut stored_hold = block_storage
+		.get_filter_hold(&network.slug)
+		.await
+		.with_context(|| "Failed to get filter hold")?;
+	let mut filter_holds = stored_hold
+		.filter(|hold| last_processed_block != 0 && hold.checkpoint == last_processed_block)
+		.map_or(0, |hold| hold.count);
+
 	// Calculate the start block number, using the default if max_past_blocks is not set.
 	// Unlimited networks never clamp: they always resume from the last processed block.
-	let start_block = if last_processed_block == 0 {
-		latest_confirmed_block
-	} else {
+	// While a hold is pending the lookback is longer. The default window is about one tick
+	// long, so the tick after a hold would otherwise start past the held block. The longer
+	// lookback covers every tick a hold can last. It is still bounded, so a longer gap, for
+	// example an RPC outage, falls back to max_past_blocks.
+	let next_block = last_processed_block.saturating_add(1);
+	let start_block_within = |windows: u32| {
+		if last_processed_block == 0 {
+			return latest_confirmed_block;
+		}
 		match max_past_blocks {
 			MaxPastBlocks::Limited(max) => std::cmp::max(
-				last_processed_block.saturating_add(1),
-				latest_confirmed_block.saturating_sub(max),
+				next_block,
+				latest_confirmed_block.saturating_sub(max.saturating_mul(u64::from(windows))),
 			),
-			MaxPastBlocks::Unlimited => last_processed_block.saturating_add(1),
+			MaxPastBlocks::Unlimited => next_block,
 		}
 	};
+	let mut start_block = start_block_within(if filter_holds > 0 {
+		MAX_FILTER_FAILURE_HOLDS + 1
+	} else {
+		1
+	});
+	if filter_holds > 0 && start_block > next_block {
+		tracing::error!(
+			network = %network.slug,
+			block_number = next_block,
+			start_block,
+			"Block {} was held after its filter failed but is now outside max_past_blocks; skipping it, so its matches are lost",
+			next_block
+		);
+		save_missed_blocks_if_enabled(&block_storage, network, &[next_block]).await?;
+		block_storage
+			.save_filter_hold(&network.slug, None)
+			.await
+			.with_context(|| "Failed to remove filter hold")?;
+		stored_hold = None;
+		filter_holds = 0;
+		start_block = start_block_within(1);
+	}
 	let skipped_blocks = match max_past_blocks {
 		MaxPastBlocks::Limited(_) if last_processed_block != 0 => {
-			let next_block = last_processed_block.saturating_add(1);
 			(start_block > next_block).then_some(start_block - next_block)
 		}
 		_ => None,
@@ -963,6 +1007,7 @@ pub async fn process_new_blocks<
 	let mut stream_kind = FetchStreamKind::Dense;
 	let mut checkpoint_block = last_processed_block;
 	let mut blocks_deleted = false;
+	let mut tick_hold = None;
 	let batch_context = BatchProcessingContext {
 		network,
 		block_storage: &block_storage,
@@ -984,16 +1029,21 @@ pub async fn process_new_blocks<
 				batch_start: latest_confirmed_block,
 				checkpoint_block: latest_confirmed_block,
 				delete_blocks_before_save: true,
+				filter_holds,
 			},
 		)
 		.await?;
 		total_blocks_processed += summary.block_count;
 		stream_kind = summary.stream_kind;
 		checkpoint_block = summary.checkpoint_block;
+		tick_hold = summary.hold;
 	} else if last_processed_block < latest_confirmed_block {
 		// The per-network run_lock serializes cron ticks while long catch-ups are still running.
 		let mut batch_start = start_block;
 		let mut batches_processed_this_tick = 0;
+		// A held block is retried on its own first. If its filter fails again the tick ends
+		// there, without filtering the rest of the batch only to throw the results away.
+		let mut retry_held_block = filter_holds > 0;
 		while batch_start <= latest_confirmed_block {
 			if matches!(max_past_blocks, MaxPastBlocks::Unlimited)
 				&& batches_processed_this_tick >= MAX_BATCHES_PER_TICK
@@ -1010,8 +1060,14 @@ pub async fn process_new_blocks<
 				break;
 			}
 
+			let batch_size = if retry_held_block {
+				1
+			} else {
+				CATCHUP_BATCH_SIZE
+			};
+			retry_held_block = false;
 			let batch_end = std::cmp::min(
-				batch_start.saturating_add(CATCHUP_BATCH_SIZE - 1),
+				batch_start.saturating_add(batch_size - 1),
 				latest_confirmed_block,
 			);
 			let batch_result = async {
@@ -1030,6 +1086,7 @@ pub async fn process_new_blocks<
 						checkpoint_block: batch_end,
 						delete_blocks_before_save: network.store_blocks.unwrap_or(false)
 							&& !blocks_deleted,
+						filter_holds,
 					},
 				)
 				.await
@@ -1045,7 +1102,8 @@ pub async fn process_new_blocks<
 					batches_processed_this_tick += 1;
 					// The checkpoint is held inside this batch; a later batch would save a
 					// checkpoint past the held block, so leave the rest to the next run
-					if checkpoint_block < batch_end {
+					if summary.hold.is_some() {
+						tick_hold = summary.hold;
 						tracing::warn!(
 							network = %network.slug,
 							checkpoint = checkpoint_block,
@@ -1088,12 +1146,35 @@ pub async fn process_new_blocks<
 				batch_start: start_block,
 				checkpoint_block: latest_confirmed_block,
 				delete_blocks_before_save: true,
+				filter_holds,
 			},
 		)
 		.await?;
 		total_blocks_processed += summary.block_count;
 		stream_kind = summary.stream_kind;
 		checkpoint_block = summary.checkpoint_block;
+	}
+
+	match tick_hold {
+		Some(HoldReason::FilterFailed) => {
+			let hold = FilterHold {
+				checkpoint: checkpoint_block,
+				count: filter_holds.saturating_add(1),
+			};
+			block_storage
+				.save_filter_hold(&network.slug, Some(hold))
+				.await
+				.with_context(|| "Failed to save filter hold")?;
+		}
+		// A shutdown says nothing about the block, so a saved hold stays as it is
+		Some(HoldReason::Cancelled) => {}
+		None if stored_hold.is_some() => {
+			block_storage
+				.save_filter_hold(&network.slug, None)
+				.await
+				.with_context(|| "Failed to remove filter hold")?;
+		}
+		None => {}
 	}
 
 	log_checkpoint_lag(network, checkpoint_block, latest_confirmed_block);
@@ -1888,6 +1969,10 @@ mod tests {
 		})
 	}
 
+	fn filter_failed() -> BlockFilterStatus {
+		BlockFilterStatus::Failed("Network error: eth_getLogs failed with status 429".to_string())
+	}
+
 	/// Trigger handler that records the number of every block it is called for, in call order.
 	fn create_recording_trigger_handler(
 		triggered: Arc<std::sync::Mutex<Vec<u64>>>,
@@ -1928,8 +2013,7 @@ mod tests {
 		// Blocks 81-88 (latest 100, 12 confirmations)
 		let rpc_client = MockRpcClient::new(100);
 		let block_tracker = Arc::new(BlockTracker::new(100));
-		let block_handler =
-			create_scripted_block_handler(vec![(84, vec![BlockFilterStatus::Failed])]);
+		let block_handler = create_scripted_block_handler(vec![(84, vec![filter_failed()])]);
 		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
 		let trigger_handler = create_recording_trigger_handler(triggered.clone());
 
@@ -1999,8 +2083,7 @@ mod tests {
 			create_evm_block(84),
 		]);
 		let block_tracker = Arc::new(BlockTracker::new(100));
-		let block_handler =
-			create_scripted_block_handler(vec![(83, vec![BlockFilterStatus::Failed])]);
+		let block_handler = create_scripted_block_handler(vec![(83, vec![filter_failed()])]);
 		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
 		let trigger_handler = create_recording_trigger_handler(triggered.clone());
 
@@ -2041,7 +2124,7 @@ mod tests {
 		let block_tracker = Arc::new(BlockTracker::new(100));
 		let failures = usize::try_from(MAX_FILTER_FAILURE_HOLDS).unwrap() + 1;
 		let block_handler =
-			create_scripted_block_handler(vec![(84, vec![BlockFilterStatus::Failed; failures])]);
+			create_scripted_block_handler(vec![(84, vec![filter_failed(); failures])]);
 		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
 		let trigger_handler = create_recording_trigger_handler(triggered.clone());
 
@@ -2094,6 +2177,476 @@ mod tests {
 		assert_eq!(missed_block_numbers(&storage).await, vec![84]);
 	}
 
+	/// Network on the default `max_past_blocks` window, with the numbers of the Base Sepolia
+	/// example config: 2s blocks on a 1 minute cron are 30 blocks per tick, and with 3
+	/// confirmations the window is 34 blocks.
+	fn create_default_window_network() -> Network {
+		let mut network = NetworkBuilder::new()
+			.name("Test Network")
+			.slug("test_network")
+			.store_blocks(true)
+			.block_time_ms(2000)
+			.cron_schedule("0 */1 * * * *")
+			.confirmation_blocks(3)
+			.build();
+		network.max_past_blocks = None;
+		assert_eq!(network.get_recommended_past_blocks(), 34);
+		network
+	}
+
+	/// Chain head on tick `tick` for a watcher that starts with its checkpoint at block 1000:
+	/// the head moves 30 blocks per tick, and 3 of them are still unconfirmed.
+	fn head_on_tick(tick: u64) -> u64 {
+		1003 + 30 * tick
+	}
+
+	async fn storage_with_checkpoint(path: &std::path::Path, checkpoint: u64) {
+		FileBlockStorage::new(path.to_path_buf())
+			.save_last_processed_block("test_network", checkpoint)
+			.await
+			.unwrap();
+	}
+
+	/// Runs one tick with the chain head at `latest_block`. The storage and the tracker are
+	/// created for this tick alone, so nothing is carried over in memory, as after a restart.
+	async fn run_tick<H>(
+		network: &Network,
+		storage_path: &std::path::Path,
+		latest_block: u64,
+		block_handler: &Arc<H>,
+		triggered: &Arc<std::sync::Mutex<Vec<u64>>>,
+	) -> Arc<FileBlockStorage>
+	where
+		H: Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync + 'static,
+	{
+		let storage = Arc::new(FileBlockStorage::new(storage_path.to_path_buf()));
+		process_new_blocks(
+			network,
+			&MockRpcClient::new(latest_block),
+			storage.clone(),
+			block_handler.clone(),
+			create_recording_trigger_handler(triggered.clone()),
+			Arc::new(BlockTracker::new(1000)),
+		)
+		.await
+		.unwrap();
+		storage
+	}
+
+	async fn checkpoint(storage: &FileBlockStorage) -> Option<u64> {
+		storage
+			.get_last_processed_block("test_network")
+			.await
+			.unwrap()
+	}
+
+	#[tokio::test]
+	async fn test_default_window_does_not_skip_held_block() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		let network = create_default_window_network();
+		let block_handler = create_scripted_block_handler(vec![(1002, vec![filter_failed()])]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		// Tick 1 covers blocks 1001-1030 and block 1002 fails
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(1),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1001));
+		assert_eq!(*triggered.lock().unwrap(), vec![1001]);
+		assert_eq!(
+			storage.get_filter_hold("test_network").await.unwrap(),
+			Some(FilterHold {
+				checkpoint: 1001,
+				count: 1
+			})
+		);
+
+		// On tick 2 the 34 block window on its own would start at block 1026
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(2),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1060));
+		assert_eq!(
+			*triggered.lock().unwrap(),
+			(1001..=1060).collect::<Vec<_>>(),
+			"each block should be triggered exactly once"
+		);
+		assert!(missed_block_numbers(&storage).await.is_empty());
+		assert_eq!(storage.get_filter_hold("test_network").await.unwrap(), None);
+	}
+
+	#[tokio::test]
+	async fn test_hold_saved_for_another_checkpoint_is_ignored() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		// A hold left from before the checkpoint moved, already at the limit
+		FileBlockStorage::new(temp_dir.path().to_path_buf())
+			.save_filter_hold(
+				"test_network",
+				Some(FilterHold {
+					checkpoint: 900,
+					count: MAX_FILTER_FAILURE_HOLDS,
+				}),
+			)
+			.await
+			.unwrap();
+		let network = create_default_window_network();
+		let block_handler = create_scripted_block_handler(vec![(1002, vec![filter_failed()])]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(1),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+
+		// The failure is held as a first hold, not skipped
+		assert_eq!(checkpoint(&storage).await, Some(1001));
+		assert!(missed_block_numbers(&storage).await.is_empty());
+		assert_eq!(
+			storage.get_filter_hold("test_network").await.unwrap(),
+			Some(FilterHold {
+				checkpoint: 1001,
+				count: 1
+			})
+		);
+	}
+
+	#[tokio::test]
+	async fn test_default_window_skips_block_after_hold_cap() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		let network = create_default_window_network();
+		let block_handler = create_scripted_block_handler(vec![(1002, vec![filter_failed(); 10])]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		for tick in 1..=u64::from(MAX_FILTER_FAILURE_HOLDS) {
+			let storage = run_tick(
+				&network,
+				temp_dir.path(),
+				head_on_tick(tick),
+				&block_handler,
+				&triggered,
+			)
+			.await;
+			assert_eq!(
+				checkpoint(&storage).await,
+				Some(1001),
+				"tick {tick} should hold the checkpoint before the failed block"
+			);
+			assert!(missed_block_numbers(&storage).await.is_empty());
+		}
+
+		// The block has used up its holds: it is saved as missed and the rest catches up
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(4),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1120));
+		assert_eq!(missed_block_numbers(&storage).await, vec![1002]);
+		let mut expected = vec![1001];
+		expected.extend(1003..=1120);
+		assert_eq!(
+			*triggered.lock().unwrap(),
+			expected,
+			"every other block should be triggered exactly once"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_failure_of_every_block_keeps_lag_bounded() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		let network = create_default_window_network();
+		// Every filter fails, as while the RPC answers 429 to everything
+		let handler_calls = Arc::new(AtomicUsize::new(0));
+		let block_handler = Arc::new({
+			let handler_calls = handler_calls.clone();
+			move |block: BlockType, network: Network| {
+				handler_calls.fetch_add(1, Ordering::SeqCst);
+				Box::pin(async move {
+					ProcessedBlock {
+						network_slug: network.slug,
+						block_number: block.number().unwrap_or(0),
+						processing_results: vec![],
+						filter_status: filter_failed(),
+					}
+				}) as BoxFuture<'static, ProcessedBlock>
+			}
+		});
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(1),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1000));
+
+		// While the checkpoint is held, a tick filters the held block only, not the batch
+		for tick in 2..=u64::from(MAX_FILTER_FAILURE_HOLDS) {
+			let calls_before = handler_calls.load(Ordering::SeqCst);
+			let storage = run_tick(
+				&network,
+				temp_dir.path(),
+				head_on_tick(tick),
+				&block_handler,
+				&triggered,
+			)
+			.await;
+			assert_eq!(checkpoint(&storage).await, Some(1000));
+			assert_eq!(
+				handler_calls.load(Ordering::SeqCst) - calls_before,
+				1,
+				"tick {tick} should retry the held block alone"
+			);
+		}
+
+		// After the last hold every failed block is saved as missed and the network catches up
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(4),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1120));
+		assert_eq!(
+			missed_block_numbers(&storage).await,
+			(1001..=1120).collect::<Vec<_>>()
+		);
+
+		// The next failure is held again, so the lag never grows past the hold limit
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(5),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1120));
+		assert!(triggered.lock().unwrap().is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_held_block_left_behind_by_window_is_saved_as_missed() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		let network = create_default_window_network();
+		let block_handler = create_scripted_block_handler(vec![(1002, vec![filter_failed()])]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(1),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1001));
+
+		// No tick runs for a long time, for example while the RPC is down. A hold must not
+		// turn `max_past_blocks` into an unbounded catch-up: the next tick starts where the
+		// plain 34 block window does, at block 4966
+		let storage = run_tick(&network, temp_dir.path(), 5003, &block_handler, &triggered).await;
+		assert_eq!(checkpoint(&storage).await, Some(5000));
+		let mut expected = vec![1001];
+		expected.extend(4966..=5000);
+		assert_eq!(*triggered.lock().unwrap(), expected);
+		assert_eq!(missed_block_numbers(&storage).await, vec![1002]);
+		assert_eq!(storage.get_filter_hold("test_network").await.unwrap(), None);
+	}
+
+	#[tokio::test]
+	async fn test_failed_tick_does_not_drop_held_block() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		let network = create_default_window_network();
+		let block_handler = create_scripted_block_handler(vec![(1002, vec![filter_failed()])]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(1),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+
+		// Tick 2 fails before it processes a block, as when the RPC rate limits every call.
+		// It does not count as a hold, but the chain head still moves on
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		let result = process_new_blocks(
+			&network,
+			&MockRpcClient::new(head_on_tick(2)).with_failing_get_blocks(),
+			storage.clone(),
+			block_handler.clone(),
+			create_recording_trigger_handler(triggered.clone()),
+			Arc::new(BlockTracker::new(1000)),
+		)
+		.await;
+		assert!(result.is_err());
+		assert_eq!(checkpoint(&storage).await, Some(1001));
+
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(3),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1090));
+		assert_eq!(
+			*triggered.lock().unwrap(),
+			(1001..=1090).collect::<Vec<_>>(),
+			"each block should be triggered exactly once"
+		);
+		assert!(missed_block_numbers(&storage).await.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_hold_left_behind_by_window_is_removed_even_if_tick_fails() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		let network = create_default_window_network();
+		let block_handler = create_scripted_block_handler(vec![(1002, vec![filter_failed()])]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(1),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+
+		// The head is far ahead by the next tick, and that tick fails to fetch its blocks
+		let storage = Arc::new(FileBlockStorage::new(temp_dir.path().to_path_buf()));
+		let result = process_new_blocks(
+			&network,
+			&MockRpcClient::new(5003).with_failing_get_blocks(),
+			storage.clone(),
+			block_handler.clone(),
+			create_recording_trigger_handler(triggered.clone()),
+			Arc::new(BlockTracker::new(1000)),
+		)
+		.await;
+		assert!(result.is_err());
+
+		// The held block is given up on once, not again on every later tick
+		assert_eq!(missed_block_numbers(&storage).await, vec![1002]);
+		assert_eq!(storage.get_filter_hold("test_network").await.unwrap(), None);
+	}
+
+	#[tokio::test]
+	async fn test_hold_count_survives_restart() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		// Unlimited never moves past a held block, so only the hold limit can
+		let mut network = create_default_window_network();
+		network.max_past_blocks = Some(MaxPastBlocks::Unlimited);
+		let block_handler = create_scripted_block_handler(vec![(1002, vec![filter_failed(); 10])]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		// `run_tick` starts from a new storage and tracker each time
+		for tick in 1..=u64::from(MAX_FILTER_FAILURE_HOLDS) {
+			let storage = run_tick(
+				&network,
+				temp_dir.path(),
+				head_on_tick(tick),
+				&block_handler,
+				&triggered,
+			)
+			.await;
+			assert_eq!(checkpoint(&storage).await, Some(1001));
+		}
+
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(4),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(checkpoint(&storage).await, Some(1120));
+		assert_eq!(missed_block_numbers(&storage).await, vec![1002]);
+	}
+
+	#[tokio::test]
+	async fn test_cancelled_tick_does_not_change_hold_count() {
+		let temp_dir = tempdir().unwrap();
+		storage_with_checkpoint(temp_dir.path(), 1000).await;
+		let mut network = create_default_window_network();
+		network.max_past_blocks = Some(MaxPastBlocks::Unlimited);
+		// The third tick is cut short by shutdown
+		let block_handler = create_scripted_block_handler(vec![(
+			1002,
+			vec![
+				filter_failed(),
+				filter_failed(),
+				BlockFilterStatus::Cancelled,
+				filter_failed(),
+				filter_failed(),
+			],
+		)]);
+		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+		// Two failed holds, the cancelled tick, then the third failed hold
+		for tick in 1..=4 {
+			let storage = run_tick(
+				&network,
+				temp_dir.path(),
+				head_on_tick(tick),
+				&block_handler,
+				&triggered,
+			)
+			.await;
+			assert_eq!(checkpoint(&storage).await, Some(1001));
+			assert!(
+				missed_block_numbers(&storage).await.is_empty(),
+				"tick {tick} should still hold the block"
+			);
+		}
+
+		let storage = run_tick(
+			&network,
+			temp_dir.path(),
+			head_on_tick(5),
+			&block_handler,
+			&triggered,
+		)
+		.await;
+		assert_eq!(missed_block_numbers(&storage).await, vec![1002]);
+	}
+
 	#[tokio::test]
 	async fn test_filter_failure_of_block_without_number_keeps_checkpoint_in_batch() {
 		let temp_dir = tempdir().unwrap();
@@ -2107,8 +2660,7 @@ mod tests {
 		// A block whose number is unknown is processed as block 0
 		let rpc_client = MockRpcClient::new(100).with_blocks(vec![create_evm_block(0)]);
 		let block_tracker = Arc::new(BlockTracker::new(100));
-		let block_handler =
-			create_scripted_block_handler(vec![(0, vec![BlockFilterStatus::Failed])]);
+		let block_handler = create_scripted_block_handler(vec![(0, vec![filter_failed()])]);
 		let trigger_handler = create_trigger_handler();
 
 		let result = process_new_blocks(
@@ -2145,8 +2697,7 @@ mod tests {
 		network.store_blocks = Some(false);
 		let rpc_client = MockRpcClient::new(100);
 		let block_tracker = Arc::new(BlockTracker::new(100));
-		let block_handler =
-			create_scripted_block_handler(vec![(84, vec![BlockFilterStatus::Failed])]);
+		let block_handler = create_scripted_block_handler(vec![(84, vec![filter_failed()])]);
 		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
 		let trigger_handler = create_recording_trigger_handler(triggered.clone());
 
@@ -2269,8 +2820,7 @@ mod tests {
 		// Blocks 11-188, in batches of CATCHUP_BATCH_SIZE; block 25 is in the first batch
 		let rpc_client = MockRpcClient::new(200);
 		let block_tracker = Arc::new(BlockTracker::new(2000));
-		let block_handler =
-			create_scripted_block_handler(vec![(25, vec![BlockFilterStatus::Failed])]);
+		let block_handler = create_scripted_block_handler(vec![(25, vec![filter_failed()])]);
 		let triggered = Arc::new(std::sync::Mutex::new(Vec::new()));
 		let trigger_handler = create_recording_trigger_handler(triggered.clone());
 

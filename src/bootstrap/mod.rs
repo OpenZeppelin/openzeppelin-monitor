@@ -257,7 +257,31 @@ fn client_unavailable(
 		network.network_type,
 		block_number
 	);
-	BlockFilterStatus::Failed
+	BlockFilterStatus::Failed(describe_filter_error(format!(
+		"Failed to get {} client: {:#}",
+		network.network_type, error
+	)))
+}
+
+/// Describes why a block could not be filtered, for [`BlockFilterStatus::Failed`].
+///
+/// `{:#}` keeps the causes of the error: the outer message alone does not tell a rate limit
+/// from a decode error. The text is logged and saved with a missed block, and a transport
+/// error names the RPC URL, which can hold an API key, so every URL is cut down to its host.
+fn describe_filter_error(error: impl std::fmt::Display) -> String {
+	lazy_static::lazy_static! {
+		static ref URL: regex::Regex =
+			regex::Regex::new(r#"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"'<>()]*[^\s"'<>().,;:]"#)
+				.unwrap();
+	}
+	let message = format!("{:#}", error);
+	URL.replace_all(&message, |url: &regex::Captures| {
+		url::Url::parse(&url[0])
+			.ok()
+			.and_then(|url| url.host_str().map(str::to_string))
+			.unwrap_or_else(|| "unknown-host".to_string())
+	})
+	.into_owned()
 }
 
 /// Why [`process_block`] did not finish filtering a block.
@@ -273,7 +297,9 @@ impl ProcessBlockError {
 	/// The status to record for a block that this error left unfiltered.
 	pub fn filter_status(&self) -> BlockFilterStatus {
 		match self {
-			ProcessBlockError::Filter(_) => BlockFilterStatus::Failed,
+			ProcessBlockError::Filter(error) => {
+				BlockFilterStatus::Failed(describe_filter_error(error))
+			}
 			ProcessBlockError::Cancelled => BlockFilterStatus::Cancelled,
 		}
 	}
@@ -881,6 +907,31 @@ mod tests {
 		let active_monitors = filter_active_monitors(monitors);
 		assert_eq!(active_monitors.len(), 2);
 		assert!(active_monitors.iter().all(|m| !m.paused));
+	}
+
+	#[test]
+	fn test_describe_filter_error_keeps_causes_without_url_secrets() {
+		let error = anyhow::anyhow!(
+			"JSON-RPC error: code -32005 for URL https://user:pass@rpc.example.com/v2/secret-key?token=secret-token: limit exceeded"
+		)
+		.context("Failed to get logs for blocks: 1 - 1");
+		assert_eq!(
+			describe_filter_error(&error),
+			"Failed to get logs for blocks: 1 - 1: JSON-RPC error: code -32005 for URL rpc.example.com: limit exceeded"
+		);
+
+		// As reqwest writes it, and over a websocket
+		let error =
+			anyhow::anyhow!("error sending request for url (wss://rpc.example.com/ws/secret-key)");
+		assert_eq!(
+			describe_filter_error(&error),
+			"error sending request for url (rpc.example.com)"
+		);
+
+		assert_eq!(
+			describe_filter_error("Expected Stellar block"),
+			"Expected Stellar block"
+		);
 	}
 
 	#[test]

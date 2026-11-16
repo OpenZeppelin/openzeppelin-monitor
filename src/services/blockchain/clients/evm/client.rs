@@ -141,7 +141,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 	/// * `addresses` - Optional list of addresses to filter logs by
 	/// # Returns
 	/// * `Result<Vec<EVMReceiptLog>, anyhow::Error>` - Collection of matching logs or error
-	#[instrument(skip(self))]
+	#[instrument(skip(self, addresses))]
 	async fn get_logs_for_blocks(
 		&self,
 		from_block: u64,
@@ -293,11 +293,18 @@ mod tests {
 	async fn test_get_logs_for_blocks_span_records_block_range() {
 		let client = EvmClient::new_with_transport(FailingTransport);
 
-		let result = client.get_logs_for_blocks(11931475, 11931476, None).await;
+		let addresses = Some(vec![
+			"0xdac17f958d2ee523a2206206994597c13d831ec7".to_string()
+		]);
+		let result = client
+			.get_logs_for_blocks(11931475, 11931476, addresses)
+			.await;
 
 		assert!(result.is_err());
 		// Errors logged inside the span name the blocks whose logs could not be fetched
 		assert!(logs_contain("from_block=11931475"));
 		assert!(logs_contain("to_block=11931476"));
+		// The address list can be every monitored address, so it stays out of the span
+		assert!(!logs_contain("0xdac17f958d2ee523a2206206994597c13d831ec7"));
 	}
 }
