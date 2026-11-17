@@ -18,5 +18,7 @@ pub use recovery::{process_missed_blocks, RecoveryResult};
 pub use service::{
 	process_new_blocks, BlockWatcherService, JobSchedulerTrait, NetworkBlockWatcher,
 };
-pub use storage::{BlockStorage, FileBlockStorage, MissedBlockEntry, MissedBlockStatus};
+pub use storage::{
+	BlockStorage, FileBlockStorage, FilterHold, MissedBlockEntry, MissedBlockStatus,
+};
 pub use tracker::{BlockCheckResult, BlockTracker, BlockTrackerTrait};
