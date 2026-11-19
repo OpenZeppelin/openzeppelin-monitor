@@ -2611,6 +2611,67 @@ mod tests {
 	}
 
 	#[test]
+	fn test_evaluate_expression_fixed_size_array_event_param() {
+		let filter = create_test_filter();
+		// Curve 3pool `AddLiquidity` event
+		let abi = json!([{
+			"type": "event",
+			"name": "AddLiquidity",
+			"anonymous": false,
+			"inputs": [
+				{"name": "provider", "type": "address", "indexed": true},
+				{"name": "token_amounts", "type": "uint256[3]", "indexed": false},
+				{"name": "fees", "type": "uint256[3]", "indexed": false},
+				{"name": "invariant", "type": "uint256", "indexed": false},
+				{"name": "token_supply", "type": "uint256", "indexed": false}
+			]
+		}]);
+		let event: alloy::json_abi::Event = serde_json::from_value(abi[0].clone()).unwrap();
+		let provider = Address::from_str("0x0000000000000000000000000000000000001234").unwrap();
+		let data: String = [0u64, 0, 1216420971, 1, 2, 3, 4, 5]
+			.iter()
+			.map(|word| format!("{word:064x}"))
+			.collect();
+		let log = EVMReceiptLog {
+			address: Address::from_str("0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7").unwrap(),
+			topics: vec![
+				event.selector(),
+				B256::from_slice(&[&[0u8; 12], provider.as_slice()].concat()),
+			],
+			data: Bytes(hex::decode(data).unwrap().into()),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let decoded = filter
+			.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log)
+			.unwrap();
+		let args = decoded.args.unwrap();
+		let amounts = args.iter().find(|p| p.name == "token_amounts").unwrap();
+		assert_eq!(amounts.kind, "uint256[3]");
+		assert_eq!(amounts.value, "[0,0,1216420971]");
+
+		assert!(filter
+			.evaluate_expression("token_amounts contains 1216420971", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("token_amounts contains 7", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(r#"token_amounts == "[0,0,1216420971]""#, &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("token_amounts[2] == 1216420971", &args)
+			.unwrap());
+	}
+
+	#[test]
 	fn test_evaluate_expression_array_contains_hex_number() {
 		let filter = create_test_filter();
 		let args = vec![create_test_param("fees", "[500,3000]", "uint256[]")];

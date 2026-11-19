@@ -16,15 +16,22 @@ use std::str::FromStr;
 
 pub type EVMArgs = [EVMMatchParamEntry];
 
-// Integer and fixed-size byte arrays are matched by size in `compare_final_values`.
-const ARRAY_KINDS: &[&str] = &[
-	"array",
-	"string[]",
-	"address[]",
-	"bool[]",
-	"bytes[]",
-	"tuple[]",
-];
+/// Returns whether `kind` is an array of a supported element kind, either dynamic (`T[]`) or
+/// fixed-size (`T[N]`). The element kind may itself be an array, as in `uint256[2][]`.
+fn is_array_kind(kind: &str) -> bool {
+	let Some((element, size)) = kind
+		.strip_suffix(']')
+		.and_then(|kind| kind.rsplit_once('['))
+	else {
+		return false;
+	};
+	size.bytes().all(|byte| byte.is_ascii_digit())
+		&& (matches!(element, "string" | "address" | "bool" | "bytes" | "tuple")
+			|| is_fixed_bytes_kind(element)
+			|| is_integer_kind(element, "uint")
+			|| is_integer_kind(element, "int")
+			|| is_array_kind(element))
+}
 
 /// Returns whether `kind` is a fixed-size byte array, `bytes1` through `bytes32`.
 fn is_fixed_bytes_kind(kind: &str) -> bool {
@@ -741,12 +748,7 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 			return self.compare_u256(lhs_value_str, operator, rhs_literal);
 		}
 
-		if ARRAY_KINDS.contains(&lhs_kind.as_str())
-			|| lhs_kind.strip_suffix("[]").is_some_and(|kind| {
-				is_fixed_bytes_kind(kind)
-					|| is_integer_kind(kind, "uint")
-					|| is_integer_kind(kind, "int")
-			}) {
+		if lhs_kind == "array" || is_array_kind(&lhs_kind) {
 			return self.compare_array(lhs_value_str, operator, rhs_literal);
 		}
 
@@ -2020,6 +2022,125 @@ mod tests {
 				&LiteralValue::Str("title")
 			)
 			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_final_values_fixed_size_and_nested_arrays() {
+		use super::super::helpers::format_token_value;
+		use alloy::{
+			dyn_abi::DynSolValue,
+			primitives::{Address, B256, I256},
+		};
+
+		let evaluator = create_evaluator();
+		let uint = |n: u64| DynSolValue::Uint(U256::from(n), 256);
+		let address = Address::repeat_byte(0x12);
+		let mut selector = B256::ZERO;
+		selector[..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+		let cases = [
+			(
+				"uint256[3]",
+				DynSolValue::FixedArray(vec![uint(0), uint(0), uint(1216420971)]),
+				"1216420971".to_string(),
+			),
+			(
+				"int24[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::Int(I256::try_from(-887272).unwrap(), 24),
+					DynSolValue::Int(I256::try_from(887272).unwrap(), 24),
+				]),
+				"-887272".to_string(),
+			),
+			(
+				"address[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::Address(Address::ZERO),
+					DynSolValue::Address(address),
+				]),
+				address.to_string(),
+			),
+			(
+				"bytes4[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::FixedBytes(B256::ZERO, 4),
+					DynSolValue::FixedBytes(selector, 4),
+				]),
+				"0xdeadbeef".to_string(),
+			),
+			(
+				"bool[2]",
+				DynSolValue::FixedArray(vec![DynSolValue::Bool(true), DynSolValue::Bool(false)]),
+				"false".to_string(),
+			),
+			(
+				"string[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::String("a".to_string()),
+					DynSolValue::String("b".to_string()),
+				]),
+				"b".to_string(),
+			),
+			(
+				"uint256[][]",
+				DynSolValue::Array(vec![
+					DynSolValue::Array(vec![uint(1), uint(2)]),
+					DynSolValue::Array(vec![uint(3)]),
+				]),
+				"3".to_string(),
+			),
+			(
+				"uint256[2][]",
+				DynSolValue::Array(vec![
+					DynSolValue::FixedArray(vec![uint(1), uint(2)]),
+					DynSolValue::FixedArray(vec![uint(3), uint(4)]),
+				]),
+				"4".to_string(),
+			),
+		];
+		for (kind, value, needle) in cases {
+			let value = format_token_value(&value);
+			assert!(
+				evaluator
+					.compare_final_values(
+						kind,
+						&value,
+						&ComparisonOperator::Contains,
+						&LiteralValue::Str(&needle)
+					)
+					.unwrap(),
+				"{kind} {value} should contain {needle}"
+			);
+		}
+
+		assert!(evaluator
+			.compare_final_values(
+				"uint256[3]",
+				"[0,0,1216420971]",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("[0,0,1216420971]")
+			)
+			.unwrap());
+
+		for kind in [
+			"uint7[2]",
+			"bytes33[]",
+			"fixed[2]",
+			"uint256[x]",
+			"uint256[2",
+			"[]",
+		] {
+			let res = evaluator.compare_final_values(
+				kind,
+				"[1]",
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("1"),
+			);
+			assert!(
+				matches!(res, Err(EvaluationError::TypeMismatch(_))),
+				"{kind} should be unsupported"
+			);
+		}
 	}
 
 	#[test]
