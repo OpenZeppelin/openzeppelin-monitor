@@ -2103,6 +2103,82 @@ mod tests {
 	}
 
 	#[test]
+	fn test_find_matching_functions_tuple_array_input() {
+		let filter = create_test_filter();
+		let multicall = "0xcA11bde05977b3631167028862bE2a173976CA11";
+		let abi = json!([{
+			"type": "function",
+			"name": "aggregate3",
+			"stateMutability": "payable",
+			"inputs": [{
+				"name": "calls",
+				"type": "tuple[]",
+				"components": [
+					{"name": "target", "type": "address"},
+					{"name": "allowFailure", "type": "bool"},
+					{"name": "callData", "type": "bytes"}
+				]
+			}],
+			"outputs": [{
+				"name": "returnData",
+				"type": "tuple[]",
+				"components": [
+					{"name": "success", "type": "bool"},
+					{"name": "returnData", "type": "bytes"}
+				]
+			}]
+		}]);
+		let function: Function = serde_json::from_value(abi[0].clone()).unwrap();
+		let target = Address::repeat_byte(0x12);
+		let calls = DynSolValue::Array(vec![DynSolValue::Tuple(vec![
+			DynSolValue::Address(target),
+			DynSolValue::Bool(false),
+			DynSolValue::Bytes(vec![0x21, 0xc0, 0xb3, 0x42]),
+		])]);
+		let transaction = TransactionBuilder::new()
+			.to(Address::from_str(multicall).unwrap())
+			.input(Bytes(function.abi_encode_input(&[calls]).unwrap().into()))
+			.build();
+		let contract_with_spec = (multicall.to_string(), EVMContractSpec::from(abi));
+
+		for (expression, expected_matches) in [
+			(format!("calls contains {target}"), 1),
+			(
+				"calls contains 0x0000000000000000000000000000000000000001".to_string(),
+				0,
+			),
+		] {
+			let monitor = create_test_monitor(
+				vec![],
+				vec![FunctionCondition {
+					signature: "aggregate3((address,bool,bytes)[])".to_string(),
+					expression: Some(expression.clone()),
+				}],
+				vec![],
+				vec![create_test_address(
+					multicall,
+					Some(ContractSpec::EVM(contract_with_spec.1.clone())),
+				)],
+			);
+			let mut matched_functions = Vec::new();
+			let mut matched_on_args = EVMMatchArguments {
+				events: None,
+				functions: Some(Vec::new()),
+			};
+
+			filter.find_matching_functions_for_transaction(
+				std::slice::from_ref(&contract_with_spec),
+				&transaction,
+				&monitor,
+				&mut matched_functions,
+				&mut matched_on_args,
+			);
+
+			assert_eq!(matched_functions.len(), expected_matches, "{expression}");
+		}
+	}
+
+	#[test]
 	fn test_find_matching_functions_non_matching_address() {
 		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();

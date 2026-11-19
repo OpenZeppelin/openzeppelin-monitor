@@ -12,7 +12,7 @@ use crate::{
 use alloy::primitives::U256;
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
 pub type EVMArgs = [EVMMatchParamEntry];
 
@@ -46,6 +46,38 @@ fn is_integer_kind(kind: &str, prefix: &str) -> bool {
 	kind.strip_prefix(prefix)
 		.and_then(|bits| bits.parse::<u16>().ok())
 		.is_some_and(|bits| bits % 8 == 0 && (8..=256).contains(&bits))
+}
+
+/// Turns tuples inside an array value, which `format_token_value` prints as `(a,b)`, into JSON
+/// arrays `[a,b]` so the value parses as JSON. Text inside quoted strings is kept as is.
+fn tuples_to_json_arrays(value: &str) -> Cow<'_, str> {
+	if !value.contains('(') {
+		return Cow::Borrowed(value);
+	}
+	let mut in_string = false;
+	let mut escaped = false;
+	Cow::Owned(
+		value
+			.chars()
+			.map(|c| match c {
+				_ if escaped => {
+					escaped = false;
+					c
+				}
+				'\\' if in_string => {
+					escaped = true;
+					c
+				}
+				'"' => {
+					in_string = !in_string;
+					c
+				}
+				'(' if !in_string => '[',
+				')' if !in_string => ']',
+				_ => c,
+			})
+			.collect(),
+	)
 }
 
 pub struct EVMConditionEvaluator<'a> {
@@ -162,7 +194,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		match operator {
 			ComparisonOperator::Eq | ComparisonOperator::Ne => {
 				let lhs_json_value = serde_json::from_str::<JsonValue>(
-					&lhs_json_array_str.to_lowercase(),
+					&tuples_to_json_arrays(lhs_json_array_str).to_lowercase(),
 				)
 				.map_err(|e| {
 					let msg = format!(
@@ -173,7 +205,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 				})?;
 
 				let rhs_json_value = serde_json::from_str::<JsonValue>(
-					&rhs_target_str.to_lowercase(),
+					&tuples_to_json_arrays(rhs_target_str).to_lowercase(),
 				)
 				.map_err(|e| {
 					let msg = format!(
@@ -200,14 +232,16 @@ impl<'a> EVMConditionEvaluator<'a> {
 				})
 			}
 			ComparisonOperator::Contains => {
-				let json_array = serde_json::from_str::<Vec<JsonValue>>(lhs_json_array_str)
-					.map_err(|e| {
-						let msg = format!(
-							"Failed to parse LHS value '{}' as JSON array for 'contains' operator",
-							lhs_json_array_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
+				let json_array = serde_json::from_str::<Vec<JsonValue>>(&tuples_to_json_arrays(
+					lhs_json_array_str,
+				))
+				.map_err(|e| {
+					let msg = format!(
+						"Failed to parse LHS value '{}' as JSON array for 'contains' operator",
+						lhs_json_array_str
+					);
+					EvaluationError::parse_error(msg, Some(e.into()), None)
+				})?;
 
 				let found = json_array.iter().any(|item_in_array| {
 					self.check_json_value_matches_str(item_in_array, rhs_target_str)
@@ -2141,6 +2175,77 @@ mod tests {
 				"{kind} should be unsupported"
 			);
 		}
+	}
+
+	#[test]
+	fn test_compare_final_values_tuple_arrays() {
+		use super::super::helpers::format_token_value;
+		use alloy::{dyn_abi::DynSolValue, primitives::Address};
+
+		let evaluator = create_evaluator();
+		let target = Address::repeat_byte(0x12);
+		// Multicall3 `Call3[]`: (address target, bool allowFailure, bytes callData)[]
+		let calls = format_token_value(&DynSolValue::Array(vec![
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(target),
+				DynSolValue::Bool(false),
+				DynSolValue::Bytes(vec![0x21, 0xc0, 0xb3, 0x42]),
+			]),
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(Address::ZERO),
+				DynSolValue::Bool(true),
+				DynSolValue::Bytes(vec![]),
+			]),
+		]));
+		let contains = |kind: &str, value: &str, needle: &str| {
+			evaluator
+				.compare_final_values(
+					kind,
+					value,
+					&ComparisonOperator::Contains,
+					&LiteralValue::Str(needle),
+				)
+				.unwrap()
+		};
+
+		assert!(contains("tuple[]", &calls, &target.to_string()));
+		assert!(contains("tuple[]", &calls, "0x21c0b342"));
+		assert!(!contains(
+			"tuple[]",
+			&calls,
+			"0x0000000000000000000000000000000000000001"
+		));
+		let calls_as_json = calls.replace('(', "[").replace(')', "]");
+		for rhs in [calls.as_str(), calls_as_json.as_str()] {
+			assert!(evaluator
+				.compare_final_values(
+					"tuple[]",
+					&calls,
+					&ComparisonOperator::Eq,
+					&LiteralValue::Str(rhs)
+				)
+				.unwrap());
+		}
+
+		let pairs = format_token_value(&DynSolValue::FixedArray(vec![
+			DynSolValue::Tuple(vec![
+				DynSolValue::String("a".to_string()),
+				DynSolValue::Tuple(vec![DynSolValue::Bool(true)]),
+			]),
+			DynSolValue::Tuple(vec![
+				DynSolValue::String("b".to_string()),
+				DynSolValue::Tuple(vec![DynSolValue::Bool(false)]),
+			]),
+		]));
+		assert!(contains("tuple[2]", &pairs, "b"));
+
+		// Parentheses inside strings are left alone
+		let strings = format_token_value(&DynSolValue::Array(vec![
+			DynSolValue::String("f(x)".to_string()),
+			DynSolValue::String("g".to_string()),
+		]));
+		assert!(contains("string[]", &strings, "f(x)"));
+		assert!(!contains("string[]", &strings, "f[x]"));
 	}
 
 	#[test]
