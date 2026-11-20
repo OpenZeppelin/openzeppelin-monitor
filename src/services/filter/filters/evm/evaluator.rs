@@ -12,19 +12,26 @@ use crate::{
 use alloy::primitives::U256;
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
 pub type EVMArgs = [EVMMatchParamEntry];
 
-// Integer and fixed-size byte arrays are matched by size in `compare_final_values`.
-const ARRAY_KINDS: &[&str] = &[
-	"array",
-	"string[]",
-	"address[]",
-	"bool[]",
-	"bytes[]",
-	"tuple[]",
-];
+/// Returns whether `kind` is an array of a supported element kind, either dynamic (`T[]`) or
+/// fixed-size (`T[N]`). The element kind may itself be an array, as in `uint256[2][]`.
+fn is_array_kind(kind: &str) -> bool {
+	let Some((element, size)) = kind
+		.strip_suffix(']')
+		.and_then(|kind| kind.rsplit_once('['))
+	else {
+		return false;
+	};
+	size.bytes().all(|byte| byte.is_ascii_digit())
+		&& (matches!(element, "string" | "address" | "bool" | "bytes" | "tuple")
+			|| is_fixed_bytes_kind(element)
+			|| is_integer_kind(element, "uint")
+			|| is_integer_kind(element, "int")
+			|| is_array_kind(element))
+}
 
 /// Returns whether `kind` is a fixed-size byte array, `bytes1` through `bytes32`.
 fn is_fixed_bytes_kind(kind: &str) -> bool {
@@ -39,6 +46,38 @@ fn is_integer_kind(kind: &str, prefix: &str) -> bool {
 	kind.strip_prefix(prefix)
 		.and_then(|bits| bits.parse::<u16>().ok())
 		.is_some_and(|bits| bits % 8 == 0 && (8..=256).contains(&bits))
+}
+
+/// Turns tuples inside an array value, which `format_token_value` prints as `(a,b)`, into JSON
+/// arrays `[a,b]` so the value parses as JSON. Text inside quoted strings is kept as is.
+fn tuples_to_json_arrays(value: &str) -> Cow<'_, str> {
+	if !value.contains('(') {
+		return Cow::Borrowed(value);
+	}
+	let mut in_string = false;
+	let mut escaped = false;
+	Cow::Owned(
+		value
+			.chars()
+			.map(|c| match c {
+				_ if escaped => {
+					escaped = false;
+					c
+				}
+				'\\' if in_string => {
+					escaped = true;
+					c
+				}
+				'"' => {
+					in_string = !in_string;
+					c
+				}
+				'(' if !in_string => '[',
+				')' if !in_string => ']',
+				_ => c,
+			})
+			.collect(),
+	)
 }
 
 pub struct EVMConditionEvaluator<'a> {
@@ -155,7 +194,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		match operator {
 			ComparisonOperator::Eq | ComparisonOperator::Ne => {
 				let lhs_json_value = serde_json::from_str::<JsonValue>(
-					&lhs_json_array_str.to_lowercase(),
+					&tuples_to_json_arrays(lhs_json_array_str).to_lowercase(),
 				)
 				.map_err(|e| {
 					let msg = format!(
@@ -166,7 +205,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 				})?;
 
 				let rhs_json_value = serde_json::from_str::<JsonValue>(
-					&rhs_target_str.to_lowercase(),
+					&tuples_to_json_arrays(rhs_target_str).to_lowercase(),
 				)
 				.map_err(|e| {
 					let msg = format!(
@@ -193,14 +232,16 @@ impl<'a> EVMConditionEvaluator<'a> {
 				})
 			}
 			ComparisonOperator::Contains => {
-				let json_array = serde_json::from_str::<Vec<JsonValue>>(lhs_json_array_str)
-					.map_err(|e| {
-						let msg = format!(
-							"Failed to parse LHS value '{}' as JSON array for 'contains' operator",
-							lhs_json_array_str
-						);
-						EvaluationError::parse_error(msg, Some(e.into()), None)
-					})?;
+				let json_array = serde_json::from_str::<Vec<JsonValue>>(&tuples_to_json_arrays(
+					lhs_json_array_str,
+				))
+				.map_err(|e| {
+					let msg = format!(
+						"Failed to parse LHS value '{}' as JSON array for 'contains' operator",
+						lhs_json_array_str
+					);
+					EvaluationError::parse_error(msg, Some(e.into()), None)
+				})?;
 
 				let found = json_array.iter().any(|item_in_array| {
 					self.check_json_value_matches_str(item_in_array, rhs_target_str)
@@ -741,12 +782,7 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 			return self.compare_u256(lhs_value_str, operator, rhs_literal);
 		}
 
-		if ARRAY_KINDS.contains(&lhs_kind.as_str())
-			|| lhs_kind.strip_suffix("[]").is_some_and(|kind| {
-				is_fixed_bytes_kind(kind)
-					|| is_integer_kind(kind, "uint")
-					|| is_integer_kind(kind, "int")
-			}) {
+		if lhs_kind == "array" || is_array_kind(&lhs_kind) {
 			return self.compare_array(lhs_value_str, operator, rhs_literal);
 		}
 
@@ -819,9 +855,13 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 
 #[cfg(test)]
 mod tests {
+	use super::super::helpers::format_token_value;
 	use super::*;
 	use crate::services::filter::expression::LiteralValue;
-	use alloy::primitives::U256;
+	use alloy::{
+		dyn_abi::DynSolValue,
+		primitives::{Address, B256, I256, U256},
+	};
 	use serde_json::json;
 
 	// Helper to create a dummy EVMConditionEvaluator (args don't matter for these unit tests)
@@ -2020,6 +2060,187 @@ mod tests {
 				&LiteralValue::Str("title")
 			)
 			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_final_values_fixed_size_and_nested_arrays() {
+		let evaluator = create_evaluator();
+		let uint = |n: u64| DynSolValue::Uint(U256::from(n), 256);
+		let address = Address::repeat_byte(0x12);
+		let mut selector = B256::ZERO;
+		selector[..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+		let cases = [
+			(
+				"uint256[3]",
+				DynSolValue::FixedArray(vec![uint(0), uint(0), uint(1216420971)]),
+				"1216420971".to_string(),
+			),
+			(
+				"int24[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::Int(I256::try_from(-887272).unwrap(), 24),
+					DynSolValue::Int(I256::try_from(887272).unwrap(), 24),
+				]),
+				"-887272".to_string(),
+			),
+			(
+				"address[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::Address(Address::ZERO),
+					DynSolValue::Address(address),
+				]),
+				address.to_string(),
+			),
+			(
+				"bytes4[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::FixedBytes(B256::ZERO, 4),
+					DynSolValue::FixedBytes(selector, 4),
+				]),
+				"0xdeadbeef".to_string(),
+			),
+			(
+				"bool[2]",
+				DynSolValue::FixedArray(vec![DynSolValue::Bool(true), DynSolValue::Bool(false)]),
+				"false".to_string(),
+			),
+			(
+				"string[2]",
+				DynSolValue::FixedArray(vec![
+					DynSolValue::String("a".to_string()),
+					DynSolValue::String("b".to_string()),
+				]),
+				"b".to_string(),
+			),
+			(
+				"uint256[][]",
+				DynSolValue::Array(vec![
+					DynSolValue::Array(vec![uint(1), uint(2)]),
+					DynSolValue::Array(vec![uint(3)]),
+				]),
+				"3".to_string(),
+			),
+			(
+				"uint256[2][]",
+				DynSolValue::Array(vec![
+					DynSolValue::FixedArray(vec![uint(1), uint(2)]),
+					DynSolValue::FixedArray(vec![uint(3), uint(4)]),
+				]),
+				"4".to_string(),
+			),
+		];
+		for (kind, value, needle) in cases {
+			let value = format_token_value(&value);
+			assert!(
+				evaluator
+					.compare_final_values(
+						kind,
+						&value,
+						&ComparisonOperator::Contains,
+						&LiteralValue::Str(&needle)
+					)
+					.unwrap(),
+				"{kind} {value} should contain {needle}"
+			);
+		}
+
+		assert!(evaluator
+			.compare_final_values(
+				"uint256[3]",
+				"[0,0,1216420971]",
+				&ComparisonOperator::Eq,
+				&LiteralValue::Str("[0,0,1216420971]")
+			)
+			.unwrap());
+
+		for kind in [
+			"uint7[2]",
+			"bytes33[]",
+			"fixed[2]",
+			"uint256[x]",
+			"uint256[2",
+			"[]",
+		] {
+			let res = evaluator.compare_final_values(
+				kind,
+				"[1]",
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("1"),
+			);
+			assert!(
+				matches!(res, Err(EvaluationError::TypeMismatch(_))),
+				"{kind} should be unsupported"
+			);
+		}
+	}
+
+	#[test]
+	fn test_compare_final_values_tuple_arrays() {
+		let evaluator = create_evaluator();
+		let target = Address::repeat_byte(0x12);
+		// Multicall3 `Call3[]`: (address target, bool allowFailure, bytes callData)[]
+		let calls = format_token_value(&DynSolValue::Array(vec![
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(target),
+				DynSolValue::Bool(false),
+				DynSolValue::Bytes(vec![0x21, 0xc0, 0xb3, 0x42]),
+			]),
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(Address::ZERO),
+				DynSolValue::Bool(true),
+				DynSolValue::Bytes(vec![]),
+			]),
+		]));
+		let contains = |kind: &str, value: &str, needle: &str| {
+			evaluator
+				.compare_final_values(
+					kind,
+					value,
+					&ComparisonOperator::Contains,
+					&LiteralValue::Str(needle),
+				)
+				.unwrap()
+		};
+
+		assert!(contains("tuple[]", &calls, &target.to_string()));
+		assert!(contains("tuple[]", &calls, "0x21c0b342"));
+		assert!(!contains(
+			"tuple[]",
+			&calls,
+			"0x0000000000000000000000000000000000000001"
+		));
+		let calls_as_json = calls.replace('(', "[").replace(')', "]");
+		for rhs in [calls.as_str(), calls_as_json.as_str()] {
+			assert!(evaluator
+				.compare_final_values(
+					"tuple[]",
+					&calls,
+					&ComparisonOperator::Eq,
+					&LiteralValue::Str(rhs)
+				)
+				.unwrap());
+		}
+
+		let pairs = format_token_value(&DynSolValue::FixedArray(vec![
+			DynSolValue::Tuple(vec![
+				DynSolValue::String("a".to_string()),
+				DynSolValue::Tuple(vec![DynSolValue::Bool(true)]),
+			]),
+			DynSolValue::Tuple(vec![
+				DynSolValue::String("b".to_string()),
+				DynSolValue::Tuple(vec![DynSolValue::Bool(false)]),
+			]),
+		]));
+		assert!(contains("tuple[2]", &pairs, "b"));
+
+		// Parentheses inside strings are left alone
+		let strings = format_token_value(&DynSolValue::Array(vec![
+			DynSolValue::String("f(x)".to_string()),
+			DynSolValue::String("g".to_string()),
+		]));
+		assert!(contains("string[]", &strings, "f(x)"));
+		assert!(!contains("string[]", &strings, "f[x]"));
 	}
 
 	#[test]

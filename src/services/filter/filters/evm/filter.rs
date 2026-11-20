@@ -2103,6 +2103,82 @@ mod tests {
 	}
 
 	#[test]
+	fn test_find_matching_functions_tuple_array_input() {
+		let filter = create_test_filter();
+		let multicall = "0xcA11bde05977b3631167028862bE2a173976CA11";
+		let abi = json!([{
+			"type": "function",
+			"name": "aggregate3",
+			"stateMutability": "payable",
+			"inputs": [{
+				"name": "calls",
+				"type": "tuple[]",
+				"components": [
+					{"name": "target", "type": "address"},
+					{"name": "allowFailure", "type": "bool"},
+					{"name": "callData", "type": "bytes"}
+				]
+			}],
+			"outputs": [{
+				"name": "returnData",
+				"type": "tuple[]",
+				"components": [
+					{"name": "success", "type": "bool"},
+					{"name": "returnData", "type": "bytes"}
+				]
+			}]
+		}]);
+		let function: Function = serde_json::from_value(abi[0].clone()).unwrap();
+		let target = Address::repeat_byte(0x12);
+		let calls = DynSolValue::Array(vec![DynSolValue::Tuple(vec![
+			DynSolValue::Address(target),
+			DynSolValue::Bool(false),
+			DynSolValue::Bytes(vec![0x21, 0xc0, 0xb3, 0x42]),
+		])]);
+		let transaction = TransactionBuilder::new()
+			.to(Address::from_str(multicall).unwrap())
+			.input(Bytes(function.abi_encode_input(&[calls]).unwrap().into()))
+			.build();
+		let contract_with_spec = (multicall.to_string(), EVMContractSpec::from(abi));
+
+		for (expression, expected_matches) in [
+			(format!("calls contains {target}"), 1),
+			(
+				"calls contains 0x0000000000000000000000000000000000000001".to_string(),
+				0,
+			),
+		] {
+			let monitor = create_test_monitor(
+				vec![],
+				vec![FunctionCondition {
+					signature: "aggregate3((address,bool,bytes)[])".to_string(),
+					expression: Some(expression.clone()),
+				}],
+				vec![],
+				vec![create_test_address(
+					multicall,
+					Some(ContractSpec::EVM(contract_with_spec.1.clone())),
+				)],
+			);
+			let mut matched_functions = Vec::new();
+			let mut matched_on_args = EVMMatchArguments {
+				events: None,
+				functions: Some(Vec::new()),
+			};
+
+			filter.find_matching_functions_for_transaction(
+				std::slice::from_ref(&contract_with_spec),
+				&transaction,
+				&monitor,
+				&mut matched_functions,
+				&mut matched_on_args,
+			);
+
+			assert_eq!(matched_functions.len(), expected_matches, "{expression}");
+		}
+	}
+
+	#[test]
 	fn test_find_matching_functions_non_matching_address() {
 		let filter = create_test_filter();
 		let mut matched_functions = Vec::new();
@@ -2608,6 +2684,67 @@ mod tests {
 		assert!(filter.evaluate_expression("tick < -887000", &args).unwrap());
 		assert!(filter.evaluate_expression("fee == 3000", &args).unwrap());
 		assert!(!filter.evaluate_expression("fee == 500", &args).unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expression_fixed_size_array_event_param() {
+		let filter = create_test_filter();
+		// Curve 3pool `AddLiquidity` event
+		let abi = json!([{
+			"type": "event",
+			"name": "AddLiquidity",
+			"anonymous": false,
+			"inputs": [
+				{"name": "provider", "type": "address", "indexed": true},
+				{"name": "token_amounts", "type": "uint256[3]", "indexed": false},
+				{"name": "fees", "type": "uint256[3]", "indexed": false},
+				{"name": "invariant", "type": "uint256", "indexed": false},
+				{"name": "token_supply", "type": "uint256", "indexed": false}
+			]
+		}]);
+		let event: alloy::json_abi::Event = serde_json::from_value(abi[0].clone()).unwrap();
+		let provider = Address::from_str("0x0000000000000000000000000000000000001234").unwrap();
+		let data: String = [0u64, 0, 1216420971, 1, 2, 3, 4, 5]
+			.iter()
+			.map(|word| format!("{word:064x}"))
+			.collect();
+		let log = EVMReceiptLog {
+			address: Address::from_str("0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7").unwrap(),
+			topics: vec![
+				event.selector(),
+				B256::from_slice(&[&[0u8; 12], provider.as_slice()].concat()),
+			],
+			data: Bytes(hex::decode(data).unwrap().into()),
+			block_hash: None,
+			block_number: None,
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: Some(U256::from(0)),
+			transaction_log_index: Some(U256::from(0)),
+			log_type: None,
+			removed: Some(false),
+		};
+
+		let decoded = filter
+			.decode_events(&ContractSpec::EVM(EVMContractSpec::from(abi)), &log)
+			.unwrap();
+		let args = decoded.args.unwrap();
+		let amounts = args.iter().find(|p| p.name == "token_amounts").unwrap();
+		assert_eq!(amounts.kind, "uint256[3]");
+		assert_eq!(amounts.value, "[0,0,1216420971]");
+
+		assert!(filter
+			.evaluate_expression("token_amounts contains 1216420971", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression("token_amounts contains 7", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(r#"token_amounts == "[0,0,1216420971]""#, &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression("token_amounts[2] == 1216420971", &args)
+			.unwrap());
 	}
 
 	#[test]
