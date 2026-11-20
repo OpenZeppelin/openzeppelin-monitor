@@ -855,9 +855,13 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 
 #[cfg(test)]
 mod tests {
+	use super::super::helpers::format_token_value;
 	use super::*;
 	use crate::services::filter::expression::LiteralValue;
-	use alloy::primitives::U256;
+	use alloy::{
+		dyn_abi::DynSolValue,
+		primitives::{Address, B256, I256, U256},
+	};
 	use serde_json::json;
 
 	// Helper to create a dummy EVMConditionEvaluator (args don't matter for these unit tests)
@@ -2060,12 +2064,6 @@ mod tests {
 
 	#[test]
 	fn test_compare_final_values_fixed_size_and_nested_arrays() {
-		use super::super::helpers::format_token_value;
-		use alloy::{
-			dyn_abi::DynSolValue,
-			primitives::{Address, B256, I256},
-		};
-
 		let evaluator = create_evaluator();
 		let uint = |n: u64| DynSolValue::Uint(U256::from(n), 256);
 		let address = Address::repeat_byte(0x12);
@@ -2179,9 +2177,6 @@ mod tests {
 
 	#[test]
 	fn test_compare_final_values_tuple_arrays() {
-		use super::super::helpers::format_token_value;
-		use alloy::{dyn_abi::DynSolValue, primitives::Address};
-
 		let evaluator = create_evaluator();
 		let target = Address::repeat_byte(0x12);
 		// Multicall3 `Call3[]`: (address target, bool allowFailure, bytes callData)[]

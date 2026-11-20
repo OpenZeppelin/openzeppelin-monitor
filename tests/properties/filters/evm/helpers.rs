@@ -304,6 +304,8 @@ prop_compose! {
 			Just("int128[]"), Just("int256[]"), Just("uint24[]"), Just("int24[]"), Just("string[]"),
 			Just("address[]"), Just("bool[]"), Just("fixed[]"), Just("ufixed[]"),
 			Just("bytes[]"), Just("bytes32[]"), Just("tuple[]"),
+			Just("uint256[3]"), Just("int24[2]"), Just("address[2]"), Just("tuple[2]"),
+			Just("uint256[][]"), Just("uint256[2][]"),
 			// Other types
 			Just("address"), Just("string"),
 			Just("bytes"), Just("bytes32"), Just("bool"),
@@ -470,7 +472,7 @@ proptest! {
 			"address" => evaluator.compare_address(&value, &operator, &literal),
 			"string" | "bytes" | "bytes32" => evaluator.compare_string(&value, &operator, &literal),
 			"bool" => evaluator.compare_boolean(&value, &operator, &literal),
-			k if k.ends_with("[]") || k == "array" => {
+			k if k.ends_with(']') || k == "array" => {
 				evaluator.compare_array(&value, &operator, &literal)
 			},
 			_ => {
@@ -510,7 +512,8 @@ proptest! {
 			  "address", "string", "bytes", "bytes32", "bool",
 			  "array", "uint8[]", "uint16[]", "uint32[]", "uint64[]", "uint128[]", "uint256[]",
 			  "int8[]", "int16[]", "int32[]", "int64[]", "int128[]", "int256[]",
-			  "uint24[]", "int24[]", "string[]", "address[]", "bool[]", "bytes[]", "bytes32[]", "tuple[]"].contains(&base_kind.as_str()) {
+			  "uint24[]", "int24[]", "string[]", "address[]", "bool[]", "bytes[]", "bytes32[]", "tuple[]",
+			  "uint256[3]", "int24[2]", "address[2]", "tuple[2]", "uint256[][]", "uint256[2][]"].contains(&base_kind.as_str()) {
 			return Ok(());
 		}
 
