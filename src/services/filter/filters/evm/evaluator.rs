@@ -468,9 +468,19 @@ impl<'a> EVMConditionEvaluator<'a> {
 		let chars = tuple_str.chars().peekable();
 		let mut in_quotes = false;
 		let mut quote_char = None;
+		let mut escaped = false;
 
 		for ch in chars {
 			match ch {
+				// The character after a backslash inside quotes is part of the string.
+				_ if escaped => {
+					escaped = false;
+					result.push(ch);
+				}
+				'\\' if in_quotes => {
+					escaped = true;
+					result.push(ch);
+				}
 				'"' | '\'' if !in_quotes => {
 					in_quotes = true;
 					quote_char = Some(ch);
@@ -2670,6 +2680,12 @@ mod tests {
 				"(123, (456, \"test string\", \"hello world 2\"), 789)"
 			),
 			"(123,(456,\"test string\",\"hello world 2\"),789)"
+		);
+
+		// Escaped quotes and backslashes inside strings
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace(r#"("a\" b", "c\\", d)"#),
+			r#"("a\" b","c\\",d)"#
 		);
 	}
 }
