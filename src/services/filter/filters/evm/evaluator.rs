@@ -2338,6 +2338,42 @@ mod tests {
 	}
 
 	#[test]
+	fn test_compare_final_values_tuple_array_strings_with_special_characters() {
+		let evaluator = create_evaluator();
+		let owner = Address::repeat_byte(0x12);
+		let injected = Address::repeat_byte(0x34);
+		let label = format!("x\",\"{injected}");
+		// (address owner, string label)[]
+		let entries = format_token_value(&DynSolValue::Array(vec![
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(owner),
+				DynSolValue::String(label.clone()),
+			]),
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(Address::ZERO),
+				DynSolValue::String("c\\".to_string()),
+			]),
+		]));
+		let contains = |needle: &str| {
+			evaluator
+				.compare_final_values(
+					"tuple[]",
+					&entries,
+					&ComparisonOperator::Contains,
+					&LiteralValue::Str(needle),
+				)
+				.unwrap()
+		};
+
+		assert!(contains(&owner.to_string()));
+		assert!(contains(&Address::ZERO.to_string()));
+		assert!(contains(&label));
+		assert!(contains("c\\"));
+		// A string field can't add elements to the tuple
+		assert!(!contains(&injected.to_string()));
+	}
+
+	#[test]
 	fn test_compare_final_values_error() {
 		let evaluator = create_evaluator();
 
