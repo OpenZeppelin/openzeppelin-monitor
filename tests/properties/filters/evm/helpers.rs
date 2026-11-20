@@ -390,6 +390,19 @@ proptest! {
 		}
 	}
 
+	/// Property: any string in a `string[]` stays one element and `contains` finds it.
+	#[test]
+	fn prop_string_array_element_round_trips(s in any::<String>()) {
+		let formatted = format_token_value(&DynSolValue::Array(vec![DynSolValue::String(s.clone())]));
+
+		let parsed: Result<Vec<serde_json::Value>, _> = serde_json::from_str(&formatted);
+		prop_assert_eq!(parsed.ok(), Some(vec![json!(s)]));
+
+		let evaluator = create_evaluator();
+		let found = evaluator.compare_array(&formatted, &ComparisonOperator::Contains, &LiteralValue::Str(&s));
+		prop_assert_eq!(found.ok(), Some(true));
+	}
+
 	#[test]
 	fn test_string_to_h256_valid_input(
 		hex_string in generate_valid_hex_string()

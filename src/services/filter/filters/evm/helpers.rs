@@ -156,7 +156,7 @@ pub fn format_token_value(token: &DynSolValue) -> String {
 pub fn dyn_value_to_string(val: &DynSolValue) -> String {
 	match val {
 		DynSolValue::Bool(b) => b.to_string(),
-		DynSolValue::String(s) => format!("\"{}\"", s),
+		DynSolValue::String(s) => serde_json::Value::from(s.as_str()).to_string(),
 		DynSolValue::Address(addr) => format!("\"0x{:x}\"", addr),
 		DynSolValue::Uint(u, _) => u.to_string(),
 		DynSolValue::Int(i, _) => i.to_string(),
@@ -578,6 +578,10 @@ mod tests {
 		assert_eq!(
 			dyn_value_to_string(&DynSolValue::String("".to_string())),
 			"\"\""
+		);
+		assert_eq!(
+			dyn_value_to_string(&DynSolValue::String("a\"b\\c\nd".to_string())),
+			r#""a\"b\\c\nd""#
 		);
 
 		// Test Address values

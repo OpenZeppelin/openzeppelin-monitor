@@ -2305,6 +2305,66 @@ mod tests {
 		assert_eq!(matched_functions.len(), 0);
 	}
 
+	#[test]
+	fn test_find_matching_functions_string_array_with_special_characters() {
+		let filter = create_test_filter();
+		let contract = "0x0000000000000000000000000000000000004321";
+		let abi = json!([{
+			"type": "function",
+			"name": "setNames",
+			"stateMutability": "nonpayable",
+			"inputs": [{"name": "names", "type": "string[]"}],
+			"outputs": []
+		}]);
+		let function: Function = serde_json::from_value(abi[0].clone()).unwrap();
+		let names = DynSolValue::Array(
+			["a\"b", "c\\d", "plain"]
+				.into_iter()
+				.map(|s| DynSolValue::String(s.to_string()))
+				.collect(),
+		);
+		let transaction = TransactionBuilder::new()
+			.to(Address::from_str(contract).unwrap())
+			.input(Bytes(function.abi_encode_input(&[names]).unwrap().into()))
+			.build();
+		let contract_with_spec = (contract.to_string(), EVMContractSpec::from(abi));
+
+		for (expression, expected_matches) in [
+			("names contains 'plain'", 1),
+			("names contains 'a\"b'", 1),
+			("names[0] == 'a\"b'", 1),
+			("names contains 'missing'", 0),
+		] {
+			let monitor = create_test_monitor(
+				vec![],
+				vec![FunctionCondition {
+					signature: "setNames(string[])".to_string(),
+					expression: Some(expression.to_string()),
+				}],
+				vec![],
+				vec![create_test_address(
+					contract,
+					Some(ContractSpec::EVM(contract_with_spec.1.clone())),
+				)],
+			);
+			let mut matched_functions = Vec::new();
+			let mut matched_on_args = EVMMatchArguments {
+				events: None,
+				functions: Some(Vec::new()),
+			};
+
+			filter.find_matching_functions_for_transaction(
+				std::slice::from_ref(&contract_with_spec),
+				&transaction,
+				&monitor,
+				&mut matched_functions,
+				&mut matched_on_args,
+			);
+
+			assert_eq!(matched_functions.len(), expected_matches, "{expression}");
+		}
+	}
+
 	//////////////////////////////////////////////////////////////////////////////
 	// Test cases for find_matching_events_for_transaction method:
 	//////////////////////////////////////////////////////////////////////////////
