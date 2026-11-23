@@ -12,6 +12,11 @@ fn create_evaluator() -> StellarConditionEvaluator<'static> {
 	StellarConditionEvaluator::new(EMPTY_ARGS)
 }
 
+/// A JSON literal as the expression parser returns it, with backslashes escaped
+fn as_literal(s: &str) -> &'static str {
+	Box::leak(s.replace('\\', r"\\").into_boxed_str())
+}
+
 // Strategy for generating various JSON string values
 prop_compose! {
 	fn arb_json_string()(
@@ -643,7 +648,7 @@ proptest! {
 		]
 	) {
 		let evaluator = create_evaluator();
-		let leaked_content = Box::leak(vec_content.clone().into_boxed_str());
+		let leaked_content = as_literal(&vec_content);
 
 		// A vec should equal itself
 		let result = evaluator.compare_vec(
@@ -679,7 +684,7 @@ proptest! {
 		let parsed: JsonValue = serde_json::from_str(&array1).unwrap();
 		let array2 = serde_json::to_string_pretty(&parsed).unwrap();
 
-		let leaked_array2 = Box::leak(array2.clone().into_boxed_str());
+		let leaked_array2 = as_literal(&array2);
 		let result = evaluator.compare_vec(
 			&array1,
 			&ComparisonOperator::Eq,
@@ -697,7 +702,7 @@ proptest! {
 			)).unwrap();
 
 			if array1 != array3 {  // Only test if actually different
-				let leaked_array3 = Box::leak(array3.clone().into_boxed_str());
+				let leaked_array3 = as_literal(&array3);
 				let result_diff_order = evaluator.compare_vec(
 					&array1,
 					&ComparisonOperator::Eq,
@@ -1156,7 +1161,7 @@ proptest! {
 		json_map in arb_json_map()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_map = Box::leak(json_map.clone().into_boxed_str());
+		let leaked_map = as_literal(&json_map);
 
 		// Map should equal itself
 		let result_eq = evaluator.compare_map(
@@ -1201,7 +1206,7 @@ proptest! {
 		let json1 = serde_json::to_string(&JsonValue::Object(map1)).unwrap();
 		let json2 = serde_json::to_string_pretty(&JsonValue::Object(map2)).unwrap();
 
-		let leaked_json2 = Box::leak(json2.clone().into_boxed_str());
+		let leaked_json2 = as_literal(&json2);
 
 		let result = evaluator.compare_map(
 			&json1,
@@ -1240,7 +1245,7 @@ proptest! {
 			fields2.into_iter().map(|(k, v)| (k, json!(v))).collect()
 		)).unwrap();
 
-		let leaked_map2 = Box::leak(map2.clone().into_boxed_str());
+		let leaked_map2 = as_literal(&map2);
 
 		let eq_result = evaluator.compare_map(
 			&map1,
@@ -1317,7 +1322,7 @@ proptest! {
 		valid_map in arb_json_map()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_valid = Box::leak(valid_map.clone().into_boxed_str());
+		let leaked_valid = as_literal(&valid_map);
 
 		// Test invalid LHS
 		let result_lhs = evaluator.compare_map(

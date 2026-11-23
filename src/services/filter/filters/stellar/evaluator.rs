@@ -5,11 +5,12 @@ use super::helpers;
 use crate::{
 	models::StellarMatchParamEntry,
 	services::filter::expression::{
-		compare_ordered_values, ComparisonOperator, ConditionEvaluator, EvaluationError,
-		LiteralValue,
+		compare_ordered_values, unescape_literal, ComparisonOperator, ConditionEvaluator,
+		EvaluationError, LiteralValue,
 	},
 };
 use serde_json::Value as JsonValue;
+use std::borrow::Cow;
 
 pub type StellarArgs = [StellarMatchParamEntry];
 
@@ -80,9 +81,9 @@ impl<'a> StellarConditionEvaluator<'a> {
 		operator: &ComparisonOperator,
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
-		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
-			LiteralValue::Number(s) => *s,
+		let rhs_target = match rhs_literal {
+			LiteralValue::Str(s) => unescape_literal(s),
+			LiteralValue::Number(s) => Cow::Borrowed(*s),
 			_ => {
 				let msg = format!(
 					"Expected string or number literal for 'vec' comparison, found: {:?}",
@@ -91,6 +92,7 @@ impl<'a> StellarConditionEvaluator<'a> {
 				return Err(EvaluationError::type_mismatch(msg, None, None));
 			}
 		};
+		let rhs_target_str: &str = &rhs_target;
 
 		tracing::debug!(
 			"Comparing vec: lhs: '{}', operator: {:?}, rhs: '{}'",
@@ -290,8 +292,8 @@ impl<'a> StellarConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let right = match rhs_literal {
-			LiteralValue::Number(s) => s,
-			LiteralValue::Str(s) => s,
+			LiteralValue::Number(s) => Cow::Borrowed(*s),
+			LiteralValue::Str(s) => unescape_literal(s),
 			_ => {
 				let msg = format!(
 					"Expected number or string literal for i256 comparison, found: {:?}",
@@ -308,8 +310,8 @@ impl<'a> StellarConditionEvaluator<'a> {
 		);
 
 		match operator {
-			ComparisonOperator::Eq => Ok(lhs_str == *right),
-			ComparisonOperator::Ne => Ok(lhs_str != *right),
+			ComparisonOperator::Eq => Ok(lhs_str == right),
+			ComparisonOperator::Ne => Ok(lhs_str != right),
 			_ => {
 				let msg = format!(
 					"Operator {:?} not supported for i256 string comparison",
@@ -340,8 +342,8 @@ impl<'a> StellarConditionEvaluator<'a> {
 		operator: &ComparisonOperator,
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
-		let right_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+		let right = match rhs_literal {
+			LiteralValue::Str(s) => unescape_literal(s),
 			_ => {
 				let msg = format!(
 					"Expected string literal for {} comparison, found: {:?}",
@@ -350,6 +352,7 @@ impl<'a> StellarConditionEvaluator<'a> {
 				return Err(EvaluationError::type_mismatch(msg, None, None));
 			}
 		};
+		let right_str: &str = &right;
 
 		// Normalize based on kind
 		let left_normalized;
@@ -406,11 +409,11 @@ impl<'a> StellarConditionEvaluator<'a> {
 		operator: &ComparisonOperator,
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
-		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+		let rhs_target = match rhs_literal {
+			LiteralValue::Str(s) => unescape_literal(s),
 			LiteralValue::Number(s) => {
 				if *operator == ComparisonOperator::Contains {
-					*s // For Contains, we search for this number (as string)
+					Cow::Borrowed(*s) // For Contains, we search for this number (as string)
 				} else {
 					let msg = format!(
 						"Expected string literal (representing a JSON map) for EVM 'map' Eq/Ne comparison, found number: {:?}",
@@ -432,6 +435,7 @@ impl<'a> StellarConditionEvaluator<'a> {
 				return Err(EvaluationError::type_mismatch(msg, None, None));
 			}
 		};
+		let rhs_target_str: &str = &rhs_target;
 
 		tracing::debug!(
 			"EVM Comparing map: lhs: '{}', operator: {:?}, rhs_target: '{}'",
@@ -582,6 +586,7 @@ impl ConditionEvaluator for StellarConditionEvaluator<'_> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::services::filter::expression::{evaluate, parse};
 
 	// Helper to create a dummy StellarConditionEvaluator (args don't matter for these unit tests)
 	fn create_evaluator() -> StellarConditionEvaluator<'static> {
@@ -1708,5 +1713,35 @@ mod tests {
 				&LiteralValue::Str("d")
 			)
 			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expressions_with_escaped_literals() {
+		let param = |name: &str, value: &str, kind: &str| StellarMatchParamEntry {
+			name: name.to_string(),
+			value: value.to_string(),
+			kind: kind.to_string(),
+			indexed: false,
+		};
+		let args = vec![
+			param("label", "it's", "string"),
+			param("path", "c\\d", "string"),
+			param("tags", r#"["c\\d","x"]"#, "vec"),
+		];
+		let evaluator = StellarConditionEvaluator::new(&args);
+
+		for (expression, expected) in [
+			(r"label == 'it\'s'", true),
+			(r"path == 'c\\d'", true),
+			(r"path == 'c\\\\d'", false),
+			(r"tags contains 'c\\d'", true),
+		] {
+			let ast = parse(expression).unwrap();
+			assert_eq!(
+				evaluate(&ast, &evaluator).unwrap(),
+				expected,
+				"{expression}"
+			);
+		}
 	}
 }
