@@ -430,6 +430,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		let mut depth = 0;
 		let mut in_quotes = false;
 		let mut quote_char = None;
+		let mut escaped = false;
 
 		while let Some(&ch) = chars.peek() {
 			// If we're at depth 0, not in quotes, and see a comma, we're done with this element
@@ -441,18 +442,16 @@ impl<'a> EVMConditionEvaluator<'a> {
 			current.push(ch);
 
 			match ch {
+				// The character after a backslash inside quotes is part of the string.
+				_ if escaped => escaped = false,
+				'\\' if in_quotes => escaped = true,
 				'"' | '\'' => {
 					if !in_quotes {
 						in_quotes = true;
 						quote_char = Some(ch);
 					} else if quote_char == Some(ch) {
-						// Check if it's escaped - check the character before the quote
-						let prev_is_escape =
-							current.len() >= 2 && current.chars().rev().nth(1) == Some('\\');
-						if !prev_is_escape {
-							in_quotes = false;
-							quote_char = None;
-						}
+						in_quotes = false;
+						quote_char = None;
 					}
 				}
 				'[' | '{' | '(' if !in_quotes => depth += 1,
@@ -469,9 +468,19 @@ impl<'a> EVMConditionEvaluator<'a> {
 		let chars = tuple_str.chars().peekable();
 		let mut in_quotes = false;
 		let mut quote_char = None;
+		let mut escaped = false;
 
 		for ch in chars {
 			match ch {
+				// The character after a backslash inside quotes is part of the string.
+				_ if escaped => {
+					escaped = false;
+					result.push(ch);
+				}
+				'\\' if in_quotes => {
+					escaped = true;
+					result.push(ch);
+				}
 				'"' | '\'' if !in_quotes => {
 					in_quotes = true;
 					quote_char = Some(ch);
@@ -1911,6 +1920,91 @@ mod tests {
 		));
 	}
 
+	#[test]
+	fn test_compare_array_strings_with_special_characters() {
+		let evaluator = create_evaluator();
+		let strings = ["a\"b", "c\\d", "e\nf", "plain"];
+		let lhs = format_token_value(&DynSolValue::Array(
+			strings
+				.iter()
+				.map(|s| DynSolValue::String(s.to_string()))
+				.collect(),
+		));
+
+		for s in strings {
+			assert!(
+				evaluator
+					.compare_array(&lhs, &ComparisonOperator::Contains, &LiteralValue::Str(s))
+					.unwrap(),
+				"{lhs} should contain {s:?}"
+			);
+		}
+		assert!(!evaluator
+			.compare_array(
+				&lhs,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("missing")
+			)
+			.unwrap());
+
+		let rhs = serde_json::to_string(&strings).unwrap();
+		assert!(evaluator
+			.compare_array(&lhs, &ComparisonOperator::Eq, &LiteralValue::Str(&rhs))
+			.unwrap());
+
+		// A string can't add elements to the array.
+		let address = "0x0000000000000000000000000000000000000001";
+		let lhs = format_token_value(&DynSolValue::Array(vec![DynSolValue::String(format!(
+			"x\",\"{address}"
+		))]));
+		assert!(!evaluator
+			.compare_array(
+				&lhs,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str(address)
+			)
+			.unwrap());
+	}
+
+	#[test]
+	fn test_compare_tuple_strings_with_special_characters() {
+		let evaluator = create_evaluator();
+		let lhs = format_token_value(&DynSolValue::Tuple(vec![
+			DynSolValue::String("x\",y".to_string()),
+			DynSolValue::Bool(true),
+		]));
+
+		assert!(evaluator
+			.compare_tuple(
+				&lhs,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("x\",y")
+			)
+			.unwrap());
+		assert!(!evaluator
+			.compare_tuple(&lhs, &ComparisonOperator::Contains, &LiteralValue::Str("y"))
+			.unwrap());
+
+		let lhs = format_token_value(&DynSolValue::Tuple(vec![
+			DynSolValue::String("c\\".to_string()),
+			DynSolValue::Bool(true),
+		]));
+		assert!(evaluator
+			.compare_tuple(
+				&lhs,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("c\\")
+			)
+			.unwrap());
+		assert!(evaluator
+			.compare_tuple(
+				&lhs,
+				&ComparisonOperator::Contains,
+				&LiteralValue::Str("true")
+			)
+			.unwrap());
+	}
+
 	/// --- Test cases for compare_final_values ---
 	#[test]
 	fn test_compare_final_values_routing() {
@@ -2241,6 +2335,42 @@ mod tests {
 		]));
 		assert!(contains("string[]", &strings, "f(x)"));
 		assert!(!contains("string[]", &strings, "f[x]"));
+	}
+
+	#[test]
+	fn test_compare_final_values_tuple_array_strings_with_special_characters() {
+		let evaluator = create_evaluator();
+		let owner = Address::repeat_byte(0x12);
+		let injected = Address::repeat_byte(0x34);
+		let label = format!("x\",\"{injected}");
+		// (address owner, string label)[]
+		let entries = format_token_value(&DynSolValue::Array(vec![
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(owner),
+				DynSolValue::String(label.clone()),
+			]),
+			DynSolValue::Tuple(vec![
+				DynSolValue::Address(Address::ZERO),
+				DynSolValue::String("c\\".to_string()),
+			]),
+		]));
+		let contains = |needle: &str| {
+			evaluator
+				.compare_final_values(
+					"tuple[]",
+					&entries,
+					&ComparisonOperator::Contains,
+					&LiteralValue::Str(needle),
+				)
+				.unwrap()
+		};
+
+		assert!(contains(&owner.to_string()));
+		assert!(contains(&Address::ZERO.to_string()));
+		assert!(contains(&label));
+		assert!(contains("c\\"));
+		// A string field can't add elements to the tuple
+		assert!(!contains(&injected.to_string()));
 	}
 
 	#[test]
@@ -2586,6 +2716,12 @@ mod tests {
 				"(123, (456, \"test string\", \"hello world 2\"), 789)"
 			),
 			"(123,(456,\"test string\",\"hello world 2\"),789)"
+		);
+
+		// Escaped quotes and backslashes inside strings
+		assert_eq!(
+			evaluator.normalize_tuple_whitespace(r#"("a\" b", "c\\", d)"#),
+			r#"("a\" b","c\\",d)"#
 		);
 	}
 }
