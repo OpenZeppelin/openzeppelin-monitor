@@ -4,10 +4,11 @@
 use crate::{
 	models::SolanaMatchParamEntry,
 	services::filter::expression::{
-		compare_ordered_values, ComparisonOperator, ConditionEvaluator, EvaluationError,
-		LiteralValue,
+		compare_ordered_values, unescape_literal, ComparisonOperator, ConditionEvaluator,
+		EvaluationError, LiteralValue,
 	},
 };
+use std::borrow::Cow;
 
 pub type SolanaArgs = [SolanaMatchParamEntry];
 
@@ -37,9 +38,9 @@ impl<'a> SolanaConditionEvaluator<'a> {
 		operator: &ComparisonOperator,
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
-		let rhs_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
-			LiteralValue::Number(n) => *n,
+		let rhs = match rhs_literal {
+			LiteralValue::Str(s) => unescape_literal(s),
+			LiteralValue::Number(n) => Cow::Borrowed(*n),
 			_ => {
 				return Err(EvaluationError::type_mismatch(
 					format!("Expected string for comparison, got {:?}", rhs_literal),
@@ -48,6 +49,7 @@ impl<'a> SolanaConditionEvaluator<'a> {
 				))
 			}
 		};
+		let rhs_str: &str = &rhs;
 
 		match operator {
 			ComparisonOperator::Eq => Ok(lhs_str == rhs_str),
@@ -81,13 +83,16 @@ impl<'a> SolanaConditionEvaluator<'a> {
 
 		let rhs_bool = match rhs_literal {
 			LiteralValue::Bool(b) => *b,
-			LiteralValue::Str(s) => s.parse::<bool>().map_err(|_| {
-				EvaluationError::type_mismatch(
-					format!("Cannot parse '{}' as boolean", s),
-					None,
-					None,
-				)
-			})?,
+			LiteralValue::Str(s) => {
+				let s = unescape_literal(s);
+				s.parse::<bool>().map_err(|_| {
+					EvaluationError::type_mismatch(
+						format!("Cannot parse '{}' as boolean", s),
+						None,
+						None,
+					)
+				})?
+			}
 			_ => {
 				return Err(EvaluationError::type_mismatch(
 					format!("Expected boolean for comparison, got {:?}", rhs_literal),
@@ -134,8 +139,8 @@ impl ConditionEvaluator for SolanaConditionEvaluator<'_> {
 			// Unsigned numeric types
 			"u8" | "u16" | "u32" | "u64" | "u128" => {
 				let rhs_str = match right_literal {
-					LiteralValue::Number(n) => *n,
-					LiteralValue::Str(s) => *s,
+					LiteralValue::Number(n) => Cow::Borrowed(*n),
+					LiteralValue::Str(s) => unescape_literal(s),
 					_ => {
 						return Err(EvaluationError::type_mismatch(
 							format!("Expected number for comparison, got {:?}", right_literal),
@@ -163,8 +168,8 @@ impl ConditionEvaluator for SolanaConditionEvaluator<'_> {
 			// Signed numeric types
 			"i8" | "i16" | "i32" | "i64" | "i128" => {
 				let rhs_str = match right_literal {
-					LiteralValue::Number(n) => *n,
-					LiteralValue::Str(s) => *s,
+					LiteralValue::Number(n) => Cow::Borrowed(*n),
+					LiteralValue::Str(s) => unescape_literal(s),
 					_ => {
 						return Err(EvaluationError::type_mismatch(
 							format!("Expected number for comparison, got {:?}", right_literal),
@@ -224,6 +229,7 @@ impl ConditionEvaluator for SolanaConditionEvaluator<'_> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::services::filter::expression::{evaluate, parse};
 
 	fn create_test_args() -> Vec<SolanaMatchParamEntry> {
 		vec![
@@ -1061,5 +1067,30 @@ mod tests {
 				&LiteralValue::Str("false")
 			)
 			.unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_expressions_with_escaped_literals() {
+		let param = |name: &str, value: &str| SolanaMatchParamEntry {
+			name: name.to_string(),
+			value: value.to_string(),
+			kind: "string".to_string(),
+			indexed: false,
+		};
+		let args = vec![param("label", "it's"), param("path", "c\\d")];
+		let evaluator = SolanaConditionEvaluator::new(&args);
+
+		for (expression, expected) in [
+			(r"label == 'it\'s'", true),
+			(r"path == 'c\\d'", true),
+			(r"path == 'c\\\\d'", false),
+		] {
+			let ast = parse(expression).unwrap();
+			assert_eq!(
+				evaluate(&ast, &evaluator).unwrap(),
+				expected,
+				"{expression}"
+			);
+		}
 	}
 }
