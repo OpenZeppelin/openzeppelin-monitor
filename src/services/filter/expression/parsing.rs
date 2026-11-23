@@ -6,9 +6,10 @@ use super::ast::{
 	Accessor, ComparisonOperator, Condition, ConditionLeft, Expression, LiteralValue,
 	LogicalOperator, VariablePath,
 };
+use std::borrow::Cow;
 use winnow::{
-	ascii::{digit1, space0, space1, Caseless},
-	combinator::{alt, delimited, eof, opt, peek, repeat, Repeat},
+	ascii::{digit1, escaped, space0, space1, take_escaped, Caseless},
+	combinator::{alt, delimited, eof, opt, peek, repeat, terminated},
 	error::{ContextError, ErrMode, ParseError, StrContext, StrContextValue},
 	prelude::*,
 	token::{literal, one_of, take_while},
@@ -102,19 +103,30 @@ fn parse_hex_string<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'a>>
 		.parse_next(input)
 }
 
-/// Parses string literals enclosed in single or double quotes into `LiteralValue::Str`
+/// The escapes allowed in quoted strings: the character after `\` and what it means
+fn escaped_char(c: char) -> Option<char> {
+	match c {
+		'\'' => Some('\''),
+		'"' => Some('"'),
+		'\\' => Some('\\'),
+		'n' => Some('\n'),
+		't' => Some('\t'),
+		_ => None,
+	}
+}
+
+/// Parses string literals enclosed in single or double quotes into `LiteralValue::Str`.
+/// Escapes are checked but kept as written; read the value with `unescape_literal`.
 fn parse_quoted_string<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'a>> {
 	// Match and consume opening quote, remember which one it was.
 	let open_quote: char = one_of(['\'', '"']).parse_next(input)?;
 
-	let character_or_escape_sequence = alt((
-		(literal("\\"), one_of([open_quote, '\\'])).void(),
-		take_while(1.., move |c: char| c != open_quote && c != '\\').void(),
-	));
-
-	let inner_parser: Repeat<_, &_, _, (), _> = repeat(0.., character_or_escape_sequence);
-
-	let string_content_slice: &'a str = inner_parser.take().parse_next(input)?;
+	let string_content_slice: &'a str = take_escaped(
+		take_while(1.., move |c: char| c != open_quote && c != '\\'),
+		'\\',
+		one_of(|c: char| escaped_char(c).is_some()),
+	)
+	.parse_next(input)?;
 
 	literal(open_quote)
 		.context(StrContext::Expected(StrContextValue::Description(
@@ -123,6 +135,24 @@ fn parse_quoted_string<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'
 		.parse_next(input)?;
 
 	Ok(LiteralValue::Str(string_content_slice))
+}
+
+/// Decodes `\'`, `\"`, `\\`, `\n` and `\t` in a quoted string literal.
+/// Returns the input unchanged if it has an escape the parser would reject.
+pub fn unescape_literal(raw: &str) -> Cow<'_, str> {
+	if !raw.contains('\\') {
+		return Cow::Borrowed(raw);
+	}
+	terminated(
+		escaped(
+			take_while(1.., |c: char| c != '\\'),
+			'\\',
+			winnow::token::any::<_, ContextError>.verify_map(escaped_char),
+		),
+		eof,
+	)
+	.parse(raw)
+	.map_or(Cow::Borrowed(raw), Cow::Owned)
 }
 
 /// Fallback parser for unquoted strings (applied last)
@@ -405,6 +435,7 @@ pub fn parse(expression_str: &str) -> Result<Expression<'_>, ParseError<Input<'_
 mod tests {
 	use super::*;
 	use crate::services::filter::expression::ast::{ComparisonOperator, LiteralValue};
+	use proptest::prelude::*;
 
 	// helpers
 	fn assert_parses_ok<'a, O, P>(
@@ -586,6 +617,75 @@ mod tests {
 		assert_parse_fails(parse_quoted_string, "'hello"); // Missing closing quote
 		assert_parse_fails(parse_quoted_string, "hello'"); // Missing opening quote
 		assert_parse_fails(parse_quoted_string, "'hello\\"); // Ends with backslash (incomplete escape)
+	}
+
+	#[test]
+	fn test_parse_quoted_string_escapes() {
+		// Both quote escapes work in both kinds of quotes, plus \n and \t
+		assert_parses_ok(
+			parse_quoted_string,
+			r#"'a\"b'"#,
+			LiteralValue::Str(r#"a\"b"#),
+			"",
+		);
+		assert_parses_ok(
+			parse_quoted_string,
+			r#""it\'s""#,
+			LiteralValue::Str(r"it\'s"),
+			"",
+		);
+		assert_parses_ok(
+			parse_quoted_string,
+			r"'a\nb\tc'",
+			LiteralValue::Str(r"a\nb\tc"),
+			"",
+		);
+		// Escaped quote right before the closing one
+		assert_parses_ok(
+			parse_quoted_string,
+			r"'it\''",
+			LiteralValue::Str(r"it\'"),
+			"",
+		);
+
+		// Unknown escapes
+		assert_parse_fails(parse_quoted_string, r"'c\d'");
+		assert_parse_fails(parse_quoted_string, r"'a\r'");
+	}
+
+	#[test]
+	fn test_unescape_literal() {
+		assert!(matches!(unescape_literal("plain"), Cow::Borrowed("plain")));
+		for (raw, expected) in [
+			(r"it\'s", "it's"),
+			(r#"a\"b\'c"#, "a\"b'c"),
+			(r"c\\d", "c\\d"),
+			(r"a\nb", "a\nb"),
+			(r"a\tb", "a\tb"),
+			(r"it\'", "it'"),
+			(r"é\tü", "é\tü"),
+		] {
+			assert_eq!(unescape_literal(raw), expected, "{raw}");
+		}
+		// The parser never returns these, they stay as they are
+		assert!(matches!(unescape_literal(r"c\d"), Cow::Borrowed(r"c\d")));
+		assert!(matches!(unescape_literal(r"x\"), Cow::Borrowed(r"x\")));
+	}
+
+	proptest! {
+		#[test]
+		fn prop_unescape_literal_round_trips(s in any::<String>()) {
+			let encoded = s
+				.replace('\\', r"\\")
+				.replace('\'', r"\'")
+				.replace('\n', r"\n")
+				.replace('\t', r"\t");
+			let input = format!("'{encoded}'");
+			let Ok(LiteralValue::Str(raw)) = parse_quoted_string.parse(input.as_str()) else {
+				return Err(TestCaseError::fail(format!("failed to parse {input:?}")));
+			};
+			prop_assert_eq!(unescape_literal(raw), s);
+		}
 	}
 
 	#[test]
