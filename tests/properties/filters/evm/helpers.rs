@@ -398,8 +398,10 @@ proptest! {
 		let parsed: Result<Vec<serde_json::Value>, _> = serde_json::from_str(&formatted);
 		prop_assert_eq!(parsed.ok(), Some(vec![json!(s)]));
 
+		// The literal as written between quotes in an expression
+		let literal = s.replace('\\', r"\\");
 		let evaluator = create_evaluator();
-		let found = evaluator.compare_array(&formatted, &ComparisonOperator::Contains, &LiteralValue::Str(&s));
+		let found = evaluator.compare_array(&formatted, &ComparisonOperator::Contains, &LiteralValue::Str(&literal));
 		prop_assert_eq!(found.ok(), Some(true));
 	}
 

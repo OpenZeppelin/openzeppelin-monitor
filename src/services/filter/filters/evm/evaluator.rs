@@ -5,8 +5,8 @@ use super::helpers::{are_same_address, string_to_i256, string_to_u256};
 use crate::{
 	models::EVMMatchParamEntry,
 	services::filter::expression::{
-		compare_ordered_values, ComparisonOperator, ConditionEvaluator, EvaluationError,
-		LiteralValue,
+		compare_ordered_values, unescape_literal, ComparisonOperator, ConditionEvaluator,
+		EvaluationError, LiteralValue,
 	},
 };
 use alloy::primitives::U256;
@@ -156,11 +156,11 @@ impl<'a> EVMConditionEvaluator<'a> {
 		operator: &ComparisonOperator,
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
-		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+		let rhs_target = match rhs_literal {
+			LiteralValue::Str(s) => unescape_literal(s),
 			LiteralValue::Number(s) => {
 				if *operator == ComparisonOperator::Contains {
-					*s // For Contains, we search for this number (as string)
+					Cow::Borrowed(*s) // For Contains, we search for this number (as string)
 				} else {
 					// For Eq/Ne, a number literal cannot be equal to a JSON array string.
 					let msg = format!(
@@ -183,6 +183,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 				return Err(EvaluationError::type_mismatch(msg, None, None));
 			}
 		};
+		let rhs_target_str: &str = &rhs_target;
 
 		tracing::debug!(
 			"EVM Comparing array: lhs: '{}', operator: {:?}, rhs_target: '{}'",
@@ -275,11 +276,11 @@ impl<'a> EVMConditionEvaluator<'a> {
 		operator: &ComparisonOperator,
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
-		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+		let rhs_target = match rhs_literal {
+			LiteralValue::Str(s) => unescape_literal(s),
 			LiteralValue::Number(s) => {
 				if *operator == ComparisonOperator::Contains {
-					*s // For Contains, we search for this number (as string)
+					Cow::Borrowed(*s) // For Contains, we search for this number (as string)
 				} else {
 					let msg = format!(
 						"Expected string literal (representing a tuple) for EVM 'tuple' Eq/Ne comparison, found number: {:?}",
@@ -296,6 +297,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 				return Err(EvaluationError::type_mismatch(msg, None, None));
 			}
 		};
+		let rhs_target_str: &str = &rhs_target;
 
 		tracing::debug!(
 			"EVM Comparing tuple: lhs: '{}', operator: {:?}, rhs_target: '{}'",
@@ -530,8 +532,8 @@ impl<'a> EVMConditionEvaluator<'a> {
 		})?;
 
 		let right_str = match right_literal {
-			LiteralValue::Number(s) => s,
-			LiteralValue::Str(s) => s,
+			LiteralValue::Number(s) => Cow::Borrowed(*s),
+			LiteralValue::Str(s) => unescape_literal(s),
 			_ => {
 				let msg = format!(
 					"Expected number or string literal for U256 comparison with found: {:?}",
@@ -541,7 +543,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 			}
 		};
 
-		let right = string_to_u256(right_str).map_err(|error| {
+		let right = string_to_u256(&right_str).map_err(|error| {
 			let msg = format!("Failed to parse RHS value '{}' as U256", right_str,);
 			EvaluationError::parse_error(msg, Some(error.into()), None)
 		})?;
@@ -577,8 +579,8 @@ impl<'a> EVMConditionEvaluator<'a> {
 		})?;
 
 		let right_str = match right_literal {
-			LiteralValue::Number(s) => s, // e.g., "-10", "10", "0x0A" (if string_to_i256 handles hex)
-			LiteralValue::Str(s) => s,    // e.g., "'-10'", "'0x0A'"
+			LiteralValue::Number(s) => Cow::Borrowed(*s), // e.g., "-10", "10", "0x0A" (if string_to_i256 handles hex)
+			LiteralValue::Str(s) => unescape_literal(s),  // e.g., "'-10'", "'0x0A'"
 			_ => {
 				let msg = format!(
 					"Expected number or string literal for I256 comparison, found: {:?}",
@@ -588,7 +590,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 			}
 		};
 
-		let right = string_to_i256(right_str).map_err(|error| {
+		let right = string_to_i256(&right_str).map_err(|error| {
 			let msg = format!("Failed to parse RHS value '{}' as I256", right_str,);
 			EvaluationError::parse_error(msg, Some(error.into()), None)
 		})?;
@@ -620,7 +622,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		right_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let right = match right_literal {
-			LiteralValue::Str(str) => *str,
+			LiteralValue::Str(s) => unescape_literal(s),
 			_ => {
 				let msg = format!(
 					"Expected string literal for address comparison, found: {:?}",
@@ -633,8 +635,8 @@ impl<'a> EVMConditionEvaluator<'a> {
 		tracing::debug!("Comparing addresses: left: {}, right: {}", left, right);
 
 		match operator {
-			ComparisonOperator::Eq => Ok(are_same_address(left, right)),
-			ComparisonOperator::Ne => Ok(!are_same_address(left, right)),
+			ComparisonOperator::Eq => Ok(are_same_address(left, &right)),
+			ComparisonOperator::Ne => Ok(!are_same_address(left, &right)),
 			_ => {
 				let msg = format!("Unsupported operator for address type: {:?}", operator);
 				Err(EvaluationError::unsupported_operator(msg, None, None))
@@ -662,7 +664,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		let left = lhs_str.to_lowercase();
 
 		let right = match rhs_literal {
-			LiteralValue::Str(s) => s.to_lowercase(),
+			LiteralValue::Str(s) => unescape_literal(s).to_lowercase(),
 			_ => {
 				let msg = format!(
 					"Expected string literal for string comparison, found: {:?}",
@@ -866,7 +868,7 @@ impl ConditionEvaluator for EVMConditionEvaluator<'_> {
 mod tests {
 	use super::super::helpers::format_token_value;
 	use super::*;
-	use crate::services::filter::expression::LiteralValue;
+	use crate::services::filter::expression::{evaluate, parse, LiteralValue};
 	use alloy::{
 		dyn_abi::DynSolValue,
 		primitives::{Address, B256, I256, U256},
@@ -1947,7 +1949,10 @@ mod tests {
 			)
 			.unwrap());
 
-		let rhs = serde_json::to_string(&strings).unwrap();
+		// The literal as written between quotes in an expression
+		let rhs = serde_json::to_string(&strings)
+			.unwrap()
+			.replace('\\', r"\\");
 		assert!(evaluator
 			.compare_array(&lhs, &ComparisonOperator::Eq, &LiteralValue::Str(&rhs))
 			.unwrap());
@@ -2723,5 +2728,57 @@ mod tests {
 			evaluator.normalize_tuple_whitespace(r#"("a\" b", "c\\", d)"#),
 			r#"("a\" b","c\\",d)"#
 		);
+	}
+
+	#[test]
+	fn test_evaluate_expressions_with_escaped_literals() {
+		let param = |name: &str, value: String, kind: &str| EVMMatchParamEntry {
+			name: name.to_string(),
+			value,
+			kind: kind.to_string(),
+			indexed: false,
+		};
+		let strings = |items: &[&str]| {
+			format_token_value(&DynSolValue::Array(
+				items
+					.iter()
+					.map(|s| DynSolValue::String(s.to_string()))
+					.collect(),
+			))
+		};
+		let args = vec![
+			param("label", "it's".to_string(), "string"),
+			param("path", "c\\d".to_string(), "string"),
+			param("note", "a\nb".to_string(), "string"),
+			param("names", strings(&["c\\d", "plain"]), "string[]"),
+			param("single", strings(&["c\\d"]), "string[]"),
+			param(
+				"pair",
+				format_token_value(&DynSolValue::Tuple(vec![
+					DynSolValue::String("a\"b".to_string()),
+					DynSolValue::Uint(U256::from(1), 256),
+				])),
+				"tuple",
+			),
+		];
+		let evaluator = EVMConditionEvaluator::new(&args);
+
+		for (expression, expected) in [
+			(r"label == 'it\'s'", true),
+			(r"label == 'IT\'S'", true),
+			(r"path == 'c\\d'", true),
+			(r"path == 'c\\\\d'", false),
+			(r"note == 'a\nb'", true),
+			(r"names contains 'c\\d'", true),
+			(r#"single == '["c\\\\d"]'"#, true),
+			(r#"pair == '("a\\"b",1)'"#, true),
+		] {
+			let ast = parse(expression).unwrap();
+			assert_eq!(
+				evaluate(&ast, &evaluator).unwrap(),
+				expected,
+				"{expression}"
+			);
+		}
 	}
 }
