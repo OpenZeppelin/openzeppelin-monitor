@@ -5,6 +5,8 @@
 //! The AST is designed to be a direct representation of the parsed filter expression, capturing it's structure, operators and literal values.
 //! Lifetime annotations (`'a`) are used to ensure that the references to string literals are valid for the duration of the expression evaluation.
 
+use std::borrow::Cow;
+
 /// Represents the possible literal values that can be used in filter expressions.
 /// The `LiteralValue` enum captures the different constant values that are used on the right side of a condition (RHS).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,11 +15,22 @@ pub enum LiteralValue<'a> {
 	Bool(bool),
 	/// A string literal value. Includes both single-quoted and unquoted strings, includes hexadecimal strings.
 	/// e.g., "abc", 'abc', '0x123ABC'
-	Str(&'a str),
+	///
+	/// Quoted literals are unescaped by the parser, so the value holds the actual string
+	/// content (e.g. `'c\\d'` is stored as `c\d`). It borrows from the input expression when
+	/// no unescaping was needed and is owned otherwise.
+	Str(Cow<'a, str>),
 	/// A numeric literal value. e.g., "123", "-123.456", "0x123" or hexadecimal
 	/// Store as string slice to preserve original form until evaluation phase.
 	/// Conversion to specific type is done within chain context during evaluation.
 	Number(&'a str),
+}
+
+impl<'a> LiteralValue<'a> {
+	/// Convenience constructor for [`LiteralValue::Str`].
+	pub fn str(value: impl Into<Cow<'a, str>>) -> Self {
+		LiteralValue::Str(value.into())
+	}
 }
 
 /// Represents the possible comparison operators that can be used in filter expressions.

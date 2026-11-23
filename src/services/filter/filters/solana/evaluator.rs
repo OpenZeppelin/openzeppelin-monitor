@@ -38,7 +38,7 @@ impl<'a> SolanaConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let rhs_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			LiteralValue::Number(n) => *n,
 			_ => {
 				return Err(EvaluationError::type_mismatch(
@@ -135,7 +135,7 @@ impl ConditionEvaluator for SolanaConditionEvaluator<'_> {
 			"u8" | "u16" | "u32" | "u64" | "u128" => {
 				let rhs_str = match right_literal {
 					LiteralValue::Number(n) => *n,
-					LiteralValue::Str(s) => *s,
+					LiteralValue::Str(s) => s.as_ref(),
 					_ => {
 						return Err(EvaluationError::type_mismatch(
 							format!("Expected number for comparison, got {:?}", right_literal),
@@ -164,7 +164,7 @@ impl ConditionEvaluator for SolanaConditionEvaluator<'_> {
 			"i8" | "i16" | "i32" | "i64" | "i128" => {
 				let rhs_str = match right_literal {
 					LiteralValue::Number(n) => *n,
-					LiteralValue::Str(s) => *s,
+					LiteralValue::Str(s) => s.as_ref(),
 					_ => {
 						return Err(EvaluationError::type_mismatch(
 							format!("Expected number for comparison, got {:?}", right_literal),
@@ -319,7 +319,7 @@ mod tests {
 				"pubkey",
 				"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+				&LiteralValue::str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
 			)
 			.unwrap());
 
@@ -329,7 +329,7 @@ mod tests {
 				"pubkey",
 				"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("11111111111111111111111111111111")
+				&LiteralValue::str("11111111111111111111111111111111")
 			)
 			.unwrap());
 
@@ -339,7 +339,7 @@ mod tests {
 				"pubkey",
 				"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("Tokenkeg")
+				&LiteralValue::str("Tokenkeg")
 			)
 			.unwrap());
 	}
@@ -891,7 +891,7 @@ mod tests {
 			"string",
 			"hello",
 			&ComparisonOperator::Gt,
-			&LiteralValue::Str("world"),
+			&LiteralValue::str("world"),
 		);
 		assert!(result.is_err());
 		let err_msg = format!("{:?}", result.unwrap_err());
@@ -930,7 +930,7 @@ mod tests {
 				"bytes",
 				"0x123456",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("0x123456")
+				&LiteralValue::str("0x123456")
 			)
 			.unwrap());
 
@@ -940,7 +940,7 @@ mod tests {
 				"bytes",
 				"0x123456",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("0xabcdef")
+				&LiteralValue::str("0xabcdef")
 			)
 			.unwrap());
 
@@ -950,7 +950,7 @@ mod tests {
 				"bytes",
 				"0x123456789abc",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("345678")
+				&LiteralValue::str("345678")
 			)
 			.unwrap());
 	}
@@ -1048,7 +1048,7 @@ mod tests {
 				"bool",
 				"true",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("true")
+				&LiteralValue::str("true")
 			)
 			.unwrap());
 
@@ -1058,7 +1058,7 @@ mod tests {
 				"bool",
 				"false",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("false")
+				&LiteralValue::str("false")
 			)
 			.unwrap());
 	}

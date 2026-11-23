@@ -3054,6 +3054,63 @@ mod tests {
 	}
 
 	#[test]
+	fn test_evaluate_expression_unescapes_quoted_literals() {
+		let filter = create_test_filter();
+
+		// string[] with an element containing a single backslash
+		let names = format_token_value(&DynSolValue::Array(
+			["a\"b", "c\\d", "e\nf"]
+				.into_iter()
+				.map(|s| DynSolValue::String(s.to_string()))
+				.collect(),
+		));
+		let args = vec![create_test_param("names", &names, "string[]")];
+		// `\\` in the literal is a single backslash, so this matches `c\d`
+		assert!(filter
+			.evaluate_expression(r"names contains 'c\\d'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(r#"names contains 'a\"b'"#, &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(r"names contains 'e\nf'", &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression(r"names contains 'c\\\\d'", &args)
+			.unwrap());
+		// Unknown escape sequences are rejected
+		assert!(filter
+			.evaluate_expression(r"names contains 'c\d'", &args)
+			.is_err());
+
+		// Plain string with a quote, backslash and newline
+		let args = vec![create_test_param("label", "it's a\\b\nc", "string")];
+		assert!(filter
+			.evaluate_expression(r"label == 'it\'s a\\b\nc'", &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(r#"label == "it's a\\b\nc""#, &args)
+			.unwrap());
+
+		// Tuple `==` against a string containing `"` (rendered escaped since #546)
+		let tuple = format_token_value(&DynSolValue::Tuple(vec![
+			DynSolValue::String("a\"b".to_string()),
+			DynSolValue::Uint(U256::from(1), 256),
+		]));
+		assert_eq!(tuple, r#"("a\"b",1)"#);
+		let args = vec![create_test_param("entry", &tuple, "tuple")];
+		assert!(filter
+			.evaluate_expression(r#"entry == '("a\\"b",1)'"#, &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression(r#"entry != '("a\\"b",1)'"#, &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(r#"entry contains 'a\"b'"#, &args)
+			.unwrap());
+	}
+
+	#[test]
 	fn test_evaluate_expression_error_cases() {
 		let filter = create_test_filter();
 

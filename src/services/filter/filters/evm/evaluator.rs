@@ -157,7 +157,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			LiteralValue::Number(s) => {
 				if *operator == ComparisonOperator::Contains {
 					*s // For Contains, we search for this number (as string)
@@ -276,7 +276,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			LiteralValue::Number(s) => {
 				if *operator == ComparisonOperator::Contains {
 					*s // For Contains, we search for this number (as string)
@@ -530,8 +530,8 @@ impl<'a> EVMConditionEvaluator<'a> {
 		})?;
 
 		let right_str = match right_literal {
-			LiteralValue::Number(s) => s,
-			LiteralValue::Str(s) => s,
+			LiteralValue::Number(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			_ => {
 				let msg = format!(
 					"Expected number or string literal for U256 comparison with found: {:?}",
@@ -577,8 +577,8 @@ impl<'a> EVMConditionEvaluator<'a> {
 		})?;
 
 		let right_str = match right_literal {
-			LiteralValue::Number(s) => s, // e.g., "-10", "10", "0x0A" (if string_to_i256 handles hex)
-			LiteralValue::Str(s) => s,    // e.g., "'-10'", "'0x0A'"
+			LiteralValue::Number(s) => *s, // e.g., "-10", "10", "0x0A" (if string_to_i256 handles hex)
+			LiteralValue::Str(s) => s.as_ref(), // e.g., "'-10'", "'0x0A'"
 			_ => {
 				let msg = format!(
 					"Expected number or string literal for I256 comparison, found: {:?}",
@@ -620,7 +620,7 @@ impl<'a> EVMConditionEvaluator<'a> {
 		right_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let right = match right_literal {
-			LiteralValue::Str(str) => *str,
+			LiteralValue::Str(s) => s.as_ref(),
 			_ => {
 				let msg = format!(
 					"Expected string literal for address comparison, found: {:?}",
@@ -989,7 +989,7 @@ mod tests {
 			evaluator.compare_u256(
 				"123",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("not-a-number")
+				&LiteralValue::str("not-a-number")
 			),
 			Err(EvaluationError::ParseError(_))
 		));
@@ -1124,7 +1124,7 @@ mod tests {
 			evaluator.compare_i256(
 				"-123",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("not-a-number")
+				&LiteralValue::str("not-a-number")
 			),
 			Err(EvaluationError::ParseError(_))
 		));
@@ -1155,7 +1155,7 @@ mod tests {
 			.compare_address(
 				"0x1234567890123456789012345678901234567890",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("0x1234567890123456789012345678901234567890")
+				&LiteralValue::str("0x1234567890123456789012345678901234567890")
 			)
 			.unwrap());
 
@@ -1163,7 +1163,7 @@ mod tests {
 			.compare_address(
 				"0x1234567890123456789012345678901234567890",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("0x0987654321098765432109876543210987654321")
+				&LiteralValue::str("0x0987654321098765432109876543210987654321")
 			)
 			.unwrap());
 	}
@@ -1176,7 +1176,7 @@ mod tests {
 			.compare_address(
 				"0x1234567890123456789012345678901234567890",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("0x0987654321098765432109876543210987654321")
+				&LiteralValue::str("0x0987654321098765432109876543210987654321")
 			)
 			.unwrap());
 
@@ -1184,7 +1184,7 @@ mod tests {
 			.compare_address(
 				"0x1234567890123456789012345678901234567890",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("0x1234567890123456789012345678901234567890")
+				&LiteralValue::str("0x1234567890123456789012345678901234567890")
 			)
 			.unwrap());
 	}
@@ -1208,7 +1208,7 @@ mod tests {
 			evaluator.compare_address(
 				"0x1234567890123456789012345678901234567890",
 				&ComparisonOperator::Gte,
-				&LiteralValue::Str("0x0987654321098765432109876543210987654321")
+				&LiteralValue::str("0x0987654321098765432109876543210987654321")
 			),
 			Err(EvaluationError::UnsupportedOperator(_))
 		));
@@ -1223,7 +1223,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("test_value_1")
+				&LiteralValue::str("test_value_1")
 			)
 			.unwrap());
 
@@ -1231,7 +1231,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("test_value_2")
+				&LiteralValue::str("test_value_2")
 			)
 			.unwrap());
 
@@ -1239,7 +1239,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::StartsWith,
-				&LiteralValue::Str("test")
+				&LiteralValue::str("test")
 			)
 			.unwrap());
 
@@ -1247,7 +1247,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::EndsWith,
-				&LiteralValue::Str("value_1")
+				&LiteralValue::str("value_1")
 			)
 			.unwrap());
 
@@ -1255,7 +1255,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value")
+				&LiteralValue::str("value")
 			)
 			.unwrap());
 	}
@@ -1268,7 +1268,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("test_value_2")
+				&LiteralValue::str("test_value_2")
 			)
 			.unwrap());
 
@@ -1276,7 +1276,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("test_value_1")
+				&LiteralValue::str("test_value_1")
 			)
 			.unwrap());
 
@@ -1284,7 +1284,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::StartsWith,
-				&LiteralValue::Str("value")
+				&LiteralValue::str("value")
 			)
 			.unwrap());
 
@@ -1292,7 +1292,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::EndsWith,
-				&LiteralValue::Str("test")
+				&LiteralValue::str("test")
 			)
 			.unwrap());
 
@@ -1300,7 +1300,7 @@ mod tests {
 			.compare_string(
 				"test_value_1",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("test_value_2")
+				&LiteralValue::str("test_value_2")
 			)
 			.unwrap());
 	}
@@ -1324,7 +1324,7 @@ mod tests {
 			evaluator.compare_string(
 				"test_value_1",
 				&ComparisonOperator::Gte,
-				&LiteralValue::Str("test_value_2")
+				&LiteralValue::str("test_value_2")
 			),
 			Err(EvaluationError::UnsupportedOperator(_))
 		));
@@ -1397,21 +1397,21 @@ mod tests {
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("bob")
+				&LiteralValue::str("bob")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("charlie")
+				&LiteralValue::str("charlie")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("dave")
+				&LiteralValue::str("dave")
 			)
 			.unwrap());
 	}
@@ -1431,14 +1431,14 @@ mod tests {
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("456")
+				&LiteralValue::str("456")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("true")
+				&LiteralValue::str("true")
 			)
 			.unwrap());
 	}
@@ -1448,13 +1448,13 @@ mod tests {
 		let evaluator = create_evaluator();
 		let lhs_json_array = r#"[0, 500, 3000, -1]"#;
 		for (literal, expected) in [
-			(LiteralValue::Str("0xbb8"), true),
-			(LiteralValue::Str("0xBB8"), true),
+			(LiteralValue::str("0xbb8"), true),
+			(LiteralValue::str("0xBB8"), true),
 			(LiteralValue::Number("3000"), true),
-			(LiteralValue::Str("0x1f4"), true),
+			(LiteralValue::str("0x1f4"), true),
 			(LiteralValue::Number("-1"), true),
-			(LiteralValue::Str("0x64"), false),
-			(LiteralValue::Str("0x"), false),
+			(LiteralValue::str("0x64"), false),
+			(LiteralValue::str("0x"), false),
 		] {
 			assert_eq!(
 				evaluator
@@ -1480,7 +1480,7 @@ mod tests {
 			.compare_array(
 				&lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str(addr1)
+				&LiteralValue::str(addr1)
 			)
 			.unwrap());
 	}
@@ -1493,14 +1493,14 @@ mod tests {
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("Alice")
+				&LiteralValue::str("Alice")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("0xTokenAddress00000000000000000000000000")
+				&LiteralValue::str("0xTokenAddress00000000000000000000000000")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -1514,7 +1514,7 @@ mod tests {
 			.compare_array(
 				lhs_json_array,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("Bob")
+				&LiteralValue::str("Bob")
 			)
 			.unwrap());
 	}
@@ -1525,13 +1525,13 @@ mod tests {
 		let lhs1 = r#"["alice", "bob"]"#;
 		let lhs2 = r#"["alice", "charlie"]"#;
 		assert!(evaluator
-			.compare_array(lhs1, &ComparisonOperator::Eq, &LiteralValue::Str(lhs1))
+			.compare_array(lhs1, &ComparisonOperator::Eq, &LiteralValue::str(lhs1))
 			.unwrap());
 		assert!(!evaluator
-			.compare_array(lhs1, &ComparisonOperator::Eq, &LiteralValue::Str(lhs2))
+			.compare_array(lhs1, &ComparisonOperator::Eq, &LiteralValue::str(lhs2))
 			.unwrap());
 		assert!(evaluator
-			.compare_array(lhs1, &ComparisonOperator::Ne, &LiteralValue::Str(lhs2))
+			.compare_array(lhs1, &ComparisonOperator::Ne, &LiteralValue::str(lhs2))
 			.unwrap());
 	}
 
@@ -1545,28 +1545,28 @@ mod tests {
 			.compare_array(
 				r#"[1, 2, 3]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[1,2,3]"#)
+				&LiteralValue::str(r#"[1,2,3]"#)
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_array(
 				r#"["a", "b"]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[ "a", "b" ]"#)
+				&LiteralValue::str(r#"[ "a", "b" ]"#)
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_array(
 				r#"[{"id":1}, {"id":2}]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[ { "id" : 1 } , { "id" : 2 } ]"#)
+				&LiteralValue::str(r#"[ { "id" : 1 } , { "id" : 2 } ]"#)
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_array(
 				r#"[]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[]"#)
+				&LiteralValue::str(r#"[]"#)
 			)
 			.unwrap());
 
@@ -1575,7 +1575,7 @@ mod tests {
 			.compare_array(
 				r#"["Alice"]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"["alice"]"#)
+				&LiteralValue::str(r#"["alice"]"#)
 			)
 			.unwrap());
 
@@ -1584,7 +1584,7 @@ mod tests {
 			.compare_array(
 				r#"[1, 2]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[2, 1]"#)
+				&LiteralValue::str(r#"[2, 1]"#)
 			)
 			.unwrap());
 
@@ -1593,7 +1593,7 @@ mod tests {
 			.compare_array(
 				r#"[1, 2]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"["1", "2"]"#)
+				&LiteralValue::str(r#"["1", "2"]"#)
 			)
 			.unwrap());
 
@@ -1602,7 +1602,7 @@ mod tests {
 			.compare_array(
 				r#"[1, 2]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[1, 2, 3]"#)
+				&LiteralValue::str(r#"[1, 2, 3]"#)
 			)
 			.unwrap());
 
@@ -1611,7 +1611,7 @@ mod tests {
 			.compare_array(
 				r#"[1, 2, 3]"#,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"[1,2,3]"#)
+				&LiteralValue::str(r#"[1,2,3]"#)
 			)
 			.unwrap());
 
@@ -1619,7 +1619,7 @@ mod tests {
 			.compare_array(
 				r#"["Alice_2"]"#,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"["alice"]"#)
+				&LiteralValue::str(r#"["alice"]"#)
 			)
 			.unwrap());
 
@@ -1627,7 +1627,7 @@ mod tests {
 			.compare_array(
 				r#"[1, 2]"#,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"[2, 1]"#)
+				&LiteralValue::str(r#"[2, 1]"#)
 			)
 			.unwrap());
 	}
@@ -1674,56 +1674,56 @@ mod tests {
 				"intN[] (e.g., int64[])",
 				"[-10, 0, 30]".to_string(),
 				LiteralValue::Number("-10"),
-				LiteralValue::Str("40"),
+				LiteralValue::str("40"),
 				"[-1, -2, -3]".to_string(),
 			),
 			(
 				"string[]",
 				r#"["apple", "Banana", ""]"#.to_string(),
-				LiteralValue::Str("banana"),
-				LiteralValue::Str("cherry"),
+				LiteralValue::str("banana"),
+				LiteralValue::str("cherry"),
 				r#"["orange", "grape"]"#.to_string(),
 			),
 			(
 				"address[]",
 				format!(r#"["{}", "{}"]"#, ADDR_1, ADDR_3_MIXED_CASE),
-				LiteralValue::Str(ADDR_3_LOWER_CASE),
-				LiteralValue::Str(ADDR_2),
+				LiteralValue::str(ADDR_3_LOWER_CASE),
+				LiteralValue::str(ADDR_2),
 				format!(r#"["{}"]"#, ADDR_2),
 			),
 			(
 				"bool[]",
 				"[true, false, true]".to_string(),
-				LiteralValue::Str("false"),
-				LiteralValue::Str("maybe"),
+				LiteralValue::str("false"),
+				LiteralValue::str("maybe"),
 				"[false, false]".to_string(),
 			),
 			(
 				"bytes[]",
 				r#"["0xaa", "0xbbcc", "0x", "0x123456EF"]"#.to_string(),
-				LiteralValue::Str("0x123456ef"),
-				LiteralValue::Str("0xff00"),
+				LiteralValue::str("0x123456ef"),
+				LiteralValue::str("0xff00"),
 				r#"["0x11", "0x2233"]"#.to_string(),
 			),
 			(
 				"bytes32[]",
 				format!(r#"["{}", "{}"]"#, BYTES32_1, BYTES32_2),
-				LiteralValue::Str(BYTES32_1),
-				LiteralValue::Str(BYTES32_3),
+				LiteralValue::str(BYTES32_1),
+				LiteralValue::str(BYTES32_3),
 				format!(r#"["{}"]"#, BYTES32_3),
 			),
 			(
 				"tuple[]",
 				tuple_array_lhs_string_data.clone(),
-				LiteralValue::Str("alice"),
-				LiteralValue::Str("unknown_field_value"),
+				LiteralValue::str("alice"),
+				LiteralValue::str("unknown_field_value"),
 				tuple_array_different_string_literal.to_string(),
 			),
 			(
 				"array (generic)",
 				r#"["text_val", 12345, true, "0xNonStandardHexMaybe"]"#.to_string(),
 				LiteralValue::Number("12345"),
-				LiteralValue::Str("nonexistent"),
+				LiteralValue::str("nonexistent"),
 				r#"["another_val", 67890]"#.to_string(),
 			),
 		];
@@ -1745,7 +1745,7 @@ mod tests {
 					.compare_array(
 						lhs_json_str,
 						&ComparisonOperator::Eq,
-						&LiteralValue::Str(lhs_json_str)
+						&LiteralValue::str(lhs_json_str)
 					)
 					.unwrap(),
 				"Eq failed for {}: LHS: '{}' == RHS: '{}'",
@@ -1760,7 +1760,7 @@ mod tests {
 					.compare_array(
 						lhs_json_str,
 						&ComparisonOperator::Ne,
-						&LiteralValue::Str(diff_json_str)
+						&LiteralValue::str(diff_json_str)
 					)
 					.unwrap(),
 				"Ne failed for {}: LHS: '{}' != RHS: '{}'",
@@ -1774,7 +1774,7 @@ mod tests {
 					.compare_array(
 						lhs_json_str,
 						&ComparisonOperator::Ne,
-						&LiteralValue::Str(lhs_json_str)
+						&LiteralValue::str(lhs_json_str)
 					)
 					.unwrap(),
 				"Ne (same) failed for {}: LHS: '{}' == RHS: '{}' (should not be Ne)",
@@ -1829,7 +1829,7 @@ mod tests {
 				.compare_array(
 					&tuple_array_lhs_string_data,
 					&ComparisonOperator::Contains,
-					&LiteralValue::Str(ADDR_1)
+					&LiteralValue::str(ADDR_1)
 				)
 				.unwrap(),
 			"Contains (tuple address string) failed for {}: LHS: {}",
@@ -1841,7 +1841,7 @@ mod tests {
 				.compare_array(
 					&tuple_array_lhs_string_data,
 					&ComparisonOperator::Contains,
-					&LiteralValue::Str("0xBytes01")
+					&LiteralValue::str("0xBytes01")
 				)
 				.unwrap(),
 			"Contains (tuple bytes string) failed for {}: LHS: {}",
@@ -1865,7 +1865,7 @@ mod tests {
 				.compare_array(
 					&tuple_array_lhs_string_data,
 					&ComparisonOperator::Contains,
-					&LiteralValue::Str("true")
+					&LiteralValue::str("true")
 				)
 				.unwrap(),
 			"Contains (tuple bool string) failed for {}: LHS: {}",
@@ -1877,7 +1877,7 @@ mod tests {
 				.compare_array(
 					&tuple_array_lhs_string_data,
 					&ComparisonOperator::Contains,
-					&LiteralValue::Str("nested_value")
+					&LiteralValue::str("nested_value")
 				)
 				.unwrap(),
 			"Contains (tuple nested object value) failed for {}: LHS: {}",
@@ -1905,7 +1905,7 @@ mod tests {
 			evaluator.compare_array(
 				invalid_lhs_array_json,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("data")
+				&LiteralValue::str("data")
 			),
 			Err(EvaluationError::ParseError(_))
 		));
@@ -1914,7 +1914,7 @@ mod tests {
 			evaluator.compare_array(
 				valid_lhs_array_json,
 				&ComparisonOperator::Gt,
-				&LiteralValue::Str("data")
+				&LiteralValue::str("data")
 			),
 			Err(EvaluationError::UnsupportedOperator(_))
 		));
@@ -1934,7 +1934,7 @@ mod tests {
 		for s in strings {
 			assert!(
 				evaluator
-					.compare_array(&lhs, &ComparisonOperator::Contains, &LiteralValue::Str(s))
+					.compare_array(&lhs, &ComparisonOperator::Contains, &LiteralValue::str(s))
 					.unwrap(),
 				"{lhs} should contain {s:?}"
 			);
@@ -1943,13 +1943,13 @@ mod tests {
 			.compare_array(
 				&lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("missing")
+				&LiteralValue::str("missing")
 			)
 			.unwrap());
 
 		let rhs = serde_json::to_string(&strings).unwrap();
 		assert!(evaluator
-			.compare_array(&lhs, &ComparisonOperator::Eq, &LiteralValue::Str(&rhs))
+			.compare_array(&lhs, &ComparisonOperator::Eq, &LiteralValue::str(&rhs))
 			.unwrap());
 
 		// A string can't add elements to the array.
@@ -1961,7 +1961,7 @@ mod tests {
 			.compare_array(
 				&lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str(address)
+				&LiteralValue::str(address)
 			)
 			.unwrap());
 	}
@@ -1978,11 +1978,11 @@ mod tests {
 			.compare_tuple(
 				&lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("x\",y")
+				&LiteralValue::str("x\",y")
 			)
 			.unwrap());
 		assert!(!evaluator
-			.compare_tuple(&lhs, &ComparisonOperator::Contains, &LiteralValue::Str("y"))
+			.compare_tuple(&lhs, &ComparisonOperator::Contains, &LiteralValue::str("y"))
 			.unwrap());
 
 		let lhs = format_token_value(&DynSolValue::Tuple(vec![
@@ -1993,14 +1993,14 @@ mod tests {
 			.compare_tuple(
 				&lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("c\\")
+				&LiteralValue::str("c\\")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_tuple(
 				&lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("true")
+				&LiteralValue::str("true")
 			)
 			.unwrap());
 	}
@@ -2024,7 +2024,7 @@ mod tests {
 				"number",
 				"0xFF",
 				&ComparisonOperator::Gt,
-				&LiteralValue::Str("10")
+				&LiteralValue::str("10")
 			)
 			.unwrap());
 
@@ -2068,7 +2068,7 @@ mod tests {
 				"uint24[]",
 				"[500,3000]",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("3000")
+				&LiteralValue::str("3000")
 			)
 			.unwrap());
 
@@ -2078,7 +2078,7 @@ mod tests {
 				"address",
 				"0x123...",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("0x456...")
+				&LiteralValue::str("0x456...")
 			)
 			.unwrap());
 
@@ -2088,7 +2088,7 @@ mod tests {
 				"string",
 				"text",
 				&ComparisonOperator::StartsWith,
-				&LiteralValue::Str("te")
+				&LiteralValue::str("te")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -2096,7 +2096,7 @@ mod tests {
 				"bytes",
 				"0xab",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("0xab")
+				&LiteralValue::str("0xab")
 			)
 			.unwrap());
 
@@ -2105,7 +2105,7 @@ mod tests {
 				"bytes4",
 				"0xdeadbeef",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("0xDEADBEEF")
+				&LiteralValue::str("0xDEADBEEF")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -2113,7 +2113,7 @@ mod tests {
 				"bytes32",
 				"0xab",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("0xab")
+				&LiteralValue::str("0xab")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -2121,7 +2121,7 @@ mod tests {
 				"bytes4[]",
 				r#"["0x12345678","0xdeadbeef"]"#,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("0xdeadbeef")
+				&LiteralValue::str("0xdeadbeef")
 			)
 			.unwrap());
 
@@ -2141,7 +2141,7 @@ mod tests {
 				"array",
 				r#"["val1", "val2"]"#,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("val1")
+				&LiteralValue::str("val1")
 			)
 			.unwrap());
 
@@ -2151,7 +2151,7 @@ mod tests {
 				"tuple",
 				r#"(12, "title",["testing","value"],14)"#,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("title")
+				&LiteralValue::str("title")
 			)
 			.unwrap());
 	}
@@ -2232,7 +2232,7 @@ mod tests {
 						kind,
 						&value,
 						&ComparisonOperator::Contains,
-						&LiteralValue::Str(&needle)
+						&LiteralValue::str(&needle)
 					)
 					.unwrap(),
 				"{kind} {value} should contain {needle}"
@@ -2244,7 +2244,7 @@ mod tests {
 				"uint256[3]",
 				"[0,0,1216420971]",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("[0,0,1216420971]")
+				&LiteralValue::str("[0,0,1216420971]")
 			)
 			.unwrap());
 
@@ -2260,7 +2260,7 @@ mod tests {
 				kind,
 				"[1]",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("1"),
+				&LiteralValue::str("1"),
 			);
 			assert!(
 				matches!(res, Err(EvaluationError::TypeMismatch(_))),
@@ -2292,7 +2292,7 @@ mod tests {
 					kind,
 					value,
 					&ComparisonOperator::Contains,
-					&LiteralValue::Str(needle),
+					&LiteralValue::str(needle),
 				)
 				.unwrap()
 		};
@@ -2311,7 +2311,7 @@ mod tests {
 					"tuple[]",
 					&calls,
 					&ComparisonOperator::Eq,
-					&LiteralValue::Str(rhs)
+					&LiteralValue::str(rhs)
 				)
 				.unwrap());
 		}
@@ -2360,7 +2360,7 @@ mod tests {
 					"tuple[]",
 					&entries,
 					&ComparisonOperator::Contains,
-					&LiteralValue::Str(needle),
+					&LiteralValue::str(needle),
 				)
 				.unwrap()
 		};
@@ -2381,7 +2381,7 @@ mod tests {
 			"unknown_type",
 			"val",
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str("s"),
+			&LiteralValue::str("s"),
 		);
 		assert!(matches!(
 			res_unsupported,
@@ -2395,7 +2395,7 @@ mod tests {
 				kind,
 				"0xab",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("0xab"),
+				&LiteralValue::str("0xab"),
 			);
 			assert!(matches!(res, Err(EvaluationError::TypeMismatch(_))));
 		}
@@ -2438,7 +2438,7 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("title")
+				&LiteralValue::str("title")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -2452,7 +2452,7 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("testing")
+				&LiteralValue::str("testing")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -2466,7 +2466,7 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("bob")
+				&LiteralValue::str("bob")
 			)
 			.unwrap());
 	}
@@ -2483,14 +2483,14 @@ mod tests {
 			.compare_tuple(
 				&lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str(addr1)
+				&LiteralValue::str(addr1)
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_tuple(
 				&lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str(addr2)
+				&LiteralValue::str(addr2)
 			)
 			.unwrap());
 	}
@@ -2505,7 +2505,7 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("alice")
+				&LiteralValue::str("alice")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -2519,14 +2519,14 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("1.0")
+				&LiteralValue::str("1.0")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("bob")
+				&LiteralValue::str("bob")
 			)
 			.unwrap());
 	}
@@ -2548,28 +2548,28 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("string_value")
+				&LiteralValue::str("string_value")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("true")
+				&LiteralValue::str("true")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("array")
+				&LiteralValue::str("array")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value")
+				&LiteralValue::str("value")
 			)
 			.unwrap());
 	}
@@ -2583,7 +2583,7 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(lhs_tuple)
+				&LiteralValue::str(lhs_tuple)
 			)
 			.unwrap());
 
@@ -2593,7 +2593,7 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple_whitespace,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(lhs_tuple)
+				&LiteralValue::str(lhs_tuple)
 			)
 			.unwrap());
 
@@ -2602,7 +2602,7 @@ mod tests {
 			.compare_tuple(
 				lhs_tuple_nested,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(lhs_tuple_nested)
+				&LiteralValue::str(lhs_tuple_nested)
 			)
 			.unwrap());
 	}
@@ -2628,7 +2628,7 @@ mod tests {
 			evaluator.compare_tuple(
 				invalid_lhs_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("title")
+				&LiteralValue::str("title")
 			),
 			Err(EvaluationError::ParseError(_))
 		));
@@ -2638,7 +2638,7 @@ mod tests {
 			evaluator.compare_tuple(
 				valid_lhs_tuple,
 				&ComparisonOperator::Gt,
-				&LiteralValue::Str("title")
+				&LiteralValue::str("title")
 			),
 			Err(EvaluationError::UnsupportedOperator(_))
 		));
@@ -2648,7 +2648,7 @@ mod tests {
 			evaluator.compare_tuple(
 				valid_lhs_tuple,
 				&ComparisonOperator::Gt,
-				&LiteralValue::Str("title")
+				&LiteralValue::str("title")
 			),
 			Err(EvaluationError::UnsupportedOperator(_))
 		));
@@ -2659,7 +2659,7 @@ mod tests {
 			evaluator.compare_tuple(
 				invalid_json_tuple,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("title")
+				&LiteralValue::str("title")
 			),
 			Err(EvaluationError::ParseError(_))
 		));

@@ -432,14 +432,14 @@ proptest! {
 		prop_assert!(evaluator.compare_array(
 			&json_array_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(&json_array_str)
+			&LiteralValue::str(&json_array_str)
 		).unwrap());
 
 		// And should not be "not equal" to itself
 		prop_assert!(!evaluator.compare_array(
 			&json_array_str,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(&json_array_str)
+			&LiteralValue::str(&json_array_str)
 		).unwrap());
 	}
 
@@ -455,7 +455,7 @@ proptest! {
 		let result = evaluator.compare_array(
 			&json_array_str,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(&search_target)
+			&LiteralValue::str(&search_target)
 		).unwrap();
 
 		let expected = array_items.iter().any(|item| {
@@ -485,7 +485,7 @@ proptest! {
 		let result = evaluator.compare_array(
 			invalid_json,
 			&operator,
-			&LiteralValue::Str("[]")
+			&LiteralValue::str("[]")
 		);
 
 		// Should always be an error
@@ -521,41 +521,41 @@ proptest! {
 		string_val in generate_string_with_special_chars()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_str = Box::leak(string_val.clone().into_boxed_str());
+		let leaked_str: &str = Box::leak(string_val.clone().into_boxed_str());
 
 		// A string should equal itself
 		prop_assert!(evaluator.compare_string(
 			&string_val,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A string should not be "not equal" to itself
 		prop_assert!(!evaluator.compare_string(
 			&string_val,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A string should start with itself
 		prop_assert!(evaluator.compare_string(
 			&string_val,
 			&ComparisonOperator::StartsWith,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A string should end with itself
 		prop_assert!(evaluator.compare_string(
 			&string_val,
 			&ComparisonOperator::EndsWith,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A string should contain itself
 		prop_assert!(evaluator.compare_string(
 			&string_val,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 	}
 
@@ -572,40 +572,40 @@ proptest! {
 			if i % 2 == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }
 		}).collect::<String>();
 
-		let leaked_lowercase = Box::leak(lowercase.clone().into_boxed_str());
-		let leaked_uppercase = Box::leak(uppercase.clone().into_boxed_str());
-		let leaked_mixed = Box::leak(mixed_case.clone().into_boxed_str());
+		let leaked_lowercase: &str = Box::leak(lowercase.clone().into_boxed_str());
+		let leaked_uppercase: &str = Box::leak(uppercase.clone().into_boxed_str());
+		let leaked_mixed: &str = Box::leak(mixed_case.clone().into_boxed_str());
 
 		// All case variations should be equal to each other
 		prop_assert!(evaluator.compare_string(
 			&lowercase,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_uppercase)
+			&LiteralValue::str(leaked_uppercase)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_string(
 			&uppercase,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_mixed)
+			&LiteralValue::str(leaked_mixed)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_string(
 			&mixed_case,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_lowercase)
+			&LiteralValue::str(leaked_lowercase)
 		).unwrap());
 
 		// Case variations should also work with other operators
 		prop_assert!(evaluator.compare_string(
 			&uppercase,
 			&ComparisonOperator::StartsWith,
-			&LiteralValue::Str(leaked_lowercase)
+			&LiteralValue::str(leaked_lowercase)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_string(
 			&lowercase,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_mixed)
+			&LiteralValue::str(leaked_mixed)
 		).unwrap());
 	}
 
@@ -615,23 +615,23 @@ proptest! {
 		(full_string, prefix, _middle, _suffix) in generate_prefix_suffix_string()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_prefix = Box::leak(prefix.clone().into_boxed_str());
+		let leaked_prefix: &str = Box::leak(prefix.clone().into_boxed_str());
 
 		// String should start with its own prefix
 		prop_assert!(evaluator.compare_string(
 			&full_string,
 			&ComparisonOperator::StartsWith,
-			&LiteralValue::Str(leaked_prefix)
+			&LiteralValue::str(leaked_prefix)
 		).unwrap());
 
 		// Test case insensitivity
 		let prefix_upper = prefix.to_uppercase();
-		let leaked_prefix_upper = Box::leak(prefix_upper.clone().into_boxed_str());
+		let leaked_prefix_upper: &str = Box::leak(prefix_upper.clone().into_boxed_str());
 
 		prop_assert!(evaluator.compare_string(
 			&full_string,
 			&ComparisonOperator::StartsWith,
-			&LiteralValue::Str(leaked_prefix_upper)
+			&LiteralValue::str(leaked_prefix_upper)
 		).unwrap());
 	}
 
@@ -641,23 +641,23 @@ proptest! {
 		(full_string, _prefix, _middle, suffix) in generate_prefix_suffix_string()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_suffix = Box::leak(suffix.clone().into_boxed_str());
+		let leaked_suffix: &str = Box::leak(suffix.clone().into_boxed_str());
 
 		// String should end with its own suffix
 		prop_assert!(evaluator.compare_string(
 			&full_string,
 			&ComparisonOperator::EndsWith,
-			&LiteralValue::Str(leaked_suffix)
+			&LiteralValue::str(leaked_suffix)
 		).unwrap());
 
 		// Test case insensitivity
 		let suffix_upper = suffix.to_uppercase();
-		let leaked_suffix_upper = Box::leak(suffix_upper.clone().into_boxed_str());
+		let leaked_suffix_upper: &str = Box::leak(suffix_upper.clone().into_boxed_str());
 
 		prop_assert!(evaluator.compare_string(
 			&full_string,
 			&ComparisonOperator::EndsWith,
-			&LiteralValue::Str(leaked_suffix_upper)
+			&LiteralValue::str(leaked_suffix_upper)
 		).unwrap());
 	}
 
@@ -671,28 +671,28 @@ proptest! {
 		let string_with_spaces = format!("  {}  ", base_word);
 		let string_clean = base_word.clone();
 
-		let leaked_clean = Box::leak(string_clean.clone().into_boxed_str());
-		let leaked_spaces = Box::leak(string_with_spaces.clone().into_boxed_str());
+		let leaked_clean: &str = Box::leak(string_clean.clone().into_boxed_str());
+		let leaked_spaces: &str = Box::leak(string_with_spaces.clone().into_boxed_str());
 
 		// Strings with whitespace should NOT equal clean strings (exact comparison after lowercase)
 		prop_assert!(!evaluator.compare_string(
 			&string_with_spaces,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_clean)
+			&LiteralValue::str(leaked_clean)
 		).unwrap());
 
 		// But strings with spaces should contain the clean word
 		prop_assert!(evaluator.compare_string(
 			&string_with_spaces,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_clean)
+			&LiteralValue::str(leaked_clean)
 		).unwrap());
 
 		// And spaces string should equal itself
 		prop_assert!(evaluator.compare_string(
 			&string_with_spaces,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_spaces)
+			&LiteralValue::str(leaked_spaces)
 		).unwrap());
 	}
 
@@ -707,23 +707,23 @@ proptest! {
 		]
 	) {
 		let evaluator = create_evaluator();
-		let leaked_chars = Box::leak(special_chars.clone().into_boxed_str());
+		let leaked_chars: &str = Box::leak(special_chars.clone().into_boxed_str());
 
 		// Special characters should equal themselves exactly (after case normalization)
 		prop_assert!(evaluator.compare_string(
 			&special_chars,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_chars)
+			&LiteralValue::str(leaked_chars)
 		).unwrap());
 
 		// Test case insensitivity with special chars
 		let special_upper = special_chars.to_uppercase();
-		let leaked_upper = Box::leak(special_upper.clone().into_boxed_str());
+		let leaked_upper: &str = Box::leak(special_upper.clone().into_boxed_str());
 
 		prop_assert!(evaluator.compare_string(
 			&special_chars,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_upper)
+			&LiteralValue::str(leaked_upper)
 		).unwrap());
 	}
 

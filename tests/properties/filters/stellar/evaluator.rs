@@ -643,13 +643,13 @@ proptest! {
 		]
 	) {
 		let evaluator = create_evaluator();
-		let leaked_content = Box::leak(vec_content.clone().into_boxed_str());
+		let leaked_content: &str = Box::leak(vec_content.clone().into_boxed_str());
 
 		// A vec should equal itself
 		let result = evaluator.compare_vec(
 			&vec_content,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_content)
+			&LiteralValue::str(leaked_content)
 		).unwrap();
 
 		prop_assert!(result, "Vec '{}' should equal itself", vec_content);
@@ -658,7 +658,7 @@ proptest! {
 		let result_ne = evaluator.compare_vec(
 			&vec_content,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_content)
+			&LiteralValue::str(leaked_content)
 		).unwrap();
 
 		prop_assert!(!result_ne, "Vec '{}' should not be Ne to itself", vec_content);
@@ -679,11 +679,11 @@ proptest! {
 		let parsed: JsonValue = serde_json::from_str(&array1).unwrap();
 		let array2 = serde_json::to_string_pretty(&parsed).unwrap();
 
-		let leaked_array2 = Box::leak(array2.clone().into_boxed_str());
+		let leaked_array2: &str = Box::leak(array2.clone().into_boxed_str());
 		let result = evaluator.compare_vec(
 			&array1,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_array2)
+			&LiteralValue::str(leaked_array2)
 		).unwrap();
 
 		prop_assert!(result, "JSON arrays with same content should be equal: '{}' vs '{}'", array1, array2);
@@ -697,11 +697,11 @@ proptest! {
 			)).unwrap();
 
 			if array1 != array3 {  // Only test if actually different
-				let leaked_array3 = Box::leak(array3.clone().into_boxed_str());
+				let leaked_array3: &str = Box::leak(array3.clone().into_boxed_str());
 				let result_diff_order = evaluator.compare_vec(
 					&array1,
 					&ComparisonOperator::Eq,
-					&LiteralValue::Str(leaked_array3)
+					&LiteralValue::str(leaked_array3)
 				).unwrap();
 
 				prop_assert!(!result_diff_order,
@@ -724,11 +724,11 @@ proptest! {
 			.collect::<Vec<_>>()
 			.join(",");
 
-		let leaked_csv2 = Box::leak(csv2.clone().into_boxed_str());
+		let leaked_csv2: &str = Box::leak(csv2.clone().into_boxed_str());
 		let result = evaluator.compare_vec(
 			&csv1,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_csv2)
+			&LiteralValue::str(leaked_csv2)
 		).unwrap();
 
 		prop_assert!(result,
@@ -742,12 +742,12 @@ proptest! {
 		(json_array_str, search_target) in arb_json_array_with_searchable_content()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_target = Box::leak(search_target.clone().into_boxed_str());
+		let leaked_target: &str = Box::leak(search_target.clone().into_boxed_str());
 
 		let result = evaluator.compare_vec(
 			&json_array_str,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_target)
+			&LiteralValue::str(leaked_target)
 		).unwrap();
 
 		prop_assert!(result,
@@ -756,11 +756,11 @@ proptest! {
 
 		// Should not find non-existent elements
 		let non_existent = format!("nonexistent_{}", search_target);
-		let leaked_non_existent = Box::leak(non_existent.clone().into_boxed_str());
+		let leaked_non_existent: &str = Box::leak(non_existent.clone().into_boxed_str());
 		let result_not_found = evaluator.compare_vec(
 			&json_array_str,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_non_existent)
+			&LiteralValue::str(leaked_non_existent)
 		).unwrap();
 
 		prop_assert!(!result_not_found,
@@ -774,12 +774,12 @@ proptest! {
 		(csv_str, search_target) in arb_csv_with_searchable_content()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_target = Box::leak(search_target.clone().into_boxed_str());
+		let leaked_target: &str = Box::leak(search_target.clone().into_boxed_str());
 
 		let result = evaluator.compare_vec(
 			&csv_str,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_target)
+			&LiteralValue::str(leaked_target)
 		).unwrap();
 
 		prop_assert!(result,
@@ -823,13 +823,13 @@ proptest! {
 		)).unwrap();
 		let csv_string = elements.join(",");
 
-		let leaked_csv = Box::leak(csv_string.clone().into_boxed_str());
+		let leaked_csv: &str = Box::leak(csv_string.clone().into_boxed_str());
 
 		// JSON array vs CSV string should NOT be equal (different formats)
 		let result = evaluator.compare_vec(
 			&json_array,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_csv)
+			&LiteralValue::str(leaked_csv)
 		).unwrap();
 
 		prop_assert!(!result,
@@ -840,7 +840,7 @@ proptest! {
 		let result_ne = evaluator.compare_vec(
 			&json_array,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_csv)
+			&LiteralValue::str(leaked_csv)
 		).unwrap();
 
 		prop_assert!(result_ne,
@@ -865,11 +865,11 @@ proptest! {
 			{"different": other_field_content}
 		])).unwrap();
 
-		let leaked_target = Box::leak(search_target.clone().into_boxed_str());
+		let leaked_target: &str = Box::leak(search_target.clone().into_boxed_str());
 		let result = evaluator.compare_vec(
 			&json_array,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_target)
+			&LiteralValue::str(leaked_target)
 		).unwrap();
 
 		prop_assert!(result,
@@ -888,7 +888,7 @@ proptest! {
 		let result = evaluator.compare_vec(
 			&vec_content,
 			&operator,
-			&LiteralValue::Str("test")
+			&LiteralValue::str("test")
 		);
 
 		prop_assert!(result.is_err(),
@@ -920,21 +920,21 @@ proptest! {
 		let uppercase = original_string.to_uppercase();
 		let lowercase = original_string.to_lowercase();
 
-		let leaked_upper = Box::leak(uppercase.clone().into_boxed_str());
-		let leaked_lower = Box::leak(lowercase.clone().into_boxed_str());
+		let leaked_upper: &str = Box::leak(uppercase.clone().into_boxed_str());
+		let leaked_lower: &str = Box::leak(lowercase.clone().into_boxed_str());
 
 		let result_upper = evaluator.compare_string(
 			string_kind,
 			&original_string,
 			&operator,
-			&LiteralValue::Str(leaked_upper)
+			&LiteralValue::str(leaked_upper)
 		).unwrap();
 
 		let result_lower = evaluator.compare_string(
 			string_kind,
 			&original_string,
 			&operator,
-			&LiteralValue::Str(leaked_lower)
+			&LiteralValue::str(leaked_lower)
 		).unwrap();
 
 		// Results should be the same regardless of case
@@ -969,21 +969,21 @@ proptest! {
 			else { c.to_uppercase().collect::<String>() }
 		}).collect::<String>();
 
-		let leaked_lower = Box::leak(lowercase_addr.clone().into_boxed_str());
-		let leaked_mixed = Box::leak(mixed_case.clone().into_boxed_str());
+		let leaked_lower: &str = Box::leak(lowercase_addr.clone().into_boxed_str());
+		let leaked_mixed: &str = Box::leak(mixed_case.clone().into_boxed_str());
 
 		let result_lower = evaluator.compare_string(
 			"address",
 			&stellar_address,
 			&operator,
-			&LiteralValue::Str(leaked_lower)
+			&LiteralValue::str(leaked_lower)
 		).unwrap();
 
 		let result_mixed = evaluator.compare_string(
 			"address",
 			&stellar_address,
 			&operator,
-			&LiteralValue::Str(leaked_mixed)
+			&LiteralValue::str(leaked_mixed)
 		).unwrap();
 
 		// Test actual behavior rather than assumptions
@@ -994,12 +994,12 @@ proptest! {
 		}
 
 		// Test reflexivity - address should equal itself
-		let leaked_same = Box::leak(stellar_address.clone().into_boxed_str());
+		let leaked_same: &str = Box::leak(stellar_address.clone().into_boxed_str());
 		let result_same = evaluator.compare_string(
 			"address",
 			&stellar_address,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_same)
+			&LiteralValue::str(leaked_same)
 		).unwrap();
 
 		prop_assert!(result_same,
@@ -1026,21 +1026,21 @@ proptest! {
 		let prefix = &full_string[..prefix_len];
 		let suffix = &full_string[full_string.len().saturating_sub(suffix_len)..];
 
-		let leaked_prefix = Box::leak(prefix.to_string().into_boxed_str());
-		let leaked_suffix = Box::leak(suffix.to_string().into_boxed_str());
+		let leaked_prefix: &str = Box::leak(prefix.to_string().into_boxed_str());
+		let leaked_suffix: &str = Box::leak(suffix.to_string().into_boxed_str());
 
 		let starts_with_result = evaluator.compare_string(
 			string_kind,
 			&full_string,
 			&ComparisonOperator::StartsWith,
-			&LiteralValue::Str(leaked_prefix)
+			&LiteralValue::str(leaked_prefix)
 		).unwrap();
 
 		let ends_with_result = evaluator.compare_string(
 			string_kind,
 			&full_string,
 			&ComparisonOperator::EndsWith,
-			&LiteralValue::Str(leaked_suffix)
+			&LiteralValue::str(leaked_suffix)
 		).unwrap();
 
 		prop_assert!(starts_with_result,
@@ -1064,20 +1064,20 @@ proptest! {
 		prop_assume!(string1.to_lowercase() != string2.to_lowercase());
 
 		let evaluator = create_evaluator();
-		let leaked_string2 = Box::leak(string2.clone().into_boxed_str());
+		let leaked_string2: &str = Box::leak(string2.clone().into_boxed_str());
 
 		let eq_result = evaluator.compare_string(
 			string_kind,
 			&string1,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_string2)
+			&LiteralValue::str(leaked_string2)
 		).unwrap();
 
 		let ne_result = evaluator.compare_string(
 			string_kind,
 			&string1,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_string2)
+			&LiteralValue::str(leaked_string2)
 		).unwrap();
 
 		prop_assert!(!eq_result,
@@ -1139,7 +1139,7 @@ proptest! {
 			string_kind,
 			&test_string,
 			&unsupported_op,
-			&LiteralValue::Str("test")
+			&LiteralValue::str("test")
 		);
 
 		prop_assert!(result.is_err(),
@@ -1156,13 +1156,13 @@ proptest! {
 		json_map in arb_json_map()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_map = Box::leak(json_map.clone().into_boxed_str());
+		let leaked_map: &str = Box::leak(json_map.clone().into_boxed_str());
 
 		// Map should equal itself
 		let result_eq = evaluator.compare_map(
 			&json_map,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_map)
+			&LiteralValue::str(leaked_map)
 		).unwrap();
 
 		prop_assert!(result_eq,
@@ -1172,7 +1172,7 @@ proptest! {
 		let result_ne = evaluator.compare_map(
 			&json_map,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_map)
+			&LiteralValue::str(leaked_map)
 		).unwrap();
 
 		prop_assert!(!result_ne,
@@ -1201,12 +1201,12 @@ proptest! {
 		let json1 = serde_json::to_string(&JsonValue::Object(map1)).unwrap();
 		let json2 = serde_json::to_string_pretty(&JsonValue::Object(map2)).unwrap();
 
-		let leaked_json2 = Box::leak(json2.clone().into_boxed_str());
+		let leaked_json2: &str = Box::leak(json2.clone().into_boxed_str());
 
 		let result = evaluator.compare_map(
 			&json1,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_json2)
+			&LiteralValue::str(leaked_json2)
 		).unwrap();
 
 		prop_assert!(result,
@@ -1240,18 +1240,18 @@ proptest! {
 			fields2.into_iter().map(|(k, v)| (k, json!(v))).collect()
 		)).unwrap();
 
-		let leaked_map2 = Box::leak(map2.clone().into_boxed_str());
+		let leaked_map2: &str = Box::leak(map2.clone().into_boxed_str());
 
 		let eq_result = evaluator.compare_map(
 			&map1,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_map2)
+			&LiteralValue::str(leaked_map2)
 		).unwrap();
 
 		let ne_result = evaluator.compare_map(
 			&map1,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_map2)
+			&LiteralValue::str(leaked_map2)
 		).unwrap();
 
 		prop_assert!(!eq_result,
@@ -1266,12 +1266,12 @@ proptest! {
 		(json_map, search_target) in arb_json_map_with_searchable_content()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_target = Box::leak(search_target.clone().into_boxed_str());
+		let leaked_target: &str = Box::leak(search_target.clone().into_boxed_str());
 
 		let result = evaluator.compare_map(
 			&json_map,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_target)
+			&LiteralValue::str(leaked_target)
 		).unwrap();
 
 		prop_assert!(result,
@@ -1280,11 +1280,11 @@ proptest! {
 
 		// Should not find non-existent values
 		let non_existent = format!("nonexistent_{}", search_target);
-		let leaked_non_existent = Box::leak(non_existent.clone().into_boxed_str());
+		let leaked_non_existent: &str = Box::leak(non_existent.clone().into_boxed_str());
 		let result_not_found = evaluator.compare_map(
 			&json_map,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_non_existent)
+			&LiteralValue::str(leaked_non_existent)
 		).unwrap();
 
 		prop_assert!(!result_not_found,
@@ -1317,21 +1317,21 @@ proptest! {
 		valid_map in arb_json_map()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_valid = Box::leak(valid_map.clone().into_boxed_str());
+		let leaked_valid: &str = Box::leak(valid_map.clone().into_boxed_str());
 
 		// Test invalid LHS
 		let result_lhs = evaluator.compare_map(
 			&invalid_json,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_valid)
+			&LiteralValue::str(leaked_valid)
 		);
 
 		// Test invalid RHS
-		let leaked_invalid = Box::leak(invalid_json.clone().into_boxed_str());
+		let leaked_invalid: &str = Box::leak(invalid_json.clone().into_boxed_str());
 		let result_rhs = evaluator.compare_map(
 			&valid_map,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_invalid)
+			&LiteralValue::str(leaked_invalid)
 		);
 
 		prop_assert!(result_lhs.is_err() || result_rhs.is_err(),
@@ -1372,7 +1372,7 @@ proptest! {
 		let result = evaluator.compare_map(
 			&json_map,
 			&unsupported_op,
-			&LiteralValue::Str("test")
+			&LiteralValue::str("test")
 		);
 
 		prop_assert!(result.is_err(),

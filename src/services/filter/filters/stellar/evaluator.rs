@@ -81,7 +81,7 @@ impl<'a> StellarConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			LiteralValue::Number(s) => *s,
 			_ => {
 				let msg = format!(
@@ -290,8 +290,8 @@ impl<'a> StellarConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let right = match rhs_literal {
-			LiteralValue::Number(s) => s,
-			LiteralValue::Str(s) => s,
+			LiteralValue::Number(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			_ => {
 				let msg = format!(
 					"Expected number or string literal for i256 comparison, found: {:?}",
@@ -308,8 +308,8 @@ impl<'a> StellarConditionEvaluator<'a> {
 		);
 
 		match operator {
-			ComparisonOperator::Eq => Ok(lhs_str == *right),
-			ComparisonOperator::Ne => Ok(lhs_str != *right),
+			ComparisonOperator::Eq => Ok(lhs_str == right),
+			ComparisonOperator::Ne => Ok(lhs_str != right),
 			_ => {
 				let msg = format!(
 					"Operator {:?} not supported for i256 string comparison",
@@ -341,7 +341,7 @@ impl<'a> StellarConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let right_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			_ => {
 				let msg = format!(
 					"Expected string literal for {} comparison, found: {:?}",
@@ -407,7 +407,7 @@ impl<'a> StellarConditionEvaluator<'a> {
 		rhs_literal: &LiteralValue<'_>,
 	) -> Result<bool, EvaluationError> {
 		let rhs_target_str = match rhs_literal {
-			LiteralValue::Str(s) => *s,
+			LiteralValue::Str(s) => s.as_ref(),
 			LiteralValue::Number(s) => {
 				if *operator == ComparisonOperator::Contains {
 					*s // For Contains, we search for this number (as string)
@@ -806,7 +806,7 @@ mod tests {
 			.compare_large_int_as_string(
 				"12345",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("12345")
+				&LiteralValue::str("12345")
 			)
 			.unwrap());
 		assert!(!evaluator
@@ -865,7 +865,7 @@ mod tests {
 				"string",
 				"hello",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("hello")
+				&LiteralValue::str("hello")
 			)
 			.unwrap());
 
@@ -875,7 +875,7 @@ mod tests {
 				"string",
 				"hello",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("world")
+				&LiteralValue::str("world")
 			)
 			.unwrap());
 
@@ -885,7 +885,7 @@ mod tests {
 				"string",
 				"hello world",
 				&ComparisonOperator::StartsWith,
-				&LiteralValue::Str("hello")
+				&LiteralValue::str("hello")
 			)
 			.unwrap());
 
@@ -895,7 +895,7 @@ mod tests {
 				"string",
 				"hello world",
 				&ComparisonOperator::EndsWith,
-				&LiteralValue::Str("world")
+				&LiteralValue::str("world")
 			)
 			.unwrap());
 
@@ -905,7 +905,7 @@ mod tests {
 				"string",
 				"hello world",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("world")
+				&LiteralValue::str("world")
 			)
 			.unwrap());
 
@@ -915,7 +915,7 @@ mod tests {
 				"address",
 				"GABC...", // Assume normalize_address makes it GABC...
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("gabc...")
+				&LiteralValue::str("gabc...")
 			)
 			.unwrap()); // This depends on normalize_address
 
@@ -925,7 +925,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("something...")
+				&LiteralValue::str("something...")
 			)
 			.unwrap());
 
@@ -935,7 +935,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::StartsWith,
-				&LiteralValue::Str("GAB")
+				&LiteralValue::str("GAB")
 			)
 			.unwrap());
 
@@ -945,7 +945,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::EndsWith,
-				&LiteralValue::Str("C...")
+				&LiteralValue::str("C...")
 			)
 			.unwrap());
 
@@ -955,7 +955,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("AB")
+				&LiteralValue::str("AB")
 			)
 			.unwrap());
 	}
@@ -970,7 +970,7 @@ mod tests {
 				"string",
 				"hello",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("world")
+				&LiteralValue::str("world")
 			)
 			.unwrap());
 
@@ -980,7 +980,7 @@ mod tests {
 				"string",
 				"hello",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("hello")
+				&LiteralValue::str("hello")
 			)
 			.unwrap());
 
@@ -990,7 +990,7 @@ mod tests {
 				"string",
 				"hello world",
 				&ComparisonOperator::StartsWith,
-				&LiteralValue::Str("world")
+				&LiteralValue::str("world")
 			)
 			.unwrap());
 
@@ -1000,7 +1000,7 @@ mod tests {
 				"string",
 				"hello world",
 				&ComparisonOperator::EndsWith,
-				&LiteralValue::Str("hello")
+				&LiteralValue::str("hello")
 			)
 			.unwrap());
 
@@ -1010,7 +1010,7 @@ mod tests {
 				"string",
 				"hello world",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("foo")
+				&LiteralValue::str("foo")
 			)
 			.unwrap());
 
@@ -1020,7 +1020,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("something...")
+				&LiteralValue::str("something...")
 			)
 			.unwrap());
 
@@ -1030,7 +1030,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("GABC...")
+				&LiteralValue::str("GABC...")
 			)
 			.unwrap());
 
@@ -1040,7 +1040,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::StartsWith,
-				&LiteralValue::Str("XYZ")
+				&LiteralValue::str("XYZ")
 			)
 			.unwrap());
 
@@ -1050,7 +1050,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::EndsWith,
-				&LiteralValue::Str("XYZ")
+				&LiteralValue::str("XYZ")
 			)
 			.unwrap());
 
@@ -1060,7 +1060,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("XYZ")
+				&LiteralValue::str("XYZ")
 			)
 			.unwrap());
 	}
@@ -1086,7 +1086,7 @@ mod tests {
 				"string",
 				"hello",
 				&ComparisonOperator::Gte,
-				&LiteralValue::Str("world")
+				&LiteralValue::str("world")
 			),
 			Err(EvaluationError::UnsupportedOperator { .. })
 		));
@@ -1101,14 +1101,14 @@ mod tests {
 			.compare_vec(
 				lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("item2")
+				&LiteralValue::str("item2")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_vec(
 				lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("items5")
+				&LiteralValue::str("items5")
 			)
 			.unwrap());
 	}
@@ -1121,7 +1121,7 @@ mod tests {
 			.compare_vec(lhs, &ComparisonOperator::Contains, &LiteralValue::Number("123")) // RHS is Number("123")
 			.unwrap());
 		assert!(evaluator
-			.compare_vec(lhs, &ComparisonOperator::Contains, &LiteralValue::Str("456")) // RHS is Str("456")
+			.compare_vec(lhs, &ComparisonOperator::Contains, &LiteralValue::str("456")) // RHS is Str("456")
 			.unwrap());
 	}
 
@@ -1133,7 +1133,7 @@ mod tests {
 			.compare_vec(
 				lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("Alice")
+				&LiteralValue::str("Alice")
 			)
 			.unwrap());
 		assert!(evaluator // Search for number value (as string)
@@ -1147,7 +1147,7 @@ mod tests {
 			.compare_vec(
 				lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("Charlie")
+				&LiteralValue::str("Charlie")
 			)
 			.unwrap());
 	}
@@ -1160,7 +1160,7 @@ mod tests {
 			.compare_vec(
 				lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("alice")
+				&LiteralValue::str("alice")
 			)
 			.unwrap());
 		assert!(evaluator // Number in "value" field (compared as string)
@@ -1180,14 +1180,14 @@ mod tests {
 			.compare_vec(
 				lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("beta")
+				&LiteralValue::str("beta")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_vec(
 				lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("delta")
+				&LiteralValue::str("delta")
 			)
 			.unwrap());
 	}
@@ -1203,18 +1203,18 @@ mod tests {
 			.compare_vec(
 				lhs_json,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"["a", "b"]"#)
+				&LiteralValue::str(r#"["a", "b"]"#)
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_vec(
 				lhs_json,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"["a", "c"]"#)
+				&LiteralValue::str(r#"["a", "c"]"#)
 			)
 			.unwrap());
 		assert!(evaluator
-			.compare_vec(lhs_csv, &ComparisonOperator::Eq, &LiteralValue::Str("a,b"))
+			.compare_vec(lhs_csv, &ComparisonOperator::Eq, &LiteralValue::str("a,b"))
 			.unwrap());
 
 		// Ne
@@ -1222,7 +1222,7 @@ mod tests {
 			.compare_vec(
 				lhs_json,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"["a", "c"]"#)
+				&LiteralValue::str(r#"["a", "c"]"#)
 			)
 			.unwrap());
 	}
@@ -1236,14 +1236,14 @@ mod tests {
 			.compare_vec(
 				r#"[1, 2, "hello"]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[1,2, "hello"]"#)
+				&LiteralValue::str(r#"[1,2, "hello"]"#)
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_vec(
 				r#"["Foo", "Bar"]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[ "Foo", "Bar" ]"#)
+				&LiteralValue::str(r#"[ "Foo", "Bar" ]"#)
 			)
 			.unwrap(),);
 
@@ -1252,7 +1252,7 @@ mod tests {
 			.compare_vec(
 				r#"["Alice"]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"["alice"]"#)
+				&LiteralValue::str(r#"["alice"]"#)
 			)
 			.unwrap(),);
 
@@ -1261,7 +1261,7 @@ mod tests {
 			.compare_vec(
 				r#"[1, 2]"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"[2, 1]"#)
+				&LiteralValue::str(r#"[2, 1]"#)
 			)
 			.unwrap(),);
 
@@ -1270,14 +1270,14 @@ mod tests {
 			.compare_vec(
 				r#"[1, 2, 3]"#,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"[1,2,3]"#)
+				&LiteralValue::str(r#"[1,2,3]"#)
 			)
 			.unwrap(),);
 		assert!(evaluator
 			.compare_vec(
 				r#"["Alice"]"#,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"["alice"]"#)
+				&LiteralValue::str(r#"["alice"]"#)
 			)
 			.unwrap(),);
 	}
@@ -1291,31 +1291,31 @@ mod tests {
 			.compare_vec(
 				"alice, bob, charlie",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("alice,bob,charlie")
+				&LiteralValue::str("alice,bob,charlie")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_vec(
 				"ALICE, BOB",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("alice,bob")
+				&LiteralValue::str("alice,bob")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_vec(
 				"  leading,trailing  ",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("leading,trailing")
+				&LiteralValue::str("leading,trailing")
 			)
 			.unwrap());
 		assert!(evaluator
-			.compare_vec("one", &ComparisonOperator::Eq, &LiteralValue::Str("ONE"))
+			.compare_vec("one", &ComparisonOperator::Eq, &LiteralValue::str("ONE"))
 			.unwrap(),);
 		assert!(evaluator
 			.compare_vec(
 				"", // LHS empty CSV
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("") // RHS empty CSV
+				&LiteralValue::str("") // RHS empty CSV
 			)
 			.unwrap(),);
 
@@ -1324,7 +1324,7 @@ mod tests {
 			.compare_vec(
 				"alice,bob",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("bob,alice")
+				&LiteralValue::str("bob,alice")
 			)
 			.unwrap(),);
 
@@ -1333,7 +1333,7 @@ mod tests {
 			.compare_vec(
 				"alice,bob",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("alice,charlie")
+				&LiteralValue::str("alice,charlie")
 			)
 			.unwrap(),);
 
@@ -1342,14 +1342,14 @@ mod tests {
 			.compare_vec(
 				"alice, bob",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("ALICE,BOB")
+				&LiteralValue::str("ALICE,BOB")
 			)
 			.unwrap(),);
 		assert!(evaluator
 			.compare_vec(
 				"alice,bob",
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("bob,alice")
+				&LiteralValue::str("bob,alice")
 			)
 			.unwrap(),);
 	}
@@ -1363,14 +1363,14 @@ mod tests {
 			.compare_vec(
 				r#"["alice", "bob"]"#, // LHS JSON
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("alice,bob") // RHS CSV
+				&LiteralValue::str("alice,bob") // RHS CSV
 			)
 			.unwrap(),);
 		assert!(!evaluator
 			.compare_vec(
 				"alice,bob", // LHS CSV
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"["alice", "bob"]"#) // RHS JSON
+				&LiteralValue::str(r#"["alice", "bob"]"#) // RHS JSON
 			)
 			.unwrap(),);
 
@@ -1379,7 +1379,7 @@ mod tests {
 			.compare_vec(
 				r#"["alice", "bob"]"#,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str("alice,bob")
+				&LiteralValue::str("alice,bob")
 			)
 			.unwrap(),);
 	}
@@ -1401,7 +1401,7 @@ mod tests {
 
 		// Unsupported Operator
 		assert!(matches!(
-			evaluator.compare_vec(lhs, &ComparisonOperator::Gt, &LiteralValue::Str("data")),
+			evaluator.compare_vec(lhs, &ComparisonOperator::Gt, &LiteralValue::str("data")),
 			Err(EvaluationError::UnsupportedOperator(_))
 		));
 	}
@@ -1415,14 +1415,14 @@ mod tests {
 			.compare_map(
 				lhs_json_map,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value1")
+				&LiteralValue::str("value1")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_map(
 				lhs_json_map,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("value3")
+				&LiteralValue::str("value3")
 			)
 			.unwrap());
 	}
@@ -1436,7 +1436,7 @@ mod tests {
 			.compare_map(
 				r#"{"key1": "value1", "key2": "value2"}"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"{"key2":"value2","key1":"value1"}"#)
+				&LiteralValue::str(r#"{"key2":"value2","key1":"value1"}"#)
 			)
 			.unwrap());
 
@@ -1445,7 +1445,7 @@ mod tests {
 			.compare_map(
 				r#"{"key1": "value1", "key2": "value2"}"#,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(r#"{"key1":"value1","key2":"value2"}"#)
+				&LiteralValue::str(r#"{"key1":"value1","key2":"value2"}"#)
 			)
 			.unwrap());
 	}
@@ -1491,7 +1491,7 @@ mod tests {
 				"string",
 				"hello",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("hello")
+				&LiteralValue::str("hello")
 			)
 			.unwrap());
 
@@ -1501,7 +1501,7 @@ mod tests {
 				"address",
 				"GABC...",
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str("gabc...")
+				&LiteralValue::str("gabc...")
 			)
 			.unwrap());
 
@@ -1511,7 +1511,7 @@ mod tests {
 				"vec",
 				r#"["item1", "item2"]"#,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("item1")
+				&LiteralValue::str("item1")
 			)
 			.unwrap());
 
@@ -1520,7 +1520,7 @@ mod tests {
 				"vec",
 				"apple,banana",
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("apple")
+				&LiteralValue::str("apple")
 			)
 			.unwrap());
 	}
@@ -1552,7 +1552,7 @@ mod tests {
 				"Map<String,U32,String>", // Generic Map type from Stellar SDK
 				r#"{"name":"John","age":"30","email":"john@email.com"}"#,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("john@email.com")
+				&LiteralValue::str("john@email.com")
 			)
 			.unwrap());
 
@@ -1572,7 +1572,7 @@ mod tests {
 				"Map<String,String>",
 				r#"{"key1":"value1"}"#,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(r#"{"key1":"value1"}"#)
+				&LiteralValue::str(r#"{"key1":"value1"}"#)
 			)
 			.unwrap());
 	}
@@ -1587,14 +1587,14 @@ mod tests {
 			.compare_vec(
 				lhs_with_brackets,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("beta")
+				&LiteralValue::str("beta")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_vec(
 				lhs_with_brackets,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("delta")
+				&LiteralValue::str("delta")
 			)
 			.unwrap());
 
@@ -1604,14 +1604,14 @@ mod tests {
 			.compare_vec(
 				lhs_with_space,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("bar")
+				&LiteralValue::str("bar")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_vec(
 				lhs_with_space,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("qux")
+				&LiteralValue::str("qux")
 			)
 			.unwrap());
 	}
@@ -1626,7 +1626,7 @@ mod tests {
 			.compare_vec(
 				lhs_only_open,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("[alpha")
+				&LiteralValue::str("[alpha")
 			)
 			.unwrap());
 
@@ -1636,7 +1636,7 @@ mod tests {
 			.compare_vec(
 				lhs_only_close,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("beta]")
+				&LiteralValue::str("beta]")
 			)
 			.unwrap());
 
@@ -1646,7 +1646,7 @@ mod tests {
 			.compare_vec(
 				lhs_empty_brackets,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("anything")
+				&LiteralValue::str("anything")
 			)
 			.unwrap());
 
@@ -1656,14 +1656,14 @@ mod tests {
 			.compare_vec(
 				lhs_numbers,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("2")
+				&LiteralValue::str("2")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_vec(
 				lhs_numbers,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("5")
+				&LiteralValue::str("5")
 			)
 			.unwrap());
 	}
@@ -1682,14 +1682,14 @@ mod tests {
 			.compare_vec(
 				lhs_plain,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("b")
+				&LiteralValue::str("b")
 			)
 			.unwrap());
 		assert!(evaluator
 			.compare_vec(
 				lhs_bracketed,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("b")
+				&LiteralValue::str("b")
 			)
 			.unwrap());
 
@@ -1698,14 +1698,14 @@ mod tests {
 			.compare_vec(
 				lhs_plain,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("d")
+				&LiteralValue::str("d")
 			)
 			.unwrap());
 		assert!(!evaluator
 			.compare_vec(
 				lhs_bracketed,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("d")
+				&LiteralValue::str("d")
 			)
 			.unwrap());
 	}

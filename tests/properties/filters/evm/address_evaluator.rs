@@ -72,20 +72,20 @@ proptest! {
 		address in generate_valid_evm_address()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_addr = Box::leak(address.clone().into_boxed_str());
+		let leaked_addr: &str = Box::leak(address.clone().into_boxed_str());
 
 		// An address should equal itself
 		prop_assert!(evaluator.compare_address(
 			&address,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_addr)
+			&LiteralValue::str(leaked_addr)
 		).unwrap());
 
 		// An address should not be "not equal" to itself
 		prop_assert!(!evaluator.compare_address(
 			&address,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_addr)
+			&LiteralValue::str(leaked_addr)
 		).unwrap());
 	}
 
@@ -96,19 +96,19 @@ proptest! {
 		addr2 in generate_valid_evm_address()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_addr1 = Box::leak(addr1.clone().into_boxed_str());
-		let leaked_addr2 = Box::leak(addr2.clone().into_boxed_str());
+		let leaked_addr1: &str = Box::leak(addr1.clone().into_boxed_str());
+		let leaked_addr2: &str = Box::leak(addr2.clone().into_boxed_str());
 
 		let addr1_eq_addr2 = evaluator.compare_address(
 			&addr1,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_addr2)
+			&LiteralValue::str(leaked_addr2)
 		).unwrap();
 
 		let addr2_eq_addr1 = evaluator.compare_address(
 			&addr2,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_addr1)
+			&LiteralValue::str(leaked_addr1)
 		).unwrap();
 
 		// Equality should be symmetric: addr1 == addr2 iff addr2 == addr1
@@ -133,34 +133,34 @@ proptest! {
 			if i > 0 && i % 4 == 0 { format!(" {}", c) } else { c.to_string() }
 		}).collect::<String>());
 
-		let leaked_lowercase = Box::leak(lowercase_addr.clone().into_boxed_str());
-		let leaked_uppercase = Box::leak(uppercase_addr.clone().into_boxed_str());
-		let leaked_mixed = Box::leak(mixed_case_addr.clone().into_boxed_str());
-		let leaked_spaces = Box::leak(addr_with_spaces.clone().into_boxed_str());
+		let leaked_lowercase: &str = Box::leak(lowercase_addr.clone().into_boxed_str());
+		let leaked_uppercase: &str = Box::leak(uppercase_addr.clone().into_boxed_str());
+		let leaked_mixed: &str = Box::leak(mixed_case_addr.clone().into_boxed_str());
+		let leaked_spaces: &str = Box::leak(addr_with_spaces.clone().into_boxed_str());
 
 		// All representations should be equal to each other
 		prop_assert!(evaluator.compare_address(
 			&lowercase_addr,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_uppercase)
+			&LiteralValue::str(leaked_uppercase)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_address(
 			&uppercase_addr,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_mixed)
+			&LiteralValue::str(leaked_mixed)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_address(
 			&mixed_case_addr,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_spaces)
+			&LiteralValue::str(leaked_spaces)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_address(
 			&addr_with_spaces,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_lowercase)
+			&LiteralValue::str(leaked_lowercase)
 		).unwrap());
 	}
 
@@ -176,20 +176,20 @@ proptest! {
 		if bytes1 != bytes2 {
 			let addr1 = format!("0x{}", hex::encode(&bytes1));
 			let addr2 = format!("0x{}", hex::encode(&bytes2));
-			let leaked_addr2 = Box::leak(addr2.clone().into_boxed_str());
+			let leaked_addr2: &str = Box::leak(addr2.clone().into_boxed_str());
 
 			// Different addresses should not be equal
 			prop_assert!(!evaluator.compare_address(
 				&addr1,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(leaked_addr2)
+				&LiteralValue::str(leaked_addr2)
 			).unwrap());
 
 			// Different addresses should be "not equal"
 			prop_assert!(evaluator.compare_address(
 				&addr1,
 				&ComparisonOperator::Ne,
-				&LiteralValue::Str(leaked_addr2)
+				&LiteralValue::str(leaked_addr2)
 			).unwrap());
 		}
 	}
@@ -202,12 +202,12 @@ proptest! {
 		operator in generate_unsupported_address_operator()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_addr2 = Box::leak(addr2.clone().into_boxed_str());
+		let leaked_addr2: &str = Box::leak(addr2.clone().into_boxed_str());
 
 		let result = evaluator.compare_address(
 			&addr1,
 			&operator,
-			&LiteralValue::Str(leaked_addr2)
+			&LiteralValue::str(leaked_addr2)
 		);
 
 		// Unsupported operators should produce error
