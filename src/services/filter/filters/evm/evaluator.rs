@@ -1933,10 +1933,17 @@ mod tests {
 				.collect(),
 		));
 
+		// The literal as written between quotes in an expression
+		let literal = |s: &str| s.replace('\\', r"\\");
+
 		for s in strings {
 			assert!(
 				evaluator
-					.compare_array(&lhs, &ComparisonOperator::Contains, &LiteralValue::Str(s))
+					.compare_array(
+						&lhs,
+						&ComparisonOperator::Contains,
+						&LiteralValue::Str(&literal(s))
+					)
 					.unwrap(),
 				"{lhs} should contain {s:?}"
 			);
@@ -1949,10 +1956,7 @@ mod tests {
 			)
 			.unwrap());
 
-		// The literal as written between quotes in an expression
-		let rhs = serde_json::to_string(&strings)
-			.unwrap()
-			.replace('\\', r"\\");
+		let rhs = literal(&serde_json::to_string(&strings).unwrap());
 		assert!(evaluator
 			.compare_array(&lhs, &ComparisonOperator::Eq, &LiteralValue::Str(&rhs))
 			.unwrap());
@@ -1998,7 +2002,7 @@ mod tests {
 			.compare_tuple(
 				&lhs,
 				&ComparisonOperator::Contains,
-				&LiteralValue::Str("c\\")
+				&LiteralValue::Str(r"c\\")
 			)
 			.unwrap());
 		assert!(evaluator
@@ -2373,7 +2377,7 @@ mod tests {
 		assert!(contains(&owner.to_string()));
 		assert!(contains(&Address::ZERO.to_string()));
 		assert!(contains(&label));
-		assert!(contains("c\\"));
+		assert!(contains(r"c\\"));
 		// A string field can't add elements to the tuple
 		assert!(!contains(&injected.to_string()));
 	}

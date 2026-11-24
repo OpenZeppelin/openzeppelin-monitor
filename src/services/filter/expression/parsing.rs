@@ -9,7 +9,7 @@ use super::ast::{
 use std::borrow::Cow;
 use winnow::{
 	ascii::{digit1, escaped, space0, space1, take_escaped, Caseless},
-	combinator::{alt, delimited, eof, opt, peek, repeat, terminated},
+	combinator::{alt, delimited, eof, opt, peek, repeat},
 	error::{ContextError, ErrMode, ParseError, StrContext, StrContextValue},
 	prelude::*,
 	token::{literal, one_of, take_while},
@@ -143,13 +143,10 @@ pub fn unescape_literal(raw: &str) -> Cow<'_, str> {
 	if !raw.contains('\\') {
 		return Cow::Borrowed(raw);
 	}
-	terminated(
-		escaped(
-			take_while(1.., |c: char| c != '\\'),
-			'\\',
-			winnow::token::any::<_, ContextError>.verify_map(escaped_char),
-		),
-		eof,
+	escaped(
+		take_while(1.., |c: char| c != '\\'),
+		'\\',
+		winnow::token::any::<_, ContextError>.verify_map(escaped_char),
 	)
 	.parse(raw)
 	.map_or(Cow::Borrowed(raw), Cow::Owned)
@@ -674,13 +671,25 @@ mod tests {
 
 	proptest! {
 		#[test]
-		fn prop_unescape_literal_round_trips(s in any::<String>()) {
-			let encoded = s
-				.replace('\\', r"\\")
-				.replace('\'', r"\'")
-				.replace('\n', r"\n")
-				.replace('\t', r"\t");
-			let input = format!("'{encoded}'");
+		fn prop_unescape_literal_round_trips(
+			s in any::<String>(),
+			quote in prop_oneof![Just('\''), Just('"')],
+			escape_other_quote in any::<bool>(),
+		) {
+			let mut encoded = String::new();
+			for c in s.chars() {
+				match c {
+					'\\' => encoded.push_str(r"\\"),
+					'\n' => encoded.push_str(r"\n"),
+					'\t' => encoded.push_str(r"\t"),
+					'\'' | '"' if c == quote || escape_other_quote => {
+						encoded.push('\\');
+						encoded.push(c);
+					}
+					_ => encoded.push(c),
+				}
+			}
+			let input = format!("{quote}{encoded}{quote}");
 			let Ok(LiteralValue::Str(raw)) = parse_quoted_string.parse(input.as_str()) else {
 				return Err(TestCaseError::fail(format!("failed to parse {input:?}")));
 			};

@@ -13,6 +13,7 @@ pub enum LiteralValue<'a> {
 	Bool(bool),
 	/// A string literal value. Includes both single-quoted and unquoted strings, includes hexadecimal strings.
 	/// e.g., "abc", 'abc', '0x123ABC'
+	/// Quoted strings keep escapes as written; read the value with `unescape_literal`.
 	Str(&'a str),
 	/// A numeric literal value. e.g., "123", "-123.456", "0x123" or hexadecimal
 	/// Store as string slice to preserve original form until evaluation phase.
