@@ -165,6 +165,17 @@ pub struct Network {
 	/// providers that reject over-limit queries: a silently truncated response drops logs.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub logs_block_range: Option<u64>,
+
+	/// EVM only: fetch only the blocks holding a log of a monitored address.
+	///
+	/// The monitor first asks `eth_getLogs` (filtered to the monitored addresses, one request
+	/// per `logs_block_range` blocks) which blocks have such a log, and then fetches only
+	/// those with `eth_getBlockByNumber`, instead of every block. It only applies when every
+	/// monitor of the network has event conditions and no function conditions, since only
+	/// then a block without a monitored log cannot produce a match; otherwise it is ignored
+	/// with a warning. With `store_blocks`, only the fetched blocks are stored.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub logs_first: Option<bool>,
 }
 
 /// RPC endpoint configuration with load balancing weight

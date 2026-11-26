@@ -41,6 +41,7 @@ fn create_test_network() -> Network {
 		store_blocks: Some(true),
 		recovery_config: None,
 		logs_block_range: None,
+		logs_first: None,
 	}
 }
 

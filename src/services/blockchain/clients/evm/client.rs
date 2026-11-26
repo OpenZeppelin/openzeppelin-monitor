@@ -5,7 +5,7 @@
 //! and log filtering.
 
 use std::{
-	collections::HashMap,
+	collections::{BTreeSet, HashMap},
 	marker::PhantomData,
 	sync::{
 		atomic::{AtomicU64, Ordering},
@@ -24,7 +24,7 @@ use crate::{
 	models::{BlockType, EVMBlock, EVMReceiptLog, EVMTransactionReceipt, Network},
 	services::{
 		blockchain::{
-			client::BlockChainClient,
+			client::{BlockChainClient, BlockFetchResult, FetchStreamKind},
 			transports::{BlockchainTransport, EVMTransportClient},
 			BlockFilterFactory,
 		},
@@ -157,6 +157,24 @@ impl LogsRangeCache {
 		cached.insert(block_number, to_block, addresses, logs.clone());
 		Some((block_number, to_block, logs))
 	}
+
+	/// Stores logs fetched elsewhere for `[from_block, to_block]`, so the blocks of that range
+	/// are answered from them.
+	fn prime(
+		&self,
+		from_block: u64,
+		to_block: u64,
+		addresses: &Option<Vec<String>>,
+		logs: Arc<HashMap<u64, Vec<EVMReceiptLog>>>,
+	) {
+		let mut cached = self.ranges.lock().unwrap_or_else(|e| e.into_inner());
+		cached.insert(
+			from_block,
+			to_block,
+			addresses,
+			Arc::new(OnceCell::new_with(Some(Some(logs)))),
+		);
+	}
 }
 
 /// Client implementation for Ethereum Virtual Machine (EVM) compatible blockchains
@@ -168,6 +186,9 @@ pub struct EvmClient<T: Send + Sync + Clone> {
 	http_client: T,
 	/// Set when the network has a `logs_block_range` greater than 1
 	logs_cache: Option<Arc<LogsRangeCache>>,
+	/// Set by [`Self::with_logs_first`]: the `eth_getLogs` address filter that decides which
+	/// blocks `get_blocks_with_meta` fetches
+	logs_first_addresses: Option<Vec<String>>,
 }
 
 impl<T: Send + Sync + Clone> EvmClient<T> {
@@ -176,7 +197,21 @@ impl<T: Send + Sync + Clone> EvmClient<T> {
 		Self {
 			http_client,
 			logs_cache: None,
+			logs_first_addresses: None,
 		}
+	}
+
+	/// Makes `get_blocks_with_meta` fetch only the blocks holding a log emitted by one of
+	/// `addresses`, found with `eth_getLogs` over the requested range, instead of every
+	/// block of the range.
+	///
+	/// Only correct when no monitor of the network can match a transaction without one of
+	/// those logs; see `logs_first_address_filter`. `addresses` must be the same filter the
+	/// block filter sends, so that its per-block `eth_getLogs` calls are answered from the
+	/// logs fetched here when a `logs_block_range` is set.
+	pub fn with_logs_first(mut self, addresses: Vec<String>) -> Self {
+		self.logs_first_addresses = Some(addresses);
+		self
 	}
 
 	/// Fetches the logs of up to `range` consecutive blocks with one `eth_getLogs` request.
@@ -436,33 +471,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
 		let blocks = stream::iter(start_block..=end_block.unwrap_or(start_block))
-			.map(|block_number| {
-				let params = json!([
-					format!("0x{:x}", block_number),
-					true // include full transaction objects
-				]);
-				let client = self.http_client.clone();
-
-				async move {
-					let response = client
-						.send_raw_request("eth_getBlockByNumber", Some(params))
-						.await
-						.with_context(|| format!("Failed to get block: {}", block_number))?;
-
-					let block_data = response
-						.get("result")
-						.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
-
-					if block_data.is_null() {
-						return Err(anyhow::anyhow!("Block not found"));
-					}
-
-					let block: EVMBlock = serde_json::from_value(block_data.clone())
-						.map_err(|e| anyhow::anyhow!("Failed to parse block: {}", e))?;
-
-					Ok(BlockType::EVM(Box::new(block)))
-				}
-			})
+			.map(|block_number| self.fetch_block(block_number))
 			.buffered(32)
 			.try_collect::<Vec<BlockType>>()
 			.await?;
@@ -473,6 +482,108 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 			}
 		}
 		Ok(blocks)
+	}
+
+	/// With [`EvmClient::with_logs_first`], fetches only the blocks of the range that hold a
+	/// log of a monitored address, as a sparse stream. Otherwise every block, as a dense one.
+	#[instrument(skip(self), fields(start_block, end_block))]
+	async fn get_blocks_with_meta(
+		&self,
+		start_block: u64,
+		end_block: Option<u64>,
+	) -> Result<BlockFetchResult, anyhow::Error> {
+		let Some(addresses) = &self.logs_first_addresses else {
+			return Ok(BlockFetchResult {
+				blocks: self.get_blocks(start_block, end_block).await?,
+				failed_blocks: Vec::new(),
+				stream_kind: FetchStreamKind::Dense,
+			});
+		};
+		let end_block = end_block.unwrap_or(start_block);
+
+		// The watcher asks for confirmed blocks only, so the whole requested range may be
+		// covered by log ranges, including blocks that turn out to have no logs
+		if let Some(cache) = &self.logs_cache {
+			cache.note_fetched_block(end_block);
+		}
+
+		let range = self.logs_cache.as_ref().map_or(1, |cache| cache.range);
+		let addresses = Some(addresses.clone());
+		let mut block_numbers = BTreeSet::new();
+		let mut from_block = start_block;
+		while from_block <= end_block {
+			let to_block = std::cmp::min(from_block.saturating_add(range - 1), end_block);
+			let by_block = match self
+				.request_logs(from_block, to_block, addresses.clone())
+				.await
+			{
+				Ok(logs) => group_logs_by_block(logs, from_block, to_block),
+				Err(error) => {
+					tracing::warn!(
+						from_block,
+						to_block,
+						error = %error,
+						"eth_getLogs request failed; fetching every block of the range"
+					);
+					None
+				}
+			};
+			match by_block {
+				Some(by_block) => {
+					block_numbers.extend(by_block.keys().copied());
+					// The block filter asks for the same logs again, block by block
+					if let Some(cache) = &self.logs_cache {
+						cache.prime(from_block, to_block, &addresses, by_block);
+					}
+				}
+				// Cannot tell which blocks have logs: fetch them all, as a dense fetch would
+				None => block_numbers.extend(from_block..=to_block),
+			}
+			from_block = to_block.saturating_add(1);
+		}
+
+		// A block that fails to fetch fails the batch, as in a dense fetch, so the checkpoint
+		// stays before it and the next run fetches it again
+		let blocks = stream::iter(block_numbers)
+			.map(|block_number| self.fetch_block(block_number))
+			.buffered(32)
+			.try_collect::<Vec<BlockType>>()
+			.await?;
+		Ok(BlockFetchResult {
+			blocks,
+			failed_blocks: Vec::new(),
+			stream_kind: FetchStreamKind::Sparse,
+		})
+	}
+}
+
+impl<T: Send + Sync + Clone + BlockchainTransport> EvmClient<T> {
+	/// Fetches one block with its full transactions.
+	async fn fetch_block(&self, block_number: u64) -> Result<BlockType, anyhow::Error> {
+		let params = json!([
+			format!("0x{:x}", block_number),
+			true // include full transaction objects
+		]);
+
+		// A clone per block, as the concurrent fetches always used
+		let client = self.http_client.clone();
+		let response = client
+			.send_raw_request("eth_getBlockByNumber", Some(params))
+			.await
+			.with_context(|| format!("Failed to get block: {}", block_number))?;
+
+		let block_data = response
+			.get("result")
+			.ok_or_else(|| anyhow::anyhow!("Missing 'result' field"))?;
+
+		if block_data.is_null() {
+			return Err(anyhow::anyhow!("Block not found"));
+		}
+
+		let block: EVMBlock = serde_json::from_value(block_data.clone())
+			.map_err(|e| anyhow::anyhow!("Failed to parse block: {}", e))?;
+
+		Ok(BlockType::EVM(Box::new(block)))
 	}
 }
 
@@ -539,17 +650,27 @@ mod tests {
 		assert!(!logs_contain("0xdac17f958d2ee523a2206206994597c13d831ec7"));
 	}
 
-	/// Transport that answers `eth_getLogs` with one log per block of the requested range and
-	/// records every range it was asked for
+	/// Transport that answers `eth_getLogs` with one log per block of the requested range
+	/// (only for `blocks_with_logs` when set) and `eth_getBlockByNumber` with an empty block,
+	/// and records every request
 	#[derive(Clone, Default)]
 	struct RecordingTransport {
 		requests: Arc<Mutex<Vec<(u64, u64)>>>,
+		block_requests: Arc<Mutex<Vec<u64>>>,
 		fail_ranges: bool,
+		blocks_with_logs: Option<Vec<u64>>,
+		failing_blocks: Vec<u64>,
 	}
 
 	impl RecordingTransport {
 		fn requests(&self) -> Vec<(u64, u64)> {
 			let mut requests = self.requests.lock().unwrap().clone();
+			requests.sort();
+			requests
+		}
+
+		fn block_requests(&self) -> Vec<u64> {
+			let mut requests = self.block_requests.lock().unwrap().clone();
 			requests.sort();
 			requests
 		}
@@ -575,8 +696,13 @@ mod tests {
 		{
 			let params: Value = params.unwrap().into();
 			if method == "eth_getBlockByNumber" {
+				let block_number = parse_block(&params[0]);
+				self.block_requests.lock().unwrap().push(block_number);
+				if self.failing_blocks.contains(&block_number) {
+					return Err(TransportError::network("timeout", None, None));
+				}
 				let mut block = EVMBlock::default();
-				block.0.number = Some(alloy::primitives::U64::from(parse_block(&params[0])));
+				block.0.number = Some(alloy::primitives::U64::from(block_number));
 				return Ok(json!({ "result": serde_json::to_value(block).unwrap() }));
 			}
 			assert_eq!(method, "eth_getLogs");
@@ -587,6 +713,11 @@ mod tests {
 				return Err(TransportError::network("block range too large", None, None));
 			}
 			let logs: Vec<Value> = (from_block..=to_block)
+				.filter(|block| {
+					self.blocks_with_logs
+						.as_ref()
+						.is_none_or(|blocks| blocks.contains(block))
+				})
 				.map(|block| {
 					json!({
 						"address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -949,5 +1080,149 @@ mod tests {
 		assert!(logs_contain(
 			"eth_getLogs range returned a log outside the range"
 		));
+	}
+
+	fn block_numbers(result: &BlockFetchResult) -> Vec<u64> {
+		let mut numbers: Vec<u64> = result
+			.blocks
+			.iter()
+			.filter_map(|block| block.number())
+			.collect();
+		numbers.sort();
+		numbers
+	}
+
+	fn logs_first_client(
+		transport: &RecordingTransport,
+		range: Option<u64>,
+	) -> EvmClient<RecordingTransport> {
+		EvmClient::new_with_transport(transport.clone())
+			.with_logs_block_range(range)
+			.with_logs_first(monitored().unwrap())
+	}
+
+	#[tokio::test]
+	async fn test_logs_first_fetches_only_blocks_with_logs() {
+		let transport = RecordingTransport {
+			blocks_with_logs: Some(vec![103, 117]),
+			..Default::default()
+		};
+		let client = logs_first_client(&transport, Some(10));
+
+		let result = client.get_blocks_with_meta(100, Some(129)).await.unwrap();
+
+		assert_eq!(result.stream_kind, FetchStreamKind::Sparse);
+		assert_eq!(block_numbers(&result), vec![103, 117]);
+		assert!(result.failed_blocks.is_empty());
+		assert_eq!(transport.block_requests(), vec![103, 117]);
+		assert_eq!(
+			transport.requests(),
+			vec![(100, 109), (110, 119), (120, 129)]
+		);
+
+		// The block filter's per-block calls are answered from the same requests
+		for block in [103, 117] {
+			let logs = client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+			assert_eq!(log_blocks(&logs), vec![block]);
+		}
+		assert_eq!(transport.requests().len(), 3);
+	}
+
+	#[tokio::test]
+	async fn test_logs_first_scans_only_the_requested_blocks() {
+		let transport = RecordingTransport {
+			blocks_with_logs: Some(vec![103, 106, 111, 116]),
+			..Default::default()
+		};
+		let client = logs_first_client(&transport, Some(10));
+
+		let result = client.get_blocks_with_meta(105, Some(116)).await.unwrap();
+
+		assert_eq!(block_numbers(&result), vec![106, 111, 116]);
+		// Ranges start at the first requested block: blocks already processed are not scanned
+		assert_eq!(transport.requests(), vec![(105, 114), (115, 116)]);
+
+		// The next batch continues where this one ended, and the block filter's calls for
+		// this batch need no request
+		for block in [106, 111, 116] {
+			client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+		}
+		client.get_blocks_with_meta(117, Some(120)).await.unwrap();
+		assert_eq!(
+			transport.requests(),
+			vec![(105, 114), (115, 116), (117, 120)]
+		);
+	}
+
+	#[tokio::test]
+	async fn test_logs_first_without_range_asks_each_block() {
+		let transport = RecordingTransport {
+			blocks_with_logs: Some(vec![101]),
+			..Default::default()
+		};
+		let client = logs_first_client(&transport, None);
+
+		let result = client.get_blocks_with_meta(100, Some(102)).await.unwrap();
+
+		assert_eq!(block_numbers(&result), vec![101]);
+		assert_eq!(
+			transport.requests(),
+			vec![(100, 100), (101, 101), (102, 102)]
+		);
+	}
+
+	#[tokio::test]
+	#[traced_test]
+	async fn test_logs_first_failed_range_fetches_every_block_of_it() {
+		let transport = RecordingTransport {
+			fail_ranges: true,
+			blocks_with_logs: Some(vec![]),
+			..Default::default()
+		};
+		let client = logs_first_client(&transport, Some(10));
+
+		let result = client.get_blocks_with_meta(100, Some(104)).await.unwrap();
+
+		assert_eq!(block_numbers(&result), vec![100, 101, 102, 103, 104]);
+		assert_eq!(result.stream_kind, FetchStreamKind::Sparse);
+		assert!(logs_contain("fetching every block of the range"));
+	}
+
+	#[tokio::test]
+	async fn test_logs_first_fails_the_batch_when_a_block_with_logs_fails_to_fetch() {
+		let transport = RecordingTransport {
+			blocks_with_logs: Some(vec![101, 102]),
+			failing_blocks: vec![102],
+			..Default::default()
+		};
+		let client = logs_first_client(&transport, Some(10));
+
+		// The scan succeeds but a block with logs cannot be fetched: the batch fails, as a
+		// dense fetch does, so the watcher keeps its checkpoint before the block
+		let result = client.get_blocks_with_meta(100, Some(109)).await;
+
+		assert!(result.is_err());
+		assert_eq!(transport.requests(), vec![(100, 109)]);
+	}
+
+	#[tokio::test]
+	async fn test_without_logs_first_every_block_is_fetched() {
+		let transport = RecordingTransport {
+			blocks_with_logs: Some(vec![101]),
+			..Default::default()
+		};
+		let client = EvmClient::new_with_transport(transport.clone());
+
+		let result = client.get_blocks_with_meta(100, Some(102)).await.unwrap();
+
+		assert_eq!(result.stream_kind, FetchStreamKind::Dense);
+		assert_eq!(block_numbers(&result), vec![100, 101, 102]);
+		assert!(transport.requests().is_empty());
 	}
 }

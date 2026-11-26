@@ -492,6 +492,7 @@ A Network configuration defines connection details and operational parameters fo
 | `**store_blocks**` | `Boolean` | Whether to store processed blocks (defaults output to `./data/` directory) |
 | `**recovery_config**` | `Object` | Optional configuration for missed block recovery (see below) |
 | `**logs_block_range**` | `Number` | Optional, **EVM only**: blocks covered by one `eth_getLogs` request (default 1, one request per block, at most 1000). Only applies when the monitors declare addresses. Keep it within your provider's `eth_getLogs` block-range limit; a rejected range falls back to one request per block. Only use it with providers that reject over-limit `eth_getLogs` queries with an error: one that silently truncates a large response would drop logs from the range |
+| `**logs_first**` | `Boolean` | Optional, **EVM only**: fetch only the blocks that hold a log of a monitored address, found with `eth_getLogs` (one request per `logs_block_range` blocks), instead of every block. Applies only when every monitor of the network has event conditions and no function conditions; otherwise it is ignored with a warning. Set `logs_block_range` too, or every block costs its own `eth_getLogs`. A block is processed only if `eth_getLogs` reports a monitored log in it, so only use it with providers that return complete `eth_getLogs` results and reject over-limit queries with an error. With `store_blocks`, only those blocks are stored |
 
 #### Missed Block Recovery
 
@@ -1767,7 +1768,8 @@ The monitor implements a comprehensive error handling system with rich context a
   * Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
   * Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
   * Too low numeric settings may skip older unprocessed blocks after downtime. Use `"unlimited"` to avoid this clamp; catch-up still runs in bounded batches.
-* On fast EVM networks most RPC calls are `eth_getLogs`, one per block. Setting `logs_block_range` (for example `10`) fetches the logs of that many blocks per request, which cuts those calls by the same factor.
+* On fast EVM networks most RPC calls are `eth_getLogs`, one per block. Setting `logs_block_range` (for example `10`) fetches the logs of that many blocks per request, which cuts those calls by the same factor. Blocks are fetched in batches of at most 30 and a range never extends past the current batch, so values above 30 cut no further requests.
+* `eth_getBlockByNumber` is then the other call made for every block. If every monitor of a network only matches events (event conditions, no function conditions), `logs_first: true` fetches only the blocks with a log of a monitored address. On a network where the monitored contracts are quiet, almost no blocks are fetched at all.
 * Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _***temporarily***_ increase it with `ulimit -n 2048`.
 * Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
 * See performance considerations about custom scripts [here](/monitor/scripts#performance-considerations).

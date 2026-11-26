@@ -389,6 +389,7 @@ mod tests {
 				retry_delay_ms: 100,
 			}),
 			logs_block_range: None,
+			logs_first: None,
 		}
 	}
 

@@ -21,6 +21,7 @@ pub struct NetworkBuilder {
 	max_past_blocks: Option<MaxPastBlocks>,
 	recovery_config: Option<BlockRecoveryConfig>,
 	logs_block_range: Option<u64>,
+	logs_first: Option<bool>,
 }
 
 impl Default for NetworkBuilder {
@@ -39,6 +40,7 @@ impl Default for NetworkBuilder {
 			max_past_blocks: Some(MaxPastBlocks::Limited(10)),
 			recovery_config: None,
 			logs_block_range: None,
+			logs_first: None,
 		}
 	}
 }
@@ -159,6 +161,11 @@ impl NetworkBuilder {
 		self
 	}
 
+	pub fn logs_first(mut self, enabled: bool) -> Self {
+		self.logs_first = Some(enabled);
+		self
+	}
+
 	pub fn logs_block_range(mut self, range: u64) -> Self {
 		self.logs_block_range = Some(range);
 		self
@@ -184,6 +191,7 @@ impl NetworkBuilder {
 			max_past_blocks: self.max_past_blocks,
 			recovery_config: self.recovery_config,
 			logs_block_range: self.logs_block_range,
+			logs_first: self.logs_first,
 		}
 	}
 }

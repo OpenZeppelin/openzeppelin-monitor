@@ -325,6 +325,14 @@ impl ConfigLoader for Network {
 			}
 		}
 
+		if self.logs_first == Some(true) && self.network_type != BlockChainType::EVM {
+			return Err(ConfigError::validation_error(
+				"logs_first is only supported on EVM networks",
+				None,
+				None,
+			));
+		}
+
 		// Log a warning if the network uses an insecure protocol
 		self.validate_protocol();
 
@@ -556,6 +564,21 @@ mod tests {
 		let network = NetworkBuilder::new()
 			.network_type(BlockChainType::Stellar)
 			.logs_block_range(10)
+			.build();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
+	fn test_validate_logs_first() {
+		let network = NetworkBuilder::new().logs_first(true).build();
+		assert!(network.validate().is_ok());
+
+		let network = NetworkBuilder::new()
+			.network_type(BlockChainType::Stellar)
+			.logs_first(true)
 			.build();
 		assert!(matches!(
 			network.validate(),

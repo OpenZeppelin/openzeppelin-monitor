@@ -41,6 +41,34 @@ pub struct EVMBlockFilter<T> {
 	pub _client: PhantomData<T>,
 }
 
+/// The `eth_getLogs` address filter that decides which blocks to fetch when only blocks with
+/// a monitored log can produce a match, or `None` when that does not hold.
+///
+/// It holds when every monitor has event conditions and no function conditions: a match then
+/// needs one of its events, and event conditions only match logs emitted by a monitored
+/// address (transaction conditions are checked on top of that, never instead). A block
+/// without such a log cannot match, so it need not be fetched.
+///
+/// `None` as well when the monitors declare no valid address or more than the filter accepts,
+/// since the request would then be unfiltered. The list is the one the block filter sends
+/// for the same monitors.
+///
+/// # Arguments
+/// * `monitors` - Every monitor of the network
+pub fn logs_first_address_filter(monitors: &[Monitor]) -> Option<Vec<String>> {
+	let event_only = |monitor: &Monitor| {
+		!monitor.match_conditions.events.is_empty() && monitor.match_conditions.functions.is_empty()
+	};
+	if monitors.is_empty() || !monitors.iter().all(event_only) {
+		return None;
+	}
+	let monitor_addresses: Vec<HashSet<Address>> = monitors
+		.iter()
+		.map(EVMBlockFilter::<()>::parse_monitor_addresses)
+		.collect();
+	EVMBlockFilter::<()>::logs_address_filter(&monitor_addresses)
+}
+
 impl<T> EVMBlockFilter<T> {
 	/// Finds transactions that match the monitor's conditions.
 	///
@@ -1174,6 +1202,79 @@ mod tests {
 				})
 				.collect(),
 		)
+	}
+
+	fn event_monitor(
+		functions: Vec<FunctionCondition>,
+		transactions: Vec<TransactionCondition>,
+		addresses: &[&str],
+	) -> Monitor {
+		let mut monitor = address_only_monitor(addresses);
+		monitor.match_conditions = MatchConditions {
+			events: vec![EventCondition {
+				signature: "Transfer(address,address,uint256)".to_string(),
+				expression: None,
+			}],
+			functions,
+			transactions,
+		};
+		monitor
+	}
+
+	#[test]
+	fn test_logs_first_address_filter_needs_event_only_monitors() {
+		let a = "0x0000000000000000000000000000000000000001";
+		let b = "0x0000000000000000000000000000000000000002";
+		let with_status = || {
+			vec![TransactionCondition {
+				status: TransactionStatus::Success,
+				expression: None,
+			}]
+		};
+		let with_function = || {
+			vec![FunctionCondition {
+				signature: "transfer(address,uint256)".to_string(),
+				expression: None,
+			}]
+		};
+
+		// Events, with or without transaction conditions: a match needs a monitored log
+		assert_eq!(
+			logs_first_address_filter(&[
+				event_monitor(vec![], vec![], &[a]),
+				event_monitor(vec![], with_status(), &[b]),
+			]),
+			Some(vec![a.to_string(), b.to_string()])
+		);
+		// The same list the block filter sends for those monitors
+		let monitors = [event_monitor(vec![], vec![], &[b, a])];
+		assert_eq!(
+			logs_first_address_filter(&monitors),
+			logs_address_filter(&monitors)
+		);
+
+		// A function condition matches calls that emit no monitored log
+		assert_eq!(
+			logs_first_address_filter(&[
+				event_monitor(vec![], vec![], &[a]),
+				event_monitor(with_function(), vec![], &[b]),
+			]),
+			None
+		);
+		// No conditions, or only transaction conditions, match transactions without logs
+		assert_eq!(
+			logs_first_address_filter(&[address_only_monitor(&[a])]),
+			None
+		);
+		let mut status_only = address_only_monitor(&[a]);
+		status_only.match_conditions.transactions = with_status();
+		assert_eq!(logs_first_address_filter(&[status_only]), None);
+		// No address to filter by
+		assert_eq!(
+			logs_first_address_filter(&[event_monitor(vec![], vec![], &[])]),
+			None
+		);
+		assert_eq!(logs_first_address_filter(&[]), None);
 	}
 
 	fn logs_address_filter(monitors: &[Monitor]) -> Option<Vec<String>> {

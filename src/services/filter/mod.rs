@@ -19,7 +19,7 @@ pub use filter_match::handle_match;
 pub use filters::{
 	evm::{
 		evaluator::{EVMArgs, EVMConditionEvaluator},
-		filter::EVMBlockFilter,
+		filter::{logs_first_address_filter, EVMBlockFilter},
 		helpers as evm_helpers,
 	},
 	midnight::{filter::MidnightBlockFilter, helpers as midnight_helpers},
