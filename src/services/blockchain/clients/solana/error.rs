@@ -61,6 +61,45 @@ pub enum SolanaClientError {
 	InstructionDecodeError(Box<ErrorContext>),
 }
 
+/// Fetching the transactions of a slot range by signature would take too many requests.
+///
+/// This is a property of the monitored addresses and the range, not a failure of the RPC:
+/// the blocks of the range can still be fetched whole.
+#[derive(Debug, Error)]
+pub enum SignatureLimitExceeded {
+	/// An address has more signatures since the start of the range than the client pages
+	/// through, so its signatures for the range cannot be listed completely.
+	#[error(
+		"Address {address} has more than {limit} signatures since slot {start_slot}; cannot list \
+		 all signatures for slots {start_slot}-{end_slot}"
+	)]
+	Signatures {
+		/// Address whose signatures were being listed
+		address: String,
+		/// First slot of the range
+		start_slot: u64,
+		/// Last slot of the range
+		end_slot: u64,
+		/// Number of signatures the client pages through
+		limit: usize,
+	},
+
+	/// The range holds more transactions of the monitored addresses than the client fetches
+	/// one by one.
+	#[error(
+		"Slots {start_slot}-{end_slot} hold more than {limit} transactions of the monitored \
+		 addresses"
+	)]
+	Transactions {
+		/// First slot of the range
+		start_slot: u64,
+		/// Last slot of the range
+		end_slot: u64,
+		/// Number of transactions the client fetches by signature for the range
+		limit: usize,
+	},
+}
+
 impl SolanaClientError {
 	/// Creates a SlotNotAvailable error
 	pub fn slot_not_available(

@@ -18,8 +18,8 @@ mod transports;
 pub use client::{BlockChainClient, BlockFetchResult, BlockFilterFactory, FetchStreamKind};
 pub use clients::{
 	EvmClient, EvmClientTrait, MidnightClient, MidnightClientTrait, MidnightSubstrateClientTrait,
-	SignatureInfo, SolanaClient, SolanaClientError, SolanaClientTrait, StellarClient,
-	StellarClientError, StellarClientTrait,
+	SignatureInfo, SignatureLimitExceeded, SolanaClient, SolanaClientError, SolanaClientTrait,
+	StellarClient, StellarClientError, StellarClientTrait,
 };
 pub use error::BlockChainError;
 pub use pool::{ClientPool, ClientPoolTrait};
