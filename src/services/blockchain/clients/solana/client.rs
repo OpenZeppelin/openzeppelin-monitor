@@ -140,13 +140,16 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 	/// one, so that blocks fetched whole match the blocks built from signatures.
 	///
 	/// A transaction is kept when a monitored address is among its accounts or the programs
-	/// it invokes, compared the way the block filter compares them, so nothing the filter
-	/// could match is dropped.
+	/// it invokes. Addresses are compared exactly, as `getSignaturesForAddress` compares
+	/// them: base58 is case-sensitive, so an address in another case is another address.
+	///
+	/// A kept transaction gets the time of its block, as a transaction fetched by signature
+	/// has it.
 	fn retain_monitored_transactions(&self, blocks: Vec<BlockType>) -> Vec<BlockType> {
 		let is_monitored = |address: &String| {
 			self.monitored_addresses
 				.iter()
-				.any(|monitored| monitored.eq_ignore_ascii_case(address))
+				.any(|monitored| monitored == address)
 		};
 
 		blocks
@@ -157,6 +160,10 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 						transaction.accounts().iter().any(is_monitored)
 							|| transaction.program_ids().iter().any(is_monitored)
 					});
+					let block_time = block.0.block_time;
+					for transaction in &mut block.0.transactions {
+						transaction.0.block_time = block_time;
+					}
 					(!block.transactions.is_empty()).then_some(BlockType::Solana(block))
 				}
 				other => Some(other),
@@ -586,8 +593,8 @@ impl SolanaClient<SolanaTransportClient> {
 }
 
 impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClient<T> {
-	/// Fetches the block of a slot. Returns `None` for a slot no block was produced in, and,
-	/// with `UnavailableBlock::Skip`, for a block the node cannot return now.
+	/// Fetches the block of a slot. When the node answers that it has no block for the slot,
+	/// returns `None` with `UnavailableBlock::Skip` and an error with `UnavailableBlock::Fail`.
 	async fn fetch_block(
 		&self,
 		slot: u64,
@@ -611,14 +618,11 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClient<T> {
 			self.check_and_handle_rpc_error(&response_body, slot, rpc_methods::GET_BLOCK)
 		{
 			if rpc_error.is_slot_not_available() || rpc_error.is_block_not_available() {
-				// Of these errors only `BLOCK_NOT_AVAILABLE` leaves a block to come back
-				// for: a node answers it for a slot it has not finalized yet. The others
-				// say that no block was produced in the slot.
-				let not_available_yet = response_body["error"]["code"].as_i64()
-					== Some(error_codes::BLOCK_NOT_AVAILABLE);
-				if not_available_yet && unavailable == UnavailableBlock::Fail {
+				// A node also answers that a slot was skipped when the block is missing from
+				// its ledger, so with `UnavailableBlock::Fail` any of these answers fails.
+				if unavailable == UnavailableBlock::Fail {
 					return Err(anyhow::anyhow!(rpc_error).context(format!(
-						"Solana RPC node cannot return the block of slot {} yet",
+						"Solana RPC node cannot return the block of slot {}",
 						slot
 					)));
 				}
@@ -671,7 +675,10 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClient<T> {
 
 		let target_block = end_block.unwrap_or(start_block);
 
-		// First, get the list of available slots in the range
+		// First, get the list of available slots in the range. A single slot is fetched
+		// without the list. With `UnavailableBlock::Fail` a node that has not reached the
+		// slot then fails the fetch instead of listing nothing, though so does a slot no
+		// block was produced in.
 		let slots = if start_block == target_block {
 			vec![start_block]
 		} else {
@@ -1323,7 +1330,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 						"{}; fetching the blocks of the range instead",
 						error
 					);
-					// A block the node cannot return yet fails the fetch: the gaps of a sparse
+					// A block the node cannot return fails the fetch: the gaps of a sparse
 					// result are not checked, so leaving the slot out would count it as
 					// processed and its transactions would never be fetched again.
 					let blocks = self
@@ -3575,7 +3582,8 @@ mod tests {
 					block_transaction("static-key", &["Payer", "ProgramId1"], &[], None),
 					block_transaction("loaded-key", &["Payer", "Other"], &["ProgramId1"], None),
 					block_transaction("program-id", &["Payer", "Other"], &[], Some("ProgramId1")),
-					// The block filter compares addresses without regard to case
+					// Base58 is case-sensitive: in another case it is another address, which
+					// getSignaturesForAddress would not return either
 					block_transaction("other-case", &["Payer", "PROGRAMID1"], &[], None),
 					block_transaction("unrelated", &["Payer", "Other"], &[], None),
 				],
@@ -3601,24 +3609,22 @@ mod tests {
 			panic!("expected a Solana block");
 		};
 		let signatures: Vec<&str> = block.transactions.iter().map(|tx| tx.signature()).collect();
-		assert_eq!(
-			signatures,
-			vec!["static-key", "loaded-key", "program-id", "other-case"]
-		);
+		assert_eq!(signatures, vec!["static-key", "loaded-key", "program-id"]);
 	}
 
-	/// A node of an address with too many transactions to fetch by signature, so the blocks
-	/// of the range are fetched whole. Slots 100 to 102 are listed as holding a block.
-	/// `block_response` is what `getBlock` answers for a slot; `None` stands for a block with
-	/// one transaction of the monitored address `ProgramId1`.
+	/// A node of an address with too many transactions in slot 100 to fetch by signature, so
+	/// the blocks of the range are fetched whole. `getBlocks` lists the slots of `listed` as
+	/// holding a block. `block_response` is what `getBlock` answers for a slot; `None` stands
+	/// for a block with one transaction of the monitored address `ProgramId1`.
 	fn busy_address_node(
+		listed: &'static [u64],
 		block_response: fn(u64) -> Option<serde_json::Value>,
 	) -> CallbackMockTransport {
 		let limit = 3 * MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT;
-		let history = signature_history(&[(101, limit + 1)]);
+		let history = signature_history(&[(100, limit + 1)]);
 		CallbackMockTransport::new(move |method, params| match method {
 			rpc_methods::GET_SIGNATURES_FOR_ADDRESS => Ok(signature_page(&history, &params[1])),
-			rpc_methods::GET_BLOCKS => Ok(json!({ "result": [100, 101, 102] })),
+			rpc_methods::GET_BLOCKS => Ok(json!({ "result": listed })),
 			rpc_methods::GET_BLOCK => {
 				let slot = params[0].as_u64().unwrap_or_default();
 				Ok(block_response(slot).unwrap_or_else(|| {
@@ -3654,7 +3660,7 @@ mod tests {
 	async fn test_blocks_fetched_whole_fail_when_a_listed_block_is_not_available() {
 		// The node lists slot 101 but has not finalized it yet. Leaving the slot out would
 		// count it as processed, and its transactions would never be fetched again.
-		let transport = busy_address_node(|slot| {
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
 			(slot == 101).then(|| {
 				json!({ "error": {
 					"code": error_codes::BLOCK_NOT_AVAILABLE,
@@ -3670,7 +3676,9 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_blocks_fetched_whole_fail_when_a_listed_block_is_returned_empty() {
-		let transport = busy_address_node(|slot| (slot == 101).then(|| json!({ "result": null })));
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
+			(slot == 101).then(|| json!({ "result": null }))
+		});
 
 		let message = blocks_fetched_whole_error(transport).await;
 
@@ -3678,13 +3686,111 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn test_blocks_fetched_whole_leave_out_skipped_slots() {
-		// No block was produced in slot 101, so there is nothing to come back for
-		let transport = busy_address_node(|slot| {
+	async fn test_blocks_fetched_whole_fail_when_a_listed_block_is_answered_as_skipped() {
+		// The node lists slot 101 as holding a block, but answers for its block that the slot
+		// was skipped or is missing from its ledger. The block exists, so leaving the slot
+		// out would lose its transactions.
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
 			(slot == 101).then(|| {
 				json!({ "error": {
 					"code": error_codes::SLOT_SKIPPED,
 					"message": "Slot 101 was skipped, or missing due to ledger jump to recent snapshot"
+				} })
+			})
+		});
+
+		let message = blocks_fetched_whole_error(transport).await;
+
+		assert!(message.contains("slot 101"), "got: {}", message);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_leave_out_slots_not_listed() {
+		// No block was produced in slot 101, so the node does not list it and there is
+		// nothing to come back for
+		let transport = busy_address_node(&[100, 102], |_| None);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(102))
+			.await
+			.unwrap();
+
+		assert_eq!(block_slots(&fetch_result), vec![Some(100), Some(102)]);
+		assert!(fetch_result.failed_blocks.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_fail_on_a_single_slot_the_node_has_not_reached() {
+		// A range of one slot is fetched without asking getBlocks. A node that has not
+		// reached slot 100 would list nothing, and the slot would count as processed.
+		let transport = busy_address_node(&[], |slot| {
+			(slot == 100).then(|| {
+				json!({ "error": {
+					"code": error_codes::BLOCK_NOT_AVAILABLE,
+					"message": "Block not available for slot 100"
+				} })
+			})
+		});
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let error = BlockChainClient::get_blocks_with_meta(&client, 100, Some(100))
+			.await
+			.expect_err("a block the node cannot return must fail the fetch");
+
+		let message = format!("{:#}", error);
+		assert!(message.contains("slot 100"), "got: {}", message);
+	}
+
+	/// The slot and time of each transaction in `fetch_result`.
+	fn transaction_times(fetch_result: &BlockFetchResult) -> Vec<(u64, Option<i64>)> {
+		fetch_result
+			.blocks
+			.iter()
+			.flat_map(|block| match block {
+				BlockType::Solana(block) => block
+					.transactions
+					.iter()
+					.map(|tx| (tx.0.slot, tx.0.block_time))
+					.collect::<Vec<_>>(),
+				_ => Vec::new(),
+			})
+			.collect()
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_give_transactions_the_time_of_their_block() {
+		// Fetched by signature, a transaction carries the time of its block, and a match
+		// hands the transaction to the triggers
+		let transport = busy_address_node(&[100, 101, 102], |_| None);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(102))
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transaction_times(&fetch_result),
+			vec![
+				(100, Some(1234567890)),
+				(101, Some(1234567890)),
+				(102, Some(1234567890))
+			]
+		);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_leave_transactions_without_time_when_the_block_has_none() {
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
+			(slot == 101).then(|| {
+				json!({ "result": {
+					"blockhash": "hash1",
+					"previousBlockhash": "hash0",
+					"parentSlot": 100,
+					"blockHeight": 101,
+					"transactions": one_monitored_transaction(101)
 				} })
 			})
 		});
@@ -3695,8 +3801,14 @@ mod tests {
 			.await
 			.unwrap();
 
-		assert_eq!(block_slots(&fetch_result), vec![Some(100), Some(102)]);
-		assert!(fetch_result.failed_blocks.is_empty());
+		assert_eq!(
+			transaction_times(&fetch_result),
+			vec![
+				(100, Some(1234567890)),
+				(101, None),
+				(102, Some(1234567890))
+			]
+		);
 	}
 
 	#[tokio::test]
