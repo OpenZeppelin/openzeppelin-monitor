@@ -580,8 +580,13 @@ mod tests {
 		where
 			P: Into<Value> + Send + Clone + Serialize,
 		{
-			assert_eq!(method, "eth_getLogs");
 			let params: Value = params.unwrap().into();
+			if method == "eth_getBlockByNumber" {
+				let mut block = EVMBlock::default();
+				block.0.number = Some(alloy::primitives::U64::from(parse_block(&params[0])));
+				return Ok(json!({ "result": serde_json::to_value(block).unwrap() }));
+			}
+			assert_eq!(method, "eth_getLogs");
 			let from_block = parse_block(&params[0]["fromBlock"]);
 			let to_block = parse_block(&params[0]["toBlock"]);
 			self.requests.lock().unwrap().push((from_block, to_block));
@@ -845,7 +850,47 @@ mod tests {
 		);
 	}
 
+	#[tokio::test]
+	async fn test_get_blocks_extends_the_logs_ranges() {
+		let transport = RecordingTransport::default();
+		let client =
+			EvmClient::new_with_transport(transport.clone()).with_logs_block_range(Some(10));
+
+		// Nothing fetched yet: no range can be built
+		client
+			.get_logs_for_blocks(100, 100, monitored())
+			.await
+			.unwrap();
+		client.get_blocks(100, Some(104)).await.unwrap();
+		client
+			.get_logs_for_blocks(101, 101, monitored())
+			.await
+			.unwrap();
+
+		assert_eq!(transport.requests(), vec![(100, 100), (100, 104)]);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_of_a_single_block_is_requested_alone() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 10, 104);
+		client
+			.get_logs_for_blocks(101, 101, monitored())
+			.await
+			.unwrap();
+
+		// 105 is the head and right after the cached range: its range would hold only itself
+		client.logs_cache.as_ref().unwrap().note_fetched_block(105);
+		client
+			.get_logs_for_blocks(105, 105, monitored())
+			.await
+			.unwrap();
+
+		assert_eq!(transport.requests(), vec![(100, 104), (105, 105)]);
+	}
+
 	#[test]
+	#[traced_test]
 	fn test_group_logs_by_block_rejects_logs_outside_the_range() {
 		let log = |block: Option<u64>| EVMReceiptLog {
 			address: Default::default(),
@@ -871,5 +916,8 @@ mod tests {
 		assert_eq!(grouped.get(&102).map(Vec::len), Some(1));
 		assert!(group_logs_by_block(vec![log(Some(105))], 100, 104).is_none());
 		assert!(group_logs_by_block(vec![log(None)], 100, 104).is_none());
+		assert!(logs_contain(
+			"eth_getLogs range returned a log outside the range"
+		));
 	}
 }
