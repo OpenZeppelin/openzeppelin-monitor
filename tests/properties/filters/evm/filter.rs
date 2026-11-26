@@ -794,10 +794,10 @@ proptest! {
 			);
 	}
 
-	// Tests that any string, once escaped into a quoted literal, compares equal to itself
+	// Tests that any string (including unicode and control characters), once escaped into a quoted literal, compares equal to itself
 	#[test]
 	fn test_escaped_string_literal_roundtrip(
-		value in r#"[a-zA-Z0-9 _\\'"\n\t\r]{0,20}"#,
+		value in any::<String>(),
 		use_double_quotes in any::<bool>(),
 	) {
 		let quote = if use_double_quotes { '"' } else { '\'' };
