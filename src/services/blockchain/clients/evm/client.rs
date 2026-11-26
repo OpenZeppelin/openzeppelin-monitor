@@ -5,7 +5,7 @@
 //! and log filtering.
 
 use std::{
-	collections::{BTreeMap, HashMap},
+	collections::HashMap,
 	marker::PhantomData,
 	sync::{
 		atomic::{AtomicU64, Ordering},
@@ -36,32 +36,66 @@ use crate::{
 /// request failed and its blocks must be fetched one by one.
 type RangeLogs = Option<Arc<HashMap<u64, Vec<EVMReceiptLog>>>>;
 
-/// Identifies one range request: its block span and its address filter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct LogsRangeKey {
+/// One range request held by [`LogsRangeCache`].
+struct CachedLogsRange {
 	from_block: u64,
 	to_block: u64,
 	addresses: Option<Vec<String>>,
+	/// Insertion order, for eviction
+	inserted: u64,
+	logs: Arc<OnceCell<RangeLogs>>,
 }
 
 /// Number of range requests kept in memory. A batch is filtered at most 32 blocks at a time,
-/// so only a few ranges are in use at once; the oldest ones are dropped.
+/// so only a few ranges are in use at once; the least recently inserted are dropped.
 const MAX_CACHED_LOG_RANGES: usize = 64;
+
+#[derive(Default)]
+struct CachedLogsRanges {
+	ranges: Vec<CachedLogsRange>,
+	inserted: u64,
+}
+
+impl CachedLogsRanges {
+	fn insert(
+		&mut self,
+		from_block: u64,
+		to_block: u64,
+		addresses: &Option<Vec<String>>,
+		logs: Arc<OnceCell<RangeLogs>>,
+	) {
+		self.inserted += 1;
+		self.ranges.push(CachedLogsRange {
+			from_block,
+			to_block,
+			addresses: addresses.clone(),
+			inserted: self.inserted,
+			logs,
+		});
+		while self.ranges.len() > MAX_CACHED_LOG_RANGES {
+			if let Some(oldest) = (0..self.ranges.len()).min_by_key(|&i| self.ranges[i].inserted) {
+				self.ranges.swap_remove(oldest);
+			}
+		}
+	}
+}
 
 /// Serves single-block `eth_getLogs` calls from one request per range of blocks.
 ///
-/// The filter asks for the logs of one block at a time. With a range configured, the first
-/// block of a range triggers one request for the whole range (aligned to multiples of the
-/// range size) and the other blocks are answered from it. Concurrent callers for blocks of
-/// the same range share the in-flight request.
+/// The filter asks for the logs of one block at a time. With a range configured, a block not
+/// covered yet triggers one request for up to `range` blocks, and the other blocks of it are
+/// answered from that request. Concurrent callers for blocks of the same range share the
+/// in-flight request.
 ///
-/// A range never reaches past the highest block this client has fetched with `get_blocks`.
-/// The block watcher only fetches confirmed blocks, so a range never covers a block that is
-/// not confirmed yet.
+/// A new range starts where the cached ranges of the same filter end (or at the block's
+/// multiple of `range`), so blocks already fetched are never requested again when the head
+/// advances. It never reaches past the highest block this client has fetched with
+/// `get_blocks`: the block watcher only fetches confirmed blocks, so a range never covers a
+/// block that is not confirmed yet.
 struct LogsRangeCache {
 	range: u64,
 	highest_fetched_block: AtomicU64,
-	ranges: Mutex<BTreeMap<LogsRangeKey, Arc<OnceCell<RangeLogs>>>>,
+	ranges: Mutex<CachedLogsRanges>,
 }
 
 impl LogsRangeCache {
@@ -69,7 +103,7 @@ impl LogsRangeCache {
 		Self {
 			range,
 			highest_fetched_block: AtomicU64::new(0),
-			ranges: Mutex::new(BTreeMap::new()),
+			ranges: Mutex::new(CachedLogsRanges::default()),
 		}
 	}
 
@@ -78,25 +112,57 @@ impl LogsRangeCache {
 			.fetch_max(block_number, Ordering::AcqRel);
 	}
 
-	/// The range holding `block_number`, or `None` when the block must be fetched alone:
-	/// it was not fetched yet, or its range would hold only this block.
-	fn range_for(&self, block_number: u64) -> Option<(u64, u64)> {
+	/// The range covering `block_number` for `addresses`, creating it when no cached range
+	/// covers the block, or `None` when the block must be fetched alone: it was not fetched
+	/// yet, or a new range would hold only this block.
+	fn range_for(
+		&self,
+		block_number: u64,
+		addresses: &Option<Vec<String>>,
+	) -> Option<(u64, u64, Arc<OnceCell<RangeLogs>>)> {
 		let head = self.highest_fetched_block.load(Ordering::Acquire);
 		if block_number > head {
 			return None;
 		}
-		let from_block = block_number - block_number % self.range;
-		let to_block = std::cmp::min(from_block.saturating_add(self.range - 1), head);
-		(from_block < to_block).then_some((from_block, to_block))
-	}
-
-	fn cell(&self, key: LogsRangeKey) -> Arc<OnceCell<RangeLogs>> {
-		let mut ranges = self.ranges.lock().unwrap_or_else(|e| e.into_inner());
-		let cell = ranges.entry(key).or_default().clone();
-		while ranges.len() > MAX_CACHED_LOG_RANGES {
-			ranges.pop_first();
+		let mut cached = self.ranges.lock().unwrap_or_else(|e| e.into_inner());
+		let same_filter = |range: &&CachedLogsRange| range.addresses == *addresses;
+		if let Some(range) = cached
+			.ranges
+			.iter()
+			.filter(same_filter)
+			.find(|range| (range.from_block..=range.to_block).contains(&block_number))
+		{
+			return Some((range.from_block, range.to_block, range.logs.clone()));
 		}
-		cell
+
+		let aligned = block_number - block_number % self.range;
+		let from_block = cached
+			.ranges
+			.iter()
+			.filter(same_filter)
+			.map(|range| range.to_block)
+			.filter(|to_block| (aligned..block_number).contains(to_block))
+			.max()
+			.map_or(aligned, |to_block| to_block + 1);
+		// Nor into a cached range above it, which a block processed out of order can leave
+		let next_cached = cached
+			.ranges
+			.iter()
+			.filter(same_filter)
+			.map(|range| range.from_block)
+			.filter(|from| *from > block_number)
+			.min()
+			.unwrap_or(u64::MAX);
+		let to_block = from_block
+			.saturating_add(self.range - 1)
+			.min(head)
+			.min(next_cached - 1);
+		if from_block >= to_block {
+			return None;
+		}
+		let logs = Arc::new(OnceCell::new());
+		cached.insert(from_block, to_block, addresses, logs.clone());
+		Some((from_block, to_block, logs))
 	}
 }
 
@@ -259,12 +325,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClient<T> {
 	) -> Option<Vec<EVMReceiptLog>> {
 		let cache = self.logs_cache.as_ref()?;
 		addresses.as_ref()?;
-		let (from_block, to_block) = cache.range_for(block_number)?;
-		let cell = cache.cell(LogsRangeKey {
-			from_block,
-			to_block,
-			addresses: addresses.clone(),
-		});
+		let (from_block, to_block, cell) = cache.range_for(block_number, addresses)?;
 		let by_block = cell
 			.get_or_init(|| async {
 				match self
@@ -634,7 +695,91 @@ mod tests {
 			.unwrap();
 
 		assert_eq!(log_blocks(&logs), vec![107]);
-		assert_eq!(transport.requests(), vec![(100, 104), (100, 109)]);
+		// The new range starts where the cached one ends: no block is requested twice
+		assert_eq!(transport.requests(), vec![(100, 104), (105, 109)]);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_does_not_refetch_as_the_head_advances_block_by_block() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 1000, 100);
+		let cache = client.logs_cache.clone().unwrap();
+
+		for block in 100..=110 {
+			cache.note_fetched_block(block + 1);
+			let logs = client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+			assert_eq!(log_blocks(&logs), vec![block]);
+		}
+
+		let requests = transport.requests();
+		// Each block is requested exactly once across all ranges
+		let requested_blocks: u64 = requests.iter().map(|(from, to)| to - from + 1).sum();
+		assert_eq!(requests.first(), Some(&(0, 101)));
+		assert_eq!(requested_blocks, 112);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_does_not_overlap_a_range_above_it() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 10, 104);
+		client
+			.get_logs_for_blocks(102, 102, monitored())
+			.await
+			.unwrap();
+
+		// The head advances and a later block is processed before 105
+		client.logs_cache.as_ref().unwrap().note_fetched_block(119);
+		client
+			.get_logs_for_blocks(112, 112, monitored())
+			.await
+			.unwrap();
+		let logs = client
+			.get_logs_for_blocks(105, 105, monitored())
+			.await
+			.unwrap();
+
+		assert_eq!(log_blocks(&logs), vec![105]);
+		// 105 fills the gap up to the range above it instead of overlapping it
+		assert_eq!(
+			transport.requests(),
+			vec![(100, 104), (105, 109), (110, 119)]
+		);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_evicts_the_oldest_inserted_range() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 2, 10_000);
+
+		// Fill the cache with ranges above block 1000, then ask for an older one
+		for block in (2000..2000 + 2 * MAX_CACHED_LOG_RANGES as u64).step_by(2) {
+			client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+		}
+		client
+			.get_logs_for_blocks(1000, 1000, monitored())
+			.await
+			.unwrap();
+		// The older range just inserted is kept, so its other block needs no request
+		client
+			.get_logs_for_blocks(1001, 1001, monitored())
+			.await
+			.unwrap();
+
+		let requests = transport.requests();
+		assert_eq!(requests.len(), MAX_CACHED_LOG_RANGES + 1);
+		assert_eq!(requests[0], (1000, 1001));
+		// The first range inserted was the one evicted
+		client
+			.get_logs_for_blocks(2000, 2000, monitored())
+			.await
+			.unwrap();
+		assert_eq!(transport.requests().len(), MAX_CACHED_LOG_RANGES + 2);
 	}
 
 	#[tokio::test]
