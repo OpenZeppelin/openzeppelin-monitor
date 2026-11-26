@@ -4,12 +4,20 @@
 //! blockchains, supporting operations like block retrieval, transaction receipt lookup,
 //! and log filtering.
 
-use std::marker::PhantomData;
+use std::{
+	collections::{BTreeMap, HashMap},
+	marker::PhantomData,
+	sync::{
+		atomic::{AtomicU64, Ordering},
+		Arc, Mutex,
+	},
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures::{stream, StreamExt, TryStreamExt};
 use serde_json::json;
+use tokio::sync::OnceCell;
 use tracing::instrument;
 
 use crate::{
@@ -24,6 +32,74 @@ use crate::{
 	},
 };
 
+/// Logs of one `eth_getLogs` range request, grouped by block number. `None` when the range
+/// request failed and its blocks must be fetched one by one.
+type RangeLogs = Option<Arc<HashMap<u64, Vec<EVMReceiptLog>>>>;
+
+/// Identifies one range request: its block span and its address filter.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct LogsRangeKey {
+	from_block: u64,
+	to_block: u64,
+	addresses: Option<Vec<String>>,
+}
+
+/// Number of range requests kept in memory. A batch is filtered at most 32 blocks at a time,
+/// so only a few ranges are in use at once; the oldest ones are dropped.
+const MAX_CACHED_LOG_RANGES: usize = 64;
+
+/// Serves single-block `eth_getLogs` calls from one request per range of blocks.
+///
+/// The filter asks for the logs of one block at a time. With a range configured, the first
+/// block of a range triggers one request for the whole range (aligned to multiples of the
+/// range size) and the other blocks are answered from it. Concurrent callers for blocks of
+/// the same range share the in-flight request.
+///
+/// A range never reaches past the highest block this client has fetched with `get_blocks`.
+/// The block watcher only fetches confirmed blocks, so a range never covers a block that is
+/// not confirmed yet.
+struct LogsRangeCache {
+	range: u64,
+	highest_fetched_block: AtomicU64,
+	ranges: Mutex<BTreeMap<LogsRangeKey, Arc<OnceCell<RangeLogs>>>>,
+}
+
+impl LogsRangeCache {
+	fn new(range: u64) -> Self {
+		Self {
+			range,
+			highest_fetched_block: AtomicU64::new(0),
+			ranges: Mutex::new(BTreeMap::new()),
+		}
+	}
+
+	fn note_fetched_block(&self, block_number: u64) {
+		self.highest_fetched_block
+			.fetch_max(block_number, Ordering::AcqRel);
+	}
+
+	/// The range holding `block_number`, or `None` when the block must be fetched alone:
+	/// it was not fetched yet, or its range would hold only this block.
+	fn range_for(&self, block_number: u64) -> Option<(u64, u64)> {
+		let head = self.highest_fetched_block.load(Ordering::Acquire);
+		if block_number > head {
+			return None;
+		}
+		let from_block = block_number - block_number % self.range;
+		let to_block = std::cmp::min(from_block.saturating_add(self.range - 1), head);
+		(from_block < to_block).then_some((from_block, to_block))
+	}
+
+	fn cell(&self, key: LogsRangeKey) -> Arc<OnceCell<RangeLogs>> {
+		let mut ranges = self.ranges.lock().unwrap_or_else(|e| e.into_inner());
+		let cell = ranges.entry(key).or_default().clone();
+		while ranges.len() > MAX_CACHED_LOG_RANGES {
+			ranges.pop_first();
+		}
+		cell
+	}
+}
+
 /// Client implementation for Ethereum Virtual Machine (EVM) compatible blockchains
 ///
 /// Provides high-level access to EVM blockchain data and operations through HTTP transport.
@@ -31,12 +107,26 @@ use crate::{
 pub struct EvmClient<T: Send + Sync + Clone> {
 	/// The underlying HTTP transport client for RPC communication
 	http_client: T,
+	/// Set when the network has a `logs_block_range` greater than 1
+	logs_cache: Option<Arc<LogsRangeCache>>,
 }
 
 impl<T: Send + Sync + Clone> EvmClient<T> {
 	/// Creates a new EVM client instance with a specific transport client
 	pub fn new_with_transport(http_client: T) -> Self {
-		Self { http_client }
+		Self {
+			http_client,
+			logs_cache: None,
+		}
+	}
+
+	/// Fetches the logs of up to `range` consecutive blocks with one `eth_getLogs` request.
+	/// See `Network::logs_block_range`. `None` or 1 keeps one request per block.
+	pub fn with_logs_block_range(mut self, range: Option<u64>) -> Self {
+		self.logs_cache = range
+			.filter(|range| *range > 1)
+			.map(|range| Arc::new(LogsRangeCache::new(range)));
+		self
 	}
 }
 
@@ -50,7 +140,7 @@ impl EvmClient<EVMTransportClient> {
 	/// * `Result<Self, anyhow::Error>` - New client instance or connection error
 	pub async fn new(network: &Network) -> Result<Self, anyhow::Error> {
 		let client = EVMTransportClient::new(network).await?;
-		Ok(Self::new_with_transport(client))
+		Ok(Self::new_with_transport(client).with_logs_block_range(network.logs_block_range))
 	}
 }
 
@@ -148,6 +238,63 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 		to_block: u64,
 		addresses: Option<Vec<String>>,
 	) -> Result<Vec<EVMReceiptLog>, anyhow::Error> {
+		if from_block == to_block {
+			if let Some(logs) = self.block_logs_from_range(from_block, &addresses).await {
+				return Ok(logs);
+			}
+		}
+		self.request_logs(from_block, to_block, addresses).await
+	}
+}
+
+impl<T: Send + Sync + Clone + BlockchainTransport> EvmClient<T> {
+	/// The logs of `block_number` taken from its range request, or `None` when the block must
+	/// be fetched on its own: no range is configured, the request has no address filter (a
+	/// range of every log of a busy chain can exceed provider limits), the block is not
+	/// covered by a range yet, or the range request failed.
+	async fn block_logs_from_range(
+		&self,
+		block_number: u64,
+		addresses: &Option<Vec<String>>,
+	) -> Option<Vec<EVMReceiptLog>> {
+		let cache = self.logs_cache.as_ref()?;
+		addresses.as_ref()?;
+		let (from_block, to_block) = cache.range_for(block_number)?;
+		let cell = cache.cell(LogsRangeKey {
+			from_block,
+			to_block,
+			addresses: addresses.clone(),
+		});
+		let by_block = cell
+			.get_or_init(|| async {
+				match self
+					.request_logs(from_block, to_block, addresses.clone())
+					.await
+				{
+					Ok(logs) => group_logs_by_block(logs, from_block, to_block),
+					Err(error) => {
+						tracing::warn!(
+							from_block,
+							to_block,
+							error = %error,
+							"eth_getLogs range request failed; fetching its blocks one by one"
+						);
+						None
+					}
+				}
+			})
+			.await
+			.as_ref()?;
+		Some(by_block.get(&block_number).cloned().unwrap_or_default())
+	}
+
+	/// Sends one `eth_getLogs` request for `[from_block, to_block]`.
+	async fn request_logs(
+		&self,
+		from_block: u64,
+		to_block: u64,
+		addresses: Option<Vec<String>>,
+	) -> Result<Vec<EVMReceiptLog>, anyhow::Error> {
 		// Convert parameters to JSON-RPC format
 		let params = json!([{
 			"fromBlock": format!("0x{:x}", from_block),
@@ -175,8 +322,31 @@ impl<T: Send + Sync + Clone + BlockchainTransport> EvmClientTrait for EvmClient<
 			.with_context(|| "Missing 'result' field")?;
 
 		// Parse the response into the expected type
-		Ok(serde_json::from_value(logs_data.clone()).with_context(|| "Failed to parse logs")?)
+		serde_json::from_value(logs_data.clone()).with_context(|| "Failed to parse logs")
 	}
+}
+
+/// Groups a range response by block. `None` (fetch the blocks one by one) if a log has no
+/// block number or one outside the requested range, since it cannot be assigned to a block.
+fn group_logs_by_block(logs: Vec<EVMReceiptLog>, from_block: u64, to_block: u64) -> RangeLogs {
+	let mut by_block: HashMap<u64, Vec<EVMReceiptLog>> = HashMap::new();
+	for log in logs {
+		match log.block_number.map(|n| n.to::<u64>()) {
+			Some(n) if (from_block..=to_block).contains(&n) => {
+				by_block.entry(n).or_default().push(log)
+			}
+			block_number => {
+				tracing::warn!(
+					from_block,
+					to_block,
+					?block_number,
+					"eth_getLogs range returned a log outside the range; fetching its blocks one by one"
+				);
+				return None;
+			}
+		}
+	}
+	Some(Arc::new(by_block))
 }
 
 #[async_trait]
@@ -211,7 +381,7 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 		start_block: u64,
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
-		stream::iter(start_block..=end_block.unwrap_or(start_block))
+		let blocks = stream::iter(start_block..=end_block.unwrap_or(start_block))
 			.map(|block_number| {
 				let params = json!([
 					format!("0x{:x}", block_number),
@@ -240,8 +410,15 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 				}
 			})
 			.buffered(32)
-			.try_collect()
-			.await
+			.try_collect::<Vec<BlockType>>()
+			.await?;
+
+		if let Some(cache) = &self.logs_cache {
+			if let Some(highest) = blocks.iter().filter_map(|block| block.number()).max() {
+				cache.note_fetched_block(highest);
+			}
+		}
+		Ok(blocks)
 	}
 }
 
@@ -306,5 +483,248 @@ mod tests {
 		assert!(logs_contain("to_block=11931476"));
 		// The address list can be every monitored address, so it stays out of the span
 		assert!(!logs_contain("0xdac17f958d2ee523a2206206994597c13d831ec7"));
+	}
+
+	/// Transport that answers `eth_getLogs` with one log per block of the requested range and
+	/// records every range it was asked for
+	#[derive(Clone, Default)]
+	struct RecordingTransport {
+		requests: Arc<Mutex<Vec<(u64, u64)>>>,
+		fail_ranges: bool,
+	}
+
+	impl RecordingTransport {
+		fn requests(&self) -> Vec<(u64, u64)> {
+			let mut requests = self.requests.lock().unwrap().clone();
+			requests.sort();
+			requests
+		}
+	}
+
+	fn parse_block(value: &Value) -> u64 {
+		u64::from_str_radix(value.as_str().unwrap().trim_start_matches("0x"), 16).unwrap()
+	}
+
+	#[async_trait]
+	impl BlockchainTransport for RecordingTransport {
+		async fn get_current_url(&self) -> String {
+			"http://localhost:8545".to_string()
+		}
+
+		async fn send_raw_request<P>(
+			&self,
+			method: &str,
+			params: Option<P>,
+		) -> Result<Value, TransportError>
+		where
+			P: Into<Value> + Send + Clone + Serialize,
+		{
+			assert_eq!(method, "eth_getLogs");
+			let params: Value = params.unwrap().into();
+			let from_block = parse_block(&params[0]["fromBlock"]);
+			let to_block = parse_block(&params[0]["toBlock"]);
+			self.requests.lock().unwrap().push((from_block, to_block));
+			if self.fail_ranges && from_block != to_block {
+				return Err(TransportError::network("block range too large", None, None));
+			}
+			let logs: Vec<Value> = (from_block..=to_block)
+				.map(|block| {
+					json!({
+						"address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+						"topics": [],
+						"data": "0x",
+						"blockHash": null,
+						"blockNumber": format!("0x{:x}", block),
+						"transactionHash": null,
+						"transactionIndex": null,
+						"logIndex": null,
+						"transactionLogIndex": null,
+						"logType": null,
+						"removed": null
+					})
+				})
+				.collect();
+			Ok(json!({ "result": logs }))
+		}
+
+		fn update_endpoint_manager_client(
+			&mut self,
+			_client: ClientWithMiddleware,
+		) -> Result<(), anyhow::Error> {
+			Ok(())
+		}
+	}
+
+	fn monitored() -> Option<Vec<String>> {
+		Some(vec![
+			"0xdac17f958d2ee523a2206206994597c13d831ec7".to_string()
+		])
+	}
+
+	fn client_with_range(
+		transport: &RecordingTransport,
+		range: u64,
+		highest_fetched_block: u64,
+	) -> EvmClient<RecordingTransport> {
+		let client =
+			EvmClient::new_with_transport(transport.clone()).with_logs_block_range(Some(range));
+		client
+			.logs_cache
+			.as_ref()
+			.unwrap()
+			.note_fetched_block(highest_fetched_block);
+		client
+	}
+
+	fn log_blocks(logs: &[EVMReceiptLog]) -> Vec<u64> {
+		logs.iter()
+			.map(|log| log.block_number.unwrap().to::<u64>())
+			.collect()
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_serves_concurrent_blocks_from_one_request() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 10, 109);
+
+		let results = futures::future::join_all(
+			(100..=109).map(|block| client.get_logs_for_blocks(block, block, monitored())),
+		)
+		.await;
+
+		for (block, result) in (100..=109).zip(results) {
+			assert_eq!(log_blocks(&result.unwrap()), vec![block]);
+		}
+		assert_eq!(transport.requests(), vec![(100, 109)]);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_never_reaches_past_the_highest_fetched_block() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 10, 104);
+
+		let logs = client
+			.get_logs_for_blocks(102, 102, monitored())
+			.await
+			.unwrap();
+		assert_eq!(log_blocks(&logs), vec![102]);
+		// Not fetched yet: requested on its own, never as part of a range
+		let logs = client
+			.get_logs_for_blocks(105, 105, monitored())
+			.await
+			.unwrap();
+		assert_eq!(log_blocks(&logs), vec![105]);
+
+		assert_eq!(transport.requests(), vec![(100, 104), (105, 105)]);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_extends_once_more_blocks_are_fetched() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 10, 104);
+
+		client
+			.get_logs_for_blocks(103, 103, monitored())
+			.await
+			.unwrap();
+		client.logs_cache.as_ref().unwrap().note_fetched_block(109);
+		let logs = client
+			.get_logs_for_blocks(107, 107, monitored())
+			.await
+			.unwrap();
+
+		assert_eq!(log_blocks(&logs), vec![107]);
+		assert_eq!(transport.requests(), vec![(100, 104), (100, 109)]);
+	}
+
+	#[tokio::test]
+	#[traced_test]
+	async fn test_logs_range_failure_falls_back_to_single_blocks() {
+		let transport = RecordingTransport {
+			fail_ranges: true,
+			..Default::default()
+		};
+		let client = client_with_range(&transport, 10, 109);
+
+		for block in 100..=102 {
+			let logs = client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+			assert_eq!(log_blocks(&logs), vec![block]);
+		}
+
+		// The failed range is tried once; its blocks then go one by one
+		assert_eq!(
+			transport.requests(),
+			vec![(100, 100), (100, 109), (101, 101), (102, 102)]
+		);
+		assert!(logs_contain("eth_getLogs range request failed"));
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_needs_an_address_filter() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 10, 109);
+
+		client.get_logs_for_blocks(100, 100, None).await.unwrap();
+		client.get_logs_for_blocks(101, 101, None).await.unwrap();
+
+		assert_eq!(transport.requests(), vec![(100, 100), (101, 101)]);
+	}
+
+	#[tokio::test]
+	async fn test_without_logs_range_each_block_has_its_own_request() {
+		let transport = RecordingTransport::default();
+		let client =
+			EvmClient::new_with_transport(transport.clone()).with_logs_block_range(Some(1));
+		assert!(client.logs_cache.is_none());
+
+		client
+			.get_logs_for_blocks(100, 100, monitored())
+			.await
+			.unwrap();
+		client
+			.get_logs_for_blocks(101, 101, monitored())
+			.await
+			.unwrap();
+		// Explicit multi-block requests are never served from the cache
+		client
+			.get_logs_for_blocks(100, 101, monitored())
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transport.requests(),
+			vec![(100, 100), (100, 101), (101, 101)]
+		);
+	}
+
+	#[test]
+	fn test_group_logs_by_block_rejects_logs_outside_the_range() {
+		let log = |block: Option<u64>| EVMReceiptLog {
+			address: Default::default(),
+			topics: vec![],
+			data: vec![].into(),
+			block_hash: None,
+			block_number: block.map(alloy::primitives::U64::from),
+			transaction_hash: None,
+			transaction_index: None,
+			log_index: None,
+			transaction_log_index: None,
+			log_type: None,
+			removed: None,
+		};
+
+		let grouped = group_logs_by_block(
+			vec![log(Some(100)), log(Some(100)), log(Some(102))],
+			100,
+			104,
+		)
+		.unwrap();
+		assert_eq!(grouped.get(&100).map(Vec::len), Some(2));
+		assert_eq!(grouped.get(&102).map(Vec::len), Some(1));
+		assert!(group_logs_by_block(vec![log(Some(105))], 100, 104).is_none());
+		assert!(group_logs_by_block(vec![log(None)], 100, 104).is_none());
 	}
 }

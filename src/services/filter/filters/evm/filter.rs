@@ -789,9 +789,9 @@ impl<T: BlockChainClient + EvmClientTrait> BlockFilter for EVMBlockFilter<T> {
 		// Event matching only looks at logs from monitored addresses, so the other logs of
 		// the block are never used; leaving them out keeps the response small on busy
 		// networks, where a block can carry thousands of unrelated logs.
-		// We could further optimize by getting logs for a range of blocks and calling this in the parent function
-		// However, due to limitations by certain RPC providers (e.g. Quicknode only allows a block range of 5),
-		// it's safer to just fetch the logs for a single block at a time as it's more reliable.
+		// Requested per block. Some providers limit the block range of eth_getLogs (e.g.
+		// Quicknode allows 5), so ranges are opt-in: with `logs_block_range` set on the network,
+		// the client fetches a range once and answers the other blocks of it from memory.
 		// Parsed once per monitor: the sets feed the eth_getLogs filter and the
 		// per-transaction check below.
 		let monitor_addresses: Vec<HashSet<Address>> =
