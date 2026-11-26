@@ -35,7 +35,7 @@ const COMMON_DELIMITERS: [char; 10] = [')', '(', ',', '=', '!', '>', '<', '&', '
 /// Parses boolean literals into `LiteralValue::Bool`
 fn parse_boolean<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'a>> {
 	let parse_true = (
-		literal("true"),
+		literal(Caseless("true")),
 		peek(alt((
 			// Ensure "true" is followed by a delimiter or EOF
 			space1.value(()),
@@ -46,7 +46,7 @@ fn parse_boolean<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'a>> {
 		.map(|_| LiteralValue::Bool(true));
 
 	let parse_false = (
-		literal("false"),
+		literal(Caseless("false")),
 		peek(alt((
 			// Ensure "false" is followed by a delimiter or EOF
 			space1.value(()),
@@ -453,9 +453,10 @@ mod tests {
 		assert_parses_ok(parse_boolean, "true", LiteralValue::Bool(true), "");
 		assert_parses_ok(parse_boolean, "false", LiteralValue::Bool(false), "");
 		assert_parses_ok(parse_boolean, "true ", LiteralValue::Bool(true), " "); // Consumes only "true"
+		assert_parses_ok(parse_boolean, "TRUE", LiteralValue::Bool(true), ""); // Case-insensitive
+		assert_parses_ok(parse_boolean, "False", LiteralValue::Bool(false), "");
 
 		// Failures
-		assert_parse_fails(parse_boolean, "TRUE"); // Case-sensitive
 		assert_parse_fails(parse_boolean, "tru");
 		assert_parse_fails(parse_boolean, "  true"); // Does not consume leading space
 	}
@@ -831,6 +832,28 @@ mod tests {
 			right: LiteralValue::Number("0.5"),
 		});
 		assert_parses_ok(parse_condition, expr_path, expected_path, "");
+	}
+
+	#[test]
+	fn test_parse_condition_with_uppercase_boolean() {
+		// Keywords are reserved case-insensitively, so `TRUE` must parse as the boolean.
+		let expected = Expression::Logical {
+			left: Box::new(Expression::Condition(Condition {
+				left: ConditionLeft::Simple("paused"),
+				operator: ComparisonOperator::Eq,
+				right: LiteralValue::Bool(true),
+			})),
+			operator: LogicalOperator::And,
+			right: Box::new(Expression::Condition(Condition {
+				left: ConditionLeft::Simple("active"),
+				operator: ComparisonOperator::Ne,
+				right: LiteralValue::Bool(false),
+			})),
+		};
+		assert_eq!(
+			parse("paused == TRUE AND active != False").unwrap(),
+			expected
+		);
 	}
 
 	#[test]
