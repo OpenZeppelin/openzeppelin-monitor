@@ -491,6 +491,7 @@ A Network configuration defines connection details and operational parameters fo
 | `**max_past_blocks**` | `Number` or `"unlimited"` | Maximum number of past blocks to process, or `"unlimited"` to resume from the last processed block without clamping |
 | `**store_blocks**` | `Boolean` | Whether to store processed blocks (defaults output to `./data/` directory) |
 | `**recovery_config**` | `Object` | Optional configuration for missed block recovery (see below) |
+| `**logs_block_range**` | `Number` | Optional, **EVM only**: blocks covered by one `eth_getLogs` request (default 1, one request per block, at most 1000). Only applies when the monitors declare addresses. Keep it within your provider's `eth_getLogs` block-range limit; a rejected range falls back to one request per block. Only use it with providers that reject over-limit `eth_getLogs` queries with an error: one that silently truncates a large response would drop logs from the range |
 
 #### Missed Block Recovery
 
@@ -1785,6 +1786,7 @@ The monitor implements a comprehensive error handling system with rich context a
   * Calculate as: `(cron_interval_ms/block_time_ms) + confirmation_blocks + 1` (defaults to this calculation if not specified).
   * Example for 1-minute Ethereum cron: `(60000/12000) + 12 + 1 = 18 blocks`.
   * Too low numeric settings may skip older unprocessed blocks after downtime. Use `"unlimited"` to avoid this clamp; catch-up still runs in bounded batches.
+* On fast EVM networks most RPC calls are `eth_getLogs`, one per block. Setting `logs_block_range` (for example `10`) fetches the logs of that many blocks per request, which cuts those calls by the same factor.
 * Trigger conditions are executed sequentially based on their position in the trigger conditions array. Proper execution also depends on the number of available file descriptors on your system. To ensure optimal performance, it is recommended to increase the limit for open file descriptors to at least 2048 or higher. On Unix-based systems you can check the current limit by running `ulimit -n` and _***temporarily***_ increase it with `ulimit -n 2048`.
 * Since scripts are loaded at startup, any modifications to script files require restarting the monitor to take effect.
 * See performance considerations about custom scripts [here](/monitor/scripts#performance-considerations).

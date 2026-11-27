@@ -6,6 +6,11 @@
 use async_trait::async_trait;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
+/// Upper bound for `logs_block_range`. A range never reaches past the blocks the monitor has
+/// fetched, so a value above the blocks processed per cycle cuts no further requests, and a
+/// bound keeps a misconfigured value from producing oversized `eth_getLogs` queries.
+pub const MAX_LOGS_BLOCK_RANGE: u64 = 1_000;
+
 use crate::{
 	models::{
 		config::error::ConfigError, BlockChainType, ConfigLoader, MaxPastBlocks, Network,
@@ -302,6 +307,24 @@ impl ConfigLoader for Network {
 			_ => {}
 		}
 
+		// Validate logs_block_range
+		if let Some(range) = self.logs_block_range {
+			if range == 0 || range > MAX_LOGS_BLOCK_RANGE {
+				return Err(ConfigError::validation_error(
+					format!("logs_block_range must be between 1 and {MAX_LOGS_BLOCK_RANGE}"),
+					None,
+					None,
+				));
+			}
+			if self.network_type != BlockChainType::EVM {
+				return Err(ConfigError::validation_error(
+					"logs_block_range is only supported on EVM networks",
+					None,
+					None,
+				));
+			}
+		}
+
 		// Log a warning if the network uses an insecure protocol
 		self.validate_protocol();
 
@@ -511,6 +534,36 @@ mod tests {
 	}
 
 	#[test]
+	fn test_validate_logs_block_range() {
+		let network = NetworkBuilder::new().logs_block_range(10).build();
+		assert!(network.validate().is_ok());
+
+		let network = NetworkBuilder::new()
+			.logs_block_range(MAX_LOGS_BLOCK_RANGE)
+			.build();
+		assert!(network.validate().is_ok());
+
+		for range in [0, MAX_LOGS_BLOCK_RANGE + 1] {
+			let network = NetworkBuilder::new().logs_block_range(range).build();
+			assert!(matches!(
+				network.validate(),
+				Err(ConfigError::ValidationError(_))
+			));
+		}
+
+		let stellar = NetworkBuilder::new().network_type(BlockChainType::Stellar);
+		assert!(stellar.build().validate().is_ok());
+		let network = NetworkBuilder::new()
+			.network_type(BlockChainType::Stellar)
+			.logs_block_range(10)
+			.build();
+		assert!(matches!(
+			network.validate(),
+			Err(ConfigError::ValidationError(_))
+		));
+	}
+
+	#[test]
 	fn test_validate_unlimited_max_past_blocks() {
 		let network = NetworkBuilder::new().unlimited_past_blocks().build();
 		assert!(network.validate().is_ok());
@@ -588,6 +641,23 @@ mod tests {
 		))
 		.unwrap();
 		assert_eq!(network.max_past_blocks, Some(MaxPastBlocks::Unlimited));
+	}
+
+	#[test]
+	fn test_logs_block_range_deserialize() {
+		let network: Network = serde_json::from_str(&network_json_with_max_past_blocks(
+			"\"logs_block_range\": 10,",
+		))
+		.unwrap();
+		assert_eq!(network.logs_block_range, Some(10));
+
+		let network: Network =
+			serde_json::from_str(&network_json_with_max_past_blocks("")).unwrap();
+		assert_eq!(network.logs_block_range, None);
+		// Left out of the serialized config when unset
+		assert!(!serde_json::to_string(&network)
+			.unwrap()
+			.contains("logs_block_range"));
 	}
 
 	#[test]
