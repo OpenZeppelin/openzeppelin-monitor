@@ -168,6 +168,13 @@ impl LogsRangeCache {
 		logs: Arc<HashMap<u64, Vec<EVMReceiptLog>>>,
 	) {
 		let mut cached = self.ranges.lock().unwrap_or_else(|e| e.into_inner());
+		// A newer scan supersedes any cached range of the same filter it overlaps, so a block
+		// is never served logs from an older scan
+		cached.ranges.retain(|range| {
+			range.addresses != *addresses
+				|| range.to_block < from_block
+				|| range.from_block > to_block
+		});
 		cached.insert(
 			from_block,
 			to_block,
@@ -509,25 +516,40 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 
 		let range = self.logs_cache.as_ref().map_or(1, |cache| cache.range);
 		let addresses = Some(addresses.clone());
-		let mut block_numbers = BTreeSet::new();
-		let mut from_block = start_block;
-		while from_block <= end_block {
-			let to_block = std::cmp::min(from_block.saturating_add(range - 1), end_block);
-			let by_block = match self
-				.request_logs(from_block, to_block, addresses.clone())
-				.await
-			{
-				Ok(logs) => group_logs_by_block(logs, from_block, to_block),
-				Err(error) => {
-					tracing::warn!(
-						from_block,
-						to_block,
-						error = %error,
-						"eth_getLogs request failed; fetching every block of the range"
-					);
-					None
+		let chunks: Vec<(u64, u64)> = (start_block..=end_block)
+			.step_by(usize::try_from(range).unwrap_or(usize::MAX))
+			.map(|from_block| {
+				(
+					from_block,
+					std::cmp::min(from_block.saturating_add(range - 1), end_block),
+				)
+			})
+			.collect();
+		let scans: Vec<(u64, u64, RangeLogs)> = stream::iter(chunks)
+			.map(|(from_block, to_block)| {
+				let addresses = addresses.clone();
+				async move {
+					let by_block = match self.request_logs(from_block, to_block, addresses).await {
+						Ok(logs) => group_logs_by_block(logs, from_block, to_block),
+						Err(error) => {
+							tracing::warn!(
+								from_block,
+								to_block,
+								error = %error,
+								"eth_getLogs request failed; fetching every block of the range"
+							);
+							None
+						}
+					};
+					(from_block, to_block, by_block)
 				}
-			};
+			})
+			.buffered(32)
+			.collect()
+			.await;
+
+		let mut block_numbers = BTreeSet::new();
+		for (from_block, to_block, by_block) in scans {
 			match by_block {
 				Some(by_block) => {
 					block_numbers.extend(by_block.keys().copied());
@@ -539,7 +561,6 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for EvmClien
 				// Cannot tell which blocks have logs: fetch them all, as a dense fetch would
 				None => block_numbers.extend(from_block..=to_block),
 			}
-			from_block = to_block.saturating_add(1);
 		}
 
 		// A block that fails to fetch fails the batch, as in a dense fetch, so the checkpoint
@@ -660,6 +681,8 @@ mod tests {
 		fail_ranges: bool,
 		blocks_with_logs: Option<Vec<u64>>,
 		failing_blocks: Vec<u64>,
+		logs_in_flight: Arc<std::sync::atomic::AtomicUsize>,
+		max_logs_in_flight: Arc<std::sync::atomic::AtomicUsize>,
 	}
 
 	impl RecordingTransport {
@@ -709,6 +732,12 @@ mod tests {
 			let from_block = parse_block(&params[0]["fromBlock"]);
 			let to_block = parse_block(&params[0]["toBlock"]);
 			self.requests.lock().unwrap().push((from_block, to_block));
+			// Let other requests start before this one answers, to observe concurrency
+			let in_flight = self.logs_in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+			self.max_logs_in_flight
+				.fetch_max(in_flight, Ordering::SeqCst);
+			tokio::task::yield_now().await;
+			self.logs_in_flight.fetch_sub(1, Ordering::SeqCst);
 			if self.fail_ranges && from_block != to_block {
 				return Err(TransportError::network("block range too large", None, None));
 			}
@@ -1158,6 +1187,77 @@ mod tests {
 			transport.requests(),
 			vec![(105, 114), (115, 116), (117, 120)]
 		);
+	}
+
+	#[tokio::test]
+	async fn test_logs_first_scans_the_ranges_concurrently() {
+		let transport = RecordingTransport {
+			blocks_with_logs: Some(vec![]),
+			..Default::default()
+		};
+		let client = logs_first_client(&transport, Some(10));
+
+		client.get_blocks_with_meta(100, Some(129)).await.unwrap();
+
+		assert_eq!(
+			transport.requests(),
+			vec![(100, 109), (110, 119), (120, 129)]
+		);
+		assert!(transport.max_logs_in_flight.load(Ordering::SeqCst) > 1);
+	}
+
+	#[tokio::test]
+	async fn test_logs_first_scan_replaces_the_ranges_it_overlaps() {
+		let transport = RecordingTransport::default();
+		let client = logs_first_client(&transport, Some(10));
+		let cache = client.logs_cache.clone().unwrap();
+		let logs_of = |block: u64| {
+			Arc::new(HashMap::from([(
+				block,
+				vec![EVMReceiptLog {
+					address: Default::default(),
+					topics: vec![],
+					data: vec![].into(),
+					block_hash: None,
+					block_number: Some(alloy::primitives::U64::from(block)),
+					transaction_hash: None,
+					transaction_index: None,
+					log_index: None,
+					transaction_log_index: None,
+					log_type: None,
+					removed: None,
+				}],
+			)]))
+		};
+
+		cache.prime(100, 109, &monitored(), logs_of(105));
+		cache.prime(120, 129, &monitored(), logs_of(125));
+		cache.prime(105, 114, &None, logs_of(106));
+		// A retried scan that overlaps the first range supersedes it
+		cache.prime(103, 112, &monitored(), logs_of(106));
+		cache.note_fetched_block(129);
+
+		let logs = client
+			.get_logs_for_blocks(105, 105, monitored())
+			.await
+			.unwrap();
+		assert!(logs.is_empty());
+		let logs = client
+			.get_logs_for_blocks(106, 106, monitored())
+			.await
+			.unwrap();
+		assert_eq!(log_blocks(&logs), vec![106]);
+		// Ranges it does not overlap, or of another filter, are kept
+		let logs = client
+			.get_logs_for_blocks(125, 125, monitored())
+			.await
+			.unwrap();
+		assert_eq!(log_blocks(&logs), vec![125]);
+		assert_eq!(
+			cache.range_for(107, &None).map(|r| (r.0, r.1)),
+			Some((105, 114))
+		);
+		assert!(transport.requests().is_empty());
 	}
 
 	#[tokio::test]

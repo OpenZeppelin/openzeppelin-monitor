@@ -332,6 +332,13 @@ impl ConfigLoader for Network {
 				None,
 			));
 		}
+		if self.logs_first == Some(true) && self.logs_block_range.is_none_or(|range| range <= 1) {
+			tracing::warn!(
+				"Network '{}' sets logs_first without a logs_block_range above 1: every block \
+				 costs its own eth_getLogs request",
+				self.slug
+			);
+		}
 
 		// Log a warning if the network uses an insecure protocol
 		self.validate_protocol();
@@ -572,9 +579,18 @@ mod tests {
 	}
 
 	#[test]
+	#[traced_test]
 	fn test_validate_logs_first() {
+		let network = NetworkBuilder::new()
+			.logs_first(true)
+			.logs_block_range(10)
+			.build();
+		assert!(network.validate().is_ok());
+		assert!(!logs_contain("sets logs_first without a logs_block_range"));
+
 		let network = NetworkBuilder::new().logs_first(true).build();
 		assert!(network.validate().is_ok());
+		assert!(logs_contain("sets logs_first without a logs_block_range"));
 
 		let network = NetworkBuilder::new()
 			.network_type(BlockChainType::Stellar)
