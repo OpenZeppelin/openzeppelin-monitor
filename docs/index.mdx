@@ -491,7 +491,7 @@ A Network configuration defines connection details and operational parameters fo
 | `**max_past_blocks**` | `Number` or `"unlimited"` | Maximum number of past blocks to process, or `"unlimited"` to resume from the last processed block without clamping |
 | `**store_blocks**` | `Boolean` | Whether to store processed blocks (defaults output to `./data/` directory) |
 | `**recovery_config**` | `Object` | Optional configuration for missed block recovery (see below) |
-| `**logs_block_range**` | `Number` | Optional, **EVM only**: blocks covered by one `eth_getLogs` request (default 1, one request per block). Only applies when the monitors declare addresses. Keep it within your provider's `eth_getLogs` block-range limit; a rejected range falls back to one request per block |
+| `**logs_block_range**` | `Number` | Optional, **EVM only**: blocks covered by one `eth_getLogs` request (default 1, one request per block, at most 1000). Only applies when the monitors declare addresses. Keep it within your provider's `eth_getLogs` block-range limit; a rejected range falls back to one request per block. Only use it with providers that reject over-limit `eth_getLogs` queries with an error: one that silently truncates a large response would drop logs from the range |
 
 #### Missed Block Recovery
 

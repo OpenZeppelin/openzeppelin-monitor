@@ -87,9 +87,9 @@ impl CachedLogsRanges {
 /// answered from that request. Concurrent callers for blocks of the same range share the
 /// in-flight request.
 ///
-/// A new range starts where the cached ranges of the same filter end (or at the block's
-/// multiple of `range`), so blocks already fetched are never requested again when the head
-/// advances. It never reaches past the highest block this client has fetched with
+/// A new range starts at the block that needs it, so blocks already processed are never
+/// requested again, and stops before any cached range of the same filter above it. It never
+/// reaches past the highest block this client has fetched with
 /// `get_blocks`: the block watcher only fetches confirmed blocks, so a range never covers a
 /// block that is not confirmed yet.
 struct LogsRangeCache {
@@ -135,16 +135,9 @@ impl LogsRangeCache {
 			return Some((range.from_block, range.to_block, range.logs.clone()));
 		}
 
-		let aligned = block_number - block_number % self.range;
-		let from_block = cached
-			.ranges
-			.iter()
-			.filter(same_filter)
-			.map(|range| range.to_block)
-			.filter(|to_block| (aligned..block_number).contains(to_block))
-			.max()
-			.map_or(aligned, |to_block| to_block + 1);
-		// Nor into a cached range above it, which a block processed out of order can leave
+		// The range starts at the block itself, so it never covers blocks already processed,
+		// and stops before a cached range above it, which a block processed out of order can
+		// leave
 		let next_cached = cached
 			.ranges
 			.iter()
@@ -153,16 +146,16 @@ impl LogsRangeCache {
 			.filter(|from| *from > block_number)
 			.min()
 			.unwrap_or(u64::MAX);
-		let to_block = from_block
+		let to_block = block_number
 			.saturating_add(self.range - 1)
 			.min(head)
 			.min(next_cached - 1);
-		if from_block >= to_block {
+		if block_number >= to_block {
 			return None;
 		}
 		let logs = Arc::new(OnceCell::new());
-		cached.insert(from_block, to_block, addresses, logs.clone());
-		Some((from_block, to_block, logs))
+		cached.insert(block_number, to_block, addresses, logs.clone());
+		Some((block_number, to_block, logs))
 	}
 }
 
@@ -681,7 +674,7 @@ mod tests {
 			.unwrap();
 		assert_eq!(log_blocks(&logs), vec![105]);
 
-		assert_eq!(transport.requests(), vec![(100, 104), (105, 105)]);
+		assert_eq!(transport.requests(), vec![(102, 104), (105, 105)]);
 	}
 
 	#[tokio::test]
@@ -689,19 +682,36 @@ mod tests {
 		let transport = RecordingTransport::default();
 		let client = client_with_range(&transport, 10, 104);
 
-		client
-			.get_logs_for_blocks(103, 103, monitored())
-			.await
-			.unwrap();
+		for block in [103, 104] {
+			client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+		}
 		client.logs_cache.as_ref().unwrap().note_fetched_block(109);
-		let logs = client
-			.get_logs_for_blocks(107, 107, monitored())
+		for block in 105..=109 {
+			let logs = client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+			assert_eq!(log_blocks(&logs), vec![block]);
+		}
+
+		// Each range starts at the block that needs it: no block is requested twice
+		assert_eq!(transport.requests(), vec![(103, 104), (105, 109)]);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_never_reaches_below_the_block() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 100_000_000, 21_000_123);
+
+		client
+			.get_logs_for_blocks(21_000_100, 21_000_100, monitored())
 			.await
 			.unwrap();
 
-		assert_eq!(log_blocks(&logs), vec![107]);
-		// The new range starts where the cached one ends: no block is requested twice
-		assert_eq!(transport.requests(), vec![(100, 104), (105, 109)]);
+		assert_eq!(transport.requests(), vec![(21_000_100, 21_000_123)]);
 	}
 
 	#[tokio::test]
@@ -722,8 +732,28 @@ mod tests {
 		let requests = transport.requests();
 		// Each block is requested exactly once across all ranges
 		let requested_blocks: u64 = requests.iter().map(|(from, to)| to - from + 1).sum();
-		assert_eq!(requests.first(), Some(&(0, 101)));
-		assert_eq!(requested_blocks, 112);
+		assert_eq!(requests.first(), Some(&(100, 101)));
+		assert_eq!(requested_blocks, 12);
+	}
+
+	#[tokio::test]
+	async fn test_logs_range_does_not_refetch_with_the_head_at_the_block() {
+		let transport = RecordingTransport::default();
+		let client = client_with_range(&transport, 1000, 100);
+		let cache = client.logs_cache.clone().unwrap();
+
+		for block in 100..=110 {
+			cache.note_fetched_block(block);
+			let logs = client
+				.get_logs_for_blocks(block, block, monitored())
+				.await
+				.unwrap();
+			assert_eq!(log_blocks(&logs), vec![block]);
+		}
+
+		// Each block is the head when filtered, so it is requested alone, and never again
+		let expected: Vec<(u64, u64)> = (100..=110).map(|block| (block, block)).collect();
+		assert_eq!(transport.requests(), expected);
 	}
 
 	#[tokio::test]
@@ -750,7 +780,7 @@ mod tests {
 		// 105 fills the gap up to the range above it instead of overlapping it
 		assert_eq!(
 			transport.requests(),
-			vec![(100, 104), (105, 109), (110, 119)]
+			vec![(102, 104), (105, 111), (112, 119)]
 		);
 	}
 
@@ -867,7 +897,7 @@ mod tests {
 			.await
 			.unwrap();
 
-		assert_eq!(transport.requests(), vec![(100, 100), (100, 104)]);
+		assert_eq!(transport.requests(), vec![(100, 100), (101, 104)]);
 	}
 
 	#[tokio::test]
@@ -886,7 +916,7 @@ mod tests {
 			.await
 			.unwrap();
 
-		assert_eq!(transport.requests(), vec![(100, 104), (105, 105)]);
+		assert_eq!(transport.requests(), vec![(101, 104), (105, 105)]);
 	}
 
 	#[test]

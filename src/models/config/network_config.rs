@@ -6,6 +6,11 @@
 use async_trait::async_trait;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
+/// Upper bound for `logs_block_range`. A range never reaches past the blocks the monitor has
+/// fetched, so a value above the blocks processed per cycle cuts no further requests, and a
+/// bound keeps a misconfigured value from producing oversized `eth_getLogs` queries.
+pub const MAX_LOGS_BLOCK_RANGE: u64 = 1_000;
+
 use crate::{
 	models::{
 		config::error::ConfigError, BlockChainType, ConfigLoader, MaxPastBlocks, Network,
@@ -304,9 +309,9 @@ impl ConfigLoader for Network {
 
 		// Validate logs_block_range
 		if let Some(range) = self.logs_block_range {
-			if range == 0 {
+			if range == 0 || range > MAX_LOGS_BLOCK_RANGE {
 				return Err(ConfigError::validation_error(
-					"logs_block_range must be greater than 0",
+					format!("logs_block_range must be between 1 and {MAX_LOGS_BLOCK_RANGE}"),
 					None,
 					None,
 				));
@@ -533,11 +538,18 @@ mod tests {
 		let network = NetworkBuilder::new().logs_block_range(10).build();
 		assert!(network.validate().is_ok());
 
-		let network = NetworkBuilder::new().logs_block_range(0).build();
-		assert!(matches!(
-			network.validate(),
-			Err(ConfigError::ValidationError(_))
-		));
+		let network = NetworkBuilder::new()
+			.logs_block_range(MAX_LOGS_BLOCK_RANGE)
+			.build();
+		assert!(network.validate().is_ok());
+
+		for range in [0, MAX_LOGS_BLOCK_RANGE + 1] {
+			let network = NetworkBuilder::new().logs_block_range(range).build();
+			assert!(matches!(
+				network.validate(),
+				Err(ConfigError::ValidationError(_))
+			));
+		}
 
 		let stellar = NetworkBuilder::new().network_type(BlockChainType::Stellar);
 		assert!(stellar.build().validate().is_ok());

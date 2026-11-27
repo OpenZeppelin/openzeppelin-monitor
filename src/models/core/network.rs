@@ -160,8 +160,9 @@ pub struct Network {
 	/// other blocks of the range from memory, so a network costs about one `eth_getLogs` per
 	/// range instead of one per block. Only blocks the monitor has already fetched are
 	/// included, so a range never reaches past the confirmed head. Keep it within the
-	/// provider's `eth_getLogs` block-range limit; if a range request fails, the blocks of
-	/// that range fall back to one request each.
+	/// provider's `eth_getLogs` block-range limit (and at most 1000); if a range request
+	/// fails, the blocks of that range fall back to one request each. Only use it with
+	/// providers that reject over-limit queries: a silently truncated response drops logs.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub logs_block_range: Option<u64>,
 }
