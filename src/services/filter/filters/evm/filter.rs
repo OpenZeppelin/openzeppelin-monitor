@@ -3111,6 +3111,31 @@ mod tests {
 	}
 
 	#[test]
+	fn test_evaluate_expression_json_literal_backslashes_are_doubled() {
+		let filter = create_test_filter();
+
+		// string[] whose only element is `c\d` (one backslash), rendered as JSON `["c\\d"]`
+		let names = format_token_value(&DynSolValue::Array(vec![DynSolValue::String(
+			"c\\d".to_string(),
+		)]));
+		assert_eq!(names, r#"["c\\d"]"#);
+		let args = vec![create_test_param("names", &names, "string[]")];
+
+		// The literal is unescaped by the parser and then again by serde_json,
+		// so a JSON backslash escape needs its backslashes doubled
+		assert!(filter
+			.evaluate_expression(r#"names == '["c\\\\d"]'"#, &args)
+			.unwrap());
+		assert!(!filter
+			.evaluate_expression(r#"names != '["c\\\\d"]'"#, &args)
+			.unwrap());
+		// The single-escaped form reaches serde_json as `["c\d"]`, which is invalid JSON
+		assert!(filter
+			.evaluate_expression(r#"names == '["c\\d"]'"#, &args)
+			.is_err());
+	}
+
+	#[test]
 	fn test_evaluate_expression_error_cases() {
 		let filter = create_test_filter();
 

@@ -2683,6 +2683,32 @@ mod tests {
 	}
 
 	#[test]
+	fn test_evaluate_expression_vec_json_literal_backslashes_are_doubled() {
+		let filter = create_test_filter();
+		// JSON array whose only element is `c\d` (one backslash)
+		let args = vec![StellarMatchParamEntry {
+			name: "json_list".to_string(),
+			value: r#"["c\\d"]"#.to_string(),
+			kind: "vec".to_string(),
+			indexed: false,
+		}];
+
+		// The literal is unescaped by the parser and then again by serde_json,
+		// so a JSON backslash escape needs its backslashes doubled
+		assert!(filter
+			.evaluate_expression(r#"json_list == '["c\\\\d"]'"#, &args)
+			.unwrap());
+		// The single-escaped form reaches serde_json as `["c\d"]`, which is not
+		// valid JSON, so the vec comparison is simply not equal
+		assert!(!filter
+			.evaluate_expression(r#"json_list == '["c\\d"]'"#, &args)
+			.unwrap());
+		assert!(filter
+			.evaluate_expression(r#"json_list != '["c\\d"]'"#, &args)
+			.unwrap());
+	}
+
+	#[test]
 	fn test_evaluate_expression_with_map_path_access() {
 		let filter = create_test_filter();
 		let args = vec![StellarMatchParamEntry {
