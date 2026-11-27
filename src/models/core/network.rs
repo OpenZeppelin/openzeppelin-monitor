@@ -152,6 +152,33 @@ pub struct Network {
 
 	/// Configuration for missed block recovery job
 	pub recovery_config: Option<BlockRecoveryConfig>,
+
+	/// EVM only: number of blocks covered by one `eth_getLogs` request.
+	///
+	/// When unset (or 1) the logs of each block are fetched with their own request. A larger
+	/// value fetches the logs of up to that many consecutive blocks at once and serves the
+	/// other blocks of the range from memory, so a network costs about one `eth_getLogs` per
+	/// range instead of one per block. Only blocks the monitor has already fetched are
+	/// included, so a range never reaches past the confirmed head. Keep it within the
+	/// provider's `eth_getLogs` block-range limit (and at most 1000); if a range request
+	/// fails, the blocks of that range fall back to one request each. Only use it with
+	/// providers that reject over-limit queries: a silently truncated response drops logs.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub logs_block_range: Option<u64>,
+
+	/// EVM only: fetch only the blocks holding a log of a monitored address.
+	///
+	/// The monitor first asks `eth_getLogs` (filtered to the monitored addresses, one request
+	/// per `logs_block_range` blocks) which blocks have such a log, and then fetches only
+	/// those with `eth_getBlockByNumber`, instead of every block. It only applies when every
+	/// monitor of the network has event conditions and no function conditions, since only
+	/// then a block without a monitored log cannot produce a match; otherwise it is ignored
+	/// with a warning. Set `logs_block_range` too, or every block costs its own `eth_getLogs`.
+	/// A block is processed only if `eth_getLogs` reports a monitored log in it, so only use
+	/// it with providers that return complete results and reject over-limit queries. With
+	/// `store_blocks`, only the fetched blocks are stored.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub logs_first: Option<bool>,
 }
 
 /// RPC endpoint configuration with load balancing weight

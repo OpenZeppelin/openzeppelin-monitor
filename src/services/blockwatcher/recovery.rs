@@ -388,6 +388,8 @@ mod tests {
 				max_retries: 3,
 				retry_delay_ms: 100,
 			}),
+			logs_block_range: None,
+			logs_first: None,
 		}
 	}
 

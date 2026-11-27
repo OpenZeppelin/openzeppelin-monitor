@@ -36,7 +36,7 @@ use crate::{
 	services::{
 		blockchain::{ClientPool, ClientPoolTrait},
 		blockwatcher::{BlockTracker, BlockTrackerTrait, BlockWatcherService, FileBlockStorage},
-		filter::FilterService,
+		filter::{logs_first_address_filter, FilterService},
 		trigger::{TriggerExecutionService, TriggerExecutionServiceTrait},
 	},
 	utils::{
@@ -422,8 +422,40 @@ async fn main() -> Result<()> {
 		match network.network_type {
 			BlockChainType::EVM => {
 				if let Ok(client) = client_pool.get_evm_client(&network).await {
+					// Only the watcher's copy fetches blocks logs-first. It shares the log
+					// ranges of the pooled client, which the block filter uses.
+					let client = (*client).clone();
+					let client = if network.logs_first == Some(true) {
+						let monitors = network_monitors
+							.iter()
+							.find(|(n, _)| n.slug == network.slug)
+							.map(|(_, monitors)| monitors.as_slice())
+							.unwrap_or_default();
+						match logs_first_address_filter(monitors) {
+							Some(addresses) => {
+								info!(
+									network = network.slug.as_str(),
+									addresses = addresses.len(),
+									"Fetching only the blocks with logs of monitored addresses"
+								);
+								client.with_logs_first(addresses)
+							}
+							None => {
+								warn!(
+									network = network.slug.as_str(),
+									"Ignoring logs_first: a monitor of the network has no event \
+									 conditions or has function conditions, or the monitors \
+									 declare no valid address or more than the eth_getLogs \
+									 filter accepts; fetching every block"
+								);
+								client
+							}
+						}
+					} else {
+						client
+					};
 					let _ = block_watcher
-						.start_network_watcher(&network, (*client).clone())
+						.start_network_watcher(&network, client)
 						.await
 						.inspect_err(|e| {
 							error!("Failed to start EVM network watcher: {}", e);
