@@ -81,11 +81,11 @@ prop_compose! {
 		is_number in any::<bool>()
 	) -> LiteralValue<'static> {
 		// Leak the string so it lives for 'static lifetime in tests
-		let leaked_value = Box::leak(value.into_boxed_str());
+		let leaked_value: &str = Box::leak(value.into_boxed_str());
 		if is_number {
 			LiteralValue::Number(leaked_value)
 		} else {
-			LiteralValue::Str(leaked_value)
+			LiteralValue::str(leaked_value)
 		}
 	}
 }
@@ -186,11 +186,11 @@ prop_compose! {
 		is_number in any::<bool>()
 	) -> LiteralValue<'static> {
 		// Leak the string so it lives for 'static lifetime in tests
-		let leaked_value = Box::leak(value.into_boxed_str());
+		let leaked_value: &str = Box::leak(value.into_boxed_str());
 		if is_number {
 			LiteralValue::Number(leaked_value)
 		} else {
-			LiteralValue::Str(leaked_value)
+			LiteralValue::str(leaked_value)
 		}
 	}
 }
@@ -323,11 +323,11 @@ prop_compose! {
 		value in generate_valid_decimal_string(),
 		is_number in any::<bool>()
 	) -> LiteralValue<'static> {
-		let leaked_value = Box::leak(value.into_boxed_str());
+		let leaked_value: &str = Box::leak(value.into_boxed_str());
 		if is_number {
 			LiteralValue::Number(leaked_value)
 		} else {
-			LiteralValue::Str(leaked_value)
+			LiteralValue::str(leaked_value)
 		}
 	}
 }
@@ -363,33 +363,33 @@ proptest! {
 		value_str in generate_valid_u256_string()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_str = Box::leak(value_str.clone().into_boxed_str());
+		let leaked_str: &str = Box::leak(value_str.clone().into_boxed_str());
 
 		// A value should equal itself
 		prop_assert!(evaluator.compare_u256(
 			&value_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A value should not be "not equal" to itself
 		prop_assert!(!evaluator.compare_u256(
 			&value_str,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A value should be >= and <= itself
 		prop_assert!(evaluator.compare_u256(
 			&value_str,
 			&ComparisonOperator::Gte,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_u256(
 			&value_str,
 			&ComparisonOperator::Lte,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 	}
 
@@ -403,29 +403,29 @@ proptest! {
 		let hex_str = format!("0x{:x}", value);
 		let hex_upper_str = format!("0X{:X}", value);
 
-		let leaked_decimal = Box::leak(decimal_str.clone().into_boxed_str());
-		let leaked_hex = Box::leak(hex_str.clone().into_boxed_str());
-		let leaked_hex_upper = Box::leak(hex_upper_str.clone().into_boxed_str());
+		let leaked_decimal: &str = Box::leak(decimal_str.clone().into_boxed_str());
+		let leaked_hex: &str = Box::leak(hex_str.clone().into_boxed_str());
+		let leaked_hex_upper: &str = Box::leak(hex_upper_str.clone().into_boxed_str());
 
 		// decimal == hex
 		prop_assert!(evaluator.compare_u256(
 			&decimal_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_hex)
+			&LiteralValue::str(leaked_hex)
 		).unwrap());
 
 		// hex == decimal
 		prop_assert!(evaluator.compare_u256(
 			&hex_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_decimal)
+			&LiteralValue::str(leaked_decimal)
 		).unwrap());
 
 		// lowercase hex == uppercase hex
 		prop_assert!(evaluator.compare_u256(
 			&hex_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_hex_upper)
+			&LiteralValue::str(leaked_hex_upper)
 		).unwrap());
 	}
 
@@ -438,12 +438,12 @@ proptest! {
 	) {
 		let evaluator = create_evaluator();
 
-		let leaked_right = Box::leak(right_value.clone().into_boxed_str());
+		let leaked_right: &str = Box::leak(right_value.clone().into_boxed_str());
 
 		let result_with_str = evaluator.compare_u256(
 			&left_value,
 			&operator,
-			&LiteralValue::Str(leaked_right)
+			&LiteralValue::str(leaked_right)
 		);
 
 		let result_with_number = evaluator.compare_u256(
@@ -467,25 +467,25 @@ proptest! {
 		value_str in generate_valid_u256_string()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_str = Box::leak(value_str.clone().into_boxed_str());
+		let leaked_str: &str = Box::leak(value_str.clone().into_boxed_str());
 
 		// Test unsupported string operators
 		prop_assert!(evaluator.compare_u256(
 			&value_str,
 			&ComparisonOperator::StartsWith,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).is_err());
 
 		prop_assert!(evaluator.compare_u256(
 			&value_str,
 			&ComparisonOperator::EndsWith,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).is_err());
 
 		prop_assert!(evaluator.compare_u256(
 			&value_str,
 			&ComparisonOperator::Contains,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).is_err());
 	}
 
@@ -495,33 +495,33 @@ proptest! {
 		value_str in generate_valid_i256_string()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_str = Box::leak(value_str.clone().into_boxed_str());
+		let leaked_str: &str = Box::leak(value_str.clone().into_boxed_str());
 
 		// A value should equal itself
 		prop_assert!(evaluator.compare_i256(
 			&value_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A value should not be "not equal" to itself
 		prop_assert!(!evaluator.compare_i256(
 			&value_str,
 			&ComparisonOperator::Ne,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		// A value should be >= and <= itself
 		prop_assert!(evaluator.compare_i256(
 			&value_str,
 			&ComparisonOperator::Gte,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 
 		prop_assert!(evaluator.compare_i256(
 			&value_str,
 			&ComparisonOperator::Lte,
-			&LiteralValue::Str(leaked_str)
+			&LiteralValue::str(leaked_str)
 		).unwrap());
 	}
 
@@ -532,19 +532,19 @@ proptest! {
 		right_value in generate_valid_i256_string()
 	) {
 		let evaluator = create_evaluator();
-		let leaked_left = Box::leak(left_value.clone().into_boxed_str());
-		let leaked_right = Box::leak(right_value.clone().into_boxed_str());
+		let leaked_left: &str = Box::leak(left_value.clone().into_boxed_str());
+		let leaked_right: &str = Box::leak(right_value.clone().into_boxed_str());
 
 		let left_eq_right = evaluator.compare_i256(
 			&left_value,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_right)
+			&LiteralValue::str(leaked_right)
 		).unwrap();
 
 		let right_eq_left = evaluator.compare_i256(
 			&right_value,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_left)
+			&LiteralValue::str(leaked_left)
 		).unwrap();
 
 		// Equality should be symmetric: a == b iff b == a
@@ -569,21 +569,21 @@ proptest! {
 			format!("-0X{:X}", -value)
 		};
 
-		let leaked_decimal = Box::leak(decimal_str.clone().into_boxed_str());
-		let leaked_hex = Box::leak(hex_str.clone().into_boxed_str());
-		let leaked_hex_upper = Box::leak(hex_upper_str.clone().into_boxed_str());
+		let leaked_decimal: &str = Box::leak(decimal_str.clone().into_boxed_str());
+		let leaked_hex: &str = Box::leak(hex_str.clone().into_boxed_str());
+		let leaked_hex_upper: &str = Box::leak(hex_upper_str.clone().into_boxed_str());
 
 		// decimal == hex (if hex is supported by string_to_i256)
 		let decimal_eq_hex = evaluator.compare_i256(
 			&decimal_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_hex)
+			&LiteralValue::str(leaked_hex)
 		);
 
 		let hex_eq_decimal = evaluator.compare_i256(
 			&hex_str,
 			&ComparisonOperator::Eq,
-			&LiteralValue::Str(leaked_decimal)
+			&LiteralValue::str(leaked_decimal)
 		);
 
 		// If hex parsing is supported, they should be equal
@@ -595,7 +595,7 @@ proptest! {
 			let hex_eq_hex_upper = evaluator.compare_i256(
 				&hex_str,
 				&ComparisonOperator::Eq,
-				&LiteralValue::Str(leaked_hex_upper)
+				&LiteralValue::str(leaked_hex_upper)
 			);
 
 			if hex_eq_hex_upper.is_ok() {
@@ -613,12 +613,12 @@ proptest! {
 	) {
 		let evaluator = create_evaluator();
 
-		let leaked_right = Box::leak(right_value.clone().into_boxed_str());
+		let leaked_right: &str = Box::leak(right_value.clone().into_boxed_str());
 
 		let result_with_str = evaluator.compare_i256(
 			&left_value,
 			&operator,
-			&LiteralValue::Str(leaked_right)
+			&LiteralValue::str(leaked_right)
 		);
 
 		let result_with_number = evaluator.compare_i256(
@@ -648,12 +648,12 @@ proptest! {
 		]
 	) {
 		let evaluator = create_evaluator();
-		let leaked_right = Box::leak(right_value.clone().into_boxed_str());
+		let leaked_right: &str = Box::leak(right_value.clone().into_boxed_str());
 
 		let result = evaluator.compare_i256(
 			&left_value,
 			&operator,
-			&LiteralValue::Str(leaked_right)
+			&LiteralValue::str(leaked_right)
 		);
 
 		// Unsupported operators should produce error

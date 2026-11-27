@@ -1243,13 +1243,13 @@ Expressions allow for condition checking of function arguments, event parameters
 | --- | --- | --- | --- |
 | `**Numeric (uint/int variants)**` | Integer values (e.g., `42`, `-100`) or decimal values (e.g., `3.14`, `-0.5`). | `>`, `>=`, `<`, `<=`, `==`, `!=` | Numbers must have digits before and after a decimal point if one is present (e.g., `.5` or `5.` are not valid standalone numbers). |
 | `**Address**` | Blockchain addresses. | `==`, `!=` | Comparisons (e.g., `from == '0xABC...'`) are typically case-insensitive regarding the hex characters of the address value itself. |
-| `**String**` | Text values. Can be single-quoted (e.g., ’hello'`) or, on the right-hand side of a comparison, unquoted (e.g., `active`). | `==`, `!=`, `starts_with`, `ends_with`, `contains` | Quoted strings support `\'` to escape a single quote and `\\` to escape a backslash. All string comparison operations (e.g., `name == 'Alice'`, `description contains 'error'`) are performed case-insensitively during evaluation. See the dedicated "String Operations" section for more examples and details. |
+| `**String**` | Text values. Can be single- or double-quoted (e.g., `'hello'`) or, on the right-hand side of a comparison, unquoted (e.g., `active`). | `==`, `!=`, `starts_with`, `ends_with`, `contains` | Quoted strings support the escape sequences `\\`, `\'`, `\"`, `\n`, `\t` and `\r`; see "Escape Sequences in Quoted Strings" below. All string comparison operations (e.g., `name == 'Alice'`, `description contains 'error'`) are performed case-insensitively during evaluation. See the dedicated "String Operations" section for more examples and details. |
 | `**Boolean**` | True or false values. | `==`, `!=` | Represented as `true` or `false`. These keywords are parsed case-insensitively (e.g., `TRUE`, `False` are also valid in expressions). |
 | `**Hex String Literal**` | A string literal starting with `0x` or `0X` followed by hexadecimal characters (0-9, a-f, A-F). | `==`, `!=`, `starts_with`, `ends_with`, `contains` | Treated as a string for comparison purposes (e.g., `input_data starts_with '0xa9059cbb'`). Comparison is case-sensitive for the hex characters after `0x`. |
-| `**Array (EVM/Stellar)**` | Ordered list of items. For Stellar, often a JSON string in config (e.g., ’["a", "id":1]'`). For EVM, typically decoded from ABI parameters: dynamic (`uint256[]`), fixed-size (`uint256[3]`), nested (`uint256[][]`) and arrays of tuples (`tuple[]`). | `contains`, `==`, `!=`, `[index]` | Detailed operations, including indexed access and behavior of `contains`, vary by network. Index access into EVM arrays of tuples (`calls[0]`) is not supported yet. See "Operations on Complex Types" below. |
-| `**Object/Map (Stellar)**` | Key-value pairs, typically represented as a JSON string in config (e.g., ’"key": "value", "id": 123'`). | `.key_access`, `==`, `!=` | Supports dot notation for field access (e.g., `data.id`). See "Operations on Complex Types" for details. |
-| `**Vec (Stellar)**` | Ordered list, where the parameter’s value can be a CSV string (e.g., `"foo,bar"`) or a JSON array string (e.g., ’["foo","bar"]'`). | `contains`, `==`, `!=` | Behavior of `contains` and `==` differs based on whether the value is CSV or a JSON array string. See "Operations on Complex Types" for details. |
-| `**Tuple (EVM)**` | Ordered list represented as a JSON array string (e.g., ’["Alice", 0x1234..., 25, true, [12,34]]'`). | `contains`, `==`, `!=` | The `contains` operation performs a case-insensitive deep search through all tuple elements. `==` and `!=` perform comparisons against the entire tuple values. See "Operations on Complex Types" for details. |
+| `**Array (EVM/Stellar)**` | Ordered list of items. For Stellar, often a JSON string in config (e.g., `'["a", {"id":1}]'`). For EVM, typically decoded from ABI parameters: dynamic (`uint256[]`), fixed-size (`uint256[3]`), nested (`uint256[][]`) and arrays of tuples (`tuple[]`). | `contains`, `==`, `!=`, `[index]` | Detailed operations, including indexed access and behavior of `contains`, vary by network. Index access into EVM arrays of tuples (`calls[0]`) is not supported yet. See "Operations on Complex Types" below. |
+| `**Object/Map (Stellar)**` | Key-value pairs, typically represented as a JSON string in config (e.g., `'{"key": "value", "id": 123}'`). | `.key_access`, `==`, `!=` | Supports dot notation for field access (e.g., `data.id`). See "Operations on Complex Types" for details. |
+| `**Vec (Stellar)**` | Ordered list, where the parameter’s value can be a CSV string (e.g., `"foo,bar"`) or a JSON array string (e.g., `'["foo","bar"]'`). | `contains`, `==`, `!=` | Behavior of `contains` and `==` differs based on whether the value is CSV or a JSON array string. See "Operations on Complex Types" for details. |
+| `**Tuple (EVM)**` | Ordered list represented as a JSON array string (e.g., `'["Alice", 0x1234..., 25, true, [12,34]]'`). | `contains`, `==`, `!=` | The `contains` operation performs a case-insensitive deep search through all tuple elements. `==` and `!=` perform comparisons against the entire tuple values. See "Operations on Complex Types" for details. |
 
 **Logical Operators:**
 
@@ -1315,6 +1315,25 @@ Several operators are available for matching patterns and comparing string value
   * Equality (`==`) and Inequality (`!=`)
   * Pattern matching (`starts_with`, `ends_with`, `contains`)
 * **Variable Name Case Sensitivity:** It is important to distinguish this from variable names (the left-hand side of your condition, e.g., `status`). Variable names **are** case-sensitive and must exactly match the field names in your source data (ABI, etc.).
+
+**Escape Sequences in Quoted Strings:**
+
+Inside a single- or double-quoted string literal, a backslash starts an escape sequence. The literal is compared using the characters the escapes stand for:
+
+| Sequence | Meaning |
+| --- | --- |
+| `\\` | A single backslash |
+| `\'` | A single quote |
+| `\"` | A double quote |
+| `\n` | Newline |
+| `\t` | Tab |
+| `\r` | Carriage return |
+
+Any other character after a backslash (e.g., `'c\d'`) is a parse error. Use `\\` to match a literal backslash: `names contains 'c\\d'` matches an element `c\d`. To compare an EVM tuple containing a string with a quote, write the tuple as it is rendered, escaping the backslash: a tuple `("a\"b",1)` is matched by `entry == '("a\\"b",1)'`.
+
+Literals that are compared as JSON (EVM array and tuple `==`/`!=`, Stellar vec and map `==`/`!=`) are unescaped twice: once by the expression parser and again by the JSON parser. A JSON escape inside such a literal therefore needs its backslashes doubled. For an EVM `string[]` whose only element is `c\d`, write `names == '["c\\\\d"]'`; the single-escaped form `names == '["c\\d"]'` reaches the JSON parser as `["c\d"]`, which is invalid JSON, so on EVM it returns an error and on a Stellar vec it is simply not equal.
+
+Monitor configurations are JSON files, so every backslash also needs JSON escaping: the expression `names contains 'c\\d'` is written as `"expression": "names contains 'c\\\\d'"`.
 
 **Whitespace Handling:**
 Flexible whitespace is generally allowed around operators, parentheses, and keywords for readability. However, whitespace within quoted string literals is significant and preserved.

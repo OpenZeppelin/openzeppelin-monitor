@@ -6,9 +6,10 @@ use super::ast::{
 	Accessor, ComparisonOperator, Condition, ConditionLeft, Expression, LiteralValue,
 	LogicalOperator, VariablePath,
 };
+use std::borrow::Cow;
 use winnow::{
 	ascii::{digit1, space0, space1, Caseless},
-	combinator::{alt, delimited, eof, opt, peek, repeat, Repeat},
+	combinator::{alt, cut_err, delimited, eof, opt, peek, repeat, Repeat},
 	error::{ContextError, ErrMode, ParseError, StrContext, StrContextValue},
 	prelude::*,
 	token::{literal, one_of, take_while},
@@ -95,20 +96,74 @@ fn parse_hex_string<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'a>>
 		))),
 	)
 		.take()
-		.map(|s: &str| LiteralValue::Str(s))
+		.map(|s: &str| LiteralValue::str(s))
 		.context(StrContext::Expected(StrContextValue::Description(
 			"hexadecimal string literal",
 		)))
 		.parse_next(input)
 }
 
-/// Parses string literals enclosed in single or double quotes into `LiteralValue::Str`
+/// Characters that may follow a backslash inside a quoted string literal.
+///
+/// Supported escape sequences:
+/// - `\\` -> `\`
+/// - `\'` -> `'`
+/// - `\"` -> `"`
+/// - `\n` -> newline
+/// - `\t` -> tab
+/// - `\r` -> carriage return
+///
+/// Any other character after a backslash (e.g. `'c\d'`) is rejected as a parse error rather
+/// than kept literally, so a typo can't silently change what a condition matches. Write `\\`
+/// for a literal backslash.
+const ESCAPABLE_CHARS: [char; 6] = ['\\', '\'', '"', 'n', 't', 'r'];
+
+/// Resolves the escape sequences in the raw content of a quoted string literal.
+///
+/// Borrows the input when it contains no backslash. Assumes the content was already validated
+/// by `parse_quoted_string`, so every backslash is followed by one of `ESCAPABLE_CHARS`.
+fn unescape_quoted_content(raw: &str) -> Cow<'_, str> {
+	if !raw.contains('\\') {
+		return Cow::Borrowed(raw);
+	}
+
+	let mut unescaped = String::with_capacity(raw.len());
+	let mut chars = raw.chars();
+	while let Some(c) = chars.next() {
+		if c != '\\' {
+			unescaped.push(c);
+			continue;
+		}
+		match chars.next() {
+			Some('n') => unescaped.push('\n'),
+			Some('t') => unescaped.push('\t'),
+			Some('r') => unescaped.push('\r'),
+			// `\\`, `\'` and `\"` resolve to the escaped character itself.
+			Some(other) => unescaped.push(other),
+			// Unreachable for validated input; keep the backslash rather than dropping it.
+			None => unescaped.push('\\'),
+		}
+	}
+	Cow::Owned(unescaped)
+}
+
+/// Parses string literals enclosed in single or double quotes into `LiteralValue::Str`.
+/// Escape sequences (see `ESCAPABLE_CHARS`) are resolved, so the literal holds the actual string.
 fn parse_quoted_string<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'a>> {
 	// Match and consume opening quote, remember which one it was.
 	let open_quote: char = one_of(['\'', '"']).parse_next(input)?;
 
 	let character_or_escape_sequence = alt((
-		(literal("\\"), one_of([open_quote, '\\'])).void(),
+		(
+			literal("\\"),
+			// A backslash always starts an escape sequence, so an unknown one is a hard error.
+			cut_err(one_of(ESCAPABLE_CHARS)).context(StrContext::Expected(
+				StrContextValue::Description(
+					"valid escape sequence (\\\\, \\', \\\", \\n, \\t or \\r)",
+				),
+			)),
+		)
+			.void(),
 		take_while(1.., move |c: char| c != open_quote && c != '\\').void(),
 	));
 
@@ -122,7 +177,9 @@ fn parse_quoted_string<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue<'
 		)))
 		.parse_next(input)?;
 
-	Ok(LiteralValue::Str(string_content_slice))
+	Ok(LiteralValue::Str(unescape_quoted_content(
+		string_content_slice,
+	)))
 }
 
 /// Fallback parser for unquoted strings (applied last)
@@ -142,7 +199,7 @@ fn parse_unquoted_string<'a>(input: &mut Input<'a>) -> ParserResult<LiteralValue
 					// Check if it's NOT a float-like string
 					&& !word.contains('.')
 		})
-		.map(|s: &str| LiteralValue::Str(s))
+		.map(|s: &str| LiteralValue::str(s))
 		.context(StrContext::Expected(StrContextValue::Description(
 			"unquoted string literal",
 		)))
@@ -524,16 +581,16 @@ mod tests {
 	#[test]
 	fn test_parse_hex_string() {
 		// Success cases
-		assert_parses_ok(parse_hex_string, "0x1a2B", LiteralValue::Str("0x1a2B"), "");
-		assert_parses_ok(parse_hex_string, "0XFF", LiteralValue::Str("0XFF"), "");
+		assert_parses_ok(parse_hex_string, "0x1a2B", LiteralValue::str("0x1a2B"), "");
+		assert_parses_ok(parse_hex_string, "0XFF", LiteralValue::str("0XFF"), "");
 		assert_parses_ok(
 			parse_hex_string,
 			"0xabcdef0123456789",
-			LiteralValue::Str("0xabcdef0123456789"),
+			LiteralValue::str("0xabcdef0123456789"),
 			"",
 		);
-		assert_parses_ok(parse_hex_string, "0x1 ", LiteralValue::Str("0x1"), " ");
-		assert_parses_ok(parse_hex_string, "0xa)", LiteralValue::Str("0xa"), ")");
+		assert_parses_ok(parse_hex_string, "0x1 ", LiteralValue::str("0x1"), " ");
+		assert_parses_ok(parse_hex_string, "0xa)", LiteralValue::str("0xa"), ")");
 
 		// Failures
 		assert_parse_fails(parse_hex_string, "0x"); // No digits
@@ -548,40 +605,41 @@ mod tests {
 		assert_parses_ok(
 			parse_quoted_string,
 			"'hello'",
-			LiteralValue::Str("hello"),
+			LiteralValue::str("hello"),
 			"",
 		);
 		// Empty string
-		assert_parses_ok(parse_quoted_string, "''", LiteralValue::Str(""), "");
+		assert_parses_ok(parse_quoted_string, "''", LiteralValue::str(""), "");
 		assert_parses_ok(
 			parse_quoted_string,
 			"'hello world'",
-			LiteralValue::Str("hello world"),
+			LiteralValue::str("hello world"),
 			"",
 		);
+		// Escape sequences are resolved to the characters they stand for
 		assert_parses_ok(
 			parse_quoted_string,
 			"'foo\\'bar'",
-			LiteralValue::Str("foo\\'bar"),
+			LiteralValue::str("foo'bar"),
 			"",
 		);
 		assert_parses_ok(
 			parse_quoted_string,
 			"'foo\\\\bar'",
-			LiteralValue::Str("foo\\\\bar"),
+			LiteralValue::str("foo\\bar"),
 			"",
 		);
-		assert_parses_ok(parse_quoted_string, "'a\\''", LiteralValue::Str("a\\'"), "");
+		assert_parses_ok(parse_quoted_string, "'a\\''", LiteralValue::str("a'"), "");
 		// Just an escaped quote
-		assert_parses_ok(parse_quoted_string, "'\\''", LiteralValue::Str("\\'"), "");
+		assert_parses_ok(parse_quoted_string, "'\\''", LiteralValue::str("'"), "");
 		// Escaped double quotes
 		assert_parses_ok(
 			parse_quoted_string,
 			"'\"hello\"'",
-			LiteralValue::Str("\"hello\""),
+			LiteralValue::str("\"hello\""),
 			"",
 		);
-		assert_parses_ok(parse_quoted_string, "'_'", LiteralValue::Str("_"), "");
+		assert_parses_ok(parse_quoted_string, "'_'", LiteralValue::str("_"), "");
 
 		// Failures
 		assert_parse_fails(parse_quoted_string, "'hello"); // Missing closing quote
@@ -590,31 +648,88 @@ mod tests {
 	}
 
 	#[test]
+	fn test_parse_quoted_string_escape_sequences() {
+		let cases = [
+			(r"'c\\d'", "c\\d"),
+			(r"'it\'s'", "it's"),
+			(r#"'say \"hi\"'"#, "say \"hi\""),
+			(r#""it\'s""#, "it's"),
+			(r#""say \"hi\"""#, "say \"hi\""),
+			(r"'a\nb'", "a\nb"),
+			(r"'a\tb'", "a\tb"),
+			(r"'a\rb'", "a\rb"),
+			// `\\` followed by `n` is a backslash and an `n`, not a newline
+			(r"'a\\nb'", "a\\nb"),
+			// Tuple rendering of a string containing `"` (see #546)
+			(r#"'("a\\"b",1)'"#, r#"("a\"b",1)"#),
+		];
+		for (input, expected) in cases {
+			assert_parses_ok(parse_quoted_string, input, LiteralValue::str(expected), "");
+		}
+	}
+
+	#[test]
+	fn test_parse_quoted_string_borrows_when_no_escapes() {
+		let mut input = "'hello world' rest";
+		match parse_quoted_string(&mut input).unwrap() {
+			LiteralValue::Str(Cow::Borrowed(s)) => assert_eq!(s, "hello world"),
+			other => panic!("expected borrowed string literal, got {:?}", other),
+		}
+		assert_eq!(input, " rest");
+
+		let mut input = r"'c\\d'";
+		match parse_quoted_string(&mut input).unwrap() {
+			LiteralValue::Str(Cow::Owned(s)) => assert_eq!(s, "c\\d"),
+			other => panic!("expected owned string literal, got {:?}", other),
+		}
+	}
+
+	#[test]
+	fn test_parse_quoted_string_rejects_unknown_escape() {
+		// Unknown escapes are rejected rather than kept literally
+		assert_parse_fails(parse_quoted_string, r"'c\d'");
+		assert_parse_fails(parse_quoted_string, r"'\x41'");
+		assert_parse_fails(parse_quoted_string, r"'\u0041'");
+		assert!(parse(r"names contains 'c\d'").is_err());
+		assert!(parse(r"names contains 'c\\d'").is_ok());
+	}
+
+	#[test]
+	fn test_unescape_quoted_content() {
+		assert!(matches!(
+			unescape_quoted_content("plain"),
+			Cow::Borrowed("plain")
+		));
+		assert_eq!(unescape_quoted_content(r#"a\\b\'c\"d"#), "a\\b'c\"d");
+		assert_eq!(unescape_quoted_content(r"\n\t\r"), "\n\t\r");
+	}
+
+	#[test]
 	fn test_parse_unquoted_string() {
 		// Success cases
 		assert_parses_ok(
 			parse_unquoted_string,
 			"foobar",
-			LiteralValue::Str("foobar"),
+			LiteralValue::str("foobar"),
 			"",
 		);
 		assert_parses_ok(
 			parse_unquoted_string,
 			"foo_bar",
-			LiteralValue::Str("foo_bar"),
+			LiteralValue::str("foo_bar"),
 			"",
 		);
 		assert_parses_ok(
 			parse_unquoted_string,
 			"foo-bar",
-			LiteralValue::Str("foo-bar"),
+			LiteralValue::str("foo-bar"),
 			"",
 		);
-		assert_parses_ok(parse_unquoted_string, "a123", LiteralValue::Str("a123"), "");
+		assert_parses_ok(parse_unquoted_string, "a123", LiteralValue::str("a123"), "");
 		assert_parses_ok(
 			parse_unquoted_string,
 			"unquoted ",
-			LiteralValue::Str("unquoted"),
+			LiteralValue::str("unquoted"),
 			" ",
 		);
 
@@ -772,19 +887,19 @@ mod tests {
 	#[test]
 	fn test_parse_value_alt_order() {
 		// Order: quoted_string, boolean, hex_string, number_or_fixed, unquoted_string
-		assert_parses_ok(parse_value, " 'hello' ", LiteralValue::Str("hello"), "");
+		assert_parses_ok(parse_value, " 'hello' ", LiteralValue::str("hello"), "");
 		assert_parses_ok(parse_value, " true ", LiteralValue::Bool(true), "");
-		assert_parses_ok(parse_value, " 0xAB ", LiteralValue::Str("0xAB"), "");
+		assert_parses_ok(parse_value, " 0xAB ", LiteralValue::str("0xAB"), "");
 		assert_parses_ok(parse_value, " 123.45 ", LiteralValue::Number("123.45"), "");
 		assert_parses_ok(parse_value, " 123 ", LiteralValue::Number("123"), "");
 		assert_parses_ok(
 			parse_value,
 			" unquoted_val ",
-			LiteralValue::Str("unquoted_val"),
+			LiteralValue::str("unquoted_val"),
 			"",
 		);
-		assert_parses_ok(parse_value, " true_val ", LiteralValue::Str("true_val"), ""); // 'true' is prefix of 'true_val', boolean is tried, fails, then unquoted.
-		assert_parses_ok(parse_value, " 0xVal ", LiteralValue::Str("0xVal"), ""); // '0x' is prefix, hex is tried, fails on 'V', then unquoted.
+		assert_parses_ok(parse_value, " true_val ", LiteralValue::str("true_val"), ""); // 'true' is prefix of 'true_val', boolean is tried, fails, then unquoted.
+		assert_parses_ok(parse_value, " 0xVal ", LiteralValue::str("0xVal"), ""); // '0x' is prefix, hex is tried, fails on 'V', then unquoted.
 	}
 
 	#[test]
@@ -818,7 +933,7 @@ mod tests {
 		let expected_str = Expression::Condition(Condition {
 			left: ConditionLeft::Simple("name"),
 			operator: ComparisonOperator::Contains,
-			right: LiteralValue::Str("test"),
+			right: LiteralValue::str("test"),
 		});
 		assert_parses_ok(parse_condition, expr_str, expected_str, "");
 
@@ -878,7 +993,7 @@ mod tests {
 			right: Box::new(Expression::Condition(Condition {
 				left: ConditionLeft::Simple("var2"),
 				operator: ComparisonOperator::Lt,
-				right: LiteralValue::Str("abc"),
+				right: LiteralValue::str("abc"),
 			})),
 		};
 		// parse_term calls parse_expression for parentheses, parse_expression calls parse_or_expression...
@@ -917,7 +1032,7 @@ mod tests {
 			right: Box::new(Expression::Condition(Condition {
 				left: ConditionLeft::Simple("b"),
 				operator: ComparisonOperator::Lt,
-				right: LiteralValue::Str("text"),
+				right: LiteralValue::str("text"),
 			})),
 		};
 		assert_eq!(parse(expr_or).unwrap(), expected_or);

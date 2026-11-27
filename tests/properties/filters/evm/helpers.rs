@@ -252,7 +252,7 @@ prop_compose! {
 		kind in "[a-z]+",
 		seed in any::<u32>()
 	) -> LiteralValue<'static> {
-		let leaked_str = match kind.as_str() {
+		let leaked_str: &str = match kind.as_str() {
 			"uint256" | "int256" | "number" | "fixed" | "ufixed" => {
 				let val = (seed % 1000000).to_string();
 				Box::leak(val.into_boxed_str())
@@ -281,7 +281,7 @@ prop_compose! {
 		} else if kind == "bool" {
 			LiteralValue::Bool(seed % 2 == 0)
 		} else {
-			LiteralValue::Str(leaked_str)
+			LiteralValue::str(leaked_str)
 		}
 	}
 }
@@ -399,7 +399,7 @@ proptest! {
 		prop_assert_eq!(parsed.ok(), Some(vec![json!(s)]));
 
 		let evaluator = create_evaluator();
-		let found = evaluator.compare_array(&formatted, &ComparisonOperator::Contains, &LiteralValue::Str(&s));
+		let found = evaluator.compare_array(&formatted, &ComparisonOperator::Contains, &LiteralValue::str(&s));
 		prop_assert_eq!(found.ok(), Some(true));
 	}
 
@@ -513,7 +513,7 @@ proptest! {
 		let evaluator = create_evaluator();
 		let value = "test_value";
 		let operator = ComparisonOperator::Eq;
-		let literal = LiteralValue::Str("test_value");
+		let literal = LiteralValue::str("test_value");
 
 		// Get the base kind (lowercase)
 		let base_kind = case_variant.to_lowercase();

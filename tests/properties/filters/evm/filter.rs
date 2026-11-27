@@ -794,6 +794,48 @@ proptest! {
 			);
 	}
 
+	// Tests that any string (including unicode and control characters), once escaped into a quoted literal, compares equal to itself
+	#[test]
+	fn test_escaped_string_literal_roundtrip(
+		value in any::<String>(),
+		use_double_quotes in any::<bool>(),
+	) {
+		let quote = if use_double_quotes { '"' } else { '\'' };
+		let mut literal = String::new();
+		for c in value.chars() {
+			match c {
+				'\\' => literal.push_str(r"\\"),
+				'\n' => literal.push_str(r"\n"),
+				'\t' => literal.push_str(r"\t"),
+				'\r' => literal.push_str(r"\r"),
+				c if c == quote => {
+					literal.push('\\');
+					literal.push(c);
+				}
+				c => literal.push(c),
+			}
+		}
+		let expr = format!("name == {quote}{literal}{quote}");
+
+		let params = vec![EVMMatchParamEntry {
+			name: "name".to_string(),
+			value: value.clone(),
+			kind: "string".to_string(),
+			indexed: false,
+		}];
+
+		let filter = EVMBlockFilter::<EvmClient<EVMTransportClient>> {
+			_client: PhantomData,
+		};
+
+		prop_assert!(
+			filter.evaluate_expression(&expr, &params).unwrap(),
+			"expression {:?} should match {:?}",
+			expr,
+			value
+		);
+	}
+
 	// Tests JSON array equality comparison
 	#[test]
 	fn test_vec_json_array_equality_expression_evaluation(
