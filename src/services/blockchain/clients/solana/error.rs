@@ -66,11 +66,11 @@ pub enum SolanaClientError {
 /// This is a property of the monitored addresses and the range, not a failure of the RPC:
 /// the blocks of the range can still be fetched whole.
 #[derive(Debug, Error)]
-pub enum SignatureLimitExceeded {
-	/// An address has more signatures since the start of the range than the client pages
-	/// through, so its signatures for the range cannot be listed completely.
+pub(crate) enum SignatureLimitExceeded {
+	/// An address has at least as many signatures since the start of the range as the client
+	/// pages through, so its signatures for the range cannot be listed completely.
 	#[error(
-		"Address {address} has more than {limit} signatures since slot {start_slot}; cannot list \
+		"Address {address} has at least {limit} signatures since slot {start_slot}; cannot list \
 		 all signatures for slots {start_slot}-{end_slot}"
 	)]
 	Signatures {

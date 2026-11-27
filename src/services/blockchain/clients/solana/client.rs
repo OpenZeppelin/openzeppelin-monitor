@@ -682,7 +682,14 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClient<T> {
 		let slots = if start_block == target_block {
 			vec![start_block]
 		} else {
-			let params = json!([start_block, target_block, { "commitment": "finalized" }]);
+			let mut config = json!({ "commitment": "finalized" });
+			// A node lists the slots up to the last one it has finalized, without an error.
+			// With `UnavailableBlock::Fail` it must have reached the end of the range, or the
+			// slots past its last one would be left out like skipped ones.
+			if unavailable == UnavailableBlock::Fail {
+				config["minContextSlot"] = json!(target_block);
+			}
+			let params = json!([start_block, target_block, config]);
 			let response = self
 				.http_client
 				.send_raw_request(rpc_methods::GET_BLOCKS, Some(params))
@@ -750,7 +757,7 @@ pub trait SolanaClientTrait {
 	/// Retrieves all signatures for an address within a slot range, paging backwards from the
 	/// newest signature of the address to the start of the range.
 	///
-	/// Returns [`SignatureLimitExceeded::Signatures`], not a partial list, when the start of the
+	/// Returns `SignatureLimitExceeded::Signatures`, not a partial list, when the start of the
 	/// range is not reached within the page limit.
 	async fn get_all_signatures_for_address(
 		&self,
@@ -766,7 +773,7 @@ pub trait SolanaClientTrait {
 	/// Uses all-or-nothing semantics per slot: if any transaction fetch fails for a slot,
 	/// all transactions for that slot are discarded and the slot is added to failed_slots.
 	///
-	/// Returns [`SignatureLimitExceeded`] before fetching any transaction when the range
+	/// Returns `SignatureLimitExceeded` before fetching any transaction when the range
 	/// holds more of them than are fetched one by one.
 	async fn get_transactions_for_addresses(
 		&self,
@@ -942,10 +949,12 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 	) -> Result<Vec<SignatureInfo>, anyhow::Error> {
 		let mut all_signatures = Vec::new();
 		let mut before_signature: Option<String> = None;
-		// Slot a node must have reached to answer a page. For a later page it is the slot of
-		// the `before` signature: a node that does not know that signature returns an empty
-		// page, which would read as the end of the history.
-		let mut min_slot = start_slot;
+		// Slot a node must have reached to answer a page. For the first page it is the end of
+		// the range: a node behind it returns its history up to its own slot, without an
+		// error. For a later page it is the slot of the `before` signature: a node that does
+		// not know that signature returns an empty page, which would read as the end of the
+		// history.
+		let mut min_slot = end_slot;
 		let mut pages = 0;
 
 		// The node returns signatures newest first, starting at the newest one of the address.
@@ -1324,7 +1333,9 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 				// monitored addresses are kept, and skipped slots leave gaps between the
 				// blocks, so a gap is not a missed block.
 				Err(error) if error.is::<SignatureLimitExceeded>() => {
-					tracing::warn!(
+					// Not a warning: a busy address takes this path on every batch for as long
+					// as it stays busy
+					tracing::info!(
 						start_block = start_block,
 						end_block = ?end_block,
 						"{}; fetching the blocks of the range instead",
@@ -3129,13 +3140,13 @@ mod tests {
 			"`until` does not move the search backwards and must not be sent"
 		);
 
-		// The first page needs a node that has reached the start of the range, a later page
+		// The first page needs a node that has reached the end of the range, a later page
 		// one that has reached the slot of its `before` signature
 		let min_context_slot: Vec<Option<u64>> = requests
 			.iter()
 			.map(|config| config["minContextSlot"].as_u64())
 			.collect();
-		assert_eq!(min_context_slot, vec![Some(100), Some(180), Some(150)]);
+		assert_eq!(min_context_slot, vec![Some(200), Some(180), Some(150)]);
 	}
 
 	#[tokio::test]
@@ -3179,6 +3190,43 @@ mod tests {
 		assert!(
 			result.is_err(),
 			"an empty page from a node that does not know the cursor must not end the walk"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_fails_when_node_is_behind_the_end_of_the_range() {
+		// The node has only got to slot 150. Asked for the newest signatures, it returns its
+		// history up to there without an error, and the signatures of slots 151 to 200 would
+		// be missed.
+		const LAGGING_NODE_SLOT: u64 = 150;
+		let history = signature_history(&[(180, 10), (150, 10), (120, 10)]);
+
+		let transport = CallbackMockTransport::new(move |_method, params| {
+			let config = &params[1];
+			// A node refuses a request it cannot evaluate at `minContextSlot`
+			if config["minContextSlot"].as_u64().unwrap_or(0) > LAGGING_NODE_SLOT {
+				return Err("Minimum context slot has not been reached".to_string());
+			}
+			let known: Vec<(String, u64)> = history
+				.iter()
+				.filter(|(_, slot)| *slot <= LAGGING_NODE_SLOT)
+				.cloned()
+				.collect();
+			Ok(signature_page(&known, config))
+		});
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_all_signatures_for_address(
+			&client,
+			"ProgramId1".to_string(),
+			100,
+			200,
+		)
+		.await;
+
+		assert!(
+			result.is_err(),
+			"a node behind the end of the range must not return its history as complete"
 		);
 	}
 
@@ -3702,6 +3750,27 @@ mod tests {
 		let message = blocks_fetched_whole_error(transport).await;
 
 		assert!(message.contains("slot 101"), "got: {}", message);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_fail_when_node_is_behind_the_end_of_the_range() {
+		// The node has only got to slot 101. It lists the blocks of slots 100 and 101 without
+		// an error, and the block of slot 102 would be missed.
+		const LAGGING_NODE_SLOT: u64 = 101;
+		let node = busy_address_node(&[100, 101], |_| None);
+		let transport = CallbackMockTransport::new(move |method, params| {
+			// A node refuses a request it cannot evaluate at `minContextSlot`
+			if method == rpc_methods::GET_BLOCKS
+				&& params[2]["minContextSlot"].as_u64().unwrap_or(0) > LAGGING_NODE_SLOT
+			{
+				return Err("Minimum context slot has not been reached".to_string());
+			}
+			(node.handler)(method, params)
+		});
+
+		let message = blocks_fetched_whole_error(transport).await;
+
+		assert!(message.contains("Minimum context slot"), "got: {}", message);
 	}
 
 	#[tokio::test]
