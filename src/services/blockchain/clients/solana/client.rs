@@ -29,7 +29,44 @@ use crate::{
 	},
 };
 
-use super::error::{error_codes, is_slot_unavailable_error, SolanaClientError};
+use super::error::{
+	error_codes, is_slot_unavailable_error, SignatureLimitExceeded, SolanaClientError,
+};
+
+/// Signatures requested per `getSignaturesForAddress` page, which is the most a node returns
+const SIGNATURE_PAGE_LIMIT: usize = 1000;
+
+/// Pages of signatures walked for one address, from its newest signature back to the start of
+/// a slot range, before the blocks of the range are fetched whole instead.
+///
+/// On top of the pages, each signature in the range costs a `getTransaction` request, while
+/// the blocks cost one request per slot. So a long walk is the more expensive way to fetch a
+/// range, and anyone can lengthen it: a transaction only has to name the address.
+const MAX_SIGNATURE_PAGES: usize = 10;
+
+/// Transactions fetched by signature per slot of a range, on average, before the blocks of
+/// the range are fetched whole instead.
+///
+/// By signature, every transaction is a `getTransaction` request. As blocks, the range is one
+/// `getBlock` request per slot, however many transactions it holds, so past a few
+/// transactions per slot the blocks take far fewer requests.
+const MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT: usize = 10;
+
+/// Blocks fetched at once by `get_blocks`.
+///
+/// One at a time, a node that takes longer to return a block than the chain takes to produce
+/// one can never catch up. The number is kept small because a whole block is a large
+/// response and endpoints limit both requests and data per second.
+const BLOCK_FETCH_CONCURRENCY: usize = 4;
+
+/// What fetching the blocks of a slot range does with a block the node cannot return now.
+#[derive(Clone, Copy, PartialEq)]
+enum UnavailableBlock {
+	/// Leave the slot out, like a slot no block was produced in.
+	Skip,
+	/// Fail the fetch, so that the caller comes back for the slot.
+	Fail,
+}
 
 /// Solana RPC method constants
 mod rpc_methods {
@@ -97,6 +134,41 @@ impl<T: Send + Sync + Clone> SolanaClient<T> {
 	/// Returns the currently monitored addresses
 	pub fn monitored_addresses(&self) -> &[String] {
 		&self.monitored_addresses
+	}
+
+	/// Keeps the transactions that involve a monitored address and the blocks that still hold
+	/// one, so that blocks fetched whole match the blocks built from signatures.
+	///
+	/// A transaction is kept when a monitored address is among its accounts or the programs
+	/// it invokes. Addresses are compared exactly, as `getSignaturesForAddress` compares
+	/// them: base58 is case-sensitive, so an address in another case is another address.
+	///
+	/// A kept transaction gets the time of its block, as a transaction fetched by signature
+	/// has it.
+	fn retain_monitored_transactions(&self, blocks: Vec<BlockType>) -> Vec<BlockType> {
+		let is_monitored = |address: &String| {
+			self.monitored_addresses
+				.iter()
+				.any(|monitored| monitored == address)
+		};
+
+		blocks
+			.into_iter()
+			.filter_map(|block| match block {
+				BlockType::Solana(mut block) => {
+					block.0.transactions.retain(|transaction| {
+						transaction.accounts().iter().any(is_monitored)
+							|| transaction.program_ids().iter().any(is_monitored)
+					});
+					let block_time = block.0.block_time;
+					for transaction in &mut block.0.transactions {
+						transaction.0.block_time = block_time;
+					}
+					(!block.transactions.is_empty()).then_some(BlockType::Solana(block))
+				}
+				other => Some(other),
+			})
+			.collect()
 	}
 
 	/// Checks a JSON-RPC response for error information and converts it into a `SolanaClientError` if present.
@@ -520,6 +592,142 @@ impl SolanaClient<SolanaTransportClient> {
 	}
 }
 
+impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClient<T> {
+	/// Fetches the block of a slot. When the node answers that it has no block for the slot,
+	/// returns `None` with `UnavailableBlock::Skip` and an error with `UnavailableBlock::Fail`.
+	async fn fetch_block(
+		&self,
+		slot: u64,
+		config: &SolanaGetBlockConfig,
+		unavailable: UnavailableBlock,
+	) -> Result<Option<BlockType>, anyhow::Error> {
+		let params = json!([slot, config]);
+
+		let response_body = self
+			.http_client
+			.send_raw_request(rpc_methods::GET_BLOCK, Some(params))
+			.await
+			.map_err(|transport_err| {
+				anyhow::anyhow!(transport_err).context(format!(
+					"Failed to fetch block from Solana RPC for slot: {}",
+					slot
+				))
+			})?;
+
+		if let Err(rpc_error) =
+			self.check_and_handle_rpc_error(&response_body, slot, rpc_methods::GET_BLOCK)
+		{
+			if rpc_error.is_slot_not_available() || rpc_error.is_block_not_available() {
+				// A node also answers that a slot was skipped when the block is missing from
+				// its ledger, so with `UnavailableBlock::Fail` any of these answers fails.
+				if unavailable == UnavailableBlock::Fail {
+					return Err(anyhow::anyhow!(rpc_error).context(format!(
+						"Solana RPC node cannot return the block of slot {}",
+						slot
+					)));
+				}
+				tracing::debug!("Skipping unavailable slot {}: {}", slot, rpc_error);
+				return Ok(None);
+			}
+			return Err(anyhow::anyhow!(rpc_error)
+				.context(format!("Solana RPC error while fetching slot {}", slot)));
+		}
+
+		match self.parse_block_response(slot, &response_body) {
+			Ok(block) => Ok(Some(BlockType::Solana(Box::new(block)))),
+			// The node returned no block and no error
+			Err(parse_error) if parse_error.is_block_not_available() => {
+				if unavailable == UnavailableBlock::Fail {
+					return Err(anyhow::anyhow!(parse_error).context(format!(
+						"Solana RPC node returned no block for slot {}",
+						slot
+					)));
+				}
+				tracing::debug!("Skipping slot {} due to parse error: {}", slot, parse_error);
+				Ok(None)
+			}
+			Err(parse_error) => Err(anyhow::anyhow!(parse_error)
+				.context(format!("Failed to parse block for slot {}", slot))),
+		}
+	}
+
+	/// Fetches the blocks of a slot range, in slot order.
+	async fn fetch_blocks(
+		&self,
+		start_block: u64,
+		end_block: Option<u64>,
+		unavailable: UnavailableBlock,
+	) -> Result<Vec<BlockType>, anyhow::Error> {
+		use futures::stream::{self, StreamExt, TryStreamExt};
+
+		// Validate input parameters
+		if let Some(end_block) = end_block {
+			if start_block > end_block {
+				let message = format!(
+					"start_block {} cannot be greater than end_block {}",
+					start_block, end_block
+				);
+				let input_error = SolanaClientError::invalid_input(message, None, None);
+				return Err(anyhow::anyhow!(input_error))
+					.context("Invalid input parameters for Solana RPC");
+			}
+		}
+
+		let target_block = end_block.unwrap_or(start_block);
+
+		// First, get the list of available slots in the range. A single slot is fetched
+		// without the list. With `UnavailableBlock::Fail` a node that has not reached the
+		// slot then fails the fetch instead of listing nothing, though so does a slot no
+		// block was produced in.
+		let slots = if start_block == target_block {
+			vec![start_block]
+		} else {
+			let mut config = json!({ "commitment": "finalized" });
+			// A node lists the slots up to the last one it has finalized, without an error.
+			// With `UnavailableBlock::Fail` it must have reached the end of the range, or the
+			// slots past its last one would be left out like skipped ones.
+			if unavailable == UnavailableBlock::Fail {
+				config["minContextSlot"] = json!(target_block);
+			}
+			let params = json!([start_block, target_block, config]);
+			let response = self
+				.http_client
+				.send_raw_request(rpc_methods::GET_BLOCKS, Some(params))
+				.await
+				.with_context(|| {
+					format!(
+						"Failed to get blocks list from {} to {}",
+						start_block, target_block
+					)
+				})?;
+
+			let slots: Vec<u64> = response["result"]
+				.as_array()
+				.ok_or_else(|| anyhow::anyhow!("Invalid blocks list response"))?
+				.iter()
+				.filter_map(|v| v.as_u64())
+				.collect();
+
+			if slots.is_empty() {
+				return Ok(Vec::new());
+			}
+
+			slots
+		};
+
+		// Fetch the blocks a few at a time. `buffered` keeps them in slot order and the first
+		// error, in that order, ends the fetch.
+		let config = SolanaGetBlockConfig::full();
+		let blocks: Vec<Option<BlockType>> = stream::iter(slots)
+			.map(|slot| self.fetch_block(slot, &config, unavailable))
+			.buffered(BLOCK_FETCH_CONCURRENCY)
+			.try_collect()
+			.await?;
+
+		Ok(blocks.into_iter().flatten().collect())
+	}
+}
+
 /// Extended functionality specific to the Solana blockchain
 #[async_trait]
 pub trait SolanaClientTrait {
@@ -532,18 +740,25 @@ pub trait SolanaClientTrait {
 		signature: String,
 	) -> Result<Option<SolanaTransaction>, anyhow::Error>;
 
-	/// Retrieves signatures with full info (slot, err, block_time) for an address
-	/// Optionally filter by slot range
+	/// Retrieves one page of signatures with full info (slot, err, block_time) for an address,
+	/// newest first.
+	///
+	/// `before_signature` starts the page after that signature, which is how older pages are
+	/// reached. `min_slot` is sent as `minContextSlot`: a node that has not reached that slot
+	/// refuses the request. It does not filter the signatures returned.
 	async fn get_signatures_for_address_with_info(
 		&self,
 		address: String,
 		limit: Option<usize>,
 		min_slot: Option<u64>,
-		until_signature: Option<String>,
+		before_signature: Option<String>,
 	) -> Result<Vec<SignatureInfo>, anyhow::Error>;
 
-	/// Retrieves all signatures for an address within a slot range with automatic pagination
-	/// This method handles pagination internally and returns all signatures up to a safety limit
+	/// Retrieves all signatures for an address within a slot range, paging backwards from the
+	/// newest signature of the address to the start of the range.
+	///
+	/// Returns `SignatureLimitExceeded::Signatures`, not a partial list, when the start of the
+	/// range is not reached within the page limit.
 	async fn get_all_signatures_for_address(
 		&self,
 		address: String,
@@ -557,6 +772,9 @@ pub trait SolanaClientTrait {
 	/// Returns a tuple of (successful transactions, failed slot numbers).
 	/// Uses all-or-nothing semantics per slot: if any transaction fetch fails for a slot,
 	/// all transactions for that slot are discarded and the slot is added to failed_slots.
+	///
+	/// Returns `SignatureLimitExceeded` before fetching any transaction when the range
+	/// holds more of them than are fetched one by one.
 	async fn get_transactions_for_addresses(
 		&self,
 		addresses: &[String],
@@ -667,23 +885,24 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		address: String,
 		limit: Option<usize>,
 		min_slot: Option<u64>,
-		until_signature: Option<String>,
+		before_signature: Option<String>,
 	) -> Result<Vec<SignatureInfo>, anyhow::Error> {
 		let address = &address;
-		let until_signature = until_signature.as_deref();
+		let before_signature = before_signature.as_deref();
 		let mut config = json!({
 			"commitment": "finalized",
 			"limit": limit.unwrap_or(1000)
 		});
 
-		// Add minContextSlot if specified (helps filter old transactions)
+		// A node that has not reached this slot refuses the request. The signatures returned
+		// are not filtered by it.
 		if let Some(min) = min_slot {
 			config["minContextSlot"] = json!(min);
 		}
 
-		// Add until signature to paginate
-		if let Some(until) = until_signature {
-			config["until"] = json!(until);
+		// Signatures come newest first, so the page after this signature is the next older one
+		if let Some(before) = before_signature {
+			config["before"] = json!(before);
 		}
 
 		let params = json!([address, config]);
@@ -728,58 +947,64 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 		start_slot: u64,
 		end_slot: u64,
 	) -> Result<Vec<SignatureInfo>, anyhow::Error> {
-		const PAGE_LIMIT: usize = 1000;
-		const MAX_SIGNATURES: usize = 100_000; // Safety limit
-
 		let mut all_signatures = Vec::new();
-		let mut until_signature: Option<String> = None;
-		let mut iteration = 0;
+		let mut before_signature: Option<String> = None;
+		// Slot a node must have reached to answer a page. For the first page it is the end of
+		// the range: a node behind it returns its history up to its own slot, without an
+		// error. For a later page it is the slot of the `before` signature: a node that does
+		// not know that signature returns an empty page, which would read as the end of the
+		// history.
+		let mut min_slot = end_slot;
+		let mut pages = 0;
 
+		// The node returns signatures newest first, starting at the newest one of the address.
+		// So the walk starts there, whatever the range, and moves back one page at a time
+		// until a page reaches below the start of the range.
 		loop {
-			let batch = self
+			if pages == MAX_SIGNATURE_PAGES {
+				return Err(anyhow::Error::new(SignatureLimitExceeded::Signatures {
+					address,
+					start_slot,
+					end_slot,
+					limit: SIGNATURE_PAGE_LIMIT * MAX_SIGNATURE_PAGES,
+				}));
+			}
+
+			let page = self
 				.get_signatures_for_address_with_info(
 					address.clone(),
-					Some(PAGE_LIMIT),
-					Some(start_slot),
-					until_signature.clone(),
+					Some(SIGNATURE_PAGE_LIMIT),
+					Some(min_slot),
+					before_signature.take(),
 				)
 				.await?;
+			pages += 1;
 
-			if batch.is_empty() {
+			// These are read from the page as the node returned it, before the range filter:
+			// a page of signatures that are all newer than the range does not end the walk.
+			let Some(oldest) = page.last() else {
+				break; // No older signatures
+			};
+			// Strictly below: the signatures of `start_slot` can continue on the next page
+			let below_start = oldest.slot < start_slot;
+			let last_page = page.len() < SIGNATURE_PAGE_LIMIT;
+			before_signature = Some(oldest.signature.clone());
+			min_slot = oldest.slot;
+
+			all_signatures.extend(
+				page.into_iter()
+					.filter(|sig| sig.slot >= start_slot && sig.slot <= end_slot),
+			);
+
+			if below_start || last_page {
 				break;
 			}
-
-			// Filter by slot range and collect
-			let filtered: Vec<SignatureInfo> = batch
-				.into_iter()
-				.filter(|sig| sig.slot >= start_slot && sig.slot <= end_slot)
-				.collect();
-
-			let batch_len = filtered.len();
-			until_signature = filtered.last().map(|s| s.signature.clone());
-			all_signatures.extend(filtered);
-
-			// Break conditions
-			if batch_len < PAGE_LIMIT {
-				break; // Last page
-			}
-
-			if all_signatures.len() >= MAX_SIGNATURES {
-				tracing::warn!(
-					address = %address,
-					count = all_signatures.len(),
-					"Reached maximum signature limit, stopping pagination"
-				);
-				break;
-			}
-
-			iteration += 1;
 		}
 
 		tracing::debug!(
 			address = %address,
 			signatures = all_signatures.len(),
-			iterations = iteration + 1,
+			pages,
 			"Completed signature pagination"
 		);
 
@@ -809,6 +1034,11 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 			"Fetching transactions for addresses using signatures approach"
 		);
 
+		let slots = usize::try_from(end_slot.saturating_sub(start_slot))
+			.unwrap_or(usize::MAX)
+			.saturating_add(1);
+		let transaction_limit = slots.saturating_mul(MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT);
+
 		// Collect all unique signatures with their slot info from all addresses
 		let mut signature_slots: HashMap<String, u64> = HashMap::new();
 
@@ -827,6 +1057,16 @@ impl<T: Send + Sync + Clone + BlockchainTransport> SolanaClientTrait for SolanaC
 				signature_slots
 					.entry(sig_info.signature)
 					.or_insert(sig_info.slot);
+			}
+
+			// Checked before any transaction is fetched and before the next address is
+			// listed: past the limit the range is fetched as blocks, whatever the rest holds
+			if signature_slots.len() > transaction_limit {
+				return Err(anyhow::Error::new(SignatureLimitExceeded::Transactions {
+					start_slot,
+					end_slot,
+					limit: transaction_limit,
+				}));
 			}
 		}
 
@@ -1050,106 +1290,8 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 		end_block: Option<u64>,
 	) -> Result<Vec<BlockType>, anyhow::Error> {
 		// Standard approach: fetch all blocks
-		// Validate input parameters
-		if let Some(end_block) = end_block {
-			if start_block > end_block {
-				let message = format!(
-					"start_block {} cannot be greater than end_block {}",
-					start_block, end_block
-				);
-				let input_error = SolanaClientError::invalid_input(message, None, None);
-				return Err(anyhow::anyhow!(input_error))
-					.context("Invalid input parameters for Solana RPC");
-			}
-		}
-
-		let target_block = end_block.unwrap_or(start_block);
-
-		// First, get the list of available slots in the range
-		let slots = if start_block == target_block {
-			vec![start_block]
-		} else {
-			let params = json!([start_block, target_block, { "commitment": "finalized" }]);
-			let response = self
-				.http_client
-				.send_raw_request(rpc_methods::GET_BLOCKS, Some(params))
-				.await
-				.with_context(|| {
-					format!(
-						"Failed to get blocks list from {} to {}",
-						start_block, target_block
-					)
-				})?;
-
-			let slots: Vec<u64> = response["result"]
-				.as_array()
-				.ok_or_else(|| anyhow::anyhow!("Invalid blocks list response"))?
-				.iter()
-				.filter_map(|v| v.as_u64())
-				.collect();
-
-			if slots.is_empty() {
-				return Ok(Vec::new());
-			}
-
-			slots
-		};
-
-		// Fetch each block
-		let mut blocks = Vec::with_capacity(slots.len());
-		let config = SolanaGetBlockConfig::full();
-
-		for slot in slots {
-			let params = json!([slot, config]);
-
-			let response = self
-				.http_client
-				.send_raw_request(rpc_methods::GET_BLOCK, Some(params))
-				.await;
-
-			match response {
-				Ok(response_body) => {
-					if let Err(rpc_error) = self.check_and_handle_rpc_error(
-						&response_body,
-						slot,
-						rpc_methods::GET_BLOCK,
-					) {
-						if rpc_error.is_slot_not_available() || rpc_error.is_block_not_available() {
-							tracing::debug!("Skipping unavailable slot {}: {}", slot, rpc_error);
-							continue;
-						}
-						return Err(anyhow::anyhow!(rpc_error)
-							.context(format!("Solana RPC error while fetching slot {}", slot)));
-					}
-
-					match self.parse_block_response(slot, &response_body) {
-						Ok(block) => {
-							blocks.push(BlockType::Solana(Box::new(block)));
-						}
-						Err(parse_error) => {
-							if parse_error.is_block_not_available() {
-								tracing::debug!(
-									"Skipping slot {} due to parse error: {}",
-									slot,
-									parse_error
-								);
-								continue;
-							}
-							return Err(anyhow::anyhow!(parse_error)
-								.context(format!("Failed to parse block for slot {}", slot)));
-						}
-					}
-				}
-				Err(transport_err) => {
-					return Err(anyhow::anyhow!(transport_err)).context(format!(
-						"Failed to fetch block from Solana RPC for slot: {}",
-						slot
-					));
-				}
-			}
-		}
-
-		Ok(blocks)
+		self.fetch_blocks(start_block, end_block, UnavailableBlock::Skip)
+			.await
 	}
 
 	#[instrument(skip(self), fields(contract_id))]
@@ -1175,13 +1317,40 @@ impl<T: Send + Sync + Clone + BlockchainTransport> BlockChainClient for SolanaCl
 				end_block = ?end_block,
 				"Using optimized getSignaturesForAddress approach"
 			);
-			let (blocks, failed_blocks) = SolanaClientTrait::get_blocks_for_addresses(
+			let fetched = SolanaClientTrait::get_blocks_for_addresses(
 				self,
 				&self.monitored_addresses,
 				start_block,
 				end_block,
 			)
-			.await?;
+			.await;
+			let (blocks, failed_blocks) = match fetched {
+				Ok(fetched) => fetched,
+				// Too many signatures or transactions is a property of the addresses, not a
+				// failure of the RPC. Failing here would stop every monitor of the network for
+				// as long as an address stays busy, and the blocks of the range hold the same
+				// transactions. The result stays sparse: only the transactions of the
+				// monitored addresses are kept, and skipped slots leave gaps between the
+				// blocks, so a gap is not a missed block.
+				Err(error) if error.is::<SignatureLimitExceeded>() => {
+					// Not a warning: a busy address takes this path on every batch for as long
+					// as it stays busy
+					tracing::info!(
+						start_block = start_block,
+						end_block = ?end_block,
+						"{}; fetching the blocks of the range instead",
+						error
+					);
+					// A block the node cannot return fails the fetch: the gaps of a sparse
+					// result are not checked, so leaving the slot out would count it as
+					// processed and its transactions would never be fetched again.
+					let blocks = self
+						.fetch_blocks(start_block, end_block, UnavailableBlock::Fail)
+						.await?;
+					(self.retain_monitored_transactions(blocks), Vec::new())
+				}
+				Err(error) => return Err(error),
+			};
 			Ok(BlockFetchResult {
 				blocks,
 				failed_blocks,
@@ -2772,5 +2941,963 @@ mod tests {
 		assert_eq!(cloned.failed_blocks, vec![1, 2, 3]);
 		assert_eq!(cloned.stream_kind, FetchStreamKind::Sparse);
 		assert!(cloned.blocks.is_empty());
+	}
+
+	// ========================================================================
+	// get_all_signatures_for_address pagination
+	// ========================================================================
+
+	/// Builds the signature history of one address, newest first, from `(slot, count)` groups
+	/// listed newest first.
+	fn signature_history(groups: &[(u64, usize)]) -> Vec<(String, u64)> {
+		groups
+			.iter()
+			.flat_map(|&(slot, count)| {
+				// Within a slot the highest transaction index is the newest
+				(0..count)
+					.rev()
+					.map(move |index| (format!("sig-{}-{}", slot, index), slot))
+			})
+			.collect()
+	}
+
+	/// The signatures of `history` whose slot is within `start_slot..=end_slot`, sorted.
+	fn signatures_in_range(
+		history: &[(String, u64)],
+		start_slot: u64,
+		end_slot: u64,
+	) -> Vec<String> {
+		let mut signatures: Vec<String> = history
+			.iter()
+			.filter(|(_, slot)| (start_slot..=end_slot).contains(slot))
+			.map(|(signature, _)| signature.clone())
+			.collect();
+		signatures.sort();
+		signatures
+	}
+
+	/// The response of a real node to a `getSignaturesForAddress` request with `config`, for an
+	/// address with `history` (newest first): the page starts after `before` (at the newest
+	/// entry without it), stops at `until` and holds at most `limit` entries. `minContextSlot`
+	/// filters nothing.
+	fn signature_page(history: &[(String, u64)], config: &serde_json::Value) -> serde_json::Value {
+		let position = |signature: &str| history.iter().position(|(s, _)| s == signature);
+		let limit = config["limit"].as_u64().unwrap_or(1000) as usize;
+		// A node that does not know the `before` signature returns an empty page
+		let start = match config["before"].as_str() {
+			Some(before) => position(before).map_or(history.len(), |index| index + 1),
+			None => 0,
+		};
+		let end = config["until"]
+			.as_str()
+			.and_then(position)
+			.unwrap_or(history.len());
+
+		let page: Vec<serde_json::Value> = history
+			.iter()
+			.take(end)
+			.skip(start)
+			.take(limit)
+			.map(|(signature, slot)| {
+				json!({ "signature": signature, "slot": slot, "err": null, "blockTime": null })
+			})
+			.collect();
+		json!({ "result": page })
+	}
+
+	/// A node that only answers `getSignaturesForAddress`, from `history` (see
+	/// [`signature_page`]). The config of every request is recorded in `requests`.
+	fn signatures_node(
+		history: Vec<(String, u64)>,
+		requests: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+	) -> CallbackMockTransport {
+		CallbackMockTransport::new(move |method, params| {
+			if method != rpc_methods::GET_SIGNATURES_FOR_ADDRESS {
+				return Err(format!("unexpected method: {}", method));
+			}
+			let config = params.get(1).cloned().unwrap_or(serde_json::Value::Null);
+			requests.lock().unwrap().push(config.clone());
+			Ok(signature_page(&history, &config))
+		})
+	}
+
+	/// Runs `get_all_signatures_for_address` against a node serving `history`. Returns the
+	/// signatures found, sorted, and the config of every request the client sent.
+	async fn collect_signatures(
+		history: &[(String, u64)],
+		start_slot: u64,
+		end_slot: u64,
+	) -> (Result<Vec<String>, anyhow::Error>, Vec<serde_json::Value>) {
+		let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let client =
+			SolanaClient::new_with_transport(signatures_node(history.to_vec(), requests.clone()));
+
+		let result = SolanaClientTrait::get_all_signatures_for_address(
+			&client,
+			"ProgramId1".to_string(),
+			start_slot,
+			end_slot,
+		)
+		.await
+		.map(|signatures| {
+			let mut signatures: Vec<String> =
+				signatures.into_iter().map(|info| info.signature).collect();
+			signatures.sort();
+			signatures
+		});
+
+		let requests = requests.lock().unwrap().clone();
+		(result, requests)
+	}
+
+	/// Compares sorted signature lists without printing thousands of signatures on failure.
+	/// A duplicate in `actual` fails the length check.
+	fn assert_same_signatures(actual: &[String], expected: &[String]) {
+		assert_eq!(
+			actual.len(),
+			expected.len(),
+			"number of signatures returned"
+		);
+		assert!(
+			actual == expected,
+			"returned signatures differ from the expected ones"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_returns_more_than_one_page() {
+		// 2500 signatures in the range, the newest of them at the chain head
+		let history = signature_history(&[(200, 900), (150, 900), (100, 700)]);
+
+		let (result, _) = collect_signatures(&history, 100, 200).await;
+
+		assert_same_signatures(&result.unwrap(), &signatures_in_range(&history, 100, 200));
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_finds_range_older_than_first_page() {
+		// The newest 1500 signatures are all newer than the range
+		let history = signature_history(&[(300, 1500), (150, 20), (50, 5)]);
+
+		let (result, _) = collect_signatures(&history, 100, 200).await;
+
+		assert_same_signatures(&result.unwrap(), &signatures_in_range(&history, 100, 200));
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_continues_after_page_with_newer_signatures() {
+		// The first page holds 400 signatures newer than the range and 600 from the range
+		let history = signature_history(&[(300, 400), (150, 1200)]);
+
+		let (result, _) = collect_signatures(&history, 100, 200).await;
+
+		assert_same_signatures(&result.unwrap(), &signatures_in_range(&history, 100, 200));
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_continues_when_page_ends_inside_start_slot() {
+		// The first page ends 10 signatures into slot 100, the first slot of the range
+		let history = signature_history(&[(150, 990), (100, 30), (99, 50)]);
+
+		let (result, _) = collect_signatures(&history, 100, 200).await;
+
+		assert_same_signatures(&result.unwrap(), &signatures_in_range(&history, 100, 200));
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_stops_below_start_slot() {
+		// 1500 signatures in the range, then 5000 older ones that must not be paged through
+		let history = signature_history(&[(150, 1500), (50, 5000)]);
+
+		let (result, requests) = collect_signatures(&history, 100, 200).await;
+
+		assert_same_signatures(&result.unwrap(), &signatures_in_range(&history, 100, 200));
+		assert_eq!(requests.len(), 2, "pages requested");
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_pages_backwards_with_before() {
+		// Three pages, the first two ending in slots 180 and 150
+		let history = signature_history(&[(180, 1000), (150, 1000), (120, 500)]);
+
+		let (_, requests) = collect_signatures(&history, 100, 200).await;
+
+		// Each page starts after the oldest signature of the page before it
+		let before: Vec<Option<&str>> = requests
+			.iter()
+			.map(|config| config["before"].as_str())
+			.collect();
+		assert_eq!(
+			before,
+			vec![
+				None,
+				Some(history[999].0.as_str()),
+				Some(history[1999].0.as_str())
+			]
+		);
+		assert!(
+			requests.iter().all(|config| config.get("until").is_none()),
+			"`until` does not move the search backwards and must not be sent"
+		);
+
+		// The first page needs a node that has reached the end of the range, a later page
+		// one that has reached the slot of its `before` signature
+		let min_context_slot: Vec<Option<u64>> = requests
+			.iter()
+			.map(|config| config["minContextSlot"].as_u64())
+			.collect();
+		assert_eq!(min_context_slot, vec![Some(200), Some(180), Some(150)]);
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_fails_when_node_is_behind_the_cursor() {
+		// Two pages of signatures in slot 150. A node at the chain head serves the first page.
+		// The second request reaches a node that has only got to slot 120, so it does not know
+		// the `before` signature.
+		const LAGGING_NODE_SLOT: u64 = 120;
+		let history = signature_history(&[(150, 1500)]);
+
+		let transport = CallbackMockTransport::new(move |_method, params| {
+			let config = &params[1];
+			if config.get("before").is_none() {
+				let page: Vec<serde_json::Value> = history
+					.iter()
+					.take(1000)
+					.map(|(signature, slot)| {
+						json!({ "signature": signature, "slot": slot, "err": null, "blockTime": null })
+					})
+					.collect();
+				return Ok(json!({ "result": page }));
+			}
+			// A node refuses a request it cannot evaluate at `minContextSlot`. If it accepts
+			// the request, a `before` signature it does not know gives an empty page.
+			if config["minContextSlot"].as_u64().unwrap_or(0) > LAGGING_NODE_SLOT {
+				Err("Minimum context slot has not been reached".to_string())
+			} else {
+				Ok(json!({ "result": [] }))
+			}
+		});
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_all_signatures_for_address(
+			&client,
+			"ProgramId1".to_string(),
+			100,
+			200,
+		)
+		.await;
+
+		assert!(
+			result.is_err(),
+			"an empty page from a node that does not know the cursor must not end the walk"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_fails_when_node_is_behind_the_end_of_the_range() {
+		// The node has only got to slot 150. Asked for the newest signatures, it returns its
+		// history up to there without an error, and the signatures of slots 151 to 200 would
+		// be missed.
+		const LAGGING_NODE_SLOT: u64 = 150;
+		let history = signature_history(&[(180, 10), (150, 10), (120, 10)]);
+
+		let transport = CallbackMockTransport::new(move |_method, params| {
+			let config = &params[1];
+			// A node refuses a request it cannot evaluate at `minContextSlot`
+			if config["minContextSlot"].as_u64().unwrap_or(0) > LAGGING_NODE_SLOT {
+				return Err("Minimum context slot has not been reached".to_string());
+			}
+			let known: Vec<(String, u64)> = history
+				.iter()
+				.filter(|(_, slot)| *slot <= LAGGING_NODE_SLOT)
+				.cloned()
+				.collect();
+			Ok(signature_page(&known, config))
+		});
+		let client = SolanaClient::new_with_transport(transport);
+
+		let result = SolanaClientTrait::get_all_signatures_for_address(
+			&client,
+			"ProgramId1".to_string(),
+			100,
+			200,
+		)
+		.await;
+
+		assert!(
+			result.is_err(),
+			"a node behind the end of the range must not return its history as complete"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_all_signatures_fails_instead_of_truncating() {
+		// More signatures since the start of the range than the client pages through
+		let limit = MAX_SIGNATURE_PAGES * SIGNATURE_PAGE_LIMIT;
+		let history = signature_history(&[(150, limit + 500)]);
+
+		let (result, requests) = collect_signatures(&history, 100, 200).await;
+
+		let error = result.expect_err("an incomplete list must not be returned as complete");
+		match error.downcast_ref::<SignatureLimitExceeded>() {
+			Some(SignatureLimitExceeded::Signatures {
+				address,
+				limit: reported,
+				..
+			}) => {
+				assert_eq!(address, "ProgramId1");
+				assert_eq!(*reported, limit);
+			}
+			other => panic!("expected the signature limit, got {:?}", other),
+		}
+		assert_eq!(requests.len(), MAX_SIGNATURE_PAGES, "pages requested");
+	}
+
+	/// A node whose `getBlock` takes `delay(slot)` turns of the executor to answer, and that
+	/// records how many `getBlock` requests were in flight at once. Slots 100 to 111 hold a
+	/// block each.
+	#[derive(Clone)]
+	struct SlowBlockNode {
+		delay: fn(u64) -> usize,
+		in_flight: Arc<AtomicUsize>,
+		most_in_flight: Arc<AtomicUsize>,
+	}
+
+	impl SlowBlockNode {
+		fn new(delay: fn(u64) -> usize) -> Self {
+			Self {
+				delay,
+				in_flight: Arc::new(AtomicUsize::new(0)),
+				most_in_flight: Arc::new(AtomicUsize::new(0)),
+			}
+		}
+	}
+
+	#[async_trait]
+	impl crate::services::blockchain::BlockchainTransport for SlowBlockNode {
+		async fn get_current_url(&self) -> String {
+			"http://mock-slow".to_string()
+		}
+
+		async fn send_raw_request<P>(
+			&self,
+			method: &str,
+			params: Option<P>,
+		) -> Result<serde_json::Value, TransportError>
+		where
+			P: Into<serde_json::Value> + Send + Clone + Serialize,
+		{
+			let params = params.map(|p| p.into()).unwrap_or(serde_json::Value::Null);
+			match method {
+				rpc_methods::GET_BLOCKS => {
+					Ok(json!({ "result": (100u64..=111).collect::<Vec<u64>>() }))
+				}
+				rpc_methods::GET_BLOCK => {
+					let slot = params[0].as_u64().unwrap_or_default();
+					let in_flight = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+					self.most_in_flight.fetch_max(in_flight, Ordering::SeqCst);
+					for _ in 0..(self.delay)(slot) {
+						tokio::task::yield_now().await;
+					}
+					self.in_flight.fetch_sub(1, Ordering::SeqCst);
+					Ok(json!({
+						"result": {
+							"blockhash": format!("hash{}", slot),
+							"previousBlockhash": "hash0",
+							"parentSlot": slot.saturating_sub(1),
+							"blockTime": 1234567890,
+							"blockHeight": slot,
+							"transactions": []
+						}
+					}))
+				}
+				_ => Err(TransportError::network(
+					format!("unexpected method: {}", method),
+					None,
+					None,
+				)),
+			}
+		}
+
+		fn update_endpoint_manager_client(
+			&mut self,
+			_client: ClientWithMiddleware,
+		) -> Result<(), anyhow::Error> {
+			Ok(())
+		}
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_fetches_several_blocks_at_once_up_to_the_limit() {
+		let node = SlowBlockNode::new(|_slot| 3);
+		let client = SolanaClient::new_with_transport(node.clone());
+
+		let blocks = client.get_blocks(100, Some(111)).await.unwrap();
+
+		assert_eq!(blocks.len(), 12);
+		assert_eq!(
+			node.most_in_flight.load(Ordering::SeqCst),
+			BLOCK_FETCH_CONCURRENCY,
+			"`getBlock` requests in flight at once"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_returns_blocks_in_slot_order() {
+		// Earlier slots take longer to answer than later ones
+		let node = SlowBlockNode::new(|slot| (112 - slot) as usize);
+		let client = SolanaClient::new_with_transport(node);
+
+		let blocks = client.get_blocks(100, Some(111)).await.unwrap();
+
+		let slots: Vec<Option<u64>> = blocks.iter().map(|block| block.number()).collect();
+		assert_eq!(slots, (100u64..=111).map(Some).collect::<Vec<_>>());
+	}
+
+	/// A node with a block in each of slots 100 to 105, where `getBlock` answers a slot listed
+	/// in `errors` with that JSON-RPC error code instead.
+	fn node_with_block_errors(errors: &'static [(u64, i64)]) -> CallbackMockTransport {
+		CallbackMockTransport::new(move |method, params| match method {
+			rpc_methods::GET_BLOCKS => {
+				Ok(json!({ "result": (100u64..=105).collect::<Vec<u64>>() }))
+			}
+			rpc_methods::GET_BLOCK => {
+				let slot = params[0].as_u64().unwrap_or_default();
+				match errors.iter().find(|(failing, _)| *failing == slot) {
+					Some((_, code)) => {
+						Ok(json!({ "error": { "code": code, "message": "node error" } }))
+					}
+					None => Ok(json!({
+						"result": {
+							"blockhash": format!("hash{}", slot),
+							"previousBlockhash": "hash0",
+							"parentSlot": slot.saturating_sub(1),
+							"blockTime": 1234567890,
+							"blockHeight": slot,
+							"transactions": []
+						}
+					})),
+				}
+			}
+			other => Err(format!("unexpected method: {}", other)),
+		})
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_leaves_out_unavailable_slots_between_fetched_blocks() {
+		let node = node_with_block_errors(&[
+			(102, error_codes::SLOT_SKIPPED),
+			(104, error_codes::BLOCK_NOT_AVAILABLE),
+		]);
+		let client = SolanaClient::new_with_transport(node);
+
+		let blocks = client.get_blocks(100, Some(105)).await.unwrap();
+
+		let slots: Vec<Option<u64>> = blocks.iter().map(|block| block.number()).collect();
+		assert_eq!(slots, vec![Some(100), Some(101), Some(103), Some(105)]);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_fails_with_the_first_slot_that_could_not_be_fetched() {
+		const INTERNAL_ERROR: i64 = -32603;
+		let node = node_with_block_errors(&[(101, INTERNAL_ERROR), (104, INTERNAL_ERROR)]);
+		let client = SolanaClient::new_with_transport(node);
+
+		let error = client.get_blocks(100, Some(105)).await.unwrap_err();
+
+		let message = format!("{:#}", error);
+		assert!(
+			message.contains("slot 101"),
+			"expected the error of slot 101, got: {}",
+			message
+		);
+	}
+
+	/// A transaction as `getBlock` returns it: `accounts` are its static account keys, `loaded`
+	/// the addresses it loads from lookup tables, and `program_id` an explicit program id on
+	/// its instruction, which otherwise invokes the first account.
+	fn block_transaction(
+		signature: &str,
+		accounts: &[&str],
+		loaded: &[&str],
+		program_id: Option<&str>,
+	) -> serde_json::Value {
+		let mut instruction = json!({ "programIdIndex": 0, "accounts": [], "data": "" });
+		if let Some(program_id) = program_id {
+			instruction["programId"] = json!(program_id);
+		}
+		json!({
+			"transaction": {
+				"signatures": [signature],
+				"message": {
+					"accountKeys": accounts,
+					"instructions": [instruction],
+					"recentBlockhash": "hash1"
+				}
+			},
+			"meta": {
+				"err": null,
+				"fee": 5000,
+				"preBalances": [100],
+				"postBalances": [95],
+				"logMessages": [],
+				"loadedAddresses": { "writable": [], "readonly": loaded }
+			}
+		})
+	}
+
+	/// The block of every slot holds one transaction of the monitored address `ProgramId1`.
+	fn one_monitored_transaction(slot: u64) -> Vec<serde_json::Value> {
+		vec![block_transaction(
+			&format!("tx-{}", slot),
+			&["Payer", "ProgramId1"],
+			&[],
+			None,
+		)]
+	}
+
+	/// A node for `get_blocks_with_meta`: `signatures` answers `getSignaturesForAddress`,
+	/// `getTransaction` returns a transaction for any signature, and slots 100 and 101 hold a
+	/// block each, with the transactions `block_transactions` gives for the slot. The method
+	/// of every request is recorded in `methods`.
+	fn node_with_blocks<F, B>(
+		signatures: F,
+		block_transactions: B,
+		methods: Arc<std::sync::Mutex<Vec<String>>>,
+	) -> CallbackMockTransport
+	where
+		F: Fn(&serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync + 'static,
+		B: Fn(u64) -> Vec<serde_json::Value> + Send + Sync + 'static,
+	{
+		CallbackMockTransport::new(move |method, params| {
+			methods.lock().unwrap().push(method.to_string());
+			match method {
+				rpc_methods::GET_SIGNATURES_FOR_ADDRESS => signatures(&params[1]),
+				rpc_methods::GET_TRANSACTION => Ok(mock_tx_response(
+					100,
+					params[0].as_str().unwrap_or_default(),
+				)),
+				rpc_methods::GET_BLOCKS => Ok(json!({ "result": [100, 101] })),
+				rpc_methods::GET_BLOCK => {
+					let slot = params[0].as_u64().unwrap_or_default();
+					Ok(json!({
+						"result": {
+							"blockhash": "hash1",
+							"previousBlockhash": "hash0",
+							"parentSlot": slot.saturating_sub(1),
+							"blockTime": 1234567890,
+							"blockHeight": slot,
+							"transactions": block_transactions(slot)
+						}
+					}))
+				}
+				_ => Err(format!("unexpected method: {}", method)),
+			}
+		})
+	}
+
+	/// Number of requests of `method` among the recorded `methods`.
+	fn requests(methods: &Arc<std::sync::Mutex<Vec<String>>>, method: &str) -> usize {
+		methods
+			.lock()
+			.unwrap()
+			.iter()
+			.filter(|requested| requested.as_str() == method)
+			.count()
+	}
+
+	/// The slots of the blocks in `fetch_result`.
+	fn block_slots(fetch_result: &BlockFetchResult) -> Vec<Option<u64>> {
+		fetch_result
+			.blocks
+			.iter()
+			.map(|block| block.number())
+			.collect()
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_fetches_blocks_when_address_has_too_many_signatures() {
+		// More signatures since slot 100 than the signatures approach pages through
+		let limit = MAX_SIGNATURE_PAGES * SIGNATURE_PAGE_LIMIT;
+		let history = signature_history(&[(101, limit), (100, 500)]);
+		let methods = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let transport = node_with_blocks(
+			move |config| Ok(signature_page(&history, config)),
+			one_monitored_transaction,
+			methods.clone(),
+		);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(101))
+			.await
+			.unwrap();
+
+		// The blocks of the range are fetched whole instead
+		assert_eq!(block_slots(&fetch_result), vec![Some(100), Some(101)]);
+		assert!(fetch_result.failed_blocks.is_empty());
+		// Skipped slots leave gaps between Solana blocks, so a gap is not a missed block
+		assert_eq!(fetch_result.stream_kind, FetchStreamKind::Sparse);
+		assert!(
+			!methods
+				.lock()
+				.unwrap()
+				.iter()
+				.any(|method| method == rpc_methods::GET_TRANSACTION),
+			"no transaction is fetched by signature once the blocks are fetched whole"
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_fetches_by_signature_at_the_transaction_limit() {
+		// Two slots holding exactly as many transactions as are fetched by signature
+		let limit = 2 * MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT;
+		let history = signature_history(&[(101, limit / 2), (100, limit / 2)]);
+		let methods = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let transport = node_with_blocks(
+			move |config| Ok(signature_page(&history, config)),
+			one_monitored_transaction,
+			methods.clone(),
+		);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		BlockChainClient::get_blocks_with_meta(&client, 100, Some(101))
+			.await
+			.unwrap();
+
+		assert_eq!(requests(&methods, rpc_methods::GET_TRANSACTION), limit);
+		assert_eq!(requests(&methods, rpc_methods::GET_BLOCK), 0);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_fetches_blocks_over_the_transaction_limit() {
+		// One transaction more than is fetched by signature for two slots
+		let limit = 2 * MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT;
+		let history = signature_history(&[(101, limit / 2 + 1), (100, limit / 2)]);
+		let methods = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let transport = node_with_blocks(
+			move |config| Ok(signature_page(&history, config)),
+			one_monitored_transaction,
+			methods.clone(),
+		);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(101))
+			.await
+			.unwrap();
+
+		assert_eq!(block_slots(&fetch_result), vec![Some(100), Some(101)]);
+		assert!(fetch_result.failed_blocks.is_empty());
+		assert_eq!(requests(&methods, rpc_methods::GET_TRANSACTION), 0);
+		assert_eq!(requests(&methods, rpc_methods::GET_BLOCK), 2);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_stops_listing_signatures_over_the_transaction_limit() {
+		// The first address alone is over the limit, so the second one is not asked about
+		let limit = 2 * MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT;
+		let history = signature_history(&[(101, limit), (100, limit)]);
+		let methods = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let transport = node_with_blocks(
+			move |config| Ok(signature_page(&history, config)),
+			one_monitored_transaction,
+			methods.clone(),
+		);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string(), "ProgramId2".to_string()]);
+
+		BlockChainClient::get_blocks_with_meta(&client, 100, Some(101))
+			.await
+			.unwrap();
+
+		assert_eq!(
+			requests(&methods, rpc_methods::GET_SIGNATURES_FOR_ADDRESS),
+			1
+		);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_keep_only_transactions_of_monitored_addresses() {
+		let limit = 2 * MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT;
+		let history = signature_history(&[(100, limit + 1)]);
+		let methods = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let transport = node_with_blocks(
+			move |config| Ok(signature_page(&history, config)),
+			|slot| match slot {
+				100 => vec![
+					block_transaction("static-key", &["Payer", "ProgramId1"], &[], None),
+					block_transaction("loaded-key", &["Payer", "Other"], &["ProgramId1"], None),
+					block_transaction("program-id", &["Payer", "Other"], &[], Some("ProgramId1")),
+					// Base58 is case-sensitive: in another case it is another address, which
+					// getSignaturesForAddress would not return either
+					block_transaction("other-case", &["Payer", "PROGRAMID1"], &[], None),
+					block_transaction("unrelated", &["Payer", "Other"], &[], None),
+				],
+				_ => vec![block_transaction(
+					"unrelated-too",
+					&["Payer", "Other"],
+					&[],
+					None,
+				)],
+			},
+			methods.clone(),
+		);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(101))
+			.await
+			.unwrap();
+
+		// The block of slot 101 holds nothing of the monitored address, so it is left out
+		assert_eq!(block_slots(&fetch_result), vec![Some(100)]);
+		let BlockType::Solana(block) = &fetch_result.blocks[0] else {
+			panic!("expected a Solana block");
+		};
+		let signatures: Vec<&str> = block.transactions.iter().map(|tx| tx.signature()).collect();
+		assert_eq!(signatures, vec!["static-key", "loaded-key", "program-id"]);
+	}
+
+	/// A node of an address with too many transactions in slot 100 to fetch by signature, so
+	/// the blocks of the range are fetched whole. `getBlocks` lists the slots of `listed` as
+	/// holding a block. `block_response` is what `getBlock` answers for a slot; `None` stands
+	/// for a block with one transaction of the monitored address `ProgramId1`.
+	fn busy_address_node(
+		listed: &'static [u64],
+		block_response: fn(u64) -> Option<serde_json::Value>,
+	) -> CallbackMockTransport {
+		let limit = 3 * MAX_TRANSACTIONS_BY_SIGNATURE_PER_SLOT;
+		let history = signature_history(&[(100, limit + 1)]);
+		CallbackMockTransport::new(move |method, params| match method {
+			rpc_methods::GET_SIGNATURES_FOR_ADDRESS => Ok(signature_page(&history, &params[1])),
+			rpc_methods::GET_BLOCKS => Ok(json!({ "result": listed })),
+			rpc_methods::GET_BLOCK => {
+				let slot = params[0].as_u64().unwrap_or_default();
+				Ok(block_response(slot).unwrap_or_else(|| {
+					json!({
+						"result": {
+							"blockhash": "hash1",
+							"previousBlockhash": "hash0",
+							"parentSlot": slot.saturating_sub(1),
+							"blockTime": 1234567890,
+							"blockHeight": slot,
+							"transactions": one_monitored_transaction(slot)
+						}
+					})
+				}))
+			}
+			other => Err(format!("unexpected method: {}", other)),
+		})
+	}
+
+	/// The error of fetching slots 100 to 102 for the monitored address `ProgramId1`.
+	async fn blocks_fetched_whole_error(transport: CallbackMockTransport) -> String {
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let error = BlockChainClient::get_blocks_with_meta(&client, 100, Some(102))
+			.await
+			.expect_err("a block the node cannot return must fail the fetch");
+
+		format!("{:#}", error)
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_fail_when_a_listed_block_is_not_available() {
+		// The node lists slot 101 but has not finalized it yet. Leaving the slot out would
+		// count it as processed, and its transactions would never be fetched again.
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
+			(slot == 101).then(|| {
+				json!({ "error": {
+					"code": error_codes::BLOCK_NOT_AVAILABLE,
+					"message": "Block not available for slot 101"
+				} })
+			})
+		});
+
+		let message = blocks_fetched_whole_error(transport).await;
+
+		assert!(message.contains("slot 101"), "got: {}", message);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_fail_when_a_listed_block_is_returned_empty() {
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
+			(slot == 101).then(|| json!({ "result": null }))
+		});
+
+		let message = blocks_fetched_whole_error(transport).await;
+
+		assert!(message.contains("slot 101"), "got: {}", message);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_fail_when_a_listed_block_is_answered_as_skipped() {
+		// The node lists slot 101 as holding a block, but answers for its block that the slot
+		// was skipped or is missing from its ledger. The block exists, so leaving the slot
+		// out would lose its transactions.
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
+			(slot == 101).then(|| {
+				json!({ "error": {
+					"code": error_codes::SLOT_SKIPPED,
+					"message": "Slot 101 was skipped, or missing due to ledger jump to recent snapshot"
+				} })
+			})
+		});
+
+		let message = blocks_fetched_whole_error(transport).await;
+
+		assert!(message.contains("slot 101"), "got: {}", message);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_fail_when_node_is_behind_the_end_of_the_range() {
+		// The node has only got to slot 101. It lists the blocks of slots 100 and 101 without
+		// an error, and the block of slot 102 would be missed.
+		const LAGGING_NODE_SLOT: u64 = 101;
+		let node = busy_address_node(&[100, 101], |_| None);
+		let transport = CallbackMockTransport::new(move |method, params| {
+			// A node refuses a request it cannot evaluate at `minContextSlot`
+			if method == rpc_methods::GET_BLOCKS
+				&& params[2]["minContextSlot"].as_u64().unwrap_or(0) > LAGGING_NODE_SLOT
+			{
+				return Err("Minimum context slot has not been reached".to_string());
+			}
+			(node.handler)(method, params)
+		});
+
+		let message = blocks_fetched_whole_error(transport).await;
+
+		assert!(message.contains("Minimum context slot"), "got: {}", message);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_leave_out_slots_not_listed() {
+		// No block was produced in slot 101, so the node does not list it and there is
+		// nothing to come back for
+		let transport = busy_address_node(&[100, 102], |_| None);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(102))
+			.await
+			.unwrap();
+
+		assert_eq!(block_slots(&fetch_result), vec![Some(100), Some(102)]);
+		assert!(fetch_result.failed_blocks.is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_fail_on_a_single_slot_the_node_has_not_reached() {
+		// A range of one slot is fetched without asking getBlocks. A node that has not
+		// reached slot 100 would list nothing, and the slot would count as processed.
+		let transport = busy_address_node(&[], |slot| {
+			(slot == 100).then(|| {
+				json!({ "error": {
+					"code": error_codes::BLOCK_NOT_AVAILABLE,
+					"message": "Block not available for slot 100"
+				} })
+			})
+		});
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let error = BlockChainClient::get_blocks_with_meta(&client, 100, Some(100))
+			.await
+			.expect_err("a block the node cannot return must fail the fetch");
+
+		let message = format!("{:#}", error);
+		assert!(message.contains("slot 100"), "got: {}", message);
+	}
+
+	/// The slot and time of each transaction in `fetch_result`.
+	fn transaction_times(fetch_result: &BlockFetchResult) -> Vec<(u64, Option<i64>)> {
+		fetch_result
+			.blocks
+			.iter()
+			.flat_map(|block| match block {
+				BlockType::Solana(block) => block
+					.transactions
+					.iter()
+					.map(|tx| (tx.0.slot, tx.0.block_time))
+					.collect::<Vec<_>>(),
+				_ => Vec::new(),
+			})
+			.collect()
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_give_transactions_the_time_of_their_block() {
+		// Fetched by signature, a transaction carries the time of its block, and a match
+		// hands the transaction to the triggers
+		let transport = busy_address_node(&[100, 101, 102], |_| None);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(102))
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transaction_times(&fetch_result),
+			vec![
+				(100, Some(1234567890)),
+				(101, Some(1234567890)),
+				(102, Some(1234567890))
+			]
+		);
+	}
+
+	#[tokio::test]
+	async fn test_blocks_fetched_whole_leave_transactions_without_time_when_the_block_has_none() {
+		let transport = busy_address_node(&[100, 101, 102], |slot| {
+			(slot == 101).then(|| {
+				json!({ "result": {
+					"blockhash": "hash1",
+					"previousBlockhash": "hash0",
+					"parentSlot": 100,
+					"blockHeight": 101,
+					"transactions": one_monitored_transaction(101)
+				} })
+			})
+		});
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let fetch_result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(102))
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transaction_times(&fetch_result),
+			vec![
+				(100, Some(1234567890)),
+				(101, None),
+				(102, Some(1234567890))
+			]
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_blocks_with_meta_fails_without_fetching_blocks_on_rpc_error() {
+		// An RPC failure says nothing about the address, so the batch fails like before
+		let methods = Arc::new(std::sync::Mutex::new(Vec::new()));
+		let transport = node_with_blocks(
+			|_config| Err("RPC node unavailable".to_string()),
+			one_monitored_transaction,
+			methods.clone(),
+		);
+		let client = SolanaClient::new_with_transport(transport)
+			.with_monitored_addresses(vec!["ProgramId1".to_string()]);
+
+		let result = BlockChainClient::get_blocks_with_meta(&client, 100, Some(101)).await;
+
+		assert!(result.is_err());
+		assert_eq!(
+			*methods.lock().unwrap(),
+			vec![rpc_methods::GET_SIGNATURES_FOR_ADDRESS.to_string()]
+		);
 	}
 }

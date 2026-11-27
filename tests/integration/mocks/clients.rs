@@ -191,7 +191,7 @@ mock! {
 			address: String,
 			limit: Option<usize>,
 			min_slot: Option<u64>,
-			until_signature: Option<String>,
+			before_signature: Option<String>,
 		) -> Result<Vec<SignatureInfo>, anyhow::Error>;
 		async fn get_all_signatures_for_address(
 			&self,
